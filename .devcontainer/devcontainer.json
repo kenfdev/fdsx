@@ -1,0 +1,25 @@
+{
+  "name": "fdsx",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "uv sync",
+  "features": {
+    "ghcr.io/kenfdev/devcontainer-feature/devenv:1": {},
+    "ghcr.io/devcontainers/features/node": {}
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": ".venv/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true
+        }
+      }
+    }
+  }
+}
