@@ -1,0 +1,13 @@
+name: Invalid Flow - Mutual Exclusive Fields
+start_at: start
+version: '1.0'
+
+states:
+  start:
+    type: task
+    provider: claude
+    model: opus
+    prompt_template: 'Some prompt'
+    prompt_file: 'some_file.txt'
+    result_path: $.result
+    end: true

@@ -1,0 +1,45 @@
+name: Choice Flow
+start_at: check_status
+version: '1.0'
+
+states:
+  check_status:
+    type: task
+    provider: system
+    command: echo ready
+    result_path: $.status
+    next: decision
+
+  decision:
+    type: choice
+    choices:
+      - variable: $.status
+        operator: equals
+        value: ready
+        next: proceed
+      - variable: $.status
+        operator: equals
+        value: pending
+        next: wait
+    default: error
+
+  proceed:
+    type: task
+    provider: system
+    command: echo Proceeding with execution
+    result_path: $.proceed_result
+    end: true
+
+  wait:
+    type: task
+    provider: system
+    command: echo Waiting for resources
+    result_path: $.wait_result
+    end: true
+
+  error:
+    type: task
+    provider: system
+    command: echo Unknown status
+    result_path: $.error_result
+    end: true

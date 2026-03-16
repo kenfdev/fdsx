@@ -1,0 +1,2 @@
+[console_scripts]
+fdsx = fdsx.cli.main:app

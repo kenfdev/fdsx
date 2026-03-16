@@ -1,0 +1,27 @@
+name: Loop Test Flow
+start_at: counter
+max_loop: 3
+
+states:
+  counter:
+    type: task
+    provider: system
+    command: "echo counting"
+    result_path: $.count
+    next: check
+
+  check:
+    type: choice
+    choices:
+      - variable: $.count
+        operator: equals
+        value: "never_matches"
+        next: done
+    default: counter
+
+  done:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.final
+    end: true

@@ -1,0 +1,25 @@
+name: Simple Plan-Implement-Review Flow
+start_at: plan
+version: '1.0'
+
+states:
+  plan:
+    type: task
+    provider: system
+    command: "echo 'Plan: Create a hello world function'"
+    result_path: $.plan
+    next: implement
+
+  implement:
+    type: task
+    provider: system
+    command: "echo 'Implementation: def hello: print(Hello World)'"
+    result_path: $.implementation
+    next: review
+
+  review:
+    type: task
+    provider: system
+    command: "echo 'Review: Code looks good'"
+    result_path: $.review
+    end: true
