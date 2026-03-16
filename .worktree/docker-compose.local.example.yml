@@ -1,0 +1,14 @@
+# docker-compose.local.example.yml
+# Copy this to docker-compose.local.yml and customize.
+# This file is gitignored — your overrides stay local.
+#
+# Use this to override the app service's build to use your personal Dockerfile.
+# See .worktree/personal/example/Dockerfile for a starting point.
+
+# services:
+#   app:
+#     build:
+#       context: ..
+#       dockerfile: .worktree/personal/<your-name>/Dockerfile
+#     volumes:
+#       - ~/.dotfiles:/home/vscode/.dotfiles:cached
