@@ -1,0 +1,156 @@
+name: full-impl
+description: Full pipeline — plan → implement → 3-parallel review (code quality, security, performance) → fix loop → finalize with PR creation
+max_movements: 15
+initial_movement: plan
+
+piece_config:
+  provider_options:
+    codex: { network_access: true }
+    opencode: { network_access: true }
+    claude: { sandbox: { allow_unsandboxed_commands: true } }
+
+# --- Section Maps ---
+
+personas:
+  planner: ../facets/personas/planner.md
+  coder: ../facets/personas/coder.md
+  code-quality-reviewer: ../facets/personas/code-quality-reviewer.md
+  security-reviewer: ../facets/personas/security-reviewer.md
+  performance-reviewer: ../facets/personas/performance-reviewer.md
+  finalizer: ../facets/personas/finalizer.md
+
+instructions:
+  plan: ../facets/instructions/plan.md
+  implement: ../facets/instructions/implement.md
+  review-code-quality: ../facets/instructions/review-code-quality.md
+  review-security: ../facets/instructions/review-security.md
+  review-performance: ../facets/instructions/review-performance.md
+  fix: ../facets/instructions/fix.md
+  finalize: ../facets/instructions/finalize.md
+
+report_formats:
+  plan: ../facets/output-contracts/plan-report.md
+  implementation: ../facets/output-contracts/implementation-report.md
+
+# --- Movements ---
+
+movements:
+  # 1. Planning (Claude)
+  - name: plan
+    persona: planner
+    instruction: plan
+    edit: false
+    provider: claude
+    output_contracts:
+      report:
+        - name: plan.md
+          format: plan
+    rules:
+      - condition: "Plan is ready"
+        next: implement
+      - condition: "Blocked — unresolved questions"
+        next: ABORT
+        requires_user_input: true
+        appendix: |
+          The planner has identified blockers.
+          Please provide clarification and re-run.
+
+  # 2. Implementation (OpenCode / opencode/minimax-m2.5-free)
+  - name: implement
+    persona: coder
+    instruction: implement
+    edit: true
+    required_permission_mode: edit
+    provider: opencode
+    model: opencode/minimax-m2.5-free
+    output_contracts:
+      report:
+        - name: implementation.md
+          format: implementation
+    rules:
+      - condition: "Implementation complete"
+        next: review
+      - condition: "Unrecoverable error"
+        next: ABORT
+
+  # 3. Parallel Review (Codex / gpt-5.4, reasoning_effort=high from ~/.codex/config.toml)
+  - name: review
+    parallel:
+      - name: code-quality
+        persona: code-quality-reviewer
+        instruction: review-code-quality
+        edit: false
+        provider: codex
+        model: gpt-5.4
+        rules:
+          - condition: approved
+          - condition: needs_fix
+
+      - name: security
+        persona: security-reviewer
+        instruction: review-security
+        edit: false
+        provider: codex
+        model: gpt-5.4
+        rules:
+          - condition: approved
+          - condition: needs_fix
+
+      - name: performance
+        persona: performance-reviewer
+        instruction: review-performance
+        edit: false
+        provider: codex
+        model: gpt-5.4
+        rules:
+          - condition: approved
+          - condition: needs_fix
+
+    rules:
+      - condition: all("approved")
+        next: finalize
+      - condition: any("needs_fix")
+        next: fix
+
+  # 4. Fix (OpenCode / opencode/minimax-m2.5-free)
+  - name: fix
+    persona: coder
+    instruction: fix
+    edit: true
+    required_permission_mode: edit
+    provider: opencode
+    model: opencode/minimax-m2.5-free
+    rules:
+      - condition: "Fixes applied"
+        next: review
+
+  # 5. Finalize (Claude)
+  - name: finalize
+    persona: finalizer
+    instruction: finalize
+    edit: true
+    required_permission_mode: full
+    provider: claude
+    rules:
+      - condition: "PR created successfully"
+        next: COMPLETE
+      - condition: "Error during finalization"
+        next: ABORT
+
+# --- Loop Monitors ---
+
+loop_monitors:
+  - cycle: [review, fix]
+    threshold: 3
+    judge:
+      persona: planner
+      instruction: |
+        The review ↔ fix loop has repeated {cycle_count} times.
+        Evaluate whether the fixes are making meaningful progress
+        or if the implementation needs a fundamentally different approach.
+      rules:
+        - condition: "Progress is being made, continue"
+          next: fix
+        - condition: "No progress, abort"
+          next: ABORT
+

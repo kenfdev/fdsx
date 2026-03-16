@@ -1,0 +1,140 @@
+name: simple-impl
+description: Lightweight pipeline — plan → implement → review → replan loop → finalize with squash commit and PR
+max_movements: 10
+initial_movement: plan
+
+piece_config:
+  provider_options:
+    codex: { network_access: true }
+    opencode: { network_access: true }
+    claude: { sandbox: { allow_unsandboxed_commands: true } }
+
+# --- Section Maps ---
+
+personas:
+  planner: ../facets/personas/planner.md
+  coder: ../facets/personas/coder.md
+  code-quality-reviewer: ../facets/personas/code-quality-reviewer.md
+  finalizer: ../facets/personas/finalizer.md
+
+instructions:
+  plan: ../facets/instructions/plan.md
+  replan: ../facets/instructions/replan.md
+  implement: ../facets/instructions/implement.md
+  review-general: ../facets/instructions/review-general.md
+  finalize: ../facets/instructions/finalize.md
+
+report_formats:
+  plan: ../facets/output-contracts/plan-report.md
+  implementation: ../facets/output-contracts/implementation-report.md
+  review: ../facets/output-contracts/review-report.md
+
+# --- Movements ---
+
+movements:
+  # 1. Planning (Claude)
+  - name: plan
+    persona: planner
+    instruction: plan
+    edit: false
+    provider: claude
+    output_contracts:
+      report:
+        - name: plan.md
+          format: plan
+    rules:
+      - condition: "Plan is ready"
+        next: implement
+      - condition: "Blocked — unresolved questions"
+        next: ABORT
+        requires_user_input: true
+        appendix: |
+          The planner has identified blockers.
+          Please provide clarification and re-run.
+
+  # 2. Implementation (OpenCode / opencode/minimax-m2.5-free)
+  - name: implement
+    persona: coder
+    instruction: implement
+    edit: true
+    required_permission_mode: edit
+    session: refresh
+    provider: opencode
+    model: opencode/minimax-m2.5-free
+    output_contracts:
+      report:
+        - name: implementation.md
+          format: implementation
+    rules:
+      - condition: "Implementation complete"
+        next: review
+      - condition: "Unrecoverable error"
+        next: ABORT
+
+  # 3. Review (Codex / gpt-5.4, reasoning_effort=high from ~/.codex/config.toml)
+  - name: review
+    persona: code-quality-reviewer
+    instruction: review-general
+    edit: false
+    provider: codex
+    model: gpt-5.4
+    output_contracts:
+      report:
+        - name: review.md
+          format: review
+    rules:
+      - condition: "Implementation is acceptable"
+        next: finalize
+      - condition: "Changes needed"
+        next: replan
+
+  # 4. Re-plan (Claude) — creates a targeted fix plan from review feedback
+  - name: replan
+    persona: planner
+    instruction: replan
+    edit: false
+    session: refresh
+    provider: claude
+    output_contracts:
+      report:
+        - name: plan.md
+          format: plan
+    rules:
+      - condition: "Fix plan is ready"
+        next: implement
+      - condition: "Blocked — fundamental design issues"
+        next: ABORT
+        requires_user_input: true
+        appendix: |
+          The review findings reveal fundamental design issues.
+          Please provide guidance and re-run.
+
+  # 5. Finalize (Claude)
+  - name: finalize
+    persona: finalizer
+    instruction: finalize
+    edit: true
+    required_permission_mode: full
+    provider: claude
+    rules:
+      - condition: "PR created successfully"
+        next: COMPLETE
+      - condition: "Error during finalization"
+        next: ABORT
+
+# --- Loop Monitors ---
+
+loop_monitors:
+  - cycle: [review, replan, implement]
+    threshold: 3
+    judge:
+      persona: planner
+      instruction: |
+        The review → replan → implement loop has repeated {cycle_count} times.
+        Evaluate whether meaningful progress is being made toward resolving review findings.
+      rules:
+        - condition: "Progress is being made, continue"
+          next: replan
+        - condition: "No progress, abort"
+          next: ABORT
+
