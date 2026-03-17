@@ -4,10 +4,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from langchain_core.runnables.config import RunnableConfig
+from langgraph.checkpoint.base import Checkpoint
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
-def _extract_meta_from_checkpoint(checkpoint_data: dict) -> dict:
+def _extract_meta_from_checkpoint(
+    checkpoint_data: Checkpoint | dict[str, Any],
+) -> dict[str, Any]:
     """Extract _meta from checkpoint channel_values, handling both
     __root__ (object schema) and named-channel (TypedDict schema) layouts."""
     channel_values = checkpoint_data.get("channel_values", {})
@@ -168,7 +172,7 @@ class CheckpointManager:
             )
             count = cursor.fetchone()[0]
             conn.close()
-            return count > 0
+            return bool(count > 0)
         except Exception:
             return False
 
@@ -198,7 +202,7 @@ class CheckpointManager:
 
                 current_state = ""
                 started_at = ""
-                config = {"configurable": {"thread_id": thread_id}}
+                config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
                 try:
                     checkpoint_tuple = checkpointer.get_tuple(config)
                     if checkpoint_tuple is not None:

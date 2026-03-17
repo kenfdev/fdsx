@@ -171,12 +171,12 @@
 
 ## Phase 10: Polish & Cross-Cutting
 
-- [ ] T052 Verify ruff and mypy pass with Phase 3 code in `pyproject.toml`
+- [x] T052 Verify ruff and mypy pass with Phase 3 code in `pyproject.toml`
   - Run `uv run ruff check src/ tests/` — fix any lint issues in new files
   - Run `uv run mypy src/fdsx/` — fix any type errors in new files
   - Ensure all Phase 1-2 tests still pass: `uv run pytest tests/`
 
-- [ ] T053 Write CLI e2e test for Phase 3 scenarios in `tests/integration/test_cli_e2e_phase3.py`
+- [x] T053 Write CLI e2e test for Phase 3 scenarios in `tests/integration/test_cli_e2e_phase3.py`
   - Test `fdsx run` with Wait state flow → mock stdin → exit code 0, JSON output contains selection result
   - Test `fdsx resume --thread-id` with a previously interrupted flow → exit code 0
   - Test `fdsx resume --thread-id` with non-existent thread → exit code 2, error message

@@ -141,6 +141,11 @@ def run_flow(
                     if "__interrupt__" not in state_snapshot:
                         last_state = state_snapshot
 
+        if needs_checkpointer and checkpoint_manager is not None:
+            final_state_info = compiled.graph.get_state(config)
+            if final_state_info.values:
+                last_state = final_state_info.values
+
         return _extract_results(last_state, compiled.result_paths)
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
