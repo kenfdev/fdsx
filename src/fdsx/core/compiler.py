@@ -3,7 +3,11 @@ from typing import Any, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from fdsx.core.variables import resolve_template, resolve_template_shell_safe, set_jsonpath
+from fdsx.core.variables import (
+    resolve_template,
+    resolve_template_shell_safe,
+    set_jsonpath,
+)
 from fdsx.display import terminal
 from fdsx.display.terminal import _sanitize_output
 from fdsx.models.flow import (
@@ -87,8 +91,12 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState) and state.result_path:
             paths.append(state.result_path)
+            if state.extract:
+                paths.append(state.extract.result_path)
         elif isinstance(state, ParallelState) and state.result_path:
             paths.append(state.result_path)
+            # Do NOT add branch extract paths — they are nested inside
+            # result array elements, not top-level state keys.
         elif isinstance(state, WaitState) and state.result_path:
             paths.append(state.result_path)
     return paths
@@ -100,6 +108,7 @@ def _create_task_node(
     """Create a LangGraph node function for a Task state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        from fdsx.core.extraction import extract_value
         from fdsx.providers.base import ProviderResult
 
         start_time = time.time()
@@ -118,10 +127,13 @@ def _create_task_node(
         max_retries = state.retry if state.retry is not None else 3
         last_error = "No attempts made"
         result = ProviderResult(exit_code=1, stdout="", stderr="")
+        extracted: str | None = None
 
         for attempt in range(max_retries + 1):
             if state.provider == "system":
-                resolved_command = resolve_template_shell_safe(state.command or "", state_dict)
+                resolved_command = resolve_template_shell_safe(
+                    state.command or "", state_dict
+                )
                 result = provider.execute(
                     prompt="",
                     model=state.model,
@@ -138,8 +150,20 @@ def _create_task_node(
                 )
 
             if result.exit_code == 0:
-                break
-            last_error = result.stderr
+                if state.extract:
+                    extracted = extract_value(
+                        result.stdout.strip(),
+                        state.extract,
+                        get_provider,
+                        source_provider=state.provider,
+                    )
+                    if extracted is not None:
+                        break
+                    last_error = "Extraction failed: all strategies returned None"
+                else:
+                    break
+            else:
+                last_error = result.stderr
 
         if result.exit_code != 0:
             terminal.display_state_error(state_name, last_error)
@@ -147,9 +171,20 @@ def _create_task_node(
                 f"Provider {state.provider} failed after {max_retries + 1} attempts with exit code {result.exit_code}: {_sanitize_output(last_error)}"
             )
 
-        output = result.stdout.strip()
-
-        new_state = set_jsonpath(state.result_path, state_dict, output)
+        if state.extract:
+            if extracted is None:
+                terminal.display_state_error(state_name, last_error)
+                raise RuntimeError(
+                    f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
+                )
+            new_state = set_jsonpath(state.extract.result_path, state_dict, extracted)
+            new_state = set_jsonpath(
+                state.result_path, new_state, result.stdout.strip()
+            )
+        else:
+            new_state = set_jsonpath(
+                state.result_path, state_dict, result.stdout.strip()
+            )
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
@@ -176,6 +211,7 @@ def _create_parallel_node(
     """Create a LangGraph node function for a Parallel state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        from fdsx.core.extraction import extract_value
         from fdsx.providers.base import ProviderResult
 
         start_time = time.time()
@@ -196,6 +232,7 @@ def _create_parallel_node(
             max_retries = branch.retry if branch.retry is not None else 3
             last_error = "No attempts made"
             result = ProviderResult(exit_code=1, stdout="", stderr="")
+            extracted: str | None = None
 
             for attempt in range(max_retries + 1):
                 if branch.provider == "system":
@@ -218,19 +255,39 @@ def _create_parallel_node(
                     )
 
                 if result.exit_code == 0:
-                    break
-                last_error = result.stderr
+                    if branch.extract:
+                        extracted = extract_value(
+                            result.stdout.strip(),
+                            branch.extract,
+                            get_provider,
+                            source_provider=branch.provider,
+                        )
+                        if extracted is not None:
+                            break
+                        last_error = "Extraction failed: all strategies returned None"
+                    else:
+                        break
+                else:
+                    last_error = result.stderr
 
             if result.exit_code != 0:
                 last_error = f"Failed after {max_retries + 1} attempts: {_sanitize_output(last_error)}"
+            elif branch.extract and extracted is None:
+                result = ProviderResult(exit_code=1, stdout=result.stdout, stderr="")
+                last_error = f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
 
-            results.append(
-                {
-                    "output": result.stdout.strip(),
-                    "exit_code": result.exit_code,
-                    "error": last_error if result.exit_code != 0 else None,
-                }
-            )
+            branch_result = {
+                "output": result.stdout.strip(),
+                "exit_code": result.exit_code,
+                "error": last_error if result.exit_code != 0 else None,
+            }
+
+            if branch.extract and extracted is not None:
+                branch_result = set_jsonpath(
+                    branch.extract.result_path, branch_result, extracted
+                )
+
+            results.append(branch_result)
 
         new_state = set_jsonpath(state.result_path, state_dict, results)
 

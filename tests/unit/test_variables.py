@@ -381,3 +381,131 @@ class TestIsVarSatisfied:
     def test_different_indexed_paths_not_satisfied(self):
         # "reviews[0].decision" ≠ "reviews[0].summary" (sibling paths)
         assert _is_var_satisfied("reviews[0].decision", {"reviews[0].summary"}) is False
+
+
+class TestAnalyzeVariableReferencesExtract:
+    """F1 regression: extract.result_path must be registered as a produced variable."""
+
+    def test_extract_result_path_satisfies_downstream_reference(self):
+        """F1: A TaskState with extract.result_path should register that path as produced."""
+        from fdsx.models.flow import ExtractRule, TaskState
+
+        flow = Flow(
+            name="Extraction Flow",
+            start_at="echo_state",
+            states={
+                "echo_state": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo APPROVED",
+                    result_path="$.raw_output",
+                    extract=ExtractRule(
+                        strategy=["keyword"],
+                        pattern="APPROVED|REJECTED",
+                        result_path="$.decision",
+                    ),
+                    next="route",
+                ),
+                "route": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {decision}",
+                    result_path="$.routed",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_missing_extract_result_path_flagged(self):
+        """F1: A reference to an extract.result_path that doesn't exist should be flagged."""
+        flow = Flow(
+            name="Extraction Flow",
+            start_at="echo_state",
+            states={
+                "echo_state": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.raw_output",
+                    next="route",
+                ),
+                "route": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {decision}",
+                    result_path="$.routed",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "decision" in errors[0]
+
+    def test_parallel_branch_extract_path_not_top_level(self):
+        """F1: Branch extract.result_path values live INSIDE result array elements,
+        not as top-level state vars. A downstream {decision} ref after a parallel
+        state with branch extract should still be flagged as undefined."""
+        from fdsx.models.flow import ExtractRule
+
+        flow = Flow(
+            name="Parallel Extract Flow",
+            start_at="par",
+            states={
+                "par": ParallelState(
+                    type="parallel",
+                    branches=[
+                        Branch(
+                            provider="system",
+                            command="echo APPROVED",
+                            extract=ExtractRule(
+                                strategy=["keyword"],
+                                pattern="APPROVED|REJECTED",
+                                result_path="$.decision",
+                            ),
+                        ),
+                    ],
+                    result_path="$.par_result",
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {decision}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        # Branch extract paths are NOT top-level — downstream {decision} is undefined
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "decision" in errors[0]
+
+    def test_parallel_state_result_path_is_top_level(self):
+        """F1: Only the parallel state's own result_path is registered as top-level."""
+        flow = Flow(
+            name="Parallel Result Flow",
+            start_at="par",
+            states={
+                "par": ParallelState(
+                    type="parallel",
+                    branches=[
+                        Branch(provider="system", command="echo hello"),
+                    ],
+                    result_path="$.par_result",
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {par_result}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"

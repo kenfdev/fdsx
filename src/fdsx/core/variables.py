@@ -310,12 +310,19 @@ def analyze_variable_references(
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)  # full path, not just root key
+            if state.extract and state.extract.result_path:
+                path = state.extract.result_path
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
         elif isinstance(state, ParallelState):
             if state.result_path:
                 path = state.result_path
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)  # full path, not just root key
+            # Do NOT register branch extract paths — they live inside
+            # result array elements, not as top-level state variables.
         return result_paths
 
     reachable_states = set()

@@ -3,12 +3,59 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, Field, model_validator
 
 
+def _parse_path_segments(path: str) -> list[str | int]:
+    """Parse a JSONPath-like string into typed segments.
+
+    Handles dot notation (a.b) and bracket notation (a[0], a["key"]).
+    Note: duplicated from variables._parse_jsonpath to avoid circular import.
+    """
+    parts: list[str | int] = []
+    current = ""
+    i = 0
+    while i < len(path):
+        char = path[i]
+        if char == ".":
+            if current:
+                parts.append(current)
+                current = ""
+        elif char == "[":
+            if current:
+                parts.append(current)
+                current = ""
+            i += 1
+            bracket = ""
+            while i < len(path) and path[i] != "]":
+                bracket += path[i]
+                i += 1
+            if bracket:
+                try:
+                    parts.append(int(bracket))
+                except ValueError:
+                    parts.append(bracket.strip("\"'"))
+        else:
+            current += char
+        i += 1
+    if current:
+        parts.append(current)
+    return parts
+
+
 class LLMClassifyFallback(BaseModel):
     """LLM-based classification fallback."""
 
     type: Literal["llm_classify"] = "llm_classify"
     provider: str = Field(..., description="LLM provider")
     prompt: str = Field(..., description="Classification prompt")
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> "LLMClassifyFallback":
+        valid_llm_providers = {"claude", "opencode", "codex"}
+        if self.provider not in valid_llm_providers:
+            raise ValueError(
+                f"LLM classify fallback provider must be one of "
+                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
+            )
+        return self
 
 
 class TaskSplitter(BaseModel):
@@ -21,12 +68,20 @@ class TaskSplitter(BaseModel):
 class ExtractRule(BaseModel):
     """Output extraction configuration."""
 
-    strategy: list[str] = Field(..., description="Extraction strategies tried in order")
+    strategy: list[Literal["json", "regex", "keyword"]] = Field(
+        ..., description="Extraction strategies tried in order"
+    )
     pattern: str = Field(..., description="Pattern for extraction")
     fallback: LLMClassifyFallback | None = Field(
         default=None, description="LLM classification fallback"
     )
     result_path: str = Field(..., description="JSONPath for extracted value")
+
+    @model_validator(mode="after")
+    def validate_strategy_not_empty(self) -> "ExtractRule":
+        if len(self.strategy) == 0:
+            raise ValueError("strategy list must not be empty")
+        return self
 
 
 class WebhookConfig(BaseModel):
@@ -121,6 +176,23 @@ class Branch(BaseModel):
             raise ValueError("prompt_template and prompt_file are mutually exclusive")
         return self
 
+    @model_validator(mode="after")
+    def validate_extract_no_reserved_keys(self) -> "Branch":
+        if self.extract is None:
+            return self
+        ep = self.extract.result_path
+        if ep.startswith("$."):
+            ep = ep[2:]
+        parts = _parse_path_segments(ep)
+        first_segment = parts[0] if parts else ""
+        reserved = {"output", "exit_code", "error"}
+        if isinstance(first_segment, str) and first_segment in reserved:
+            raise ValueError(
+                f"Branch extract.result_path '{self.extract.result_path}' "
+                f"must not use reserved key '{first_segment}'"
+            )
+        return self
+
 
 class AggregateRule(BaseModel):
     """Aggregation rule for parallel results."""
@@ -176,6 +248,26 @@ class TaskState(BaseModel):
     def validate_next_end_exclusive(self) -> "TaskState":
         if self.next is not None and self.end is not None:
             raise ValueError("next and end are mutually exclusive")
+        return self
+
+    @model_validator(mode="after")
+    def validate_extract_path_no_overlap(self) -> "TaskState":
+        if self.extract is None:
+            return self
+        rp = self.result_path
+        if rp.startswith("$."):
+            rp = rp[2:]
+        ep = self.extract.result_path
+        if ep.startswith("$."):
+            ep = ep[2:]
+        rp_parts = _parse_path_segments(rp)
+        ep_parts = _parse_path_segments(ep)
+        min_len = min(len(rp_parts), len(ep_parts))
+        if rp_parts[:min_len] == ep_parts[:min_len]:
+            raise ValueError(
+                f"result_path '{self.result_path}' and extract.result_path "
+                f"'{self.extract.result_path}' must not overlap"
+            )
         return self
 
 

@@ -1,0 +1,50 @@
+name: Regex Extraction Flow
+start_at: echo_state
+version: '1.0'
+
+states:
+  echo_state:
+    type: task
+    provider: system
+    command: 'echo "Result: success"'
+    result_path: $.raw_output
+    extract:
+      strategy:
+        - regex
+      pattern: "Result: (success)"
+      result_path: $.extracted_status
+    next: decision
+
+  decision:
+    type: choice
+    choices:
+      - variable: $.extracted_status
+        operator: equals
+        value: success
+        next: success_path
+      - variable: $.extracted_status
+        operator: equals
+        value: failure
+        next: failure_path
+    default: unknown_path
+
+  success_path:
+    type: task
+    provider: system
+    command: echo "Success path taken"
+    result_path: $.success_result
+    end: true
+
+  failure_path:
+    type: task
+    provider: system
+    command: echo "Failure path taken"
+    result_path: $.failure_result
+    end: true
+
+  unknown_path:
+    type: task
+    provider: system
+    command: echo "Unknown status"
+    result_path: $.unknown_result
+    end: true

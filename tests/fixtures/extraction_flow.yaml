@@ -1,0 +1,50 @@
+name: Extraction Flow
+start_at: echo_state
+version: '1.0'
+
+states:
+  echo_state:
+    type: task
+    provider: system
+    command: echo "This is an APPROVED decision"
+    result_path: $.raw_output
+    extract:
+      strategy:
+        - keyword
+      pattern: APPROVED|REJECTED
+      result_path: $.decision
+    next: decision
+
+  decision:
+    type: choice
+    choices:
+      - variable: $.decision
+        operator: equals
+        value: APPROVED
+        next: approved_path
+      - variable: $.decision
+        operator: equals
+        value: REJECTED
+        next: rejected_path
+    default: unknown_path
+
+  approved_path:
+    type: task
+    provider: system
+    command: echo "Approved path taken"
+    result_path: $.approved_result
+    end: true
+
+  rejected_path:
+    type: task
+    provider: system
+    command: echo "Rejected path taken"
+    result_path: $.rejected_result
+    end: true
+
+  unknown_path:
+    type: task
+    provider: system
+    command: echo "Unknown decision"
+    result_path: $.unknown_result
+    end: true

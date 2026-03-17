@@ -1,10 +1,13 @@
 import pytest
+from pydantic import ValidationError
 
 from fdsx.models.flow import (
     Branch,
     ChoiceState,
     ChoiceRule,
+    ExtractRule,
     Flow,
+    LLMClassifyFallback,
     ParallelState,
     PassState,
     TaskState,
@@ -316,3 +319,159 @@ class TestPydanticModels:
         assert isinstance(flow.states["parallel_step"], ParallelState)
         assert isinstance(flow.states["pass_step"], PassState)
         assert isinstance(flow.states["wait_step"], WaitState)
+
+
+class TestLLMClassifyFallbackValidation:
+    # F4 regression: system provider must be rejected at model construction time
+    def test_system_provider_rejected(self):
+        """F4: LLMClassifyFallback with provider='system' must raise ValidationError."""
+        with pytest.raises(ValidationError, match="system"):
+            LLMClassifyFallback(
+                type="llm_classify",
+                provider="system",
+                prompt="Classify: {output}",
+            )
+
+    def test_non_system_provider_accepted(self):
+        """F4: LLMClassifyFallback with a non-system provider must be accepted."""
+        fb = LLMClassifyFallback(
+            type="llm_classify",
+            provider="claude",
+            prompt="Classify: {output}",
+        )
+        assert fb.provider == "claude"
+
+    def test_opencode_provider_accepted(self):
+        """F4: opencode is a valid LLM provider for classify fallback."""
+        fb = LLMClassifyFallback(
+            type="llm_classify",
+            provider="opencode",
+            prompt="Classify: {output}",
+        )
+        assert fb.provider == "opencode"
+
+
+class TestExtractPathValidation:
+    """CQ-1, CQ-2: Regression tests for extract path validation."""
+
+    def test_task_state_rejects_overlapping_extract_result_path(self):
+        """CQ-1: TaskState with overlapping result_path and extract.result_path must raise."""
+        with pytest.raises(ValidationError, match="must not overlap"):
+            TaskState(
+                type="task",
+                provider="system",
+                command="echo hi",
+                result_path="$.result",
+                extract=ExtractRule(
+                    strategy=["keyword"], pattern="A|B", result_path="$.result"
+                ),
+            )
+
+    def test_task_state_rejects_ancestor_descendant_extract_path(self):
+        """CQ-1: TaskState with ancestor/descendant paths must raise."""
+        with pytest.raises(ValidationError, match="must not overlap"):
+            TaskState(
+                type="task",
+                provider="system",
+                command="echo hi",
+                result_path="$.result",
+                extract=ExtractRule(
+                    strategy=["keyword"],
+                    pattern="A|B",
+                    result_path="$.result.decision",
+                ),
+            )
+
+    def test_task_state_allows_non_overlapping_extract_path(self):
+        """CQ-1: TaskState with non-overlapping paths must be accepted."""
+        state = TaskState(
+            type="task",
+            provider="system",
+            command="echo hi",
+            result_path="$.raw_output",
+            extract=ExtractRule(
+                strategy=["keyword"], pattern="A|B", result_path="$.decision"
+            ),
+        )
+        assert state.result_path == "$.raw_output"
+
+    def test_task_state_rejects_bracket_notation_overlap(self):
+        """Regression: $.result vs $.result[0] must be rejected as overlapping."""
+        with pytest.raises(ValidationError, match="must not overlap"):
+            TaskState(
+                type="task",
+                provider="system",
+                command="echo hi",
+                result_path="$.result",
+                extract=ExtractRule(
+                    strategy=["keyword"], pattern="A|B", result_path="$.result[0]"
+                ),
+            )
+
+    def test_branch_rejects_extract_path_reserved_output(self):
+        """CQ-2: Branch extract.result_path with reserved key 'output' must raise."""
+        with pytest.raises(ValidationError, match="reserved key"):
+            Branch(
+                provider="system",
+                command="echo hi",
+                extract=ExtractRule(
+                    strategy=["keyword"], pattern="A|B", result_path="$.output"
+                ),
+            )
+
+    def test_branch_rejects_extract_path_reserved_exit_code(self):
+        """CQ-2: Branch extract.result_path with reserved key 'exit_code' must raise."""
+        with pytest.raises(ValidationError, match="reserved key"):
+            Branch(
+                provider="system",
+                command="echo hi",
+                extract=ExtractRule(
+                    strategy=["keyword"], pattern="A|B", result_path="$.exit_code"
+                ),
+            )
+
+    def test_branch_rejects_extract_path_reserved_error_descendant(self):
+        """CQ-2: Branch extract.result_path with reserved key 'error' must raise."""
+        with pytest.raises(ValidationError, match="reserved key"):
+            Branch(
+                provider="system",
+                command="echo hi",
+                extract=ExtractRule(
+                    strategy=["keyword"],
+                    pattern="A|B",
+                    result_path="$.error.detail",
+                ),
+            )
+
+    def test_branch_allows_extract_path_non_reserved(self):
+        """CQ-2: Branch extract.result_path with non-reserved key must be accepted."""
+        branch = Branch(
+            provider="system",
+            command="echo hi",
+            extract=ExtractRule(
+                strategy=["keyword"], pattern="A|B", result_path="$.decision"
+            ),
+        )
+        assert branch.extract.result_path == "$.decision"
+
+    def test_branch_rejects_extract_path_reserved_error_bracket(self):
+        """Regression: bracket notation must not bypass reserved key check."""
+        with pytest.raises(ValidationError, match="reserved key"):
+            Branch(
+                provider="system",
+                command="echo hi",
+                extract=ExtractRule(
+                    strategy=["keyword"], pattern="A|B", result_path="$.error[0]"
+                ),
+            )
+
+    def test_branch_rejects_extract_path_reserved_output_bracket(self):
+        """Regression: bracket notation must not bypass reserved key check."""
+        with pytest.raises(ValidationError, match="reserved key"):
+            Branch(
+                provider="system",
+                command="echo hi",
+                extract=ExtractRule(
+                    strategy=["keyword"], pattern="A|B", result_path="$.output[0]"
+                ),
+            )
