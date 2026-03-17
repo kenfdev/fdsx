@@ -1,0 +1,69 @@
+name: Plan-Implement-Review Loop
+start_at: plan
+version: "1.0"
+max_loop: 3
+
+states:
+  plan:
+    type: task
+    provider: claude
+    model: claude-sonnet-4-6
+    prompt_template: |
+      You are a planning agent. Break down the following task into clear,
+      actionable implementation steps. Be concise and specific.
+
+      Task: {task}
+    result_path: $.plan
+    next: implement
+
+  implement:
+    type: task
+    provider: opencode
+    model: opencode/minimax-m2.5-free
+    prompt_template: |
+      You are an implementation agent. Follow this plan exactly and write the code.
+      Output ONLY the code, no explanations.
+
+      Plan:
+      {plan}
+
+      Previous review feedback (if any):
+      {review}
+    result_path: $.implementation
+    next: review
+
+  review:
+    type: task
+    provider: codex
+    model: gpt-5.4
+    prompt_template: |
+      You are a code review agent. Review the following implementation
+      against the original plan.
+
+      Plan:
+      {plan}
+
+      Implementation:
+      {implementation}
+
+      Respond with EXACTLY one of:
+      - "APPROVED" if the code is correct and complete
+      - "REJECTED: <reason>" if changes are needed
+    result_path: $.review
+    next: check_review
+
+  check_review:
+    type: choice
+    choices:
+      - variable: $.review
+        operator: contains
+        value: "APPROVED"
+        next: done
+    default: implement
+
+  done:
+    type: task
+    provider: system
+    command: "echo 'Workflow complete! Code approved.'"
+    result_path: $.final
+    end: true
