@@ -6,6 +6,7 @@ states:
   task1:
     type: task
     provider: claude
+    model: opus
     prompt_file: prompt.txt
     result_path: $.result
     end: true

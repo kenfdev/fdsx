@@ -57,41 +57,41 @@
 - State transitions are displayed in the terminal
 - Final flow result is output as JSON
 
-- [ ] T007 [US1] Implement YAML loader and validator in `src/fdsx/core/loader.py`
+- [x] T007 [US1] Implement YAML loader and validator in `src/fdsx/core/loader.py`
   - `load_flow(path: Path) -> Flow`: parse YAML file → Pydantic model validation → return `Flow`
   - Run variable reference static analysis (from `variables.py`) as part of validation
   - Check provider CLI existence on PATH for all providers used in the flow
   - Return clear error messages with context on validation failure
   - Resolve `prompt_file` paths relative to the YAML file location; check file existence
 
-- [ ] T008 [US1] Write unit tests for YAML loader in `tests/unit/test_loader.py`
+- [x] T008 [US1] Write unit tests for YAML loader in `tests/unit/test_loader.py`
   - Test loading a valid simple flow YAML
   - Test validation error: malformed YAML
   - Test validation error: schema violation (missing required fields)
   - Test validation error: unreachable variable reference
   - Test `prompt_file` resolution relative to YAML location
 
-- [ ] T009 [US1] Implement provider base interface in `src/fdsx/providers/base.py`
+- [x] T009 [US1] Implement provider base interface in `src/fdsx/providers/base.py`
   - Define `Provider` protocol/ABC with method: `execute(prompt: str, model: str | None, timeout: int | None) -> ProviderResult`
   - Define `ProviderResult` dataclass: `exit_code: int`, `stdout: str`, `stderr: str`
   - `check_cli_exists(command: str) -> bool`: check if CLI is on PATH
   - `get_provider(name: str) -> Provider`: factory function returning the correct provider adapter
 
-- [ ] T010 [US1] Implement system provider in `src/fdsx/providers/system.py`
+- [x] T010 [US1] Implement system provider in `src/fdsx/providers/system.py`
   - Execute shell commands via `subprocess.Popen` with line-buffered stdout
   - Capture stdout and stderr
   - Handle timeout via `subprocess.TimeoutExpired` (if `timeout_seconds` is set)
   - Return `ProviderResult` with exit code, stdout, stderr
   - Non-zero exit codes are treated as failures
 
-- [ ] T011 [US1] Implement claude provider in `src/fdsx/providers/claude.py`
+- [x] T011 [US1] Implement claude provider in `src/fdsx/providers/claude.py`
   - Construct command: `claude -p "{prompt}" --model {model}`
   - Execute via `subprocess.Popen` with line-buffered stdout
   - Stream output lines to a callback (for display layer)
   - Handle timeout
   - Return `ProviderResult`
 
-- [ ] T012 [US1] Implement flow compiler in `src/fdsx/core/compiler.py`
+- [x] T012 [US1] Implement flow compiler in `src/fdsx/core/compiler.py`
   - `compile_flow(flow: Flow) -> CompiledGraph`: compile Flow → LangGraph `StateGraph`
   - Generate `TypedDict` state schema dynamically based on all `result_path` fields
   - Task state → LangGraph node function (calls provider, stores result at `result_path`)
@@ -101,7 +101,7 @@
   - Set `start_at` as graph entry point
   - Reference: impl-plan.md "Key Design Decisions" section 1 for mapping table, section 2 for state schema
 
-- [ ] T013 [US1] Implement execution engine in `src/fdsx/core/engine.py`
+- [x] T013 [US1] Implement execution engine in `src/fdsx/core/engine.py`
   - `run_flow(flow_path: Path, inputs: dict[str, str] | None, thread_id: str | None) -> dict`: high-level orchestration
   - Load flow → compile → execute graph with LangGraph `.invoke()`
   - Generate UUID thread ID if not provided
@@ -109,7 +109,7 @@
   - Return final state variables as result dict
   - Handle errors: wrap LangGraph exceptions with user-friendly messages
 
-- [ ] T014 [US1] Implement basic terminal display in `src/fdsx/display/terminal.py`
+- [x] T014 [US1] Implement basic terminal display in `src/fdsx/display/terminal.py`
   - `display_state_start(state_name: str, state_type: str, provider: str | None)`: print `[HH:MM:SS] ▶ state_name (type/provider/model)`
   - `display_state_complete(state_name: str, duration_seconds: float)`: print `[HH:MM:SS] ✓ state_name completed (Xs)`
   - `display_state_error(state_name: str, error: str)`: print `[HH:MM:SS] ✗ state_name failed`
@@ -117,27 +117,27 @@
   - Output to stderr (stdout reserved for final JSON result per CLI contract)
   - Reference: [plan/contracts/cli.md](plan/contracts/cli.md) for terminal output format
 
-- [ ] T015 [US1] Implement CLI commands in `src/fdsx/cli/main.py`
+- [x] T015 [US1] Implement CLI commands in `src/fdsx/cli/main.py`
   - Create Typer app with commands:
     - `fdsx run <workflow.yaml> [--thread-id TEXT] [--input KEY=VALUE (repeatable)]`: load, validate, compile, execute flow. Print thread ID at start. Print final JSON result to stdout on completion. Exit codes: 0=success, 1=flow error, 2=validation error
     - `fdsx validate <workflow.yaml>`: validate only, print errors to stderr. Exit codes: 0=valid, 2=validation errors
   - Parse `--input` as `key=value` pairs into dict
   - Reference: [plan/contracts/cli.md](plan/contracts/cli.md) for full CLI contract
 
-- [ ] T016 [US1] Create test fixture YAML files in `tests/fixtures/`
+- [x] T016 [US1] Create test fixture YAML files in `tests/fixtures/`
   - `tests/fixtures/simple_flow.yaml`: 3-state linear flow (plan → implement → review) using `system` provider with echo commands
   - `tests/fixtures/choice_flow.yaml`: linear flow with a Choice state branching on a variable value (using system provider)
   - `tests/fixtures/invalid_flows/missing_start_at.yaml`: flow where `start_at` references non-existent state
   - `tests/fixtures/invalid_flows/bad_next_ref.yaml`: flow where `next` references non-existent state
   - `tests/fixtures/invalid_flows/mutual_exclusive.yaml`: flow with both `prompt_template` and `prompt_file`
 
-- [ ] T017 [US1] Write integration test for linear flow execution in `tests/integration/test_linear_flow.py`
+- [x] T017 [US1] Write integration test for linear flow execution in `tests/integration/test_linear_flow.py`
   - Test end-to-end: load `simple_flow.yaml` → compile → execute → verify all 3 states ran
   - Verify state variables are set correctly after each state
   - Verify final result dict contains all expected variables
   - Use `system` provider (echo commands) so no real LLM is needed
 
-- [ ] T018 [US1] Write integration test for choice flow in `tests/integration/test_choice_flow.py`
+- [x] T018 [US1] Write integration test for choice flow in `tests/integration/test_choice_flow.py`
   - Test: load `choice_flow.yaml` → execute → verify correct branch taken based on variable value
   - Test: default branch is taken when no condition matches
 

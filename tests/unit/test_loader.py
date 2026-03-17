@@ -23,7 +23,7 @@ class TestLoadFlow:
         import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("invalid: yaml: content:")
+            f.write("  invalid: yaml\n    content:\n      - broken")
             f.flush()
             path = Path(f.name)
 
@@ -100,7 +100,10 @@ class TestPromptFileResolution:
             )
             flow, errors = load_flow(flow_yaml)
             assert flow is None
-            assert any("escapes" in e or "relative" in e.lower() or "path" in e.lower() for e in errors)
+            assert any(
+                "escapes" in e or "relative" in e.lower() or "path" in e.lower()
+                for e in errors
+            )
 
     def test_prompt_file_absolute_path_rejected(self):
         """F5: absolute prompt_file paths must be rejected."""
@@ -120,7 +123,9 @@ class TestPromptFileResolution:
             )
             flow, errors = load_flow(flow_yaml)
             assert flow is None
-            assert any("absolute" in e.lower() or "relative" in e.lower() for e in errors)
+            assert any(
+                "absolute" in e.lower() or "relative" in e.lower() for e in errors
+            )
 
     def test_input_keys_prevent_false_positive_in_loader(self):
         """F2: load_flow must accept input_keys and suppress warnings for runtime-provided vars."""
@@ -150,5 +155,7 @@ class TestPromptFileResolution:
 
             # With input_keys: no warnings
             flow_ok, no_warnings = load_flow(flow_yaml, input_keys={"task"})
-            assert flow_ok is not None, f"Expected load to succeed but got: {no_warnings}"
+            assert flow_ok is not None, (
+                f"Expected load to succeed but got: {no_warnings}"
+            )
             assert len(no_warnings) == 0
