@@ -249,6 +249,28 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     return paths
 
 
+def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, Any]:
+    """Inject _meta.next_state so list_threads can show the correct current state.
+
+    Stores the name of the node that will execute NEXT so that if the next node
+    crashes before its checkpoint is written, list_threads() can still report the
+    correct CURRENT_STATE for the stopped flow.
+    """
+    next_name = ""
+    if hasattr(state, "next") and state.next:
+        next_name = state.next
+    elif hasattr(state, "end") and state.end:
+        next_name = "__end__"
+    if not next_name:
+        return state_dict
+    meta = state_dict.get("_meta", {})
+    if isinstance(meta, dict):
+        state_dict["_meta"] = {**meta, "next_state": next_name}
+    else:
+        state_dict["_meta"] = {"next_state": next_name}
+    return state_dict
+
+
 def _create_task_node(
     state_name: str, state: TaskState, flow: Flow
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -336,6 +358,7 @@ def _create_task_node(
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
 
+        new_state = _set_next_state_meta(new_state, state)
         return new_state
 
     return node
@@ -569,6 +592,7 @@ def _create_collector_node(
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
 
+        new_state = _set_next_state_meta(new_state, state)
         return new_state
 
     return node
@@ -639,6 +663,7 @@ def _create_pass_node(
                 result = state.aggregate.no_match
             state_dict = set_jsonpath(state.aggregate.result_path, state_dict, result)
 
+        state_dict = _set_next_state_meta(state_dict, state)
         return state_dict
 
     return node
@@ -687,6 +712,7 @@ def _create_wait_interrupt_node(
         )
 
         new_state = set_jsonpath(state.result_path, state_dict, user_selection)
+        new_state = _set_next_state_meta(new_state, state)
         return new_state
 
     return node

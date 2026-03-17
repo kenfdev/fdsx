@@ -1,0 +1,56 @@
+name: Wait Resume Test Flow
+description: A flow with Wait state for checkpoint/resume testing
+start_at: plan
+max_loop: 100
+
+states:
+  plan:
+    type: task
+    provider: system
+    model: null
+    command: echo "plan output"
+    result_path: "$.plan_output"
+    next: wait
+
+  wait:
+    type: wait
+    message: "Please approve or reject the plan"
+    choices:
+      - approve
+      - reject
+      - retry
+    result_path: "$.approval"
+    next: decision
+
+  decision:
+    type: choice
+    choices:
+      - variable: "$.approval"
+        operator: equals
+        value: approve
+        next: approved
+      - variable: "$.approval"
+        operator: equals
+        value: reject
+        next: rejected
+      - variable: "$.approval"
+        operator: equals
+        value: retry
+        next: plan
+    default: rejected
+
+  approved:
+    type: task
+    provider: system
+    model: null
+    command: echo "approved"
+    result_path: "$.status"
+    end: true
+
+  rejected:
+    type: task
+    provider: system
+    model: null
+    command: echo "rejected"
+    result_path: "$.status"
+    end: true

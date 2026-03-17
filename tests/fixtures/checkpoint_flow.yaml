@@ -1,0 +1,29 @@
+name: Checkpoint Test Flow
+description: A simple 3-state linear flow for checkpoint/resume testing
+start_at: plan
+max_loop: 100
+
+states:
+  plan:
+    type: task
+    provider: system
+    model: null
+    command: echo "plan output"
+    result_path: "$.plan_output"
+    next: implement
+
+  implement:
+    type: task
+    provider: system
+    model: null
+    command: echo "implement output"
+    result_path: "$.implement_output"
+    next: review
+
+  review:
+    type: task
+    provider: system
+    model: null
+    command: echo "review output"
+    result_path: "$.review_output"
+    end: true

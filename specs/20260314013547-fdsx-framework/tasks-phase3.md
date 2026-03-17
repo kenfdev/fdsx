@@ -87,7 +87,7 @@
 - `prompt_file` loads prompt content from an external file with variable substitution
 - A flow interrupted mid-execution can be resumed and produces the same result
 
-- [ ] T043 [US5] Implement checkpoint manager in `src/fdsx/checkpoint/manager.py`
+- [x] T043 [US5] Implement checkpoint manager in `src/fdsx/checkpoint/manager.py`
   - `CheckpointManager` class wrapping LangGraph's `SqliteSaver`:
     - `__init__(base_dir: Path | None = None)`: default base_dir is `.fdsx/` relative to CWD. Create `.fdsx/checkpoints/` and `.fdsx/locks/` directories if they don't exist
     - `get_checkpointer() -> SqliteSaver`: return `SqliteSaver.from_conn_string(str(base_dir / "checkpoints" / "checkpoints.db"))`
@@ -98,7 +98,7 @@
     - `verify_checkpoint(thread_id: str) -> bool`: verify checkpoint integrity (DB readable, thread_id exists in checkpoint store)
   - Reference: impl-plan.md "Checkpoint Directory Layout" for file structure
 
-- [ ] T044 [P] [US5] Write unit tests for checkpoint manager in `tests/unit/test_checkpoint.py`
+- [x] T044 [P] [US5] Write unit tests for checkpoint manager in `tests/unit/test_checkpoint.py`
   - Test `acquire_lock`: new thread → acquires lock, returns True
   - Test `acquire_lock`: same thread, same PID → returns False (already locked)
   - Test `acquire_lock`: stale lock (dead PID) → removes stale lock, acquires new, returns True
@@ -108,7 +108,7 @@
   - Test directory creation: `.fdsx/checkpoints/` and `.fdsx/locks/` created on init
   - Test `verify_checkpoint`: valid checkpoint → True, missing thread → False
 
-- [ ] T045 [US5] Integrate checkpoint manager into engine in `src/fdsx/core/engine.py`
+- [x] T045 [US5] Integrate checkpoint manager into engine in `src/fdsx/core/engine.py`
   - Modify `run_flow` to use `CheckpointManager`:
     - Acquire lock before execution; raise error if locked by another process
     - Pass `SqliteSaver` checkpointer to `graph.compile(checkpointer=checkpointer)` (modify `compile_flow` to accept optional checkpointer)
@@ -117,7 +117,7 @@
   - Modify `compile_flow` in `src/fdsx/core/compiler.py` to accept an optional checkpointer parameter and pass it to `graph.compile(checkpointer=checkpointer)`
   - On error: print "Checkpoint saved. Resume with: fdsx resume --thread-id {thread_id}" to stderr
 
-- [ ] T046 [US5] Implement `resume_flow` function in `src/fdsx/core/engine.py`
+- [x] T046 [US5] Implement `resume_flow` function in `src/fdsx/core/engine.py`
   - `resume_flow(thread_id: str, base_dir: Path | None = None) -> dict`: resume a flow from checkpoint
     - Create `CheckpointManager` and verify checkpoint integrity; raise error if corrupt
     - Acquire lock; raise error if locked by another process
@@ -129,7 +129,7 @@
     - Return final state variables
   - Print `Resuming from state: {state_name}` to stderr at start
 
-- [ ] T047 [US5] Implement `fdsx resume` and `fdsx list` CLI commands in `src/fdsx/cli/main.py`
+- [x] T047 [US5] Implement `fdsx resume` and `fdsx list` CLI commands in `src/fdsx/cli/main.py`
   - Add `resume` command:
     - `fdsx resume --thread-id TEXT`: call `engine.resume_flow(thread_id)`
     - Exit codes: 0=success, 1=flow error, 2=validation error (corrupt checkpoint)
@@ -140,7 +140,7 @@
     - Status detection: check PID lock → running; check for pending interrupt → waiting; no lock + completed → completed; no lock + not completed → stopped
     - If no threads found, print "No flow executions found."
 
-- [ ] T048 [P] [US5] Implement `prompt_file` support in `src/fdsx/core/compiler.py` and `src/fdsx/core/loader.py`
+- [x] T048 [P] [US5] Implement `prompt_file` support in `src/fdsx/core/compiler.py` and `src/fdsx/core/loader.py`
   - In `loader.py`: `prompt_file` paths are already validated as relative to YAML file location (check existing code)
   - In `compiler.py` `_create_task_node`: if `state.prompt_file` is set (and `state.prompt_template` is not):
     - Read the file content from the resolved path
@@ -150,17 +150,17 @@
   - Store the YAML file path in `Flow` or pass it through compilation so file paths can be resolved at runtime
   - Reference: spec.md FR-2.1 for prompt_file behavior
 
-- [ ] T049 [P] [US5] Write unit tests for `prompt_file` support in `tests/unit/test_prompt_file.py`
+- [x] T049 [P] [US5] Write unit tests for `prompt_file` support in `tests/unit/test_prompt_file.py`
   - Test: prompt_file content is read and variable references are resolved
   - Test: prompt_file path is resolved relative to YAML file location
   - Test: prompt_file not found → clear error message
   - Test: prompt_file in parallel branch works the same as in Task state
 
-- [ ] T050 [US5] Create checkpoint/resume test fixtures in `tests/fixtures/`
+- [x] T050 [US5] Create checkpoint/resume test fixtures in `tests/fixtures/`
   - `tests/fixtures/checkpoint_flow.yaml`: 3-state linear flow (plan → implement → review) using system provider, suitable for interrupt/resume testing
   - `tests/fixtures/wait_resume_flow.yaml`: Plan → Wait → Choice → end flow, designed to test checkpoint saving at Wait state and resume after process restart
 
-- [ ] T051 [US5] Write integration test for checkpoint/resume in `tests/integration/test_checkpoint_resume.py`
+- [x] T051 [US5] Write integration test for checkpoint/resume in `tests/integration/test_checkpoint_resume.py`
   - Test checkpoint save: run a flow → verify `.fdsx/checkpoints/checkpoints.db` exists
   - Test resume: run a flow with a Wait state → interrupt at Wait → resume with `resume_flow` → verify flow completes
   - Test PID lock: start a flow → attempt concurrent execution with same thread_id → verify lock error
