@@ -73,3 +73,45 @@ def display_output_line(line: str) -> None:
         line: Output line from the LLM
     """
     print(_sanitize_output(line), file=sys.stderr)
+
+
+def display_parallel_start(state_name: str, branch_count: int) -> None:
+    """Display parallel state start in terminal.
+
+    Args:
+        state_name: Name of the parallel state
+        branch_count: Number of parallel branches
+    """
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{timestamp}] ▶ {state_name} (parallel, {branch_count} branches)"
+    print(line, file=sys.stderr)
+
+
+def display_branch_status(
+    state_name: str,
+    branch_index: int,
+    provider: str,
+    status: str,
+    duration: float | None,
+) -> None:
+    """Display branch status in terminal.
+
+    Args:
+        state_name: Name of the parent parallel state
+        branch_index: Index of the branch (0-based)
+        provider: Provider name for the branch
+        status: Status string - "running", "completed", "failed"
+        duration: Duration in seconds (None if still running)
+    """
+    if status == "running":
+        status_text = "⏳ running..."
+    elif status == "completed" and duration is not None:
+        status_text = f"✓ completed ({int(duration)}s)"
+    elif status == "failed":
+        status_text = "✗ failed"
+    else:
+        status_text = status
+
+    display_index = branch_index + 1  # CLI contract is 1-indexed
+    line = f"  [branch-{display_index}] {provider}  {status_text}"
+    print(line, file=sys.stderr)

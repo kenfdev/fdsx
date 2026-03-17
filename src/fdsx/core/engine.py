@@ -3,6 +3,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from langgraph.errors import GraphRecursionError
+
 from fdsx.core.compiler import compile_flow
 from fdsx.core.loader import load_flow
 
@@ -26,7 +28,9 @@ def run_flow(
         thread_id: Optional thread ID (generated if not provided)
 
     Returns:
-        Final state variables as result dict
+        Final state variables as result dict. When max_loop is reached,
+        returns partial results from the last completed iteration rather
+        than raising an error.
 
     Raises:
         RuntimeError: If flow validation fails or execution fails
@@ -36,11 +40,13 @@ def run_flow(
 
     print(f"Thread ID: {thread_id}", file=sys.stderr)
 
-    flow, errors = load_flow(flow_path, input_keys=set(inputs.keys()) if inputs else None)
+    flow, errors = load_flow(
+        flow_path, input_keys=set(inputs.keys()) if inputs else None
+    )
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
 
-    compiled = compile_flow(flow)
+    compiled = compile_flow(flow, input_keys=set(inputs.keys()) if inputs else None)
 
     initial_state: dict[str, Any] = {"_meta": {"thread_id": thread_id}}
 
@@ -48,16 +54,33 @@ def run_flow(
         for key, value in inputs.items():
             initial_state[key] = value
 
+    # Compute recursion limit: account for extra nodes added by Send API fan-out/fan-in
+    from fdsx.models.flow import ParallelState
+
+    parallel_extra = sum(
+        len(s.branches) + 1
+        for s in flow.states.values()
+        if isinstance(s, ParallelState)
+    )
+    steps_per_iter = len(flow.states) + parallel_extra
+    recursion_limit = flow.max_loop * steps_per_iter + 1
+
+    config: dict[str, Any] = {"recursion_limit": recursion_limit}
+
+    # Track the last successfully completed state so it can be returned on loop exhaustion
+    last_state: dict[str, Any] = initial_state.copy()
+
     try:
-        recursion_limit = flow.max_loop * len(flow.states) + 1
-        result = compiled.graph.invoke(
-            initial_state,
-            config={"recursion_limit": recursion_limit},
-        )
+        for state_snapshot in compiled.graph.stream(
+            initial_state, config=config, stream_mode="values"
+        ):
+            last_state = state_snapshot
+        return _extract_results(last_state, compiled.result_paths)
+    except GraphRecursionError:
+        print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
+        return _extract_results(last_state, compiled.result_paths)
     except Exception as e:
         raise RuntimeError(f"Flow execution failed: {e}")
-
-    return _extract_results(result, compiled.result_paths)
 
 
 def _extract_results(state: dict[str, Any], result_paths: list[str]) -> dict[str, Any]:

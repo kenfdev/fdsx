@@ -1,7 +1,9 @@
+import operator
 import time
-from typing import Any, Callable, TypedDict
+from typing import Annotated, Any, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import Send
 
 from fdsx.core.variables import (
     resolve_template,
@@ -11,6 +13,7 @@ from fdsx.core.variables import (
 from fdsx.display import terminal
 from fdsx.display.terminal import _sanitize_output
 from fdsx.models.flow import (
+    AggregateRule,
     ChoiceState,
     Flow,
     ParallelState,
@@ -36,32 +39,134 @@ class CompiledGraph:
         self.result_paths = result_paths
 
 
-def compile_flow(flow: Flow) -> CompiledGraph:
+def _top_level_key(path: str) -> str | None:
+    """Extract the top-level key from a JSONPath like '$.reviews' → 'reviews'."""
+    if path.startswith("$."):
+        path = path[2:]
+    if not path:
+        return None
+    return path.split(".")[0].split("[")[0] or None
+
+
+def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
+    """Build a TypedDict state schema that covers ALL state keys used by the flow.
+
+    LangGraph's _get_updates filters every node's output dict to only keys that
+    are declared as channels in the schema. With a partial schema (only _br_* keys),
+    all workflow variables like $.reviews, $.decision, $.plan_output would be silently
+    dropped by _get_updates. This function declares ALL needed keys:
+
+    1. _br_{state_name} reducer channels (Annotated[list, operator.add]) for each
+       ParallelState — required for Send API fan-in accumulation.
+    2. All result_path / extract / aggregate top-level keys as LastValue channels.
+    3. Input keys from --input CLI flags.
+    4. _meta internal key.
+
+    Returns `object` (→ __root__ single channel, no filtering) for flows with no
+    ParallelState, since they don't need the Send API reducer channels.
+    """
+    has_parallel = any(isinstance(s, ParallelState) for s in flow.states.values())
+    if not has_parallel:
+        return object
+
+    annotations: dict[str, Any] = {}
+
+    # 1. Reducer channels for parallel branch result accumulation
+    for state_name, state in flow.states.items():
+        if isinstance(state, ParallelState):
+            annotations[f"_br_{state_name}"] = Annotated[list, operator.add]
+
+    # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
+    for state_name, state in flow.states.items():
+        if isinstance(state, TaskState) and state.result_path:
+            k = _top_level_key(state.result_path)
+            if k:
+                annotations.setdefault(k, Any)
+            if state.extract:
+                k = _top_level_key(state.extract.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
+        elif isinstance(state, ParallelState) and state.result_path:
+            k = _top_level_key(state.result_path)
+            if k:
+                annotations.setdefault(k, Any)
+        elif isinstance(state, PassState):
+            if state.aggregate:
+                k = _top_level_key(state.aggregate.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
+            if state.parameters:
+                for target in state.parameters:
+                    k = _top_level_key(str(target))
+                    if k:
+                        annotations.setdefault(k, Any)
+        elif isinstance(state, WaitState) and state.result_path:
+            k = _top_level_key(state.result_path)
+            if k:
+                annotations.setdefault(k, Any)
+
+    # 3. Input keys from --input CLI flags
+    if input_keys:
+        for key in input_keys:
+            annotations.setdefault(key, Any)
+
+    # 4. Internal tracking key
+    annotations.setdefault("_meta", Any)
+
+    return TypedDict("FlowState", annotations, total=False)  # type: ignore[no-any-return,operator]
+
+
+def compile_flow(
+    flow: Flow, input_keys: set[str] | None = None
+) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
     Args:
         flow: The Flow to compile
+        input_keys: Top-level keys injected via --input; needed for the state schema
+                    so LangGraph channels are created for them.
 
     Returns:
         CompiledGraph with the compiled state machine
     """
     result_paths = _extract_result_paths(flow)
 
-    graph: StateGraph[Any] = StateGraph(object)
+    schema = _build_state_schema(flow, input_keys)
+    graph: StateGraph[Any] = StateGraph(schema)
 
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
             graph.add_node(state_name, _create_task_node(state_name, state, flow))  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):
             graph.add_node(state_name, _create_choice_node(state_name, state, flow))  # type: ignore[call-overload]
-        elif state.type == "parallel":
-            graph.add_node(state_name, _create_parallel_node(state_name, state, flow))  # type: ignore[call-overload]
+        elif isinstance(state, ParallelState):
+            # Three-node pattern: dispatch → branch (×N via Send) → collector
+            graph.add_node(state_name, _create_dispatch_node(state_name, state))  # type: ignore[call-overload]
+            graph.add_node(f"_branch_{state_name}", _create_branch_executor(state_name, state, flow))  # type: ignore[call-overload]
+            graph.add_node(f"_collect_{state_name}", _create_collector_node(state_name, state, flow))  # type: ignore[call-overload]
         elif state.type == "pass":
             graph.add_node(state_name, _create_pass_node(state_name, state, flow))  # type: ignore[call-overload]
         elif state.type == "wait":
             graph.add_node(state_name, _create_wait_node(state_name, state, flow))  # type: ignore[call-overload]
 
     for state_name, state in flow.states.items():
+        if isinstance(state, ParallelState):
+            # Fan-out: dispatch node → branch nodes via Send API (no path_map needed)
+            graph.add_conditional_edges(
+                state_name,
+                _create_fan_out(state_name, state),
+            )
+            # Fan-in: each branch node → collector
+            graph.add_edge(f"_branch_{state_name}", f"_collect_{state_name}")
+            # Outgoing: collector → next state (NOT dispatch node)
+            next_s = _get_next_state(state)
+            if next_s:
+                graph.add_edge(
+                    f"_collect_{state_name}",
+                    END if next_s == "END" else next_s,
+                )
+            continue  # Skip the regular edge-adding below for ParallelState
+
         next_state = _get_next_state(state)
         if next_state:
             if next_state == "END":
@@ -95,8 +200,8 @@ def _extract_result_paths(flow: Flow) -> list[str]:
                 paths.append(state.extract.result_path)
         elif isinstance(state, ParallelState) and state.result_path:
             paths.append(state.result_path)
-            # Do NOT add branch extract paths — they are nested inside
-            # result array elements, not top-level state keys.
+        elif isinstance(state, PassState) and state.aggregate:
+            paths.append(state.aggregate.result_path)
         elif isinstance(state, WaitState) and state.result_path:
             paths.append(state.result_path)
     return paths
@@ -205,36 +310,61 @@ def _create_choice_node(
     return node
 
 
-def _create_parallel_node(
+def _create_dispatch_node(
+    state_name: str, state: ParallelState
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Create the dispatch node for a Parallel state.
+
+    Displays the parallel state start line and triggers fan-out via Send.
+    Returns {} (no state update) — the fan-out is triggered by the conditional edges.
+    Only emits display_parallel_start (not display_state_start) to match CLI contract.
+    """
+
+    def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        terminal.display_parallel_start(state_name, len(state.branches))
+        return {}
+
+    return node
+
+
+def _create_branch_executor(
     state_name: str, state: ParallelState, flow: Flow
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Create a LangGraph node function for a Parallel state."""
+    """Create a shared branch executor node invoked once per branch via Send.
+
+    Reads `_branch_index` from the state dict to identify which branch to run.
+    Returns `{f"_br_{state_name}": [result]}` — accumulated by operator.add reducer.
+    Never raises: all errors are captured in the result dict (exit_code != 0).
+    """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.extraction import extract_value
         from fdsx.providers.base import ProviderResult
 
+        branch_index: int = state_dict.get("_branch_index", 0)
+        branch = state.branches[branch_index]
+
         start_time = time.time()
-        terminal.display_state_start(
+        terminal.display_branch_status(
             state_name=state_name,
-            state_type="parallel",
-            provider=None,
-            model=None,
+            branch_index=branch_index,
+            provider=branch.provider,
+            status="running",
+            duration=None,
         )
 
-        results = []
-        for branch in state.branches:
-            prompt = branch.prompt_template or ""
-            resolved_prompt = resolve_template(prompt, state_dict)
+        prompt = branch.prompt_template or ""
+        resolved_prompt = resolve_template(prompt, state_dict)
 
-            provider = get_provider(branch.provider)
+        provider = get_provider(branch.provider)
 
-            max_retries = branch.retry if branch.retry is not None else 3
-            last_error = "No attempts made"
-            result = ProviderResult(exit_code=1, stdout="", stderr="")
-            extracted: str | None = None
+        max_retries = branch.retry if branch.retry is not None else 3
+        last_error = "No attempts made"
+        result = ProviderResult(exit_code=1, stdout="", stderr="")
+        extracted: str | None = None
 
-            for attempt in range(max_retries + 1):
+        for _attempt in range(max_retries + 1):
+            try:
                 if branch.provider == "system":
                     resolved_command = resolve_template_shell_safe(
                         branch.command or "", state_dict
@@ -253,43 +383,146 @@ def _create_parallel_node(
                         timeout=branch.timeout_seconds,
                         output_callback=terminal.display_output_line,
                     )
+            except Exception as exc:
+                last_error = str(exc)
+                result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
+                continue
 
-                if result.exit_code == 0:
-                    if branch.extract:
-                        extracted = extract_value(
-                            result.stdout.strip(),
-                            branch.extract,
-                            get_provider,
-                            source_provider=branch.provider,
-                        )
-                        if extracted is not None:
-                            break
-                        last_error = "Extraction failed: all strategies returned None"
-                    else:
+            if result.exit_code == 0:
+                if branch.extract:
+                    extracted = extract_value(
+                        result.stdout.strip(),
+                        branch.extract,
+                        get_provider,
+                        source_provider=branch.provider,
+                    )
+                    if extracted is not None:
                         break
+                    last_error = "Extraction failed: all strategies returned None"
                 else:
-                    last_error = result.stderr
+                    break
+            else:
+                last_error = result.stderr
 
-            if result.exit_code != 0:
-                last_error = f"Failed after {max_retries + 1} attempts: {_sanitize_output(last_error)}"
-            elif branch.extract and extracted is None:
-                result = ProviderResult(exit_code=1, stdout=result.stdout, stderr="")
-                last_error = f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
+        duration = time.time() - start_time
 
-            branch_result = {
+        if result.exit_code != 0:
+            terminal.display_branch_status(
+                state_name=state_name,
+                branch_index=branch_index,
+                provider=branch.provider,
+                status="failed",
+                duration=duration,
+            )
+            branch_result: dict[str, Any] = {
+                "index": branch_index,
                 "output": result.stdout.strip(),
                 "exit_code": result.exit_code,
-                "error": last_error if result.exit_code != 0 else None,
+                "error": _sanitize_output(last_error),
+            }
+        elif branch.extract and extracted is None:
+            terminal.display_branch_status(
+                state_name=state_name,
+                branch_index=branch_index,
+                provider=branch.provider,
+                status="failed",
+                duration=duration,
+            )
+            branch_result = {
+                "index": branch_index,
+                "output": result.stdout.strip(),
+                "exit_code": 1,
+                "error": f"Extraction failed after {max_retries + 1} attempts: all strategies returned None",
+            }
+        else:
+            terminal.display_branch_status(
+                state_name=state_name,
+                branch_index=branch_index,
+                provider=branch.provider,
+                status="completed",
+                duration=duration,
+            )
+            branch_result = {
+                "index": branch_index,
+                "output": result.stdout.strip(),
+                "exit_code": 0,
+                "error": None,
             }
 
-            if branch.extract and extracted is not None:
-                branch_result = set_jsonpath(
-                    branch.extract.result_path, branch_result, extracted
-                )
+        if branch.extract and extracted is not None:
+            branch_result = set_jsonpath(
+                branch.extract.result_path, branch_result, extracted
+            )
 
-            results.append(branch_result)
+        return {f"_br_{state_name}": [branch_result]}
 
-        new_state = set_jsonpath(state.result_path, state_dict, results)
+    return node
+
+
+def _create_fan_out(
+    state_name: str, state: ParallelState
+) -> Callable[[dict[str, Any]], list[Send]]:
+    """Create the fan-out function that returns one Send per branch.
+
+    Each Send carries a fresh `_br_{state_name}: []` reset so that accumulation
+    from a previous pass through this parallel state (in a loop) does not bleed
+    into the current pass.
+    """
+
+    def fan_out(state_dict: dict[str, Any]) -> list[Send]:
+        return [
+            Send(
+                f"_branch_{state_name}",
+                {**state_dict, "_branch_index": i, f"_br_{state_name}": []},
+            )
+            for i in range(len(state.branches))
+        ]
+
+    return fan_out
+
+
+def _create_collector_node(
+    state_name: str, state: ParallelState, flow: Flow
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Create the fan-in collector node for a Parallel state.
+
+    Reads branch results accumulated by the operator.add reducer, sorts by index,
+    enforces min_success (defaulting to all branches), and stores at result_path.
+    """
+
+    def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        start_time = time.time()
+
+        # All branch results fan-in via operator.add reducer
+        raw_results: list[dict[str, Any]] = state_dict.get(f"_br_{state_name}", [])
+
+        # Sort by original branch index to preserve declaration order
+        sorted_results = sorted(raw_results, key=lambda r: r.get("index", 0))
+
+        # Strip internal "index" key — not part of the public branch result schema
+        clean_results = [
+            {k: v for k, v in r.items() if k != "index"} for r in sorted_results
+        ]
+
+        # Enforce min_success — default: ALL branches must succeed (FR-2.3)
+        min_required = (
+            state.min_success if state.min_success is not None else len(state.branches)
+        )
+        successful = sum(1 for r in clean_results if r.get("exit_code") == 0)
+
+        if successful < min_required:
+            failed_branches = [
+                f"branch {i}: {r.get('error', 'unknown error')}"
+                for i, r in enumerate(clean_results)
+                if r.get("exit_code") != 0
+            ]
+            raise RuntimeError(
+                f"Parallel state '{state_name}' failed: only {successful}/{len(state.branches)} "
+                f"branches succeeded, required {min_required}. "
+                f"Failed branches: {'; '.join(failed_branches)}"
+            )
+
+        new_state = set_jsonpath(state.result_path, state_dict, clean_results)
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
@@ -297,6 +530,46 @@ def _create_parallel_node(
         return new_state
 
     return node
+
+
+def _aggregate(source_data: list[dict[str, Any]], rule: AggregateRule) -> str:
+    """Aggregate parallel results using majority/all/any strategy.
+
+    Args:
+        source_data: List of branch result dictionaries (already resolved from state)
+        rule: AggregateRule with field, strategy, match/no_match values
+
+    Returns:
+        The aggregated result (rule.match or rule.no_match)
+
+    Security note: Uses total branch count (len(source_data)) as the denominator,
+    so failed branches that did not produce the field count as no_match votes.
+    This prevents bypassing a dissenting reviewer by knocking out their branch.
+    """
+    if not source_data:
+        return rule.no_match
+
+    if not isinstance(source_data, list):
+        return rule.no_match
+
+    # Use total branch count as denominator — failed/missing branches count as no_match
+    total = len(source_data)
+
+    match_count = 0
+    for item in source_data:
+        if isinstance(item, dict) and rule.field in item:
+            if str(item[rule.field]) == str(rule.match):
+                match_count += 1
+        # Items without the field (failed branches) are treated as no_match
+
+    if rule.strategy == "majority":
+        return rule.match if match_count > total / 2 else rule.no_match
+    elif rule.strategy == "all":
+        return rule.match if match_count == total else rule.no_match
+    elif rule.strategy == "any":
+        return rule.match if match_count > 0 else rule.no_match
+    else:
+        raise ValueError(f"Unknown aggregation strategy: {rule.strategy}")
 
 
 def _create_pass_node(
@@ -313,6 +586,17 @@ def _create_pass_node(
                     value = source
                 new_state = set_jsonpath(target, state_dict, value)
                 state_dict = new_state
+
+        if state.aggregate:
+            from fdsx.core.variables import resolve_jsonpath
+
+            source_data = resolve_jsonpath(state.aggregate.source, state_dict)
+            if isinstance(source_data, list):
+                result = _aggregate(source_data, state.aggregate)
+            else:
+                result = state.aggregate.no_match
+            state_dict = set_jsonpath(state.aggregate.result_path, state_dict, result)
+
         return state_dict
 
     return node

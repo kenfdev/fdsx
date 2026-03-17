@@ -70,7 +70,7 @@
 - Loop control enforces `max_loop` and stops gracefully as "loop completed"
 - Full Scenario 2 flow: parallel review → aggregate → choice → loop or complete
 
-- [ ] T025 [US3] Implement aggregation logic in Pass state in `src/fdsx/core/compiler.py`
+- [x] T025 [US3] Implement aggregation logic in Pass state in `src/fdsx/core/compiler.py`
   - Modify `_create_pass_node` to handle `state.aggregate` when defined
   - `_aggregate(source_data: list[dict], rule: AggregateRule) -> str`: resolve `source` JSONPath to get array, extract `field` from each element, apply strategy:
     - **majority**: count matches for `rule.match` value → if > len/2, return `rule.match`, else return `rule.no_match`
@@ -79,7 +79,7 @@
   - Store result at `aggregate.result_path` in state dict
   - Reference: spec.md FR-4 for aggregation strategy definitions
 
-- [ ] T026 [US3] Write unit tests for aggregation strategies in `tests/unit/test_aggregation.py`
+- [x] T026 [US3] Write unit tests for aggregation strategies in `tests/unit/test_aggregation.py`
   - Test majority strategy: 2/3 match → returns match value
   - Test majority strategy: 1/3 match → returns no_match value
   - Test majority strategy: 0 match → returns no_match value
@@ -88,7 +88,7 @@
   - Test with empty source array → returns no_match
   - Test integration with Pass node: aggregate block processes parallel results correctly
 
-- [ ] T027 [P] [US3] Refactor parallel execution to use LangGraph Send API in `src/fdsx/core/compiler.py`
+- [x] T027 [P] [US3] Refactor parallel execution to use LangGraph Send API in `src/fdsx/core/compiler.py`
   - Replace sequential branch execution in `_create_parallel_node` with LangGraph Send API fan-out/fan-in
   - Create a `_create_branch_node(branch_index: int, branch: Branch, parent_state_name: str) -> Callable`: node function for a single branch execution (provider call, extraction if configured)
   - Create fan-out function: `_create_fan_out(state_name: str, state: ParallelState) -> Callable` that returns `list[Send]` — one `Send("_branch_{state_name}_{i}", {...})` per branch
@@ -98,32 +98,32 @@
   - Update `_extract_result_paths` to handle ParallelState extraction result paths
   - Reference: research.md "Parallel Execution via Send API" for LangGraph Send pattern
 
-- [ ] T028 [US3] Implement per-branch retry with min_success enforcement in `src/fdsx/core/compiler.py`
+- [x] T028 [US3] Implement per-branch retry with min_success enforcement in `src/fdsx/core/compiler.py`
   - In the branch node function: retry failed branches up to `branch.retry` times (existing retry pattern)
   - In the fan-in collector: count branches with `exit_code == 0`
   - If successful count < `min_success` (default: total branch count): raise error with details of which branches failed
   - If successful count >= `min_success`: proceed normally, include all results (both success and failure) in the array
   - Failed branch results in array: `{output: "", exit_code: N, error: "message"}`
 
-- [ ] T029 [P] [US3] Add parallel execution display to terminal in `src/fdsx/display/terminal.py`
+- [x] T029 [P] [US3] Add parallel execution display to terminal in `src/fdsx/display/terminal.py`
   - `display_parallel_start(state_name: str, branch_count: int)`: print `[HH:MM:SS] ▶ state_name (parallel, N branches)`
   - `display_branch_status(state_name: str, branch_index: int, provider: str, status: str, duration: float | None)`: print branch status line per CLI contract format: `  [branch-N] provider/model  status`
   - Status values: `⏳ running...`, `✓ completed (Xs)`, `✗ failed`
   - Reference: contracts/cli.md "Parallel Execution Status" for format
 
-- [ ] T030 [US3] Implement loop control in `src/fdsx/core/engine.py`
+- [x] T030 [US3] Implement loop control in `src/fdsx/core/engine.py`
   - The current `recursion_limit` calculation in `run_flow` already maps `max_loop` to LangGraph's `recursion_limit`
   - Add graceful handling: catch LangGraph's `GraphRecursionError` and convert to a "Loop completed" message rather than a raw error
   - Display "Loop completed after N iterations" on stderr when max_loop is reached
   - Return partial results (last state before loop limit) rather than raising an error
   - Reference: spec.md FR-2.6 for loop behavior
 
-- [ ] T031 [US3] Create parallel + aggregation test fixtures in `tests/fixtures/`
+- [x] T031 [US3] Create parallel + aggregation test fixtures in `tests/fixtures/`
   - `tests/fixtures/parallel_review.yaml`: Parallel state with 3 system provider branches (echo commands outputting APPROVED/REJECTED), followed by Pass state with majority aggregation, followed by Choice state routing on decision
   - `tests/fixtures/loop_flow.yaml`: Plan → Implement → Review → Choice (APPROVED → end, REJECTED → back to Plan) flow with `max_loop: 3`, using system provider
   - `tests/fixtures/parallel_min_success.yaml`: Parallel state with 3 branches, one designed to fail (exit code 1), `min_success: 2` — tests partial failure tolerance
 
-- [ ] T032 [US3] Write integration test for parallel flow in `tests/integration/test_parallel_flow.py`
+- [x] T032 [US3] Write integration test for parallel flow in `tests/integration/test_parallel_flow.py`
   - Test end-to-end: load `parallel_review.yaml` → execute → verify all 3 branches ran
   - Verify branch results array at `result_path` contains 3 elements with `output` field
   - Verify Pass state aggregation produces correct `$.decision` value
@@ -131,7 +131,7 @@
   - Test `min_success`: load `parallel_min_success.yaml` → verify flow continues despite 1 failed branch
   - Test `min_success` failure: all branches fail → flow errors
 
-- [ ] T033 [US3] Write integration test for loop flow in `tests/integration/test_loop_flow.py`
+- [x] T033 [US3] Write integration test for loop flow in `tests/integration/test_loop_flow.py`
   - Test loop execution: load `loop_flow.yaml` → verify flow loops back to planner on REJECTED
   - Test max_loop enforcement: flow with always-REJECTED review → verify graceful stop after max_loop iterations
   - Verify state variables are retained across loop iterations (previous review results available in next plan prompt)

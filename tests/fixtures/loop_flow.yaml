@@ -1,27 +1,41 @@
 name: Loop Test Flow
-start_at: counter
+start_at: plan
 max_loop: 3
 
 states:
-  counter:
+  plan:
     type: task
     provider: system
-    command: "echo counting"
-    result_path: $.count
-    next: check
+    command: echo "Planning step"
+    result_path: $.plan_output
+    next: implement
 
-  check:
+  implement:
+    type: task
+    provider: system
+    command: echo "Implementation step"
+    result_path: $.impl_output
+    next: review
+
+  review:
+    type: task
+    provider: system
+    command: echo "REJECTED"
+    result_path: $.review_output
+    next: decide
+
+  decide:
     type: choice
     choices:
-      - variable: $.count
+      - variable: $.review_output
         operator: equals
-        value: "never_matches"
+        value: "APPROVED"
         next: done
-    default: counter
+    default: plan
 
   done:
     type: task
     provider: system
-    command: "echo done"
-    result_path: $.final
+    command: echo "Flow completed"
+    result_path: $.final_result
     end: true

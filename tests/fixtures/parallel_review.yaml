@@ -1,0 +1,79 @@
+name: Parallel Review Flow
+start_at: review_parallel
+version: '1.0'
+
+states:
+  review_parallel:
+    type: parallel
+    branches:
+      - provider: system
+        command: echo "APPROVED"
+        extract:
+          strategy:
+            - keyword
+          pattern: APPROVED|REJECTED
+          result_path: $.decision
+        retry: 0
+      - provider: system
+        command: echo "APPROVED"
+        extract:
+          strategy:
+            - keyword
+          pattern: APPROVED|REJECTED
+          result_path: $.decision
+        retry: 0
+      - provider: system
+        command: echo "REJECTED"
+        extract:
+          strategy:
+            - keyword
+          pattern: APPROVED|REJECTED
+          result_path: $.decision
+        retry: 0
+    result_path: $.reviews
+    next: aggregate
+
+  aggregate:
+    type: pass
+    aggregate:
+      source: $.reviews
+      field: decision
+      strategy: majority
+      match: APPROVED
+      no_match: REJECTED
+      result_path: $.decision
+    next: decision
+
+  decision:
+    type: choice
+    choices:
+      - variable: $.decision
+        operator: equals
+        value: APPROVED
+        next: approved_path
+      - variable: $.decision
+        operator: equals
+        value: REJECTED
+        next: rejected_path
+    default: unknown_path
+
+  approved_path:
+    type: task
+    provider: system
+    command: echo "Approved path taken"
+    result_path: $.approved_result
+    end: true
+
+  rejected_path:
+    type: task
+    provider: system
+    command: echo "Rejected path taken"
+    result_path: $.rejected_result
+    end: true
+
+  unknown_path:
+    type: task
+    provider: system
+    command: echo "Unknown decision"
+    result_path: $.unknown_result
+    end: true
