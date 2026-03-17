@@ -143,13 +143,13 @@
 
 ## Phase 4: Polish & Cross-Cutting
 
-- [ ] T019 Configure ruff and mypy in `pyproject.toml`
+- [x] T019 Configure ruff and mypy in `pyproject.toml`
   - Add `[tool.ruff]` section with src directory, target Python 3.10
   - Add `[tool.mypy]` section with strict mode for `src/fdsx/`
   - Ensure `uv run ruff check src/ tests/` passes
   - Ensure `uv run mypy src/fdsx/` passes
 
-- [ ] T020 Verify full Scenario 1 flow from CLI in `tests/integration/test_cli_e2e.py`
+- [x] T020 Verify full Scenario 1 flow from CLI in `tests/integration/test_cli_e2e.py`
   - Test `fdsx validate` with valid flow → exit code 0
   - Test `fdsx validate` with invalid flow → exit code 2, error message on stderr
   - Test `fdsx run` with `simple_flow.yaml` → exit code 0, JSON output on stdout

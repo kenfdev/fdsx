@@ -31,6 +31,8 @@ class TestCLIE2E:
             text=True,
         )
         assert result.returncode == 2
+        assert result.stderr, "Expected error message on stderr"
+        assert len(result.stderr.strip()) > 0
 
     def test_run_simple_flow(self):
         result = subprocess.run(
