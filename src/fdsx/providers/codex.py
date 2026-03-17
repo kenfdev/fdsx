@@ -26,7 +26,7 @@ class CodexProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
-        args = ["codex"]
+        args = ["codex", "exec"]
         if model:
             args.extend(["--model", model])
         args.append(prompt)

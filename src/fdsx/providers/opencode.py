@@ -26,9 +26,9 @@ class OpenCodeProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
-        args = ["opencode"]
+        args = ["opencode", "run"]
         if model:
-            args.extend(["--model", model])
+            args.extend(["-m", model])
         args.append(prompt)
 
         return _run_subprocess(
