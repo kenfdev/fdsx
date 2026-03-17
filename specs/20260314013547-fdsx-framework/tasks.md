@@ -9,13 +9,13 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Initialize project with pyproject.toml, uv, and directory structure per plan in `pyproject.toml`
+- [x] T001 Initialize project with pyproject.toml, uv, and directory structure per plan in `pyproject.toml`
   - Create `pyproject.toml` with dependencies (langgraph, langgraph-checkpoint-sqlite, pyyaml, typer, httpx, structlog) and dev dependencies (pytest, pytest-asyncio, ruff, mypy)
   - Configure `[project.scripts]` entry point: `fdsx = "fdsx.cli.main:app"`
   - Use `src/` layout with `[tool.setuptools.packages.find] where = ["src"]`
   - Run `uv sync` to generate `uv.lock`
 
-- [ ] T002 Create package `__init__.py` files for all modules in `src/fdsx/`
+- [x] T002 Create package `__init__.py` files for all modules in `src/fdsx/`
   - `src/fdsx/__init__.py`, `src/fdsx/cli/__init__.py`, `src/fdsx/core/__init__.py`, `src/fdsx/models/__init__.py`, `src/fdsx/providers/__init__.py`, `src/fdsx/checkpoint/__init__.py`, `src/fdsx/notify/__init__.py`, `src/fdsx/display/__init__.py`, `src/fdsx/logging/__init__.py`
   - Also create `tests/__init__.py`, `tests/unit/__init__.py`, `tests/integration/__init__.py`, `tests/fixtures/` directory
 
