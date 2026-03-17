@@ -1,6 +1,7 @@
 import pytest
 
 from fdsx.models.flow import (
+    Branch,
     ChoiceState,
     ChoiceRule,
     Flow,
@@ -130,6 +131,7 @@ class TestPydanticModels:
             TaskState(
                 type="task",
                 provider="claude",
+                model="opus",
                 prompt_template="Hello",
                 prompt_file="hello.txt",
                 result_path="$.result",
@@ -168,7 +170,24 @@ class TestPydanticModels:
             TaskState(
                 type="task",
                 provider="claude",
+                model="opus",
                 result_path="$.result",
+            )
+
+    def test_validation_claude_requires_model(self):
+        with pytest.raises(ValueError, match="requires model"):
+            TaskState(
+                type="task",
+                provider="claude",
+                prompt_template="Hello",
+                result_path="$.result",
+            )
+
+    def test_validation_branch_requires_model_for_non_system(self):
+        with pytest.raises(ValueError, match="requires model"):
+            Branch(
+                provider="claude",
+                prompt_template="Hello",
             )
 
     def test_validation_termination_required(self):
@@ -231,7 +250,13 @@ class TestPydanticModels:
 
     def test_choice_rule_valid_operators_accepted(self):
         """F1: all documented operators must be accepted."""
-        valid_operators = ["equals", "not_equals", "greater_than", "less_than", "contains"]
+        valid_operators = [
+            "equals",
+            "not_equals",
+            "greater_than",
+            "less_than",
+            "contains",
+        ]
         for op in valid_operators:
             rule = ChoiceRule(variable="$.x", operator=op, value="a", next="b")
             assert rule.operator == op

@@ -2,7 +2,7 @@ import re
 import shlex
 from typing import Any
 
-from fdsx.models.flow import Flow, State
+from fdsx.models.flow import Branch, Flow, ParallelState, State
 
 
 def resolve_template(template: str, variables: dict[str, Any]) -> str:
@@ -169,7 +169,8 @@ def set_jsonpath(path: str, data: dict[str, Any], value: Any) -> dict[str, Any]:
             if not isinstance(current, dict):
                 raise ValueError(f"Cannot access dict key in non-dict at position {i}")
             if part not in current or not isinstance(current[part], (dict, list)):
-                current[part] = {}
+                next_part = parts[i + 1] if i + 1 < len(parts) else parts[-1]
+                current[part] = [] if isinstance(next_part, int) else {}
                 current = current[part]
             else:
                 next_val = current[part]
@@ -226,7 +227,9 @@ def _is_var_satisfied(var: str, available: set[str]) -> bool:
     return False
 
 
-def analyze_variable_references(flow: Flow, input_keys: set[str] | None = None) -> list[str]:
+def analyze_variable_references(
+    flow: Flow, input_keys: set[str] | None = None
+) -> list[str]:
     """Static analysis to detect unreachable variable references.
 
     Traces reachable states from start_at and checks that {variable}
@@ -272,7 +275,7 @@ def analyze_variable_references(flow: Flow, input_keys: set[str] | None = None) 
                 result.add("$END")
         return result
 
-    def get_prompt_variables(state: State) -> set[str]:
+    def get_prompt_variables(state: State | Branch) -> set[str]:
         variables: set[str] = set()
         from fdsx.models.flow import TaskState, Branch
 
@@ -299,7 +302,7 @@ def analyze_variable_references(flow: Flow, input_keys: set[str] | None = None) 
 
     def get_result_paths(state: State) -> set[str]:
         result_paths: set[str] = set()
-        from fdsx.models.flow import TaskState, Branch, ParallelState
+        from fdsx.models.flow import ParallelState, TaskState
 
         if isinstance(state, TaskState):
             if state.result_path:
@@ -307,8 +310,6 @@ def analyze_variable_references(flow: Flow, input_keys: set[str] | None = None) 
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)  # full path, not just root key
-        elif isinstance(state, Branch):
-            result_paths.add("branch_result")
         elif isinstance(state, ParallelState):
             if state.result_path:
                 path = state.result_path
@@ -370,6 +371,10 @@ def analyze_variable_references(flow: Flow, input_keys: set[str] | None = None) 
     for state_name in reachable_states:
         state = flow.states[state_name]
         prompt_vars = get_prompt_variables(state)
+
+        if isinstance(state, ParallelState):
+            for branch in state.branches:
+                prompt_vars.update(get_prompt_variables(branch))
 
         for var in prompt_vars:
             if (

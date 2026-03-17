@@ -3,6 +3,14 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, Field, model_validator
 
 
+class LLMClassifyFallback(BaseModel):
+    """LLM-based classification fallback."""
+
+    type: Literal["llm_classify"] = "llm_classify"
+    provider: str = Field(..., description="LLM provider")
+    prompt: str = Field(..., description="Classification prompt")
+
+
 class TaskSplitter(BaseModel):
     """Configuration for batch task splitting."""
 
@@ -15,16 +23,10 @@ class ExtractRule(BaseModel):
 
     strategy: list[str] = Field(..., description="Extraction strategies tried in order")
     pattern: str = Field(..., description="Pattern for extraction")
-    fallback: Any = Field(default=None, description="LLM classification fallback")
+    fallback: LLMClassifyFallback | None = Field(
+        default=None, description="LLM classification fallback"
+    )
     result_path: str = Field(..., description="JSONPath for extracted value")
-
-
-class LLMClassifyFallback(BaseModel):
-    """LLM-based classification fallback."""
-
-    type: Literal["llm_classify"] = "llm_classify"
-    provider: str = Field(..., description="LLM provider")
-    prompt: str = Field(..., description="Classification prompt")
 
 
 class WebhookConfig(BaseModel):
@@ -44,7 +46,9 @@ class ChoiceRule(BaseModel):
     """Choice rule for branching."""
 
     variable: str = Field(..., description="JSONPath to compare")
-    operator: Literal["equals", "not_equals", "greater_than", "less_than", "contains"] = Field(
+    operator: Literal[
+        "equals", "not_equals", "greater_than", "less_than", "contains"
+    ] = Field(
         ...,
         description="Comparison operator",
     )
@@ -77,6 +81,8 @@ def _validate_provider_fields(
     else:
         if command is not None:
             raise ValueError(f"provider={provider} forbids command")
+        if model is None:
+            raise ValueError(f"provider={provider} requires model")
         has_prompt = prompt_template is not None or prompt_file is not None
         if not has_prompt:
             raise ValueError(

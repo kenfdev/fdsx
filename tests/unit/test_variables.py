@@ -6,7 +6,7 @@ from fdsx.core.variables import (
     resolve_template_shell_safe,
     set_jsonpath,
 )
-from fdsx.models.flow import Flow, TaskState
+from fdsx.models.flow import Branch, Flow, ParallelState, TaskState
 
 
 class TestResolveTemplate:
@@ -115,6 +115,16 @@ class TestSetJsonPath:
         result = set_jsonpath("items[1].value", data, "x")
         assert isinstance(result["items"][0], dict)
         assert result["items"][1] == {"value": "x"}
+
+    def test_set_jsonpath_creates_list_for_index(self):
+        """Regression: set_jsonpath must create list when next part is an index."""
+        result = set_jsonpath("items[0]", {}, "x")
+        assert result == {"items": ["x"]}
+
+    def test_set_jsonpath_creates_nested_list_for_index(self):
+        """Regression: set_jsonpath must create nested list for index then dict."""
+        result = set_jsonpath("items[0].name", {}, "Alice")
+        assert result == {"items": [{"name": "Alice"}]}
 
 
 class TestResolveTemplateShellSafe:
@@ -306,6 +316,36 @@ class TestAnalyzeVariableReferences:
         )
         errors = analyze_variable_references(flow)
         assert len(errors) == 0
+
+    def test_parallel_branch_undefined_variable_detected(self):
+        """Regression: analyze_variable_references must check parallel branch prompts."""
+        flow = Flow(
+            name="Test Flow",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="par",
+                ),
+                "par": ParallelState(
+                    type="parallel",
+                    branches=[
+                        Branch(
+                            provider="system",
+                            command="echo {undefined_var}",
+                        ),
+                    ],
+                    result_path="$.par_result",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "undefined_var" in errors[0]
 
 
 class TestIsVarSatisfied:

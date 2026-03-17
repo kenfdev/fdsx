@@ -21,19 +21,19 @@
 
 ## Phase 2: Foundational
 
-- [ ] T003 Implement Pydantic models for all state types in `src/fdsx/models/flow.py`
+- [x] T003 Implement Pydantic models for all state types in `src/fdsx/models/flow.py`
   - Define: `Flow`, `TaskState`, `ChoiceState`, `ChoiceRule`, `ParallelState`, `Branch`, `PassState`, `AggregateRule`, `WaitState`, `NotifyConfig`, `WebhookConfig`, `ExtractRule`, `LLMClassifyFallback`, `TaskSplitter`
   - Use discriminated union for `State` (discriminator: `type` field)
   - Implement validation rules: `start_at` must exist in `states`, all `next` references must be valid state keys, `prompt_template`/`prompt_file` mutual exclusion, `next`/`end` mutual exclusion, provider-specific field constraints (system requires `command`, forbids `prompt_template`/`prompt_file`/`model`; claude/opencode/codex require `prompt_template` or `prompt_file`, forbid `command`)
   - At least one state must have `end: true` or flow must reach termination
   - Reference: [plan/data-model.md](plan/data-model.md) for entity definitions, spec.md FR-14 for validation rules
 
-- [ ] T004 Write unit tests for Pydantic models in `tests/unit/test_models.py`
+- [x] T004 Write unit tests for Pydantic models in `tests/unit/test_models.py`
   - Test valid flow creation with all state types
   - Test validation errors: missing `start_at` reference, invalid `next` references, `prompt_template` + `prompt_file` together, `next` + `end` together, system provider with `prompt_template`, claude provider without `prompt_template`/`prompt_file`
   - Test discriminated union dispatch (type=task → TaskState, type=choice → ChoiceState, etc.)
 
-- [ ] T005 Implement variable resolution in `src/fdsx/core/variables.py`
+- [x] T005 Implement variable resolution in `src/fdsx/core/variables.py`
   - `resolve_template(template: str, variables: dict) -> str`: custom safe substitution for `{variable}` patterns. Only replace registered variable names; preserve unknown `{...}` patterns as literals
   - Support dot access (`{review.decision}`) and index access (`{reviews[0].summary}`)
   - `resolve_jsonpath(path: str, data: dict) -> Any`: resolve `$.field.subfield[0].name` patterns (~30 LOC, no library)
@@ -41,7 +41,7 @@
   - `analyze_variable_references(flow: Flow) -> list[str]`: static analysis — trace reachable states from `start_at`, check that `{variable}` references in `prompt_template` correspond to a `result_path` set by a preceding state on at least one reachable path. Return list of error messages for unreachable references
   - Reference: [plan/contracts/yaml-schema.md](plan/contracts/yaml-schema.md) for variable reference contract, research.md section 4 for implementation approach
 
-- [ ] T006 Write unit tests for variable resolution in `tests/unit/test_variables.py`
+- [x] T006 Write unit tests for variable resolution in `tests/unit/test_variables.py`
   - Test `resolve_template`: simple variable, dot access, index access, unknown pattern preserved, missing variable preserved
   - Test `resolve_jsonpath`: simple field, nested field, array indexing, invalid path
   - Test `set_jsonpath`: set new field, set nested field
