@@ -138,12 +138,12 @@
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T034 Verify ruff and mypy pass with Phase 2 code in `pyproject.toml`
+- [x] T034 Verify ruff and mypy pass with Phase 2 code in `pyproject.toml`
   - Run `uv run ruff check src/ tests/` — fix any lint issues in new files
   - Run `uv run mypy src/fdsx/` — fix any type errors in new files
   - Ensure all Phase 1 tests still pass: `uv run pytest tests/`
 
-- [ ] T035 Write CLI e2e test for Phase 2 scenarios in `tests/integration/test_cli_e2e_phase2.py`
+- [x] T035 Write CLI e2e test for Phase 2 scenarios in `tests/integration/test_cli_e2e_phase2.py`
   - Test `fdsx run` with `parallel_review.yaml` → exit code 0, JSON output contains decision
   - Test `fdsx run` with `extraction_flow.yaml` → exit code 0, extracted value in output
   - Test `fdsx run` with `loop_flow.yaml` → verify loop behavior from CLI
