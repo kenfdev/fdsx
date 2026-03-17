@@ -3,7 +3,7 @@ import time
 from typing import Annotated, Any, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
-from langgraph.types import Send
+from langgraph.types import interrupt, Send
 
 from fdsx.core.variables import (
     resolve_template,
@@ -117,7 +117,9 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
 
 
 def compile_flow(
-    flow: Flow, input_keys: set[str] | None = None
+    flow: Flow,
+    input_keys: set[str] | None = None,
+    checkpointer: Any = None,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -125,6 +127,9 @@ def compile_flow(
         flow: The Flow to compile
         input_keys: Top-level keys injected via --input; needed for the state schema
                     so LangGraph channels are created for them.
+        checkpointer: Optional checkpointer for state persistence.
+                      If not provided and the flow contains Wait states,
+                      a MemorySaver will be used as default.
 
     Returns:
         CompiledGraph with the compiled state machine
@@ -134,6 +139,15 @@ def compile_flow(
     schema = _build_state_schema(flow, input_keys)
     graph: StateGraph[Any] = StateGraph(schema)
 
+    if checkpointer is None:
+        from fdsx.models.flow import WaitState as _WaitState
+
+        has_wait = any(isinstance(s, _WaitState) for s in flow.states.values())
+        if has_wait:
+            from langgraph.checkpoint.memory import MemorySaver
+
+            checkpointer = MemorySaver()
+
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
             graph.add_node(state_name, _create_task_node(state_name, state, flow))  # type: ignore[call-overload]
@@ -142,12 +156,25 @@ def compile_flow(
         elif isinstance(state, ParallelState):
             # Three-node pattern: dispatch → branch (×N via Send) → collector
             graph.add_node(state_name, _create_dispatch_node(state_name, state))  # type: ignore[call-overload]
-            graph.add_node(f"_branch_{state_name}", _create_branch_executor(state_name, state, flow))  # type: ignore[call-overload]
-            graph.add_node(f"_collect_{state_name}", _create_collector_node(state_name, state, flow))  # type: ignore[call-overload]
+            graph.add_node(
+                f"_branch_{state_name}",
+                _create_branch_executor(state_name, state, flow),
+            )  # type: ignore[call-overload]
+            graph.add_node(
+                f"_collect_{state_name}",
+                _create_collector_node(state_name, state, flow),
+            )  # type: ignore[call-overload]
         elif state.type == "pass":
             graph.add_node(state_name, _create_pass_node(state_name, state, flow))  # type: ignore[call-overload]
         elif state.type == "wait":
-            graph.add_node(state_name, _create_wait_node(state_name, state, flow))  # type: ignore[call-overload]
+            # Two-node pattern: notify pre-node (checkpointed) → interrupt node.
+            # The notify node fires once; on resume LangGraph replays only the
+            # interrupt node because the checkpoint advances past the notify node.
+            graph.add_node(state_name, _create_wait_notify_node(state_name, state))  # type: ignore[call-overload]
+            graph.add_node(
+                f"_{state_name}_int", _create_wait_interrupt_node(state_name, state)
+            )  # type: ignore[call-overload]
+            graph.add_edge(state_name, f"_{state_name}_int")
 
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
@@ -167,6 +194,18 @@ def compile_flow(
                 )
             continue  # Skip the regular edge-adding below for ParallelState
 
+        if isinstance(state, WaitState):
+            # Outgoing edge comes from the interrupt node (_{state_name}_int), not
+            # the notify pre-node ({state_name}).  The pre-node → interrupt edge was
+            # already added in the node-registration loop above.
+            next_s = _get_next_state(state)
+            if next_s:
+                graph.add_edge(
+                    f"_{state_name}_int",
+                    END if next_s == "END" else next_s,
+                )
+            continue  # Skip the regular edge-adding below for WaitState
+
         next_state = _get_next_state(state)
         if next_state:
             if next_state == "END":
@@ -185,7 +224,10 @@ def compile_flow(
 
     graph.set_entry_point(flow.start_at)
 
-    compiled = graph.compile()
+    if checkpointer is not None:
+        compiled = graph.compile(checkpointer=checkpointer)
+    else:
+        compiled = graph.compile()
 
     return CompiledGraph(compiled, flow.start_at, result_paths)
 
@@ -602,13 +644,50 @@ def _create_pass_node(
     return node
 
 
-def _create_wait_node(
-    state_name: str, state: WaitState, flow: Flow
+def _create_wait_notify_node(
+    state_name: str, state: WaitState
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Create a LangGraph node function for a Wait state."""
+    """Create the pre-interrupt notify node for a Wait state.
+
+    Sends the webhook notification (if configured) and returns the state so the
+    result is checkpointed before the interrupt.  This guarantees the notification
+    fires exactly once: on the first entry the checkpoint advances past this node,
+    so on resume LangGraph replays only the interrupt node — not this one.
+    """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        if state.notify is not None:
+            from fdsx.notify.webhook import send_notification
+
+            send_notification(state.notify, state_dict)
         return state_dict
+
+    return node
+
+
+def _create_wait_interrupt_node(
+    state_name: str, state: WaitState
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Create the interrupt node for a Wait state.
+
+    Uses LangGraph's interrupt() to pause execution and wait for user input.
+    The engine handles the actual prompting and resume with Command(resume=value).
+    Only this node is re-executed on resume; the notify node above is not.
+    """
+
+    def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        resolved_message = resolve_template(state.message, state_dict)
+
+        user_selection = interrupt(
+            {
+                "message": resolved_message,
+                "choices": state.choices,
+                "state_name": state_name,
+            }
+        )
+
+        new_state = set_jsonpath(state.result_path, state_dict, user_selection)
+        return new_state
 
     return node
 

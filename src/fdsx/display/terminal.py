@@ -115,3 +115,51 @@ def display_branch_status(
     display_index = branch_index + 1  # CLI contract is 1-indexed
     line = f"  [branch-{display_index}] {provider}  {status_text}"
     print(line, file=sys.stderr)
+
+
+def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> str:
+    """Display a wait prompt and get user selection.
+
+    Args:
+        state_name: Name of the wait state
+        message: Message to display to the user
+        choices: List of choice options
+
+    Returns:
+        The selected choice string (not the number)
+    """
+    if not choices:
+        raise ValueError("choices must not be empty")
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(
+        f"[{timestamp}] ⏸ {_sanitize_output(state_name)} (waiting for input)",
+        file=sys.stderr,
+    )
+    print("", file=sys.stderr)
+    for line in _sanitize_output(message).splitlines():
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    for i, choice in enumerate(choices, start=1):
+        print(f"  [{i}] {_sanitize_output(choice)}", file=sys.stderr)
+
+    print("", file=sys.stderr)
+
+    while True:
+        try:
+            sys.stderr.write(f"  Select (1-{len(choices)}): ")
+            sys.stderr.flush()
+            user_input = input()
+            choice_num = int(user_input)
+            if 1 <= choice_num <= len(choices):
+                return choices[choice_num - 1]
+            print(
+                f"Invalid choice. Please enter a number between 1 and {len(choices)}.",
+                file=sys.stderr,
+            )
+        except ValueError:
+            print(
+                f"Invalid input. Please enter a number between 1 and {len(choices)}.",
+                file=sys.stderr,
+            )

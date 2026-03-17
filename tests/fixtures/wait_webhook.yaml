@@ -1,0 +1,59 @@
+name: Wait Webhook Flow
+start_at: plan
+version: '1.0'
+
+states:
+  plan:
+    type: task
+    provider: system
+    command: echo Planning phase complete
+    result_path: $.plan_output
+    next: approval_gate
+
+  approval_gate:
+    type: wait
+    mode: prompt
+    message: |
+      Please review the plan and approve for implementation.
+      Plan: {plan_output}
+    choices:
+      - approve
+      - reject
+      - retry
+    result_path: $.approval_decision
+    notify:
+      webhook:
+        url: https://example.com/webhook
+        template: "Approval needed: {plan_output}"
+    next: route_approval
+
+  route_approval:
+    type: choice
+    choices:
+      - variable: $.approval_decision
+        operator: equals
+        value: approve
+        next: implement
+      - variable: $.approval_decision
+        operator: equals
+        value: reject
+        next: rejected
+      - variable: $.approval_decision
+        operator: equals
+        value: retry
+        next: plan
+    default: rejected
+
+  implement:
+    type: task
+    provider: system
+    command: echo Implementation complete
+    result_path: $.implementation_output
+    end: true
+
+  rejected:
+    type: task
+    provider: system
+    command: echo Request rejected
+    result_path: $.rejected_output
+    end: true
