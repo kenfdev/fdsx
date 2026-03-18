@@ -162,18 +162,18 @@
 
 ## Phase 16: Polish & Cross-Cutting
 
-- [ ] T069 Verify ruff and mypy pass with Phase 4 code in `pyproject.toml`
+- [x] T069 Verify ruff and mypy pass with Phase 4 code in `pyproject.toml`
   - Run `uv run ruff check src/ tests/` — fix any lint issues in new files
   - Run `uv run mypy src/fdsx/` — fix any type errors in new files
   - Ensure all Phase 1-3 tests still pass: `uv run pytest tests/`
 
-- [ ] T070 Write CLI e2e test for batch task scenario in `tests/integration/test_cli_e2e_phase4.py`
+- [x] T070 Write CLI e2e test for batch task scenario in `tests/integration/test_cli_e2e_phase4.py`
   - Test `fdsx run workflow.yaml --tasks tasks.md` → mock task_splitter → approve → all tasks execute → exit code 0
   - Test `fdsx run workflow.yaml --input task=foo --tasks tasks.md` → exit code 2, mutual exclusion error
   - Test `fdsx run workflow.yaml --tasks tasks.md` with flow missing task_splitter → exit code 2
   - Use `subprocess.run` to invoke the actual CLI entry point
 
-- [ ] T071 Write comprehensive e2e test suite for all scenarios in `tests/integration/test_e2e_scenarios.py`
+- [x] T071 Write comprehensive e2e test suite for all scenarios in `tests/integration/test_e2e_scenarios.py`
   - **Scenario 1**: Simple linear flow (Plan → Implement → Review) with system provider → verify state transitions and final JSON output
   - **Scenario 2**: Parallel review + majority vote → verify parallel execution, aggregation result, choice routing
   - **Scenario 3**: Wait state + webhook notification → mock stdin for selection, mock httpx for webhook → verify routing
@@ -182,7 +182,7 @@
   - Each scenario uses dedicated fixture YAMLs from `tests/fixtures/`
   - Use `subprocess.run` for CLI invocation where applicable, direct engine calls for finer control
 
-- [ ] T072 Verify structured logging output in e2e tests in `tests/integration/test_e2e_scenarios.py`
+- [x] T072 Verify structured logging output in e2e tests in `tests/integration/test_e2e_scenarios.py`
   - After each scenario run, verify `runs/<thread_id>.json` exists and conforms to the Run Log Format schema
   - Verify state entries match the executed states (name, type, status)
   - Verify `final_variables` contains expected keys

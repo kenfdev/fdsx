@@ -61,6 +61,8 @@ def run(
         typer.echo(f"Validation error: {e}", err=True)
         raise typer.Exit(code=2)
     except RuntimeError as e:
+        if isinstance(e, typer.Exit):
+            raise
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=1)
     except Exception as e:
