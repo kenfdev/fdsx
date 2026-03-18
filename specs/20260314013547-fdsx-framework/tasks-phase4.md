@@ -148,14 +148,14 @@
 
 **Story Goal**: Finalize pyproject.toml, create README with quickstart, and ensure `pip install fdsx` works.
 
-- [ ] T067 Finalize pyproject.toml for PyPI publishing in `pyproject.toml`
+- [x] T067 Finalize pyproject.toml for PyPI publishing in `pyproject.toml`
   - Add/verify required PyPI fields: `description`, `authors`, `license`, `readme`, `classifiers`, `urls` (homepage, repository)
   - Verify `[project.scripts]` entry point: `fdsx = "fdsx.cli.main:app"`
   - Verify all runtime dependencies are correctly listed
   - Add `[build-system]` section if missing (setuptools or hatchling)
   - Test: `uv build` produces a valid wheel and sdist
 
-- [ ] T068 Write README with quickstart in `README.md`
+- [x] T068 Write README with quickstart in `README.md`
   - Include: project overview (what fdsx is), installation (`pip install fdsx`), quickstart (create a simple YAML flow + run it), feature overview (state types, parallel execution, checkpointing, batch tasks), CLI reference table, example workflow YAML
   - Keep concise and practical — focus on getting users running in under 5 minutes
   - Reference: spec.md Overview and Scenarios for content
