@@ -120,6 +120,7 @@ def compile_flow(
     flow: Flow,
     input_keys: set[str] | None = None,
     checkpointer: Any = None,
+    recorder: Any = None,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -150,29 +151,36 @@ def compile_flow(
 
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
-            graph.add_node(state_name, _create_task_node(state_name, state, flow))  # type: ignore[call-overload]
+            graph.add_node(
+                state_name, _create_task_node(state_name, state, flow, recorder)
+            )  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):
-            graph.add_node(state_name, _create_choice_node(state_name, state, flow))  # type: ignore[call-overload]
+            graph.add_node(
+                state_name, _create_choice_node(state_name, state, flow, recorder)
+            )  # type: ignore[call-overload]
         elif isinstance(state, ParallelState):
-            # Three-node pattern: dispatch → branch (×N via Send) → collector
-            graph.add_node(state_name, _create_dispatch_node(state_name, state))  # type: ignore[call-overload]
+            graph.add_node(
+                state_name, _create_dispatch_node(state_name, state, recorder)
+            )  # type: ignore[call-overload]
             graph.add_node(
                 f"_branch_{state_name}",
-                _create_branch_executor(state_name, state, flow),
+                _create_branch_executor(state_name, state, flow, recorder),
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_collect_{state_name}",
-                _create_collector_node(state_name, state, flow),
+                _create_collector_node(state_name, state, flow, recorder),
             )  # type: ignore[call-overload]
         elif state.type == "pass":
-            graph.add_node(state_name, _create_pass_node(state_name, state, flow))  # type: ignore[call-overload]
-        elif state.type == "wait":
-            # Two-node pattern: notify pre-node (checkpointed) → interrupt node.
-            # The notify node fires once; on resume LangGraph replays only the
-            # interrupt node because the checkpoint advances past the notify node.
-            graph.add_node(state_name, _create_wait_notify_node(state_name, state))  # type: ignore[call-overload]
             graph.add_node(
-                f"_{state_name}_int", _create_wait_interrupt_node(state_name, state)
+                state_name, _create_pass_node(state_name, state, flow, recorder)
+            )  # type: ignore[call-overload]
+        elif state.type == "wait":
+            graph.add_node(
+                state_name, _create_wait_notify_node(state_name, state, recorder)
+            )  # type: ignore[call-overload]
+            graph.add_node(
+                f"_{state_name}_int",
+                _create_wait_interrupt_node(state_name, state, recorder),
             )  # type: ignore[call-overload]
             graph.add_edge(state_name, f"_{state_name}_int")
 
@@ -272,7 +280,7 @@ def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, An
 
 
 def _create_task_node(
-    state_name: str, state: TaskState, flow: Flow
+    state_name: str, state: TaskState, flow: Flow, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
 
@@ -287,6 +295,9 @@ def _create_task_node(
             provider=state.provider,
             model=state.model,
         )
+
+        if recorder is not None:
+            recorder.record_state_start(state_name, "task")
 
         prompt = state.prompt_template or ""
         resolved_prompt = resolve_template(prompt, state_dict)
@@ -336,6 +347,8 @@ def _create_task_node(
 
         if result.exit_code != 0:
             terminal.display_state_error(state_name, last_error)
+            if recorder is not None:
+                recorder.record_state_error(state_name, last_error)
             raise RuntimeError(
                 f"Provider {state.provider} failed after {max_retries + 1} attempts with exit code {result.exit_code}: {_sanitize_output(last_error)}"
             )
@@ -343,6 +356,8 @@ def _create_task_node(
         if state.extract:
             if extracted is None:
                 terminal.display_state_error(state_name, last_error)
+                if recorder is not None:
+                    recorder.record_state_error(state_name, last_error)
                 raise RuntimeError(
                     f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
                 )
@@ -350,13 +365,23 @@ def _create_task_node(
             new_state = set_jsonpath(
                 state.result_path, new_state, result.stdout.strip()
             )
+            variables_set = [state.extract.result_path, state.result_path]
         else:
             new_state = set_jsonpath(
                 state.result_path, state_dict, result.stdout.strip()
             )
+            variables_set = [state.result_path]
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
+
+        if recorder is not None:
+            recorder.record_state_complete(
+                state_name,
+                "success",
+                result.stdout,
+                variables_set,
+            )
 
         new_state = _set_next_state_meta(new_state, state)
         return new_state
@@ -365,18 +390,21 @@ def _create_task_node(
 
 
 def _create_choice_node(
-    state_name: str, state: ChoiceState, flow: Flow
+    state_name: str, state: ChoiceState, flow: Flow, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Choice state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        if recorder is not None:
+            recorder.record_state_start(state_name, "choice")
+            recorder.record_state_complete(state_name, "success", "", [])
         return state_dict
 
     return node
 
 
 def _create_dispatch_node(
-    state_name: str, state: ParallelState
+    state_name: str, state: ParallelState, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the dispatch node for a Parallel state.
 
@@ -387,13 +415,15 @@ def _create_dispatch_node(
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         terminal.display_parallel_start(state_name, len(state.branches))
+        if recorder is not None:
+            recorder.record_state_start(state_name, "parallel")
         return {}
 
     return node
 
 
 def _create_branch_executor(
-    state_name: str, state: ParallelState, flow: Flow
+    state_name: str, state: ParallelState, flow: Flow, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a shared branch executor node invoked once per branch via Send.
 
@@ -484,6 +514,7 @@ def _create_branch_executor(
                 "output": result.stdout.strip(),
                 "exit_code": result.exit_code,
                 "error": _sanitize_output(last_error),
+                "_duration": duration,
             }
         elif branch.extract and extracted is None:
             terminal.display_branch_status(
@@ -498,6 +529,7 @@ def _create_branch_executor(
                 "output": result.stdout.strip(),
                 "exit_code": 1,
                 "error": f"Extraction failed after {max_retries + 1} attempts: all strategies returned None",
+                "_duration": duration,
             }
         else:
             terminal.display_branch_status(
@@ -512,6 +544,7 @@ def _create_branch_executor(
                 "output": result.stdout.strip(),
                 "exit_code": 0,
                 "error": None,
+                "_duration": duration,
             }
 
         if branch.extract and extracted is not None:
@@ -547,7 +580,7 @@ def _create_fan_out(
 
 
 def _create_collector_node(
-    state_name: str, state: ParallelState, flow: Flow
+    state_name: str, state: ParallelState, flow: Flow, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the fan-in collector node for a Parallel state.
 
@@ -558,18 +591,28 @@ def _create_collector_node(
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         start_time = time.time()
 
-        # All branch results fan-in via operator.add reducer
         raw_results: list[dict[str, Any]] = state_dict.get(f"_br_{state_name}", [])
 
-        # Sort by original branch index to preserve declaration order
         sorted_results = sorted(raw_results, key=lambda r: r.get("index", 0))
 
-        # Strip internal "index" key — not part of the public branch result schema
+        branch_info_list: list[dict[str, Any]] = []
+        for r in sorted_results:
+            branch_info_list.append(
+                {
+                    "index": r.get("index", 0),
+                    "provider": state.branches[r.get("index", 0)].provider
+                    if r.get("index", 0) < len(state.branches)
+                    else "unknown",
+                    "status": "success" if r.get("exit_code") == 0 else "error",
+                    "duration_seconds": int(r.get("_duration", 0)),
+                }
+            )
+
         clean_results = [
-            {k: v for k, v in r.items() if k != "index"} for r in sorted_results
+            {k: v for k, v in r.items() if k != "index" and k != "_duration"}
+            for r in sorted_results
         ]
 
-        # Enforce min_success — default: ALL branches must succeed (FR-2.3)
         min_required = (
             state.min_success if state.min_success is not None else len(state.branches)
         )
@@ -581,6 +624,14 @@ def _create_collector_node(
                 for i, r in enumerate(clean_results)
                 if r.get("exit_code") != 0
             ]
+            if recorder is not None:
+                recorder.record_state_complete(
+                    state_name,
+                    "error",
+                    f"Only {successful}/{len(state.branches)} branches succeeded",
+                    [state.result_path],
+                    branch_info_list,
+                )
             raise RuntimeError(
                 f"Parallel state '{state_name}' failed: only {successful}/{len(state.branches)} "
                 f"branches succeeded, required {min_required}. "
@@ -591,6 +642,15 @@ def _create_collector_node(
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
+
+        if recorder is not None:
+            recorder.record_state_complete(
+                state_name,
+                "success",
+                "",
+                [state.result_path],
+                branch_info_list,
+            )
 
         new_state = _set_next_state_meta(new_state, state)
         return new_state
@@ -639,11 +699,15 @@ def _aggregate(source_data: list[dict[str, Any]], rule: AggregateRule) -> str:
 
 
 def _create_pass_node(
-    state_name: str, state: PassState, flow: Flow
+    state_name: str, state: PassState, flow: Flow, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Pass state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        if recorder is not None:
+            recorder.record_state_start(state_name, "pass")
+
+        variables_set = []
         if state.parameters:
             for target, source in state.parameters.items():
                 if isinstance(source, str):
@@ -652,6 +716,7 @@ def _create_pass_node(
                     value = source
                 new_state = set_jsonpath(target, state_dict, value)
                 state_dict = new_state
+                variables_set.append(target)
 
         if state.aggregate:
             from fdsx.core.variables import resolve_jsonpath
@@ -662,6 +727,10 @@ def _create_pass_node(
             else:
                 result = state.aggregate.no_match
             state_dict = set_jsonpath(state.aggregate.result_path, state_dict, result)
+            variables_set.append(state.aggregate.result_path)
+
+        if recorder is not None:
+            recorder.record_state_complete(state_name, "success", "", variables_set)
 
         state_dict = _set_next_state_meta(state_dict, state)
         return state_dict
@@ -670,7 +739,7 @@ def _create_pass_node(
 
 
 def _create_wait_notify_node(
-    state_name: str, state: WaitState
+    state_name: str, state: WaitState, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the pre-interrupt notify node for a Wait state.
 
@@ -681,6 +750,9 @@ def _create_wait_notify_node(
     """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        if recorder is not None:
+            recorder.record_state_start(state_name, "wait")
+
         if state.notify is not None:
             from fdsx.notify.webhook import send_notification
 
@@ -691,7 +763,7 @@ def _create_wait_notify_node(
 
 
 def _create_wait_interrupt_node(
-    state_name: str, state: WaitState
+    state_name: str, state: WaitState, recorder: Any = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the interrupt node for a Wait state.
 
@@ -712,6 +784,13 @@ def _create_wait_interrupt_node(
         )
 
         new_state = set_jsonpath(state.result_path, state_dict, user_selection)
+
+        if recorder is not None:
+            recorder.record_state_complete(
+                state_name, "success", user_selection, [state.result_path],
+                state_type="wait",
+            )
+
         new_state = _set_next_state_meta(new_state, state)
         return new_state
 

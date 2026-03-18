@@ -11,6 +11,7 @@ from fdsx.checkpoint.manager import CheckpointManager, _extract_meta_from_checkp
 from fdsx.core.compiler import compile_flow
 from fdsx.core.loader import load_flow
 from fdsx.display.terminal import _sanitize_output, display_wait_prompt
+from fdsx.logging import RunRecorder
 
 
 class FlowValidationError(Exception):
@@ -70,10 +71,17 @@ def run_flow(
     elif needs_checkpointer:
         checkpointer = MemorySaver()
 
+    recorder = RunRecorder(
+        thread_id=thread_id,
+        flow_name=flow.name,
+        flow_version=flow.version,
+    )
+
     compiled = compile_flow(
         flow,
         input_keys=set(inputs.keys()) if inputs else None,
         checkpointer=checkpointer,
+        recorder=recorder,
     )
 
     initial_state: dict[str, Any] = {
@@ -146,16 +154,24 @@ def run_flow(
             if final_state_info.values:
                 last_state = final_state_info.values
 
-        return _extract_results(last_state, compiled.result_paths)
+        results = _extract_results(last_state, compiled.result_paths)
+        recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+        recorder.save()
+        return results
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
-        return _extract_results(last_state, compiled.result_paths)
+        results = _extract_results(last_state, compiled.result_paths)
+        recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+        recorder.save()
+        return results
     except Exception as e:
         if checkpoint_manager is not None:
             print(
                 f"Checkpoint saved. Resume with: fdsx resume --thread-id {_sanitize_output(thread_id)}",
                 file=sys.stderr,
             )
+        recorder.finalize(_sanitize_state_for_log(last_state), "error")
+        recorder.save()
         raise RuntimeError(f"Flow execution failed: {e}")
     finally:
         if checkpoint_manager is not None:
@@ -174,6 +190,17 @@ def _extract_results(state: dict[str, Any], result_paths: list[str]) -> dict[str
             results = set_jsonpath(clean_path, results, value)
 
     return results
+
+
+def _sanitize_state_for_log(state: dict[str, Any]) -> dict[str, Any]:
+    """Create a sanitized copy of state for logging, stripping internal keys."""
+    return {
+        k: v
+        for k, v in state.items()
+        if not k.startswith("_meta")
+        and not k.startswith("__")
+        and not k.startswith("_br_")
+    }
 
 
 def resume_flow(
@@ -209,6 +236,9 @@ def resume_flow(
 
     print(f"Resuming from thread: {_sanitize_output(thread_id)}", file=sys.stderr)
 
+    recorder: RunRecorder | None = None
+    last_state: dict[str, Any] = {}
+
     try:
         checkpointer = checkpoint_manager.get_checkpointer()
 
@@ -235,9 +265,30 @@ def resume_flow(
 
         from fdsx.models.flow import WaitState, ParallelState
 
+        runs_dir = Path.cwd() / "runs"
+        existing_log_path = runs_dir / f"{thread_id}.json"
+
+        if existing_log_path.exists():
+            import json
+
+            with open(existing_log_path, "r") as f:
+                existing_log = json.load(f)
+            flow_name = existing_log.get("flow_name", flow.name)
+            flow_version = existing_log.get("flow_version")
+        else:
+            flow_name = flow.name
+            flow_version = flow.version
+
+        recorder = RunRecorder(
+            thread_id=thread_id,
+            flow_name=flow_name,
+            flow_version=flow_version,
+        )
+
         compiled = compile_flow(
             flow,
             checkpointer=checkpointer,
+            recorder=recorder,
         )
 
         parallel_extra = sum(
@@ -253,8 +304,6 @@ def resume_flow(
             "recursion_limit": recursion_limit,
             "configurable": {"thread_id": thread_id},
         }
-
-        last_state: dict[str, Any] = {}
 
         state_info = compiled.graph.get_state(resume_config)
         if state_info.tasks:
@@ -325,12 +374,22 @@ def resume_flow(
         if final_state_info.values:
             last_state = final_state_info.values
 
-        return _extract_results(last_state, compiled.result_paths)
+        results = _extract_results(last_state, compiled.result_paths)
+        if recorder is not None:
+            recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+            recorder.save()
+        return results
     except GraphRecursionError:
         if flow is not None:
             print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
+        if recorder is not None:
+            recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+            recorder.save()
         return {}
     except Exception as e:
+        if recorder is not None:
+            recorder.finalize(_sanitize_state_for_log(last_state), "error")
+            recorder.save()
         raise RuntimeError(f"Flow resume failed: {e}")
     finally:
         checkpoint_manager.release_lock(thread_id)
