@@ -64,6 +64,16 @@ class TaskSplitter(BaseModel):
     provider: str = Field(..., description="Provider name (claude/opencode/codex)")
     model: str = Field(..., description="Model name")
 
+    @model_validator(mode="after")
+    def validate_provider(self) -> "TaskSplitter":
+        valid_llm_providers = {"claude", "opencode", "codex"}
+        if self.provider not in valid_llm_providers:
+            raise ValueError(
+                f"task_splitter provider must be one of "
+                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
+            )
+        return self
+
 
 class ExtractRule(BaseModel):
     """Output extraction configuration."""

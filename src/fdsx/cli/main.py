@@ -18,8 +18,18 @@ def run(
     input_vars: list[str] | None = typer.Option(
         None, "--input", help="Input variable as KEY=VALUE"
     ),
+    tasks_file: Path | None = typer.Option(
+        None, "--tasks", help="Batch task file path"
+    ),
 ) -> None:
     """Run a workflow from a YAML file."""
+    if input_vars and tasks_file is not None:
+        typer.echo(
+            "Error: --input and --tasks are mutually exclusive",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
     inputs = None
     if input_vars:
         inputs = {}
@@ -36,8 +46,17 @@ def run(
     base_dir = Path(".fdsx")
 
     try:
-        result = engine.run_flow(workflow, inputs, thread_id, base_dir)
-        typer.echo(json.dumps(result, indent=2))
+        if tasks_file is not None:
+            results = engine.run_batch(workflow, tasks_file, base_dir)
+            typer.echo(json.dumps(results, indent=2))
+            has_failure = any(r.get("status") == "failed" for r in results)
+            if has_failure:
+                raise typer.Exit(code=1)
+            else:
+                raise typer.Exit(code=0)
+        else:
+            result = engine.run_flow(workflow, inputs, thread_id, base_dir)
+            typer.echo(json.dumps(result, indent=2))
     except FlowValidationError as e:
         typer.echo(f"Validation error: {e}", err=True)
         raise typer.Exit(code=2)
@@ -45,8 +64,10 @@ def run(
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=1)
+        if not isinstance(e, typer.Exit):
+            typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+            raise typer.Exit(code=1)
+        raise
 
 
 @app.command()

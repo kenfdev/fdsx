@@ -1,0 +1,22 @@
+name: Batch Task Execution Flow
+start_at: plan
+version: '1.0'
+
+task_splitter:
+  provider: claude
+  model: claude-3-5-sonnet-20241022
+
+states:
+  plan:
+    type: task
+    provider: system
+    command: "echo 'Planning for task: $task'"
+    result_path: $.plan
+    next: implement
+
+  implement:
+    type: task
+    provider: system
+    command: "echo 'Implementation for task: $task'"
+    result_path: $.implementation
+    end: true

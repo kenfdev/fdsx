@@ -62,7 +62,7 @@
 - A results summary is displayed at the end
 - `--input` and `--tasks` are mutually exclusive (validation error if both provided)
 
-- [ ] T057 [US7] Implement batch task splitter in `src/fdsx/core/batch.py`
+- [x] T057 [US7] Implement batch task splitter in `src/fdsx/core/batch.py`
   - `split_tasks(task_content: str, flow: Flow, task_splitter: TaskSplitter) -> list[str]`: invoke the task_splitter LLM to split the task file content into individual task descriptions
     - Build a prompt that includes the task file content and the workflow definition (state names, input variables) to guide the LLM on appropriate granularity
     - Call the provider specified by `task_splitter.provider` with `task_splitter.model`
@@ -72,14 +72,14 @@
   - `display_batch_summary(results: list[dict]) -> None`: display a summary table of all task results to stderr (task index, description preview, status, thread_id)
   - Reference: spec.md FR-13 for batch execution behavior
 
-- [ ] T058 [P] [US7] Write unit tests for batch task splitter in `tests/unit/test_batch.py`
+- [x] T058 [P] [US7] Write unit tests for batch task splitter in `tests/unit/test_batch.py`
   - Test `split_tasks`: mock provider returns numbered task list → parses correctly into list of strings
   - Test `split_tasks`: mock provider returns empty response → returns empty list
   - Test `display_task_list`: mock stdin "y" → returns True
   - Test `display_task_list`: mock stdin "n" → returns False
   - Test `display_batch_summary`: verify output format includes task index, description, status, thread_id
 
-- [ ] T059 [US7] Implement batch execution orchestrator in `src/fdsx/core/engine.py`
+- [x] T059 [US7] Implement batch execution orchestrator in `src/fdsx/core/engine.py`
   - `run_batch(workflow_path: Path, tasks_file: Path, base_dir: Path | None = None) -> list[dict]`: orchestrate batch execution
     - Load and validate the flow YAML
     - Verify `task_splitter` is defined in the flow; raise error if missing
@@ -92,18 +92,18 @@
     - Call `display_batch_summary` at the end
   - Reference: spec.md FR-13, clarification "approve/reject only"
 
-- [ ] T060 [US7] Add `--tasks` option to CLI and validate mutual exclusion in `src/fdsx/cli/main.py`
+- [x] T060 [US7] Add `--tasks` option to CLI and validate mutual exclusion in `src/fdsx/cli/main.py`
   - Add `--tasks` option to the `run` command: `tasks_file: Path | None = typer.Option(None, "--tasks", help="Batch task file path")`
   - Validate `--input` and `--tasks` mutual exclusion: if both provided, print error and exit with code 2
   - When `--tasks` is provided: call `engine.run_batch(workflow, tasks_file, base_dir)` instead of `engine.run_flow`
   - Print batch results summary JSON to stdout on completion
   - Exit code: 0 if all tasks succeed, 1 if any task failed
 
-- [ ] T061 [US7] Create batch execution test fixtures in `tests/fixtures/`
+- [x] T061 [US7] Create batch execution test fixtures in `tests/fixtures/`
   - `tests/fixtures/batch_flow.yaml`: simple 2-state flow (Plan → Implement) using system provider with `task_splitter: {provider: system, model: default}` and system command that echoes task descriptions
   - `tests/fixtures/sample_tasks.md`: sample task file with 3 task descriptions for testing batch splitting
 
-- [ ] T062 [US7] Write integration test for batch execution in `tests/integration/test_batch.py`
+- [x] T062 [US7] Write integration test for batch execution in `tests/integration/test_batch.py`
   - Test full batch flow: mock the task_splitter provider to return 3 tasks → approve → all 3 execute with independent thread_ids
   - Test batch rejection: mock stdin to reject task list → verify no tasks executed
   - Test batch failure handling: mock one task to fail → prompt to continue → remaining tasks execute
