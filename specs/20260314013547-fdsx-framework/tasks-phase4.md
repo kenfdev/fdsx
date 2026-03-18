@@ -130,14 +130,14 @@
 
 **Story Goal**: Enhance terminal output during parallel execution with real-time status line updates and post-completion branch output display.
 
-- [ ] T065 Implement parallel status line updates in `src/fdsx/display/terminal.py`
+- [x] T065 Implement parallel status line updates in `src/fdsx/display/terminal.py`
   - `display_branch_start(state_name: str, branch_index: int, provider: str, model: str | None) -> None`: print `  [branch-N] provider/model  ⏳ running...` to stderr
   - `display_branch_complete(state_name: str, branch_index: int, provider: str, duration: float) -> None`: print `  [branch-N] provider/model  ✓ completed (Xs)` to stderr
   - `display_branch_failed(state_name: str, branch_index: int, provider: str) -> None`: print `  [branch-N] provider/model  ✗ failed` to stderr
   - `display_parallel_results(state_name: str, branch_results: list[dict]) -> None`: after all branches complete, display each branch's output with header `--- branch-N (provider/model) ---`
   - Reference: contracts/cli.md "Parallel Execution Status" for exact format
 
-- [ ] T066 Integrate parallel display callbacks into compiler in `src/fdsx/core/compiler.py`
+- [x] T066 Integrate parallel display callbacks into compiler in `src/fdsx/core/compiler.py`
   - In `_create_branch_executor`: call `display_branch_start` before provider execution
   - On branch success: call `display_branch_complete` with duration
   - On branch failure: call `display_branch_failed`

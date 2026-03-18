@@ -154,7 +154,7 @@ def run_flow(
                     if "__interrupt__" not in state_snapshot:
                         last_state = state_snapshot
 
-        if needs_checkpointer and checkpoint_manager is not None:
+        if needs_checkpointer:
             final_state_info = compiled.graph.get_state(config)
             if final_state_info.values:
                 last_state = final_state_info.values

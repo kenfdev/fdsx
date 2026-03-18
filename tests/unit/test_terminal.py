@@ -1,7 +1,13 @@
 from io import StringIO
 from unittest.mock import patch
 
-from fdsx.display.terminal import display_wait_prompt
+from fdsx.display.terminal import (
+    display_branch_complete,
+    display_branch_failed,
+    display_branch_start,
+    display_parallel_results,
+    display_wait_prompt,
+)
 
 
 class TestDisplayWaitPrompt:
@@ -133,3 +139,327 @@ class TestDisplayWaitPrompt:
         assert "\x1b" not in stderr_text, "ANSI escape in state_name leaked to terminal"
         # The visible text content must still appear in the header
         assert "malicious_state" in stderr_text
+
+
+class TestDisplayBranchStart:
+    """Tests for display_branch_start function."""
+
+    def test_displays_branch_start_with_model(self):
+        """Branch start shows provider/model format."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_start(
+                state_name="review",
+                branch_index=0,
+                provider="claude",
+                model="sonnet",
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "[branch-1]" in stderr_text
+        assert "claude/sonnet" in stderr_text
+        assert "⏳ running..." in stderr_text
+
+    def test_displays_branch_start_without_model(self):
+        """Branch start shows provider only when model is None."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_start(
+                state_name="review",
+                branch_index=1,
+                provider="openai",
+                model=None,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "[branch-2]" in stderr_text
+        assert "openai" in stderr_text
+        assert "⏳ running..." in stderr_text
+        assert "/None" not in stderr_text
+
+    def test_branch_index_is_1_indexed(self):
+        """Branch index should be 1-indexed in display."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_start(
+                state_name="parallel",
+                branch_index=2,
+                provider="test",
+                model=None,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "branch-3" in stderr_text
+
+    def test_ansi_escape_sequences_stripped_from_model(self):
+        """Regression: ANSI escape sequences in model must be stripped.
+
+        A crafted branch with ANSI escape codes in the model field could
+        spoof terminal output or manipulate the operator's terminal.
+        """
+        ansi_model = "\x1b[31mmalicious_model\x1b[0m"
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_start(
+                state_name="review",
+                branch_index=0,
+                provider="test",
+                model=ansi_model,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        # ESC byte must not appear in terminal output
+        assert "\x1b" not in stderr_text, "ANSI escape in model leaked to terminal"
+        # Visible text content must still be present
+        assert "malicious_model" in stderr_text
+
+
+class TestDisplayBranchComplete:
+    """Tests for display_branch_complete function."""
+
+    def test_displays_branch_complete_with_model(self):
+        """Branch completion shows provider/model and duration."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_complete(
+                state_name="review",
+                branch_index=0,
+                provider="claude",
+                model="sonnet",
+                duration=5.5,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "[branch-1]" in stderr_text
+        assert "claude/sonnet" in stderr_text
+        assert "✓ completed" in stderr_text
+        assert "(5s)" in stderr_text
+
+    def test_displays_branch_complete_without_model(self):
+        """Branch completion shows provider only when model is None."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_complete(
+                state_name="review",
+                branch_index=0,
+                provider="claude",
+                model=None,
+                duration=5.5,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "[branch-1]" in stderr_text
+        assert "claude" in stderr_text
+        assert "✓ completed" in stderr_text
+        assert "(5s)" in stderr_text
+
+    def test_duration_is_truncated_to_integer(self):
+        """Duration should be truncated to integer second (int() behavior)."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_complete(
+                state_name="review",
+                branch_index=0,
+                provider="test",
+                model=None,
+                duration=3.7,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "(3s)" in stderr_text
+
+    def test_ansi_escape_sequences_stripped_from_model(self):
+        """Regression: ANSI escape sequences in model must be stripped."""
+        ansi_model = "\x1b[31mmalicious_model\x1b[0m"
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_complete(
+                state_name="review",
+                branch_index=0,
+                provider="test",
+                model=ansi_model,
+                duration=5.0,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "\x1b" not in stderr_text, "ANSI escape in model leaked to terminal"
+        assert "malicious_model" in stderr_text
+
+
+class TestDisplayBranchFailed:
+    """Tests for display_branch_failed function."""
+
+    def test_displays_branch_failed_with_model(self):
+        """Branch failure shows provider/model and failure marker."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_failed(
+                state_name="review",
+                branch_index=1,
+                provider="openai",
+                model="gpt-4",
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "[branch-2]" in stderr_text
+        assert "openai/gpt-4" in stderr_text
+        assert "✗ failed" in stderr_text
+
+    def test_displays_branch_failed_without_model(self):
+        """Branch failure shows provider only when model is None."""
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_failed(
+                state_name="review",
+                branch_index=1,
+                provider="openai",
+                model=None,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "[branch-2]" in stderr_text
+        assert "openai" in stderr_text
+        assert "✗ failed" in stderr_text
+
+    def test_ansi_escape_sequences_stripped_from_model(self):
+        """Regression: ANSI escape sequences in model must be stripped."""
+        ansi_model = "\x1b[31mmalicious_model\x1b[0m"
+        captured_stderr = StringIO()
+
+        with patch("sys.stderr", captured_stderr):
+            display_branch_failed(
+                state_name="review",
+                branch_index=0,
+                provider="test",
+                model=ansi_model,
+            )
+
+        stderr_text = captured_stderr.getvalue()
+        assert "\x1b" not in stderr_text, "ANSI escape in model leaked to terminal"
+        assert "malicious_model" in stderr_text
+
+
+class TestDisplayParallelResults:
+    """Tests for display_parallel_results function."""
+
+    def test_displays_all_branch_outputs(self):
+        """All branch results should be displayed with headers."""
+        captured_stderr = StringIO()
+
+        branch_results = [
+            {
+                "index": 0,
+                "provider": "claude",
+                "model": "sonnet",
+                "output": "first output",
+                "exit_code": 0,
+            },
+            {
+                "index": 1,
+                "provider": "openai",
+                "model": "gpt-4",
+                "output": "second output",
+                "exit_code": 0,
+            },
+        ]
+
+        with patch("sys.stderr", captured_stderr):
+            display_parallel_results("parallel_state", branch_results)
+
+        stderr_text = captured_stderr.getvalue()
+        assert "--- branch-1 (claude/sonnet) ---" in stderr_text
+        assert "first output" in stderr_text
+        assert "--- branch-2 (openai/gpt-4) ---" in stderr_text
+        assert "second output" in stderr_text
+
+    def test_displays_failed_branch(self):
+        """Failed branches should show FAILED marker in header."""
+        captured_stderr = StringIO()
+
+        branch_results = [
+            {
+                "index": 0,
+                "provider": "claude",
+                "model": "sonnet",
+                "output": "error occurred",
+                "exit_code": 1,
+            },
+        ]
+
+        with patch("sys.stderr", captured_stderr):
+            display_parallel_results("parallel_state", branch_results)
+
+        stderr_text = captured_stderr.getvalue()
+        assert "--- branch-1 (claude/sonnet) FAILED ---" in stderr_text
+        assert "error occurred" in stderr_text
+
+    def test_multiline_output_preserved(self):
+        """Multiline output should be preserved in display."""
+        captured_stderr = StringIO()
+
+        branch_results = [
+            {
+                "index": 0,
+                "provider": "test",
+                "output": "line 1\nline 2\nline 3",
+                "exit_code": 0,
+            },
+        ]
+
+        with patch("sys.stderr", captured_stderr):
+            display_parallel_results("parallel_state", branch_results)
+
+        stderr_text = captured_stderr.getvalue()
+        assert "line 1" in stderr_text
+        assert "line 2" in stderr_text
+        assert "line 3" in stderr_text
+
+    def test_empty_output_handled(self):
+        """Empty output should not cause issues."""
+        captured_stderr = StringIO()
+
+        branch_results = [
+            {"index": 0, "provider": "test", "output": "", "exit_code": 0},
+        ]
+
+        with patch("sys.stderr", captured_stderr):
+            display_parallel_results("parallel_state", branch_results)
+
+        stderr_text = captured_stderr.getvalue()
+        assert "--- branch-1 (test) ---" in stderr_text
+
+    def test_ansi_escape_sequences_stripped_from_output(self):
+        """Regression: ANSI escape sequences in branch output must be stripped.
+
+        Branch output comes from provider stdout, so attacker-controlled LLM output
+        could inject ANSI sequences to spoof prompts, alter terminal state, or
+        leak sensitive values into CI/logs.
+        """
+        ansi_output = "\x1b[31mMalicious\x1b[0m output\x1b]0;spoof title\x07"
+        captured_stderr = StringIO()
+
+        branch_results = [
+            {"index": 0, "provider": "test", "output": ansi_output, "exit_code": 0},
+        ]
+
+        with patch("sys.stderr", captured_stderr):
+            display_parallel_results("parallel_state", branch_results)
+
+        stderr_text = captured_stderr.getvalue()
+        # ESC byte must not appear in terminal output
+        assert "\x1b" not in stderr_text, "ANSI escape in output leaked to terminal"
+        # BEL byte must not appear
+        assert "\x07" not in stderr_text, "BEL byte leaked to terminal"
+        # Visible text content must still be present
+        assert "Malicious" in stderr_text
+        assert "output" in stderr_text

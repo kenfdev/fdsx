@@ -1,5 +1,6 @@
 import sys
 from datetime import datetime
+from typing import Any
 
 
 def _sanitize_output(text: str) -> str:
@@ -87,34 +88,108 @@ def display_parallel_start(state_name: str, branch_count: int) -> None:
     print(line, file=sys.stderr)
 
 
-def display_branch_status(
+def display_branch_start(
     state_name: str,
     branch_index: int,
     provider: str,
-    status: str,
-    duration: float | None,
+    model: str | None = None,
 ) -> None:
-    """Display branch status in terminal.
+    """Display branch start in terminal.
 
     Args:
         state_name: Name of the parent parallel state
         branch_index: Index of the branch (0-based)
         provider: Provider name for the branch
-        status: Status string - "running", "completed", "failed"
-        duration: Duration in seconds (None if still running)
+        model: Model name for the branch (optional)
     """
-    if status == "running":
-        status_text = "⏳ running..."
-    elif status == "completed" and duration is not None:
-        status_text = f"✓ completed ({int(duration)}s)"
-    elif status == "failed":
-        status_text = "✗ failed"
-    else:
-        status_text = status
-
-    display_index = branch_index + 1  # CLI contract is 1-indexed
-    line = f"  [branch-{display_index}] {provider}  {status_text}"
+    display_index = branch_index + 1
+    sanitized_model = _sanitize_output(model) if model else None
+    model_info = f"/{sanitized_model}" if sanitized_model else ""
+    line = f"  [branch-{display_index}] {provider}{model_info}  ⏳ running..."
     print(line, file=sys.stderr)
+
+
+def display_branch_complete(
+    state_name: str,
+    branch_index: int,
+    provider: str,
+    model: str | None = None,
+    duration: float | None = None,
+) -> None:
+    """Display branch completion in terminal.
+
+    Args:
+        state_name: Name of the parent parallel state
+        branch_index: Index of the branch (0-based)
+        provider: Provider name for the branch
+        model: Model name for the branch (optional)
+        duration: Duration in seconds (optional, for display)
+    """
+    display_index = branch_index + 1
+    sanitized_model = _sanitize_output(model) if model else None
+    model_info = f"/{sanitized_model}" if sanitized_model else ""
+    duration_info = f" ({int(duration)}s)" if duration is not None else ""
+    line = (
+        f"  [branch-{display_index}] {provider}{model_info}  ✓ completed{duration_info}"
+    )
+    print(line, file=sys.stderr)
+
+
+def display_branch_failed(
+    state_name: str,
+    branch_index: int,
+    provider: str,
+    model: str | None = None,
+) -> None:
+    """Display branch failure in terminal.
+
+    Args:
+        state_name: Name of the parent parallel state
+        branch_index: Index of the branch (0-based)
+        provider: Provider name for the branch
+        model: Model name for the branch (optional)
+    """
+    display_index = branch_index + 1
+    sanitized_model = _sanitize_output(model) if model else None
+    model_info = f"/{sanitized_model}" if sanitized_model else ""
+    line = f"  [branch-{display_index}] {provider}{model_info}  ✗ failed"
+    print(line, file=sys.stderr)
+
+
+def display_parallel_results(
+    state_name: str,
+    branch_results: list[dict[str, Any]],
+) -> None:
+    """Display parallel branch results in terminal.
+
+    Args:
+        state_name: Name of the parallel state
+        branch_results: List of branch result dictionaries
+    """
+    print("", file=sys.stderr)
+    for result in branch_results:
+        branch_index = result.get("index", 0)
+        display_index = branch_index + 1
+        provider = result.get("provider", "unknown")
+        model = result.get("model")
+        output = result.get("output", "")
+        exit_code = result.get("exit_code", 1)
+
+        sanitized_provider = _sanitize_output(provider) if provider else "unknown"
+        sanitized_model = _sanitize_output(model) if model else None
+        model_info = f"/{sanitized_model}" if sanitized_model else ""
+
+        if exit_code == 0:
+            header = (
+                f"--- branch-{display_index} ({sanitized_provider}{model_info}) ---"
+            )
+        else:
+            header = f"--- branch-{display_index} ({sanitized_provider}{model_info}) FAILED ---"
+
+        print(_sanitize_output(header), file=sys.stderr)
+        if output:
+            for line in output.splitlines():
+                print(_sanitize_output(line), file=sys.stderr)
 
 
 def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> str:

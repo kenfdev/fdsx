@@ -448,12 +448,11 @@ def _create_branch_executor(
         branch = state.branches[branch_index]
 
         start_time = time.time()
-        terminal.display_branch_status(
+        terminal.display_branch_start(
             state_name=state_name,
             branch_index=branch_index,
             provider=branch.provider,
-            status="running",
-            duration=None,
+            model=branch.model,
         )
 
         prompt = branch.prompt_template or ""
@@ -512,12 +511,11 @@ def _create_branch_executor(
         duration = time.time() - start_time
 
         if result.exit_code != 0:
-            terminal.display_branch_status(
+            terminal.display_branch_failed(
                 state_name=state_name,
                 branch_index=branch_index,
                 provider=branch.provider,
-                status="failed",
-                duration=duration,
+                model=branch.model,
             )
             branch_result: dict[str, Any] = {
                 "index": branch_index,
@@ -527,12 +525,11 @@ def _create_branch_executor(
                 "_duration": duration,
             }
         elif branch.extract and extracted is None:
-            terminal.display_branch_status(
+            terminal.display_branch_failed(
                 state_name=state_name,
                 branch_index=branch_index,
                 provider=branch.provider,
-                status="failed",
-                duration=duration,
+                model=branch.model,
             )
             branch_result = {
                 "index": branch_index,
@@ -542,11 +539,11 @@ def _create_branch_executor(
                 "_duration": duration,
             }
         else:
-            terminal.display_branch_status(
+            terminal.display_branch_complete(
                 state_name=state_name,
                 branch_index=branch_index,
                 provider=branch.provider,
-                status="completed",
+                model=branch.model,
                 duration=duration,
             )
             branch_result = {
@@ -649,6 +646,23 @@ def _create_collector_node(
             )
 
         new_state = set_jsonpath(state.result_path, state_dict, clean_results)
+
+        display_results = []
+        for r in sorted_results:
+            idx = r.get("index", 0)
+            if idx < len(state.branches):
+                branch = state.branches[idx]
+                display_results.append(
+                    {
+                        **r,
+                        "provider": branch.provider,
+                        "model": branch.model,
+                    }
+                )
+            else:
+                display_results.append({**r, "provider": "unknown", "model": None})
+
+        terminal.display_parallel_results(state_name, display_results)
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
