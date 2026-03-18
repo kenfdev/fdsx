@@ -1,4 +1,5 @@
 import operator
+import subprocess
 import time
 from typing import Annotated, Any, Callable, TypedDict
 
@@ -310,24 +311,31 @@ def _create_task_node(
         extracted: str | None = None
 
         for attempt in range(max_retries + 1):
-            if state.provider == "system":
-                resolved_command = resolve_template_shell_safe(
-                    state.command or "", state_dict
-                )
-                result = provider.execute(
-                    prompt="",
-                    model=state.model,
-                    timeout=state.timeout_seconds,
-                    command=resolved_command,
-                    output_callback=None,
-                )
-            else:
-                result = provider.execute(
-                    prompt=resolved_prompt,
-                    model=state.model,
-                    timeout=state.timeout_seconds,
-                    output_callback=terminal.display_output_line,
-                )
+            if attempt > 0:
+                time.sleep(min(2 ** (attempt - 1), 30))
+            try:
+                if state.provider == "system":
+                    resolved_command = resolve_template_shell_safe(
+                        state.command or "", state_dict
+                    )
+                    result = provider.execute(
+                        prompt="",
+                        model=state.model,
+                        timeout=state.timeout_seconds,
+                        command=resolved_command,
+                        output_callback=None,
+                    )
+                else:
+                    result = provider.execute(
+                        prompt=resolved_prompt,
+                        model=state.model,
+                        timeout=state.timeout_seconds,
+                        output_callback=terminal.display_output_line,
+                    )
+            except (subprocess.TimeoutExpired, TimeoutError) as exc:
+                last_error = str(exc)
+                result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
+                continue
 
             if result.exit_code == 0:
                 if state.extract:
@@ -458,7 +466,9 @@ def _create_branch_executor(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        for _attempt in range(max_retries + 1):
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                time.sleep(min(2 ** (attempt - 1), 30))
             try:
                 if branch.provider == "system":
                     resolved_command = resolve_template_shell_safe(
@@ -478,7 +488,7 @@ def _create_branch_executor(
                         timeout=branch.timeout_seconds,
                         output_callback=terminal.display_output_line,
                     )
-            except Exception as exc:
+            except (subprocess.TimeoutExpired, TimeoutError) as exc:
                 last_error = str(exc)
                 result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
                 continue
@@ -787,7 +797,10 @@ def _create_wait_interrupt_node(
 
         if recorder is not None:
             recorder.record_state_complete(
-                state_name, "success", user_selection, [state.result_path],
+                state_name,
+                "success",
+                user_selection,
+                [state.result_path],
                 state_type="wait",
             )
 

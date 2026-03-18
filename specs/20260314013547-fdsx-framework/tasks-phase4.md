@@ -114,13 +114,13 @@
 
 **Story Goal**: Add exponential backoff for retries and ensure timeout handling is robust across all retry paths.
 
-- [ ] T063 Implement exponential backoff for retry loops in `src/fdsx/core/compiler.py`
+- [x] T063 Implement exponential backoff for retry loops in `src/fdsx/core/compiler.py`
   - Modify the retry loop in `_create_task_node` to add exponential backoff delay between retries: `time.sleep(min(2 ** attempt, 30))` (1s, 2s, 4s, 8s... capped at 30s)
   - Apply the same backoff to the retry loop in `_create_branch_executor` for parallel branch retries
   - Add `import time` at the top of the file
   - Ensure the first attempt has no delay (backoff starts from the second attempt)
 
-- [ ] T064 [P] Write unit test for exponential backoff in `tests/unit/test_backoff.py`
+- [x] T064 [P] Write unit test for exponential backoff in `tests/unit/test_backoff.py`
   - Test: mock `time.sleep` and verify backoff delays for 3 retries → sleep(1), sleep(2), sleep(4)
   - Test: verify first attempt has no delay
   - Test: verify backoff is capped at 30 seconds for high retry counts
