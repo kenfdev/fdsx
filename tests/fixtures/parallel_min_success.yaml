@@ -1,0 +1,27 @@
+name: Parallel Min Success Flow
+start_at: parallel_with_failure
+version: '1.0'
+
+states:
+  parallel_with_failure:
+    type: parallel
+    branches:
+      - provider: system
+        command: echo "success"
+        retry: 0
+      - provider: system
+        command: echo "success"
+        retry: 0
+      - provider: system
+        command: "exit 1"
+        retry: 0
+    result_path: $.results
+    min_success: 2
+    next: check_success
+
+  check_success:
+    type: task
+    provider: system
+    command: echo "Flow continued after partial failure"
+    result_path: $.success_check
+    end: true

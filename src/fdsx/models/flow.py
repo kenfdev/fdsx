@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _parse_path_segments(path: str) -> list[str | int]:
@@ -64,6 +64,16 @@ class TaskSplitter(BaseModel):
     provider: str = Field(..., description="Provider name (claude/opencode/codex)")
     model: str = Field(..., description="Model name")
 
+    @model_validator(mode="after")
+    def validate_provider(self) -> "TaskSplitter":
+        valid_llm_providers = {"claude", "opencode", "codex"}
+        if self.provider not in valid_llm_providers:
+            raise ValueError(
+                f"task_splitter provider must be one of "
+                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
+            )
+        return self
+
 
 class ExtractRule(BaseModel):
     """Output extraction configuration."""
@@ -89,6 +99,21 @@ class WebhookConfig(BaseModel):
 
     url: str = Field(..., description="Webhook URL")
     template: str = Field(..., description="Message template with {variable} refs")
+
+    @field_validator("url")
+    @classmethod
+    def validate_https(cls, v: str) -> str:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+        if parsed.scheme == "https":
+            return v
+        if parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"):
+            return v
+        raise ValueError(
+            f"Webhook URL must use HTTPS (got {parsed.scheme}://). "
+            "HTTP is only allowed for localhost."
+        )
 
 
 class NotifyConfig(BaseModel):
@@ -326,7 +351,7 @@ class WaitState(BaseModel):
     type: Literal["wait"] = "wait"
     mode: Literal["prompt"] = "prompt"
     message: str = Field(..., description="Terminal display message")
-    choices: list[str] = Field(..., description="User selection options")
+    choices: list[str] = Field(..., min_length=1, description="User selection options")
     result_path: str = Field(..., description="JSONPath for selection result")
     notify: NotifyConfig | None = Field(
         default=None, description="Webhook notification"

@@ -81,6 +81,7 @@ class TestParallelBranchExtraction:
                         ),
                     ],
                     result_path="$.parallel_results",
+                    min_success=0,
                     end=True,
                 ),
             },

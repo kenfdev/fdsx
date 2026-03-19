@@ -12,6 +12,7 @@ from fdsx.models.flow import (
     PassState,
     TaskState,
     WaitState,
+    WebhookConfig,
 )
 
 
@@ -475,3 +476,76 @@ class TestExtractPathValidation:
                     strategy=["keyword"], pattern="A|B", result_path="$.output[0]"
                 ),
             )
+
+
+class TestWaitStateValidation:
+    """CQ-2: Regression tests for WaitState.choices validation."""
+
+    def test_wait_state_rejects_empty_choices(self):
+        """CQ-2: WaitState with empty choices list must raise ValidationError."""
+        with pytest.raises(ValidationError, match="too_short|at least 1"):
+            WaitState(
+                type="wait",
+                mode="prompt",
+                message="Continue?",
+                choices=[],
+                result_path="$.choice",
+            )
+
+    def test_wait_state_accepts_single_choice(self):
+        """WaitState with one choice must be accepted."""
+        state = WaitState(
+            type="wait",
+            mode="prompt",
+            message="Continue?",
+            choices=["yes"],
+            result_path="$.choice",
+        )
+        assert state.choices == ["yes"]
+
+    def test_wait_state_accepts_multiple_choices(self):
+        """WaitState with multiple choices must be accepted."""
+        state = WaitState(
+            type="wait",
+            mode="prompt",
+            message="Choose:",
+            choices=["approve", "reject", "retry"],
+            result_path="$.choice",
+        )
+        assert len(state.choices) == 3
+
+
+class TestWebhookConfigValidation:
+    """SEC-3: Regression tests for WebhookConfig URL validation."""
+
+    def test_webhook_rejects_http_non_localhost(self):
+        """SEC-3: Webhook URL with http:// (non-localhost) must raise ValidationError."""
+        with pytest.raises(ValidationError, match="HTTPS"):
+            WebhookConfig(
+                url="http://evil.com/hook",
+                template="Test",
+            )
+
+    def test_webhook_accepts_https(self):
+        """SEC-3: Webhook URL with https:// must be accepted."""
+        config = WebhookConfig(
+            url="https://hooks.example.com/services/TOKEN",
+            template="Test message",
+        )
+        assert config.url == "https://hooks.example.com/services/TOKEN"
+
+    def test_webhook_accepts_http_localhost(self):
+        """SEC-3: Webhook URL with http://localhost must be accepted for testing."""
+        config = WebhookConfig(
+            url="http://localhost:8080/webhook",
+            template="Test",
+        )
+        assert config.url == "http://localhost:8080/webhook"
+
+    def test_webhook_accepts_http_127_0_0_1(self):
+        """SEC-3: Webhook URL with http://127.0.0.1 must be accepted for testing."""
+        config = WebhookConfig(
+            url="http://127.0.0.1:9000/webhook",
+            template="Test",
+        )
+        assert config.url == "http://127.0.0.1:9000/webhook"
