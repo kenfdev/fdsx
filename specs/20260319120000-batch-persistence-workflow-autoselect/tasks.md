@@ -20,14 +20,14 @@
 
 ## Phase 3: Split Command
 
-- [ ] T13: Refactor split prompt — Update `_build_task_split_prompt()` to request JSON with dependency groups in `src/fdsx/core/batch.py`
-- [ ] T14: JSON parser — New `_parse_structured_tasks()` replacing `_parse_task_list()`, returns `list[list[TaskEntry]]` in `src/fdsx/core/batch.py`
-- [ ] T15: File writer — New `write_task_files(groups, tasks_dir)` — creates numbered YAML files from groups in `src/fdsx/core/batch.py`
-- [ ] T16: Split CLI command — Add `split` command to typer app with `task-file` arg and `--force` flag in `src/fdsx/cli/main.py`
-- [ ] T17: Non-empty dir guard — Check `.fdsx/tasks/` is empty, error or clear with `--force`
-- [ ] T18: Config integration — Split command reads task_splitter config from `load_config()` instead of flow
-- [ ] T19: Unit tests — TDD: JSON parsing, file writing, non-empty dir guard in `tests/unit/test_batch.py`
-- [ ] T20: Integration test — End-to-end split with mock provider, verify file output in `tests/integration/test_split.py` (NEW)
+- [x] T13: Refactor split prompt — Update `_build_task_split_prompt()` to request JSON with dependency groups in `src/fdsx/core/batch.py`
+- [x] T14: JSON parser — New `_parse_structured_tasks()` replacing `_parse_task_list()`, returns `list[list[TaskEntry]]` in `src/fdsx/core/batch.py`
+- [x] T15: File writer — New `write_task_files(groups, tasks_dir)` — creates numbered YAML files from groups in `src/fdsx/core/batch.py`
+- [x] T16: Split CLI command — Add `split` command to typer app with `task-file` arg and `--force` flag in `src/fdsx/cli/main.py`
+- [x] T17: Non-empty dir guard — Check `.fdsx/tasks/` is empty, error or clear with `--force`
+- [x] T18: Config integration — Split command reads task_splitter config from `load_config()` instead of flow
+- [x] T19: Unit tests — TDD: JSON parsing, file writing, non-empty dir guard in `tests/unit/test_batch.py`
+- [x] T20: Integration test — End-to-end split with mock provider, verify file output in `tests/integration/test_split.py` (NEW)
 
 ## Phase 4: Tasks-Dir Run Mode
 

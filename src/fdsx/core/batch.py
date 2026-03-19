@@ -1,10 +1,28 @@
+import json
+import re as _re
 import sys
+from pathlib import Path
 from typing import Any
 
 from fdsx.core.config import TaskSplitterConfig
 from fdsx.display.terminal import _sanitize_output
 from fdsx.models.flow import Flow
+from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 from fdsx.providers.base import get_provider
+
+
+TASKS_DIR = ".fdsx/tasks"
+
+
+def _slugify(text: str, max_length: int = 40) -> str:
+    """Convert text to a URL-safe slug for use in filenames."""
+    slug = text.lower()
+    slug = _re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = _re.sub(r"[\s_]+", "-", slug).strip("-")
+    slug = _re.sub(r"-+", "-", slug)
+    if len(slug) > max_length:
+        slug = slug[:max_length].rstrip("-")
+    return slug or "task"
 
 
 def split_tasks(
@@ -35,19 +53,68 @@ def split_tasks(
     if result.exit_code != 0:
         raise RuntimeError(f"Task splitter failed: {result.stderr}")
 
-    tasks = _parse_task_list(result.stdout)
+    try:
+        groups = _parse_structured_tasks(result.stdout)
+        flattened = [entry.description for group in groups for entry in group]
+        return flattened
+    except ValueError:
+        return _parse_task_list(result.stdout)
 
-    return tasks
+
+def split_tasks_to_groups(
+    task_content: str,
+    task_splitter: TaskSplitterConfig,
+    state_names: list[str] | None = None,
+    input_vars: set[str] | None = None,
+) -> list[list[TaskEntry]]:
+    """Invoke the task_splitter LLM to split task content into file groups.
+
+    This is the standalone version used by the split CLI command that doesn't
+    require a flow object.
+
+    Args:
+        task_content: The content of the task file
+        task_splitter: The task splitter configuration
+        state_names: Optional list of state names for context
+        input_vars: Optional set of input variables for context
+
+    Returns:
+        List of file groups. Each group contains sequentially-dependent
+        TaskEntry objects that belong in the same file.
+
+    Raises:
+        RuntimeError: If the LLM call fails
+        ValueError: If the response cannot be parsed
+    """
+    provider = get_provider(task_splitter.provider)
+
+    prompt = _build_task_split_prompt(task_content, state_names, input_vars)
+
+    result = provider.execute(
+        prompt=prompt,
+        model=task_splitter.model,
+    )
+
+    if result.exit_code != 0:
+        raise RuntimeError(f"Task splitter failed: {result.stderr}")
+
+    return _parse_structured_tasks(result.stdout)
 
 
 def _build_task_split_prompt(
-    task_content: str, state_names: list[str], input_vars: set[str]
+    task_content: str, state_names: list[str] | None, input_vars: set[str] | None
 ) -> str:
-    """Build the prompt for the task splitter LLM."""
-    states_desc = ", ".join(state_names)
-    input_vars_desc = ", ".join(input_vars) if input_vars else "none"
+    """Build the prompt for the task splitter LLM.
 
-    prompt = f"""You are a task splitter. Given a batch of work, split it into individual executable tasks.
+    Args:
+        task_content: The content of the task file
+        state_names: List of state names in the workflow (optional for standalone split)
+        input_vars: Set of input variable names (optional for standalone split)
+    """
+    states_desc = ", ".join(state_names) if state_names else "any workflow"
+    input_vars_desc = ", ".join(input_vars) if input_vars else "task"
+
+    prompt = f"""You are a task splitter. Given a batch of work, split it into individual executable tasks and organize them into file groups.
 
 The workflow has these states: {states_desc}
 The workflow accepts these input variables: {input_vars_desc}
@@ -58,12 +125,29 @@ TASK CONTENT:
 INSTRUCTIONS:
 1. Analyze the task content above
 2. Split it into individual, self-contained task descriptions
-3. Each task should be executable by the workflow and should set a 'task' variable
-4. Output ONLY a numbered list (1., 2., 3., etc.) with one task per line
-5. Keep tasks concise but clear
-6. Do NOT include any additional text, explanations, or formatting
+3. Group tasks that DEPEND on each other sequentially into the same group (they will be executed in order within one file)
+4. Place independent tasks (no dependencies between them) in SEPARATE groups (each becomes its own file)
+5. Within each group, order tasks by their sequential dependency (first task executed first)
+6. Output ONLY valid JSON in the format described below
 
-OUTPUT:"""
+OUTPUT FORMAT:
+Return a JSON array of file groups. Each group is an array of task objects that belong in the same file.
+```json
+[
+  [
+    {{"description": "Independent task A"}}
+  ],
+  [
+    {{"description": "Step 1 of related work"}},
+    {{"description": "Step 2 that depends on step 1"}}
+  ],
+  [
+    {{"description": "Independent task B"}}
+  ]
+]
+```
+
+IMPORTANT: Output ONLY the JSON array, no additional text, explanations, or markdown formatting."""
 
     return prompt
 
@@ -114,6 +198,107 @@ def _parse_task_list(response: str) -> list[str]:
             tasks.append(line)
 
     return tasks
+
+
+def _parse_structured_tasks(response: str) -> list[list[TaskEntry]]:
+    """Parse the LLM JSON response into a list of file groups.
+
+    Each group is a list of TaskEntry objects that belong in the same file.
+    Tasks within a group execute sequentially; separate groups become
+    separate files.
+
+    Args:
+        response: The LLM response containing JSON
+
+    Returns:
+        List of file groups, each containing TaskEntry objects
+
+    Raises:
+        ValueError: If JSON parsing fails or format is invalid
+    """
+    cleaned = response.strip()
+
+    code_block_patterns = [
+        r"```json\s*(.*?)\s*```",
+        r"```\s*(.*?)\s*```",
+    ]
+    for pattern in code_block_patterns:
+        import re
+
+        match = re.search(pattern, cleaned, re.DOTALL)
+        if match:
+            cleaned = match.group(1).strip()
+            break
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON from LLM response: {e}") from e
+
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Expected JSON array of file groups, got {type(data).__name__}"
+        )
+
+    groups: list[list[TaskEntry]] = []
+    for i, group in enumerate(data):
+        if not isinstance(group, list):
+            raise ValueError(
+                f"Group {i} must be an array of tasks, got {type(group).__name__}"
+            )
+
+        entries: list[TaskEntry] = []
+        for j, task in enumerate(group):
+            if not isinstance(task, dict):
+                raise ValueError(
+                    f"Task {j} in group {i} must be an object, got {type(task).__name__}"
+                )
+            if "description" not in task:
+                raise ValueError(
+                    f"Task {j} in group {i} missing required 'description' field"
+                )
+            entries.append(TaskEntry(description=task["description"]))
+        groups.append(entries)
+
+    return groups
+
+
+def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Path]:
+    """Write task groups to numbered YAML files in the tasks directory.
+
+    Creates files in the format: tasks_dir/001-<slug>.yaml, tasks_dir/002-<slug>.yaml, etc.
+    Each file contains sequentially-dependent tasks from one file group.
+
+    Args:
+        groups: List of file groups, each containing TaskEntry objects
+        tasks_dir: Directory to write task files to
+
+    Returns:
+        List of created file paths
+
+    Raises:
+        ValueError: If tasks_dir is a symlink or other security checks fail
+    """
+    current = tasks_dir
+    while current != current.parent:
+        if current.exists() and current.is_symlink():
+            raise ValueError(f"Refusing to write: ancestor is a symlink: {current}")
+        current = current.parent
+
+    tasks_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    created_files: list[Path] = []
+    for i, group in enumerate(groups):
+        if not group:
+            continue
+
+        task_file = TaskFile(entries=group)
+        slug = _slugify(group[0].description)
+        file_path = tasks_dir / f"{i + 1:03d}-{slug}.yaml"
+        save_task_file(file_path, task_file)
+        created_files.append(file_path)
+
+    return created_files
 
 
 def display_task_list(tasks: list[str]) -> bool:

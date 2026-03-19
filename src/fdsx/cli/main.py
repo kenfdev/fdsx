@@ -5,6 +5,8 @@ import typer
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
+from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
+from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
 from fdsx.display.terminal import _sanitize_output
 
@@ -148,6 +150,71 @@ def list_flows(
             f"{_sanitize_output(thread.get('current_state', '')):<20} "
             f"{_sanitize_output(thread.get('started_at', '')):<20}"
         )
+
+
+@app.command()
+def split(
+    task_file: Path = typer.Argument(..., help="Path to the task file to split"),
+    force: bool = typer.Option(
+        False, "--force", help="Clear existing tasks directory before splitting"
+    ),
+) -> None:
+    """Split a task file into individual task files for persistent batch execution.
+
+    Reads task_splitter configuration from .fdsx/config.yaml (or defaults).
+    Writes numbered task files to .fdsx/tasks/ directory.
+    """
+    if not task_file.exists():
+        typer.echo(f"Error: Task file not found: {task_file}", err=True)
+        raise typer.Exit(code=2)
+
+    config = load_config()
+    task_splitter = config.task_splitter or TaskSplitterConfig()
+
+    tasks_dir = Path(TASKS_DIR)
+
+    if tasks_dir.exists() and any(tasks_dir.iterdir()):
+        if not force:
+            typer.echo(
+                f"Error: Tasks directory '{TASKS_DIR}' is not empty. "
+                "Use --force to clear and overwrite.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if tasks_dir.is_symlink():
+            typer.echo(
+                f"Error: Tasks directory '{TASKS_DIR}' is a symlink. Refusing to delete.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        for f in tasks_dir.glob("*.yaml"):
+            f.unlink()
+        typer.echo(f"Cleared existing task files in {TASKS_DIR}/", err=True)
+
+    try:
+        task_content = task_file.read_text()
+        groups = split_tasks_to_groups(task_content, task_splitter)
+
+        if not groups:
+            typer.echo("No tasks were generated from the input file.", err=True)
+            typer.echo(json.dumps([]))
+            return
+
+        created_files = write_task_files(groups, tasks_dir)
+
+        typer.echo(
+            f"Created {len(created_files)} task file(s) in {TASKS_DIR}/", err=True
+        )
+        for f in created_files:
+            typer.echo(f"  {f}", err=True)
+        typer.echo(json.dumps([str(f) for f in created_files]))
+
+    except RuntimeError as e:
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=1)
+    except ValueError as e:
+        typer.echo(f"Error parsing tasks: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
