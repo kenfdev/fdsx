@@ -15,7 +15,7 @@ app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework
 
 @app.command()
 def run(
-    workflow: Path = typer.Argument(..., help="Path to the YAML workflow file"),
+    workflow: Path | None = typer.Argument(None, help="Path to the YAML workflow file"),
     thread_id: str | None = typer.Option(None, help="Thread ID for this execution"),
     input_vars: list[str] | None = typer.Option(
         None, "--input", help="Input variable as KEY=VALUE"
@@ -23,11 +23,51 @@ def run(
     tasks_file: Path | None = typer.Option(
         None, "--tasks", help="Batch task file path"
     ),
+    tasks_dir: Path | None = typer.Option(
+        None, "--tasks-dir", help="Directory of task YAML files to execute"
+    ),
 ) -> None:
     """Run a workflow from a YAML file."""
-    if input_vars and tasks_file is not None:
+    if tasks_dir is not None:
+        if workflow is None:
+            typer.echo(
+                "Error: workflow argument is required when using --tasks-dir",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if input_vars is not None or tasks_file is not None:
+            typer.echo(
+                "Error: --tasks-dir is mutually exclusive with --input and --tasks",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if not tasks_dir.exists():
+            typer.echo(
+                f"Error: Tasks directory not found: {tasks_dir}",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if tasks_dir.is_symlink():
+            typer.echo(
+                f"Error: --tasks-dir must not be a symlink: {tasks_dir}",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if not tasks_dir.is_dir():
+            typer.echo(
+                f"Error: --tasks-dir must be a directory: {tasks_dir}",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+    elif input_vars and tasks_file is not None:
         typer.echo(
             "Error: --input and --tasks are mutually exclusive",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    elif workflow is None and tasks_dir is None:
+        typer.echo(
+            "Error: workflow argument is required when not using --tasks-dir",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -48,7 +88,15 @@ def run(
     base_dir = Path(".fdsx")
 
     try:
-        if tasks_file is not None:
+        if tasks_dir is not None:
+            results = engine.run_tasks_dir(workflow, tasks_dir, base_dir)
+            typer.echo(json.dumps(results, indent=2))
+            has_failure = any(r.get("status") == "failed" for r in results)
+            if has_failure:
+                raise typer.Exit(code=1)
+            else:
+                raise typer.Exit(code=0)
+        elif tasks_file is not None:
             results = engine.run_batch(workflow, tasks_file, base_dir)
             typer.echo(json.dumps(results, indent=2))
             has_failure = any(r.get("status") == "failed" for r in results)

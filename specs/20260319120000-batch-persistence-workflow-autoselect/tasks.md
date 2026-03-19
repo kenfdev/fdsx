@@ -31,14 +31,14 @@
 
 ## Phase 4: Tasks-Dir Run Mode
 
-- [ ] T21: Tasks-dir loader — Read and sort task files from directory, parse each as `TaskFile` in `src/fdsx/core/engine.py`
-- [ ] T22: Status filter — Skip `completed` entries; mark `failed`/`running` as retriable in `src/fdsx/core/engine.py`
-- [ ] T23: Status persistence — After each task execution, update status + thread_id/error in YAML file in `src/fdsx/core/engine.py`
-- [ ] T24: Per-entry tracking — For multi-task files, track and update per-entry status in `src/fdsx/core/engine.py`
-- [ ] T25: Run orchestrator — `run_tasks_dir()` — iterate files, execute entries, handle errors, display summary in `src/fdsx/core/engine.py`
-- [ ] T26: CLI integration — Add `--tasks-dir` option, mutual exclusivity with `--tasks`/`--input`, make `workflow` argument optional in `src/fdsx/cli/main.py`
-- [ ] T27: Resume test — Integration test: run partial batch, simulate crash, resume and verify skip/retry logic in `tests/integration/test_tasks_dir.py` (NEW)
-- [ ] T28: Summary display — Update batch summary to show skipped (completed), retried, new tasks in `src/fdsx/core/batch.py`
+- [x] T21: Tasks-dir loader — Read and sort task files from directory, parse each as `TaskFile` in `src/fdsx/core/engine.py`
+- [x] T22: Status filter — Skip `completed` entries; mark `failed`/`running` as retriable in `src/fdsx/core/engine.py`
+- [x] T23: Status persistence — After each task execution, update status + thread_id/error in YAML file in `src/fdsx/core/engine.py`
+- [x] T24: Per-entry tracking — For multi-task files, track and update per-entry status in `src/fdsx/core/engine.py`
+- [x] T25: Run orchestrator — `run_tasks_dir()` — iterate files, execute entries, handle errors, display summary in `src/fdsx/core/engine.py`
+- [x] T26: CLI integration — Add `--tasks-dir` option, mutual exclusivity with `--tasks`/`--input`, make `workflow` argument optional in `src/fdsx/cli/main.py`
+- [x] T27: Resume test — Integration test: run partial batch, simulate crash, resume and verify skip/retry logic in `tests/integration/test_tasks_dir.py` (NEW)
+- [x] T28: Summary display — Update batch summary to show skipped (completed), retried, new tasks in `src/fdsx/core/batch.py`
 
 ## Phase 5: Workflow Auto-Selection
 

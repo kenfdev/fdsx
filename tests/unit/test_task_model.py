@@ -382,6 +382,30 @@ class TestRoundTrip:
             assert loaded.entries[0].workflow == "plan.yaml"
 
 
+class TestLoadTaskFileSymlinkProtection:
+    """SEC: TOCTOU — load_task_file() must refuse symlinks at the read call site."""
+
+    def test_load_rejects_symlinked_task_file(self):
+        """SEC-TOCTOU-1: load_task_file() must raise ValueError when target is a symlink.
+
+        This covers the TOCTOU race window: even if a pre-check in the caller passed,
+        a symlink swapped in before open() must be rejected by O_NOFOLLOW.
+        """
+        if not hasattr(__import__("os"), "O_NOFOLLOW"):
+            pytest.skip("O_NOFOLLOW not available on this platform")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            real_file = Path(tmpdir) / "real.yaml"
+            real_file.write_text(
+                yaml.dump({"description": "Real task", "status": "pending"})
+            )
+            sym_file = Path(tmpdir) / "task.yaml"
+            sym_file.symlink_to(real_file)
+
+            with pytest.raises(ValueError, match="symlink"):
+                load_task_file(sym_file)
+
+
 class TestSaveTaskFileSecurity:
     def test_symlinked_ancestor_raises_before_mkdir(self):
         with tempfile.TemporaryDirectory() as tmpdir:

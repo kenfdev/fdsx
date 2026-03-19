@@ -369,3 +369,65 @@ def display_batch_summary(results: list[dict[str, Any]]) -> None:
         f"Total: {total} | Succeeded: {succeeded} | Failed: {failed}", file=sys.stderr
     )
     print("=" * 80, file=sys.stderr)
+
+
+def display_tasks_dir_summary(results: list[dict[str, Any]]) -> None:
+    """Display a summary of tasks-dir execution results.
+
+    Shows skipped, retried, new, completed, and failed entries with symbols.
+
+    Args:
+        results: List of result dicts with file_index, file_name, entry_index,
+                 entry_description, thread_id, status, error, category.
+    """
+    print("\n" + "=" * 80, file=sys.stderr)
+    print("TASKS-DIR EXECUTION SUMMARY", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    print(
+        f"{'FILE':<30} {'ENTRY':<6} {'CAT':<8} {'STATUS':<12} {'THREAD_ID':<36} {'TASK':<20}",
+        file=sys.stderr,
+    )
+    print("-" * 80, file=sys.stderr)
+
+    for result in results:
+        file_name = result.get("file_name", "")[:30]
+        entry_idx = result.get("entry_index", -1)
+        category = result.get("category", "new")
+        status = result.get("status", "unknown")
+        thread_id = result.get("thread_id", "")[:36]
+        entry_desc = result.get("entry_description", "")[:20]
+
+        symbol_map = {
+            "skipped": "⊘",
+            "retried": "↻",
+            "new": "○",
+            "completed": "✓",
+        }
+        status_symbol = symbol_map.get(category, "?") if status == "completed" else "✗"
+
+        entry_display = str(entry_idx + 1) if entry_idx >= 0 else "-"
+        print(
+            f"{_sanitize_output(file_name):<30} {entry_display:<6} {category:<8} "
+            f"{status_symbol} {status:<10} {_sanitize_output(thread_id):<36} "
+            f"{_sanitize_output(entry_desc):<20}",
+            file=sys.stderr,
+        )
+
+        if result.get("error"):
+            error_preview = result["error"][:70]
+            print(f"       Error: {_sanitize_output(error_preview)}", file=sys.stderr)
+
+    print("-" * 80, file=sys.stderr)
+
+    skipped = sum(1 for r in results if r.get("category") == "skipped")
+    retried = sum(1 for r in results if r.get("category") == "retried")
+    new_total = sum(1 for r in results if r.get("category") == "new")
+    failed = sum(1 for r in results if r.get("status") == "failed")
+    total = len(results)
+
+    print(
+        f"Total: {total} | Skipped: {skipped} | Retried: {retried} | New: {new_total} | "
+        f"Failed: {failed}",
+        file=sys.stderr,
+    )
+    print("=" * 80, file=sys.stderr)

@@ -15,6 +15,7 @@ Supports both flat single-task format and list multi-task format:
 
 from __future__ import annotations
 
+import errno
 import os
 from pathlib import Path
 from typing import Literal
@@ -95,11 +96,27 @@ def load_task_file(path: Path) -> TaskFile:
     if not path.exists():
         raise FileNotFoundError(f"Task file not found: {path}")
 
-    with open(path, encoding="utf-8") as f:
-        try:
-            raw = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML in task file {path}: {e}") from e
+    open_flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        open_flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(str(path), open_flags)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise ValueError(
+                f"Refusing to read task file: {path} is a symlink"
+            ) from e
+        raise
+    try:
+        data = os.read(fd, os.fstat(fd).st_size)
+        content = data.decode("utf-8")
+    finally:
+        os.close(fd)
+
+    try:
+        raw = yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in task file {path}: {e}") from e
 
     if raw is None:
         return TaskFile()

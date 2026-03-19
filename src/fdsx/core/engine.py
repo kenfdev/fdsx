@@ -1,7 +1,7 @@
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
@@ -11,6 +11,7 @@ from fdsx.checkpoint.manager import CheckpointManager, _extract_meta_from_checkp
 from fdsx.core.batch import (
     display_batch_summary,
     display_task_list,
+    display_tasks_dir_summary,
     split_tasks,
 )
 from fdsx.core.compiler import compile_flow
@@ -18,6 +19,7 @@ from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
 from fdsx.display.terminal import _sanitize_output, display_wait_prompt
 from fdsx.logging import RunRecorder
+from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
 
 class FlowValidationError(Exception):
@@ -519,3 +521,236 @@ def validate_flow(flow_path: Path) -> tuple[bool, list[str]]:
     """
     flow, errors = load_flow(flow_path)
     return flow is not None, errors
+
+
+def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
+    """Load and sort all task YAML files from a directory.
+
+    Args:
+        tasks_dir: Directory containing task YAML files.
+
+    Returns:
+        List of (file_path, task_file) tuples sorted alphabetically by filename.
+
+    Raises:
+        FileNotFoundError: If the tasks directory does not exist.
+        ValueError: If no .yaml files are found.
+    """
+    if not tasks_dir.exists():
+        raise FileNotFoundError(f"Tasks directory not found: {tasks_dir}")
+    if tasks_dir.is_symlink():
+        raise ValueError(f"Tasks directory must not be a symlink: {tasks_dir}")
+
+    yaml_files = sorted(tasks_dir.glob("*.yaml"))
+    if not yaml_files:
+        raise ValueError(f"No .yaml files found in {tasks_dir}")
+
+    result: list[tuple[Path, TaskFile]] = []
+    for fp in yaml_files:
+        if fp.is_symlink() or not fp.is_file():
+            raise ValueError(
+                f"Task file must be a regular file (not a symlink or special file): {fp}"
+            )
+        task_file = load_task_file(fp)
+        result.append((fp, task_file))
+
+    return result
+
+
+def _filter_actionable_entries(
+    task_file: TaskFile,
+) -> list[tuple[int, TaskEntry]]:
+    """Return entries that need execution.
+
+    Skips entries with status "completed". Treats "failed" and "running"
+    as retriable (returns them for execution).
+
+    Args:
+        task_file: The TaskFile to filter.
+
+    Returns:
+        List of (entry_index, entry) tuples for entries that should run.
+    """
+    actionable: list[tuple[int, TaskEntry]] = []
+    for i, entry in enumerate(task_file.entries):
+        if entry.status == "completed":
+            continue
+        actionable.append((i, entry))
+    return actionable
+
+
+def _update_task_status(
+    file_path: Path,
+    task_file: TaskFile,
+    entry_index: int,
+    status: str,
+    thread_id: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Update and persist a single entry's status in the task file.
+
+    Args:
+        file_path: Path to the task YAML file.
+        task_file: The TaskFile containing the entry.
+        entry_index: Index of the entry within task_file.entries.
+        status: New status value.
+        thread_id: Optional thread ID to store.
+        error: Optional error message to store.
+    """
+    entry = task_file.entries[entry_index]
+    entry.status = cast(Literal["pending", "running", "completed", "failed"], status)
+    entry.thread_id = thread_id
+    entry.error = error
+    save_task_file(file_path, task_file)
+
+
+def run_tasks_dir(
+    workflow_path: Path,
+    tasks_dir: Path,
+    base_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Execute tasks from a directory of YAML task files with crash-resilient persistence.
+
+    Args:
+        workflow_path: Path to the YAML workflow file.
+        tasks_dir: Directory containing task YAML files.
+        base_dir: Optional base directory for checkpoints (.fdsx/).
+
+    Returns:
+        List of result dicts with file_index, file_name, entry_index,
+        entry_description, thread_id, status, error, category.
+
+    Raises:
+        FlowValidationError: If flow validation fails.
+    """
+    import uuid
+
+    flow, errors = load_flow(workflow_path)
+    if flow is None:
+        raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
+
+    task_files = load_tasks_dir(tasks_dir)
+    results: list[dict[str, Any]] = []
+
+    for file_idx, (file_path, task_file) in enumerate(task_files):
+        actionable = _filter_actionable_entries(task_file)
+
+        if not actionable:
+            for entry_idx, entry in enumerate(task_file.entries):
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": entry.description,
+                        "thread_id": entry.thread_id or "",
+                        "status": "completed",
+                        "error": None,
+                        "category": "skipped",
+                    }
+                )
+            continue
+
+        print(
+            f"\nProcessing file {file_idx + 1}/{len(task_files)}: {_sanitize_output(file_path.name)}",
+            file=sys.stderr,
+        )
+        print(
+            f"  {len(actionable)} actionable entries out of {len(task_file.entries)}",
+            file=sys.stderr,
+        )
+
+        for entry_idx, entry in enumerate(task_file.entries):
+            if entry.status == "completed":
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": entry.description,
+                        "thread_id": entry.thread_id or "",
+                        "status": "completed",
+                        "error": None,
+                        "category": "skipped",
+                    }
+                )
+
+        for entry_idx, entry in actionable:
+            thread_id = str(uuid.uuid4())
+            description = entry.description
+            original_status = entry.status
+            category = "retried" if original_status in ("failed", "running") else "new"
+
+            print(
+                f"  Executing entry {entry_idx + 1}/{len(task_file.entries)}: {_sanitize_output(description[:50])}...",
+                file=sys.stderr,
+            )
+
+            _update_task_status(
+                file_path, task_file, entry_idx, "running", thread_id=thread_id
+            )
+
+            try:
+                task_inputs = {"task": description}
+                run_flow(
+                    flow_path=workflow_path,
+                    inputs=task_inputs,
+                    thread_id=thread_id,
+                    base_dir=base_dir,
+                )
+                _update_task_status(
+                    file_path, task_file, entry_idx, "completed", thread_id=thread_id
+                )
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": description,
+                        "thread_id": thread_id,
+                        "status": "completed",
+                        "error": None,
+                        "category": category,
+                    }
+                )
+            except Exception as e:
+                _update_task_status(
+                    file_path,
+                    task_file,
+                    entry_idx,
+                    "failed",
+                    thread_id=thread_id,
+                    error=str(e),
+                )
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": description,
+                        "thread_id": thread_id,
+                        "status": "failed",
+                        "error": str(e),
+                        "category": category,
+                    }
+                )
+
+                print(
+                    f"  Entry {entry_idx + 1} failed: {_sanitize_output(str(e))}",
+                    file=sys.stderr,
+                )
+                while True:
+                    response = (
+                        input("Continue with remaining entries? (y/n): ")
+                        .strip()
+                        .lower()
+                    )
+                    if response == "y":
+                        break
+                    elif response == "n":
+                        print("Stopping tasks-dir execution.", file=sys.stderr)
+                        display_tasks_dir_summary(results)
+                        return results
+
+    display_tasks_dir_summary(results)
+    return results
