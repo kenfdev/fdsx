@@ -20,3 +20,8 @@ build/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+
+# fdsx runtime data
+.fdsx/
+runs/
+specs/
