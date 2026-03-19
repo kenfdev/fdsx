@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -177,7 +177,9 @@ class TestRunTasksDir:
 
             with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             assert len(results) == 2
             for r in results:
@@ -215,7 +217,9 @@ class TestRunTasksDir:
 
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             assert run_count[0] == 1
             skipped = [r for r in results if r["category"] == "skipped"]
@@ -243,7 +247,9 @@ class TestRunTasksDir:
 
             with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             assert len(results) == 1
             assert results[0]["status"] == "completed"
@@ -271,7 +277,9 @@ class TestRunTasksDir:
 
             with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             assert len(results) == 1
             assert results[0]["status"] == "completed"
@@ -299,7 +307,9 @@ class TestRunTasksDir:
 
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             assert call_count[0] == 3
             assert len(results) == 3
@@ -331,8 +341,10 @@ class TestRunTasksDir:
 
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.input", side_effect=["y", "y"]):
-                        results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    with patch("fdsx.core.engine.input", side_effect=["y"]):
+                        results = engine.run_tasks_dir(
+                            flow_path, tasks_dir, auto_workflow=True
+                        )
 
             assert len(results) == 2
             assert results[0]["status"] == "failed"
@@ -366,7 +378,9 @@ class TestRunTasksDir:
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
                     with patch("fdsx.core.engine.input", side_effect=["n"]):
-                        results = engine.run_tasks_dir(flow_path, tasks_dir)
+                        results = engine.run_tasks_dir(
+                            flow_path, tasks_dir, auto_workflow=True
+                        )
 
             assert len(results) == 1
             assert results[0]["status"] == "failed"
@@ -387,7 +401,9 @@ class TestRunTasksDir:
                 "fdsx.core.engine.run_flow", return_value={"result": "ok"}
             ) as mock_run:
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             mock_run.assert_not_called()
             assert len(results) == 1
@@ -412,7 +428,9 @@ class TestRunTasksDir:
                 "fdsx.core.engine.run_flow", return_value={"result": "ok"}
             ) as mock_run:
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(flow_path, tasks_dir)
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
             mock_run.assert_not_called()
             assert len(results) == 2
@@ -444,7 +462,9 @@ class TestRunTasksDir:
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
                     with patch("fdsx.core.engine.input", side_effect=["n"]):
-                        results = engine.run_tasks_dir(flow_path, tasks_dir)
+                        results = engine.run_tasks_dir(
+                            flow_path, tasks_dir, auto_workflow=True
+                        )
 
             assert len(results) == 1
             assert results[0]["status"] == "failed"
@@ -468,7 +488,7 @@ class TestRunTasksDir:
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
                     with patch("fdsx.core.engine.input", side_effect=["n"]):
-                        engine.run_tasks_dir(flow_path, tasks_dir)
+                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             loaded = load_task_file(tasks_dir / "001-test.yaml")
             assert loaded.entries[0].thread_id is not None
@@ -542,6 +562,7 @@ class TestTasksDirCli:
                         str(workflow_path),
                         "--tasks-dir",
                         str(tasks_dir),
+                        "--auto-workflow",
                     ],
                 )
 
@@ -569,7 +590,7 @@ class TestTasksDirCli:
         assert result.exit_code == 2
         assert "mutually exclusive" in result.stderr.lower()
 
-    def test_run_tasks_dir_requires_workflow(self, tmp_path):
+    def test_run_tasks_dir_without_workflow_requires_auto_workflow(self, tmp_path):
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         (tasks_dir / "001-test.yaml").write_text("description: dummy\n")
@@ -577,10 +598,10 @@ class TestTasksDirCli:
         runner = CliRunner()
         result = runner.invoke(
             app,
-            ["run", "--tasks-dir", str(tasks_dir)],
+            ["run", "--tasks-dir", str(tasks_dir), "--auto-workflow"],
         )
-        assert result.exit_code == 2
-        assert "required" in result.stderr.lower()
+        assert result.exit_code == 1
+        assert "No workflows found" in result.stderr
 
     def test_run_tasks_dir_rejects_symlink_dir(self, tmp_path):
         real_dir = tmp_path / "real"
@@ -599,3 +620,158 @@ class TestTasksDirCli:
         )
         assert result.exit_code == 2
         assert "symlink" in result.stderr.lower()
+
+    def test_auto_and_confirm_workflow_mutually_exclusive(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "001-test.yaml").write_text("description: dummy\n")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--tasks-dir",
+                str(tasks_dir),
+                "--auto-workflow",
+                "--confirm-workflow",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "mutually exclusive" in result.stderr.lower()
+
+
+class TestBatchEditFlow:
+    """Regression tests for FR-6.3 batch edit flow (Finding 1).
+
+    When the user rejects the batch workflow assignments, the engine must allow
+    per-entry keep/change instead of aborting immediately.
+    """
+
+    def _make_workflow_yaml(self, name: str, description: str) -> str:
+        import yaml
+
+        return yaml.dump(
+            {
+                "name": name,
+                "description": description,
+                "start_at": "s",
+                "states": {
+                    "s": {
+                        "type": "task",
+                        "provider": "system",
+                        "command": "echo done",
+                        "result_path": "$.result",
+                        "end": True,
+                    }
+                },
+            }
+        )
+
+    def test_reject_then_keep_all_proceeds(self, tmp_path):
+        """Reject batch, then keep all entries — execution should proceed."""
+        project_root = tmp_path
+        workflows_dir = project_root / ".fdsx" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "plan.yaml").write_text(
+            self._make_workflow_yaml("Plan", "Planning workflow")
+        )
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        tf = TaskFile(entries=[TaskEntry(description="plan this feature")])
+        save_task_file(tasks_dir / "001-test.yaml", tf)
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0, stdout="plan.yaml", stderr=""
+        )
+
+        # inputs to engine: "n" = reject batch, "k" = keep entry
+        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    with patch(
+                        "fdsx.core.engine.input",
+                        side_effect=["n", "k"],
+                    ):
+                        results = engine.run_tasks_dir(
+                            None,
+                            tasks_dir,
+                            base_dir=project_root / ".fdsx",
+                            auto_workflow=False,
+                        )
+
+        assert len([r for r in results if r["category"] == "new"]) == 1
+
+    def test_reject_then_cancel_during_edit_aborts(self, tmp_path):
+        """Reject batch, then cancel during pick_workflow_manually — aborts."""
+        project_root = tmp_path
+        workflows_dir = project_root / ".fdsx" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "plan.yaml").write_text(
+            self._make_workflow_yaml("Plan", "Planning workflow")
+        )
+        (workflows_dir / "impl.yaml").write_text(
+            self._make_workflow_yaml("Impl", "Implementation workflow")
+        )
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        tf = TaskFile(entries=[TaskEntry(description="do something")])
+        save_task_file(tasks_dir / "001-test.yaml", tf)
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0, stdout="plan.yaml", stderr=""
+        )
+
+        # engine inputs: "n" = reject batch, "c" = change
+        # selector inputs: "c" = cancel during pick
+        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    with patch("fdsx.core.engine.input", side_effect=["n", "c"]):
+                        with patch("fdsx.core.selector.input", return_value="c"):
+                            results = engine.run_tasks_dir(
+                                None,
+                                tasks_dir,
+                                base_dir=project_root / ".fdsx",
+                                auto_workflow=False,
+                            )
+
+        # Cancelled during edit → empty results (aborted)
+        assert results == []
+
+    def test_approve_batch_skips_edit_flow(self, tmp_path):
+        """Approve batch on first prompt — no per-entry prompts are called."""
+        project_root = tmp_path
+        workflows_dir = project_root / ".fdsx" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "plan.yaml").write_text(
+            self._make_workflow_yaml("Plan", "Planning workflow")
+        )
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        tf = TaskFile(entries=[TaskEntry(description="plan this feature")])
+        save_task_file(tasks_dir / "001-test.yaml", tf)
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0, stdout="plan.yaml", stderr=""
+        )
+
+        # Only "y" for batch approve — no keep/change prompts follow
+        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    with patch("fdsx.core.engine.input", side_effect=["y"]):
+                        results = engine.run_tasks_dir(
+                            None,
+                            tasks_dir,
+                            base_dir=project_root / ".fdsx",
+                            auto_workflow=False,
+                        )
+
+        assert len([r for r in results if r["category"] == "new"]) == 1

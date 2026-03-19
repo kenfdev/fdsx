@@ -42,16 +42,16 @@
 
 ## Phase 5: Workflow Auto-Selection
 
-- [ ] T29: Workflow discovery — `discover_workflows(dir)` — glob `*.yaml` files, load each, return list of `(path, description)` in `src/fdsx/core/selector.py` (NEW)
-- [ ] T30: Selection prompt — Build LLM prompt with task description + workflow descriptions, request workflow filename in `src/fdsx/core/selector.py`
-- [ ] T31: Select function — `select_workflow(task_desc, workflows, config)` — single workflow = auto, multiple = LLM call in `src/fdsx/core/selector.py`
-- [ ] T32: Confirm mode UX — Present selected workflow, prompt for approval. On rejection, show full list for manual pick in `src/fdsx/cli/main.py`
-- [ ] T33: Auto mode — `--auto-workflow` flag and `auto_workflow` config — skip confirmation in `src/fdsx/cli/main.py`
-- [ ] T34: CLI flags — Add `--auto-workflow` / `--confirm-workflow` flags, CLI overrides config in `src/fdsx/cli/main.py`
-- [ ] T35: Integration with run — Wire selector into `run_tasks_dir()` for per-task workflow selection in `src/fdsx/core/engine.py`
-- [ ] T36: FR-6.3 batch confirm — In confirm mode with tasks-dir, present all workflow selections before execution
-- [ ] T37: Unit tests — TDD: discovery, selection logic, single-workflow shortcut, no-workflows error in `tests/unit/test_selector.py` (NEW)
-- [ ] T38: Integration test — End-to-end auto-selection with mock provider in `tests/integration/test_auto_select.py` (NEW)
+- [x] T29: Workflow discovery — `discover_workflows(dir)` — glob `*.yaml` files, load each, return list of `(path, description)` in `src/fdsx/core/selector.py` (NEW)
+- [x] T30: Selection prompt — Build LLM prompt with task description + workflow descriptions, request workflow filename in `src/fdsx/core/selector.py`
+- [x] T31: Select function — `select_workflow(task_desc, workflows, config)` — single workflow = auto, multiple = LLM call in `src/fdsx/core/selector.py`
+- [x] T32: Confirm mode UX — Present selected workflow, prompt for approval. On rejection, show full list for manual pick in `src/fdsx/cli/main.py`
+- [x] T33: Auto mode — `--auto-workflow` flag and `auto_workflow` config — skip confirmation in `src/fdsx/cli/main.py`
+- [x] T34: CLI flags — Add `--auto-workflow` / `--confirm-workflow` flags, CLI overrides config in `src/fdsx/cli/main.py`
+- [x] T35: Integration with run — Wire selector into `run_tasks_dir()` for per-task workflow selection in `src/fdsx/core/engine.py`
+- [x] T36: FR-6.3 batch confirm — In confirm mode with tasks-dir, present all workflow selections before execution
+- [x] T37: Unit tests — TDD: discovery, selection logic, single-workflow shortcut, no-workflows error in `tests/unit/test_selector.py` (NEW)
+- [x] T38: Integration test — End-to-end auto-selection with mock provider in `tests/integration/test_auto_select.py` (NEW)
 
 ## Phase 6: Polish & Backward Compatibility
 

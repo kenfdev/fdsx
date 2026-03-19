@@ -17,6 +17,9 @@ from fdsx.core.batch import (
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
+from fdsx.core.selector import (
+    resolve_workflow_for_task,
+)
 from fdsx.display.terminal import _sanitize_output, display_wait_prompt
 from fdsx.logging import RunRecorder
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
@@ -605,16 +608,19 @@ def _update_task_status(
 
 
 def run_tasks_dir(
-    workflow_path: Path,
+    workflow_path: Path | None,
     tasks_dir: Path,
     base_dir: Path | None = None,
+    auto_workflow: bool = False,
 ) -> list[dict[str, Any]]:
     """Execute tasks from a directory of YAML task files with crash-resilient persistence.
 
     Args:
-        workflow_path: Path to the YAML workflow file.
+        workflow_path: Path to the YAML workflow file. If None, workflows are auto-selected
+            per task entry using the selector.
         tasks_dir: Directory containing task YAML files.
         base_dir: Optional base directory for checkpoints (.fdsx/).
+        auto_workflow: If True, skip workflow confirmation prompts and auto-select.
 
     Returns:
         List of result dicts with file_index, file_name, entry_index,
@@ -625,12 +631,68 @@ def run_tasks_dir(
     """
     import uuid
 
-    flow, errors = load_flow(workflow_path)
-    if flow is None:
-        raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
-
     task_files = load_tasks_dir(tasks_dir)
     results: list[dict[str, Any]] = []
+    workflow_assignments: dict[tuple[int, int], Path] = {}
+
+    if base_dir is None:
+        base_dir = Path.cwd() / ".fdsx"
+    config = load_config(project_dir=base_dir.parent)
+    project_root = base_dir.parent
+    workflows_dir = project_root / config.workflows_dir
+
+    for file_idx, (file_path, task_file) in enumerate(task_files):
+        actionable = _filter_actionable_entries(task_file)
+        for entry_idx, entry in actionable:
+            if entry.workflow is not None:
+                wf_path = workflows_dir / entry.workflow
+                workflow_assignments[(file_idx, entry_idx)] = wf_path
+            elif workflow_path is not None:
+                workflow_assignments[(file_idx, entry_idx)] = workflow_path
+            else:
+                resolved = resolve_workflow_for_task(
+                    task_description=entry.description,
+                    workflows_dir=workflows_dir,
+                    selector_config=config.workflow_selector,
+                    auto_workflow=True,
+                )
+                if resolved is not None:
+                    workflow_assignments[(file_idx, entry_idx)] = resolved
+                else:
+                    raise ValueError(
+                        f"No workflow selected for entry {entry_idx} "
+                        f"in {file_path.name}: selection was cancelled."
+                    )
+
+    if workflow_assignments and not auto_workflow:
+        from fdsx.core.selector import discover_workflows, pick_workflow_manually
+
+        _display_batch_workflow_confirm(workflow_assignments, task_files)
+        approved = input("Approve workflow assignments? (y/n): ").strip().lower()
+        if approved != "y":
+            print("\nEdit workflow assignments:", file=sys.stderr)
+            discovered = discover_workflows(workflows_dir)
+            for key in sorted(workflow_assignments.keys()):
+                file_idx, entry_idx = key
+                file_path, task_file = task_files[file_idx]
+                entry = task_file.entries[entry_idx]
+                current_wf = workflow_assignments[key]
+                desc_preview = entry.description[:40]
+                if len(entry.description) > 40:
+                    desc_preview += "..."
+                print(
+                    f"\n  {file_path.name} entry {entry_idx + 1}: {desc_preview}",
+                    file=sys.stderr,
+                )
+                print(f"  Current: {current_wf.name}", file=sys.stderr)
+                choice = input("  Keep (k) or Change (c)? ").strip().lower()
+                if choice == "c":
+                    picked = pick_workflow_manually(discovered)
+                    if picked is not None:
+                        workflow_assignments[key] = picked
+                    else:
+                        print("Batch execution aborted.", file=sys.stderr)
+                        return results
 
     for file_idx, (file_path, task_file) in enumerate(task_files):
         actionable = _filter_actionable_entries(task_file)
@@ -681,6 +743,15 @@ def run_tasks_dir(
             original_status = entry.status
             category = "retried" if original_status in ("failed", "running") else "new"
 
+            effective_workflow = workflow_assignments.get(
+                (file_idx, entry_idx), workflow_path
+            )
+            if effective_workflow is None:
+                raise ValueError(
+                    f"No workflow available for entry {entry_idx} in {file_path}. "
+                    "Ensure the task has a workflow set or that workflows exist in the workflows directory."
+                )
+
             print(
                 f"  Executing entry {entry_idx + 1}/{len(task_file.entries)}: {_sanitize_output(description[:50])}...",
                 file=sys.stderr,
@@ -693,7 +764,7 @@ def run_tasks_dir(
             try:
                 task_inputs = {"task": description}
                 run_flow(
-                    flow_path=workflow_path,
+                    flow_path=effective_workflow,
                     inputs=task_inputs,
                     thread_id=thread_id,
                     base_dir=base_dir,
@@ -754,3 +825,38 @@ def run_tasks_dir(
 
     display_tasks_dir_summary(results)
     return results
+
+
+def _display_batch_workflow_confirm(
+    workflow_assignments: dict[tuple[int, int], Path],
+    task_files: list[tuple[Path, TaskFile]],
+) -> None:
+    """Display workflow assignments for batch confirmation (FR-6.3).
+
+    Args:
+        workflow_assignments: Map of (file_idx, entry_idx) -> workflow path.
+        task_files: List of (file_path, task_file) tuples.
+    """
+    print("\n" + "=" * 80, file=sys.stderr)
+    print("WORKFLOW ASSIGNMENTS", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    print(
+        f"{'FILE':<30} {'ENTRY':<6} {'WORKFLOW':<30} {'TASK':<15}",
+        file=sys.stderr,
+    )
+    print("-" * 80, file=sys.stderr)
+
+    for (file_idx, entry_idx), wf_path in sorted(workflow_assignments.items()):
+        file_path, task_file = task_files[file_idx]
+        entry = task_file.entries[entry_idx]
+        file_name = file_path.name[:29]
+        entry_num = str(entry_idx + 1)
+        wf_name = wf_path.name[:29]
+        task_preview = entry.description[:14]
+
+        print(
+            f"{_sanitize_output(file_name):<30} {entry_num:<6} {_sanitize_output(wf_name):<30} {_sanitize_output(task_preview):<15}",
+            file=sys.stderr,
+        )
+
+    print("=" * 80, file=sys.stderr)

@@ -15,7 +15,10 @@ app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework
 
 @app.command()
 def run(
-    workflow: Path | None = typer.Argument(None, help="Path to the YAML workflow file"),
+    workflow: Path | None = typer.Argument(
+        None,
+        help="Path to the YAML workflow file (optional with --tasks-dir for auto-selection)",
+    ),
     thread_id: str | None = typer.Option(None, help="Thread ID for this execution"),
     input_vars: list[str] | None = typer.Option(
         None, "--input", help="Input variable as KEY=VALUE"
@@ -26,15 +29,19 @@ def run(
     tasks_dir: Path | None = typer.Option(
         None, "--tasks-dir", help="Directory of task YAML files to execute"
     ),
+    auto_workflow: bool | None = typer.Option(
+        None,
+        "--auto-workflow",
+        help="Skip confirmation and auto-select workflow (overrides config)",
+    ),
+    confirm_workflow: bool | None = typer.Option(
+        None,
+        "--confirm-workflow",
+        help="Confirm workflow selection before execution (overrides config)",
+    ),
 ) -> None:
     """Run a workflow from a YAML file."""
     if tasks_dir is not None:
-        if workflow is None:
-            typer.echo(
-                "Error: workflow argument is required when using --tasks-dir",
-                err=True,
-            )
-            raise typer.Exit(code=2)
         if input_vars is not None or tasks_file is not None:
             typer.echo(
                 "Error: --tasks-dir is mutually exclusive with --input and --tasks",
@@ -71,6 +78,19 @@ def run(
             err=True,
         )
         raise typer.Exit(code=2)
+    elif tasks_file is not None and workflow is None:
+        typer.echo(
+            "Error: workflow argument is required when using --tasks",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if auto_workflow is not None and confirm_workflow is not None:
+        typer.echo(
+            "Error: --auto-workflow and --confirm-workflow are mutually exclusive",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     inputs = None
     if input_vars:
@@ -86,10 +106,22 @@ def run(
             inputs[key] = value
 
     base_dir = Path(".fdsx")
+    config = load_config()
+
+    effective_auto_workflow = (
+        auto_workflow if auto_workflow is not None else config.auto_workflow
+    )
+    if confirm_workflow is not None:
+        effective_auto_workflow = not confirm_workflow
 
     try:
         if tasks_dir is not None:
-            results = engine.run_tasks_dir(workflow, tasks_dir, base_dir)
+            results = engine.run_tasks_dir(
+                workflow,
+                tasks_dir,
+                base_dir,
+                auto_workflow=effective_auto_workflow,
+            )
             typer.echo(json.dumps(results, indent=2))
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:
@@ -97,6 +129,7 @@ def run(
             else:
                 raise typer.Exit(code=0)
         elif tasks_file is not None:
+            assert workflow is not None
             results = engine.run_batch(workflow, tasks_file, base_dir)
             typer.echo(json.dumps(results, indent=2))
             has_failure = any(r.get("status") == "failed" for r in results)
@@ -105,6 +138,7 @@ def run(
             else:
                 raise typer.Exit(code=0)
         else:
+            assert workflow is not None
             result = engine.run_flow(workflow, inputs, thread_id, base_dir)
             typer.echo(json.dumps(result, indent=2))
     except FlowValidationError as e:
