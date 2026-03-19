@@ -161,6 +161,7 @@ class TestAnalyzeVariableReferences:
     def test_valid_flow_no_errors(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for variable analysis",
             start_at="start",
             states={
                 "start": TaskState(
@@ -185,6 +186,7 @@ class TestAnalyzeVariableReferences:
     def test_unreachable_variable_reference(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for unreachable variable",
             start_at="start",
             states={
                 "start": TaskState(
@@ -215,6 +217,7 @@ class TestAnalyzeVariableReferences:
         # so we need a second state to demonstrate the fix.
         flow2 = Flow(
             name="Test Flow 2",
+            description="Test flow for input keys",
             start_at="start",
             states={
                 "start": TaskState(
@@ -245,6 +248,7 @@ class TestAnalyzeVariableReferences:
         """F3: different nested sub-paths on producer vs consumer should be flagged."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for nested paths",
             start_at="produce",
             states={
                 "produce": TaskState(
@@ -271,6 +275,7 @@ class TestAnalyzeVariableReferences:
         """F3: producing $.review satisfies reference to {review.decision} (ancestor)."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for ancestor path",
             start_at="produce",
             states={
                 "produce": TaskState(
@@ -296,6 +301,7 @@ class TestAnalyzeVariableReferences:
         """F3: producing $.review.summary satisfies reference to {review} (descendant proves parent exists)."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for descendant path",
             start_at="produce",
             states={
                 "produce": TaskState(
@@ -321,6 +327,7 @@ class TestAnalyzeVariableReferences:
         """Regression: analyze_variable_references must check parallel branch prompts."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for parallel branch",
             start_at="start",
             states={
                 "start": TaskState(
@@ -392,6 +399,7 @@ class TestAnalyzeVariableReferencesExtract:
 
         flow = Flow(
             name="Extraction Flow",
+            description="Test flow for extract result path",
             start_at="echo_state",
             states={
                 "echo_state": TaskState(
@@ -422,6 +430,7 @@ class TestAnalyzeVariableReferencesExtract:
         """F1: A reference to an extract.result_path that doesn't exist should be flagged."""
         flow = Flow(
             name="Extraction Flow",
+            description="Test flow for missing extract result path",
             start_at="echo_state",
             states={
                 "echo_state": TaskState(
@@ -452,6 +461,7 @@ class TestAnalyzeVariableReferencesExtract:
 
         flow = Flow(
             name="Parallel Extract Flow",
+            description="Test flow for parallel extract path",
             start_at="par",
             states={
                 "par": ParallelState(
@@ -488,6 +498,7 @@ class TestAnalyzeVariableReferencesExtract:
         """F1: Only the parallel state's own result_path is registered as top-level."""
         flow = Flow(
             name="Parallel Result Flow",
+            description="Test flow for parallel result path",
             start_at="par",
             states={
                 "par": ParallelState(

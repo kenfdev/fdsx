@@ -48,6 +48,34 @@ class TestLoadFlow:
         flow, errors = load_flow(path)
         assert flow is None
 
+    def test_load_yaml_list_root_returns_error(self):
+        """Regression: non-dict YAML root (list) must not crash with TypeError."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("- item1\n- item2\n")
+            path = Path(f.name)
+
+        try:
+            flow, errors = load_flow(path)
+            assert flow is None
+            assert len(errors) > 0
+            assert "mapping" in errors[0].lower()
+        finally:
+            path.unlink()
+
+    def test_load_yaml_scalar_root_returns_error(self):
+        """Regression: non-dict YAML root (scalar string) must not crash with TypeError."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("just a string\n")
+            path = Path(f.name)
+
+        try:
+            flow, errors = load_flow(path)
+            assert flow is None
+            assert len(errors) > 0
+            assert "mapping" in errors[0].lower()
+        finally:
+            path.unlink()
+
 
 class TestValidateFlow:
     def test_validate_valid_flow(self):
@@ -88,6 +116,7 @@ class TestPromptFileResolution:
             # provider=claude requires prompt_template or prompt_file (no command)
             flow_yaml.write_text(
                 "name: test\n"
+                "description: test description\n"
                 "start_at: task1\n"
                 "states:\n"
                 "  task1:\n"
@@ -111,6 +140,7 @@ class TestPromptFileResolution:
             flow_yaml = Path(tmpdir) / "flow.yaml"
             flow_yaml.write_text(
                 "name: test\n"
+                "description: test description\n"
                 "start_at: task1\n"
                 "states:\n"
                 "  task1:\n"
@@ -133,6 +163,7 @@ class TestPromptFileResolution:
             flow_yaml = Path(tmpdir) / "flow.yaml"
             flow_yaml.write_text(
                 "name: test\n"
+                "description: test description\n"
                 "start_at: start\n"
                 "states:\n"
                 "  start:\n"
@@ -159,3 +190,69 @@ class TestPromptFileResolution:
                 f"Expected load to succeed but got: {no_warnings}"
             )
             assert len(no_warnings) == 0
+
+
+class TestDescriptionValidation:
+    """T10: Tests for description field pre-check in loader."""
+
+    def test_load_flow_missing_description(self):
+        """T10: Loader should provide actionable error for missing description."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            flow_yaml = Path(tmpdir) / "flow.yaml"
+            flow_yaml.write_text(
+                "name: test\n"
+                "start_at: start\n"
+                "states:\n"
+                "  start:\n"
+                "    type: task\n"
+                "    provider: system\n"
+                "    command: echo test\n"
+                "    result_path: '$.result'\n"
+                "    end: true\n"
+            )
+            flow, errors = load_flow(flow_yaml)
+            assert flow is None
+            assert len(errors) > 0
+            assert "description" in errors[0].lower()
+
+    def test_load_flow_empty_description(self):
+        """T10: Loader should reject empty description."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            flow_yaml = Path(tmpdir) / "flow.yaml"
+            flow_yaml.write_text(
+                "name: test\n"
+                "description: ''\n"
+                "start_at: start\n"
+                "states:\n"
+                "  start:\n"
+                "    type: task\n"
+                "    provider: system\n"
+                "    command: echo test\n"
+                "    result_path: '$.result'\n"
+                "    end: true\n"
+            )
+            flow, errors = load_flow(flow_yaml)
+            assert flow is None
+            assert len(errors) > 0
+            assert "description" in errors[0].lower()
+
+    def test_load_flow_with_valid_description(self):
+        """T10: Loader should accept valid description."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            flow_yaml = Path(tmpdir) / "flow.yaml"
+            flow_yaml.write_text(
+                "name: test\n"
+                "description: A valid test flow\n"
+                "start_at: start\n"
+                "states:\n"
+                "  start:\n"
+                "    type: task\n"
+                "    provider: system\n"
+                "    command: echo test\n"
+                "    result_path: '$.result'\n"
+                "    end: true\n"
+            )
+            flow, errors = load_flow(flow_yaml)
+            assert flow is not None
+            assert len(errors) == 0
+            assert flow.description == "A valid test flow"

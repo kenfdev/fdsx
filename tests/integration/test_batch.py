@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from fdsx.core import engine
-from fdsx.models.flow import Flow, TaskState
+from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 
 
 class TestBatchExecution:
@@ -23,11 +23,12 @@ class TestBatchExecution:
         )
 
         with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch("fdsx.core.engine.display_task_list", return_value=True):
-                with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        base_dir = Path(tmpdir)
-                        results = engine.run_batch(flow_path, tasks_file, base_dir)
+            with patch("fdsx.core.engine.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+                with patch("fdsx.core.engine.display_task_list", return_value=True):
+                    with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            base_dir = Path(tmpdir)
+                            results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert len(results) == 3
         thread_ids = [r["thread_id"] for r in results]
@@ -51,46 +52,24 @@ class TestBatchExecution:
         )
 
         with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch("fdsx.core.engine.display_task_list", return_value=False):
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    base_dir = Path(tmpdir)
-                    results = engine.run_batch(flow_path, tasks_file, base_dir)
+            with patch("fdsx.core.engine.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+                with patch("fdsx.core.engine.display_task_list", return_value=False):
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        base_dir = Path(tmpdir)
+                        results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert results == []
 
-    def test_missing_task_splitter(self):
-        flow = Flow(
-            name="Test Flow",
-            start_at="plan",
-            states={
-                "plan": TaskState(
-                    type="task",
-                    provider="system",
-                    command="echo test",
-                    result_path="$.result",
-                    end=True,
-                )
-            },
-        )
+    def test_batch_fails_when_task_splitter_not_configured(self):
+        """Regression: run_batch must raise FlowValidationError when task_splitter is None in config."""
+        flow_path = Path("tests/fixtures/batch_flow.yaml")
+        tasks_file = Path("tests/fixtures/sample_tasks.md")
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            import yaml
-
-            yaml.dump(flow.model_dump(), f)
-            flow_path = Path(f.name)
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-            f.write("Test task\n")
-            tasks_file = Path(f.name)
-
-        try:
+        with patch("fdsx.core.engine.load_config", return_value=FdsxConfig(task_splitter=None)):
             with tempfile.TemporaryDirectory() as tmpdir:
                 base_dir = Path(tmpdir)
                 with pytest.raises(engine.FlowValidationError, match="task_splitter"):
                     engine.run_batch(flow_path, tasks_file, base_dir)
-        finally:
-            flow_path.unlink()
-            tasks_file.unlink()
 
     def test_mutual_exclusion_validation(self):
         result = subprocess.run(
@@ -134,12 +113,13 @@ class TestBatchIntegrationWithMockedInput:
         )
 
         with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch("fdsx.core.engine.display_task_list", return_value=True):
-                with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        base_dir = Path(tmpdir)
-                        with patch("fdsx.core.engine.input", side_effect=["y", "y"]):
-                            results = engine.run_batch(flow_path, tasks_file, base_dir)
+            with patch("fdsx.core.engine.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+                with patch("fdsx.core.engine.display_task_list", return_value=True):
+                    with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            base_dir = Path(tmpdir)
+                            with patch("fdsx.core.engine.input", side_effect=["y", "y"]):
+                                results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert len(results) == 3
 
@@ -163,11 +143,12 @@ class TestBatchIntegrationWithMockedInput:
         )
 
         with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch("fdsx.core.engine.display_task_list", return_value=True):
-                with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        base_dir = Path(tmpdir)
-                        with patch("fdsx.core.engine.input", side_effect=["n"]):
-                            results = engine.run_batch(flow_path, tasks_file, base_dir)
+            with patch("fdsx.core.engine.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+                with patch("fdsx.core.engine.display_task_list", return_value=True):
+                    with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            base_dir = Path(tmpdir)
+                            with patch("fdsx.core.engine.input", side_effect=["n"]):
+                                results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert len(results) == 2

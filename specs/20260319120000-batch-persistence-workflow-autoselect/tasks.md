@@ -12,11 +12,11 @@
 
 ## Phase 2: Flow Model Changes
 
-- [ ] T8: Add description field — Add required `description: str` to `Flow` model in `src/fdsx/models/flow.py`
-- [ ] T9: Remove task_splitter — Remove `task_splitter` field from `Flow`. Handle gracefully if present in YAML (custom error) in `src/fdsx/models/flow.py`
-- [ ] T10: Update loader errors — Customize validation error for missing `description` with actionable guidance in `src/fdsx/core/loader.py`
-- [ ] T11: Update example workflow — Add `description` to `examples/workflows/plan-implement-review.yaml`
-- [ ] T12: Update tests — Fix broken tests from model changes, add tests for new validation in `tests/unit/test_models.py` and `tests/unit/test_loader.py`
+- [x] T8: Add description field — Add required `description: str` to `Flow` model in `src/fdsx/models/flow.py`
+- [x] T9: Remove task_splitter — Remove `task_splitter` field from `Flow`. Handle gracefully if present in YAML (custom error) in `src/fdsx/models/flow.py`
+- [x] T10: Update loader errors — Customize validation error for missing `description` with actionable guidance in `src/fdsx/core/loader.py`
+- [x] T11: Update example workflow — Add `description` to `examples/workflows/plan-implement-review.yaml`
+- [x] T12: Update tests — Fix broken tests from model changes, add tests for new validation in `tests/unit/test_models.py` and `tests/unit/test_loader.py`
 
 ## Phase 3: Split Command
 

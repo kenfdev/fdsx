@@ -59,9 +59,7 @@ class TestWorkflowSelectorConfigDefaults:
 class TestFdsxConfigDefaults:
     def test_default_task_splitter(self):
         cfg = FdsxConfig()
-        assert isinstance(cfg.task_splitter, TaskSplitterConfig)
-        assert cfg.task_splitter.provider == "claude"
-        assert cfg.task_splitter.model == "claude-sonnet-4-6"
+        assert cfg.task_splitter is None
 
     def test_default_workflow_selector(self):
         cfg = FdsxConfig()
@@ -102,8 +100,7 @@ class TestFdsxConfigDefaults:
 class TestLoadConfigNoFiles:
     def test_returns_defaults_when_no_files(self):
         cfg = load_config(load_global=False, load_project=False)
-        assert cfg.task_splitter.provider == "claude"
-        assert cfg.task_splitter.model == "claude-sonnet-4-6"
+        assert cfg.task_splitter is None
         assert cfg.workflow_selector.provider == "claude"
         assert cfg.auto_workflow is False
 

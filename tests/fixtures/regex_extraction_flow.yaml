@@ -1,4 +1,5 @@
 name: Regex Extraction Flow
+description: Regex extraction test flow
 start_at: echo_state
 version: '1.0'
 

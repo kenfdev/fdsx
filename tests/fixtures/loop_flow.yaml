@@ -1,4 +1,5 @@
 name: Loop Test Flow
+description: Loop test flow for testing max_loop behavior
 start_at: plan
 max_loop: 3
 

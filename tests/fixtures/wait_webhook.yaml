@@ -1,4 +1,5 @@
 name: Wait Webhook Flow
+description: Wait state with webhook for testing notifications
 start_at: plan
 version: '1.0'
 

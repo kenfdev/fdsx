@@ -1,4 +1,5 @@
 name: Invalid Flow - Mutual Exclusive Fields
+description: Invalid flow for testing mutual exclusivity validation
 start_at: start
 version: '1.0'
 

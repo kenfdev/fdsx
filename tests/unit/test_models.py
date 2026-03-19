@@ -84,6 +84,7 @@ class TestPydanticModels:
     def test_valid_flow(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for unit testing",
             start_at="start",
             states={
                 "start": TaskState(
@@ -102,6 +103,7 @@ class TestPydanticModels:
         with pytest.raises(ValueError, match="start_at"):
             Flow(
                 name="Test Flow",
+                description="Test flow with missing start_at",
                 start_at="nonexistent",
                 states={
                     "start": TaskState(
@@ -118,6 +120,7 @@ class TestPydanticModels:
         with pytest.raises(ValueError, match="does not exist"):
             Flow(
                 name="Test Flow",
+                description="Test flow with invalid next reference",
                 start_at="start",
                 states={
                     "start": TaskState(
@@ -198,6 +201,7 @@ class TestPydanticModels:
         with pytest.raises(ValueError, match="termination"):
             Flow(
                 name="Test Flow",
+                description="Test flow with no termination",
                 start_at="start",
                 states={
                     "start": TaskState(
@@ -270,6 +274,7 @@ class TestPydanticModels:
         through Flow's discriminated union using raw dicts (not pre-typed instances)."""
         flow = Flow(
             name="All State Types",
+            description="Test flow with all state types",
             start_at="task_step",
             states={
                 "task_step": {
@@ -549,3 +554,142 @@ class TestWebhookConfigValidation:
             template="Test",
         )
         assert config.url == "http://127.0.0.1:9000/webhook"
+
+
+class TestFlowDescriptionField:
+    """T8: Tests for the new required description field in Flow model."""
+
+    def test_flow_requires_description(self):
+        """T8: Flow model requires description field."""
+        with pytest.raises(ValidationError, match="description"):
+            Flow(
+                name="Test Flow",
+                start_at="start",
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+    def test_flow_accepts_valid_description(self):
+        """T8: Flow model accepts valid description."""
+        flow = Flow(
+            name="Test Flow",
+            description="A test flow with description",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+        )
+        assert flow.description == "A test flow with description"
+
+    def test_flow_description_can_be_multiline(self):
+        """T8: Flow description can be a multiline string."""
+        flow = Flow(
+            name="Test Flow",
+            description="Line 1\nLine 2\nLine 3",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+        )
+        assert "Line 1" in flow.description
+
+    def test_flow_rejects_empty_description(self):
+        """T8: Flow model must reject empty string description (min_length=1)."""
+        with pytest.raises(ValidationError, match="description"):
+            Flow(
+                name="Test Flow",
+                description="",
+                start_at="start",
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+
+class TestTaskSplitterRemoval:
+    """T9: Tests for task_splitter removal from Flow model."""
+
+    def test_task_splitter_rejected_in_constructor(self):
+        """T9: task_splitter field must be rejected with migration error."""
+        with pytest.raises(ValidationError, match="task_splitter"):
+            Flow(
+                name="Test Flow",
+                description="Test flow",
+                start_at="start",
+                task_splitter={
+                    "provider": "claude",
+                    "model": "claude-3-5-sonnet-20241022",
+                },
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+    def test_task_splitter_null_also_rejected(self):
+        """T9: task_splitter: null must also be rejected with migration error."""
+        with pytest.raises(ValidationError, match="task_splitter"):
+            Flow(
+                name="Test Flow",
+                description="Test flow",
+                start_at="start",
+                task_splitter=None,
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+    def test_task_splitter_migration_error_message(self):
+        """T9: Error message should guide users to config file."""
+        with pytest.raises(ValidationError, match="config"):
+            Flow(
+                name="Test Flow",
+                description="Test flow",
+                start_at="start",
+                task_splitter={"provider": "claude", "model": "opus"},
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )

@@ -1,5 +1,5 @@
 name: Plan-Implement-Review Loop
-comment: >
+description: >
   Full-featured example: Plan (Claude) -> Implement (opencode) ->
   Parallel Review (Codex x2: implementation + security) -> Aggregate ->
   Choice -> Wait (human approval) -> System command.

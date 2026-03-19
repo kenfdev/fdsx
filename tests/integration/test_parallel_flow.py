@@ -63,6 +63,7 @@ class TestParallelMinSuccess:
 
         flow = Flow(
             name="Parallel All Fail",
+            description="Test flow for min_success failure",
             start_at="parallel_state",
             states={
                 "parallel_state": ParallelState(

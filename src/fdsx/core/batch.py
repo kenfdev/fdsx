@@ -1,13 +1,14 @@
 import sys
 from typing import Any
 
+from fdsx.core.config import TaskSplitterConfig
 from fdsx.display.terminal import _sanitize_output
-from fdsx.models.flow import Flow, TaskSplitter
+from fdsx.models.flow import Flow
 from fdsx.providers.base import get_provider
 
 
 def split_tasks(
-    task_content: str, flow: Flow, task_splitter: TaskSplitter
+    task_content: str, flow: Flow, task_splitter: TaskSplitterConfig
 ) -> list[str]:
     """Invoke the task_splitter LLM to split the task file content into individual tasks.
 

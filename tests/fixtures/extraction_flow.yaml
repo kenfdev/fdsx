@@ -1,4 +1,5 @@
 name: Extraction Flow
+description: Extraction test flow for testing output extraction
 start_at: echo_state
 version: '1.0'
 

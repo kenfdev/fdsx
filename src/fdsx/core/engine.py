@@ -14,6 +14,7 @@ from fdsx.core.batch import (
     split_tasks,
 )
 from fdsx.core.compiler import compile_flow
+from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
 from fdsx.display.terminal import _sanitize_output, display_wait_prompt
 from fdsx.logging import RunRecorder
@@ -233,12 +234,16 @@ def run_batch(
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
 
-    if flow.task_splitter is None:
+    config = load_config()
+    if config.task_splitter is None:
         raise FlowValidationError(
-            "Flow must define 'task_splitter' configuration for batch execution"
+            "Batch execution requires task_splitter configuration. "
+            "Add task_splitter settings to your .fdsx/config.yaml:\n"
+            "  task_splitter:\n"
+            "    provider: claude\n"
+            "    model: claude-sonnet-4-6"
         )
-
-    task_splitter = flow.task_splitter
+    task_splitter = config.task_splitter
 
     tasks_file_content = tasks_file.read_text()
 

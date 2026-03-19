@@ -1,4 +1,5 @@
 name: Prompt File Test Flow
+description: Test flow for prompt file resolution
 start_at: task1
 version: '1.0'
 

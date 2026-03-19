@@ -85,12 +85,12 @@ class TestBatchCLIE2E:
         )
         assert "mutually exclusive" in result.stderr.lower()
 
-    def test_batch_missing_task_splitter(self):
-        """Test --tasks with flow missing task_splitter → exit code 2."""
+    def test_batch_missing_description(self):
+        """Test --tasks with flow missing description → exit code 2 with actionable error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            flow_path = Path(tmpdir) / "no_splitter_flow.yaml"
+            flow_path = Path(tmpdir) / "no_description_flow.yaml"
             flow_path.write_text(
-                "name: No Splitter Flow\n"
+                "name: No Description Flow\n"
                 "start_at: task1\n"
                 "version: '1.0'\n"
                 "\n"
@@ -124,4 +124,4 @@ class TestBatchCLIE2E:
             assert result.returncode == 2, (
                 f"Expected exit code 2, got {result.returncode}. stderr: {result.stderr}"
             )
-            assert "task_splitter" in result.stderr.lower()
+            assert "description" in result.stderr.lower()

@@ -55,18 +55,6 @@ class LLMClassifyFallback(BaseModel):
         return self
 
 
-class TaskSplitter(BaseModel):
-    """Configuration for batch task splitting."""
-
-    provider: str = Field(..., description="Provider name (claude/opencode/codex)")
-    model: str = Field(..., description="Model name")
-
-    @model_validator(mode="after")
-    def validate_provider(self) -> "TaskSplitter":
-        validate_llm_provider(self.provider, "task_splitter")
-        return self
-
-
 class ExtractRule(BaseModel):
     """Output extraction configuration."""
 
@@ -370,14 +358,23 @@ class Flow(BaseModel):
     """Top-level workflow definition."""
 
     name: str = Field(..., description="Flow name")
+    description: str = Field(..., min_length=1, description="Flow description")
     start_at: str = Field(..., description="Initial state name")
     states: dict[str, State] = Field(..., description="State definitions keyed by name")
-    comment: str | None = Field(default=None, description="Flow description")
     version: str | None = Field(default=None, description="Flow version")
-    task_splitter: TaskSplitter | None = Field(
-        default=None, description="Batch task splitting config"
-    )
     max_loop: int = Field(default=10, description="Max loop iterations")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_task_splitter(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """Reject task_splitter field and provide migration guidance."""
+        if "task_splitter" in values:
+            raise ValueError(
+                "task_splitter has been removed from Flow model. "
+                "Configure task splitting in your fdsx config file instead. "
+                "See: https://fdsx.dev/docs/config#task-splitter"
+            )
+        return values
 
     @model_validator(mode="after")
     def validate_start_at_exists(self) -> "Flow":

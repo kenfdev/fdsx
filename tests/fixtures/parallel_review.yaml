@@ -1,4 +1,5 @@
 name: Parallel Review Flow
+description: Parallel review flow for testing parallel state execution
 start_at: review_parallel
 version: '1.0'
 

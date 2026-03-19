@@ -9,13 +9,15 @@ from fdsx.core.batch import (
     _build_task_split_prompt,
     _extract_input_variables,
 )
-from fdsx.models.flow import Flow, TaskState, TaskSplitter
+from fdsx.core.config import TaskSplitterConfig
+from fdsx.models.flow import Flow, TaskState
 
 
 class TestSplitTasks:
     def test_split_tasks_parses_numbered_list(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for split tasks",
             start_at="plan",
             states={
                 "plan": TaskState(
@@ -27,7 +29,7 @@ class TestSplitTasks:
                 )
             },
         )
-        task_splitter = TaskSplitter(
+        task_splitter = TaskSplitterConfig(
             provider="claude", model="claude-3-5-sonnet-20241022"
         )
 
@@ -49,6 +51,7 @@ class TestSplitTasks:
     def test_split_tasks_empty_response(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for split tasks empty",
             start_at="plan",
             states={
                 "plan": TaskState(
@@ -60,7 +63,7 @@ class TestSplitTasks:
                 )
             },
         )
-        task_splitter = TaskSplitter(
+        task_splitter = TaskSplitterConfig(
             provider="claude", model="claude-3-5-sonnet-20241022"
         )
 
@@ -79,6 +82,7 @@ class TestSplitTasks:
     def test_split_tasks_provider_failure(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for provider failure",
             start_at="plan",
             states={
                 "plan": TaskState(
@@ -90,7 +94,7 @@ class TestSplitTasks:
                 )
             },
         )
-        task_splitter = TaskSplitter(
+        task_splitter = TaskSplitterConfig(
             provider="claude", model="claude-3-5-sonnet-20241022"
         )
 
@@ -204,6 +208,7 @@ class TestExtractInputVariables:
     def test_extract_from_task_states_with_prompt_template(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for extract input variables",
             start_at="plan",
             states={
                 "plan": TaskState(
@@ -234,6 +239,7 @@ class TestExtractInputVariables:
     def test_extract_returns_task_by_default(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for extract task default",
             start_at="plan",
             states={
                 "plan": TaskState(
@@ -255,6 +261,7 @@ class TestExtractInputVariables:
 
         flow = Flow(
             name="Test Flow",
+            description="Test flow for extract parallel branches",
             start_at="review",
             states={
                 "review": ParallelState(
@@ -285,6 +292,7 @@ class TestExtractInputVariables:
     def test_extract_dotted_variable_references(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for dotted variable references",
             start_at="plan",
             states={
                 "plan": TaskState(
@@ -305,12 +313,49 @@ class TestExtractInputVariables:
         assert "issue" in input_vars
 
 
-class TestTaskSplitterValidation:
-    def test_task_splitter_rejects_system_provider(self):
+class TestTaskSplitterConfigValidation:
+    def test_task_splitter_config_rejects_system_provider(self):
         with pytest.raises(ValueError, match="task_splitter provider must be one of"):
-            TaskSplitter(provider="system", model="default")
+            TaskSplitterConfig(provider="system", model="default")
 
-    def test_task_splitter_accepts_valid_llm_providers(self):
+    def test_task_splitter_config_accepts_valid_llm_providers(self):
         for provider in ["claude", "opencode", "codex"]:
-            ts = TaskSplitter(provider=provider, model="test-model")
+            ts = TaskSplitterConfig(provider=provider, model="test-model")
             assert ts.provider == provider
+
+
+class TestSplitTasksWithConfig:
+    """Regression tests: split_tasks accepts TaskSplitterConfig from config (T9 migration)."""
+
+    def test_split_tasks_accepts_task_splitter_config(self):
+        """split_tasks must work with TaskSplitterConfig from load_config()."""
+        flow = Flow(
+            name="Config Test Flow",
+            description="Test that split_tasks accepts TaskSplitterConfig",
+            start_at="plan",
+            states={
+                "plan": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+        )
+        config_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout="1. Task A\n2. Task B",
+            stderr="",
+        )
+
+        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+            tasks = split_tasks("test content", flow, config_splitter)
+
+        assert tasks == ["Task A", "Task B"]
+        # Verify the model from TaskSplitterConfig was forwarded to the provider
+        call_kwargs = mock_provider.execute.call_args[1]
+        assert call_kwargs["model"] == "claude-sonnet-4-6"

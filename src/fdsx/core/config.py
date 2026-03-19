@@ -56,9 +56,9 @@ class WorkflowSelectorConfig(BaseModel):
 class FdsxConfig(BaseModel):
     """Top-level fdsx configuration."""
 
-    task_splitter: TaskSplitterConfig = Field(
-        default_factory=TaskSplitterConfig,
-        description="Batch task splitting configuration",
+    task_splitter: TaskSplitterConfig | None = Field(
+        default=None,
+        description="Batch task splitting configuration (must be explicitly configured)",
     )
     workflow_selector: WorkflowSelectorConfig = Field(
         default_factory=WorkflowSelectorConfig,

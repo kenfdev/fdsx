@@ -1,4 +1,5 @@
 name: Choice Flow - Default Branch Test
+description: Choice flow testing default branch behavior
 start_at: check_status
 version: '1.0'
 

@@ -305,6 +305,7 @@ class TestMinSuccessDefault:
 
         flow = Flow(
             name="Min Success Default Test",
+            description="Test flow for min_success default",
             start_at="parallel_state",
             states={
                 "parallel_state": ParallelState(
