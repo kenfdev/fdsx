@@ -55,8 +55,8 @@
 
 ## Phase 6: Polish & Backward Compatibility
 
-- [ ] T39: Backward compat — Ensure `--tasks` (in-memory batch) still works. Reads task_splitter from config instead of flow in `src/fdsx/core/engine.py`
-- [ ] T40: Error messages — Clear errors for: no workflows found, invalid task file, no config, missing description
-- [ ] T41: Help text — Update all command help text and `--help` output in `src/fdsx/cli/main.py`
-- [ ] T42: Edge cases — Empty tasks dir, all tasks completed (no-op), single task file, invalid YAML task files
-- [ ] T43: End-to-end test — Full flow: split → edit → run → crash → resume → complete
+- [x] T39: Backward compat — Ensure `--tasks` (in-memory batch) still works. Reads task_splitter from config instead of flow in `src/fdsx/core/engine.py`
+- [x] T40: Error messages — Clear errors for: no workflows found, invalid task file, no config, missing description
+- [x] T41: Help text — Update all command help text and `--help` output in `src/fdsx/cli/main.py`
+- [x] T42: Edge cases — Empty tasks dir, all tasks completed (no-op), single task file, invalid YAML task files
+- [x] T43: End-to-end test — Full flow: split → edit → run → crash → resume → complete

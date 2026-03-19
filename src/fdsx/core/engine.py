@@ -631,7 +631,12 @@ def run_tasks_dir(
     """
     import uuid
 
-    task_files = load_tasks_dir(tasks_dir)
+    try:
+        task_files = load_tasks_dir(tasks_dir)
+    except ValueError as e:
+        raise FlowValidationError(str(e)) from e
+    except FileNotFoundError as e:
+        raise FlowValidationError(str(e))
     results: list[dict[str, Any]] = []
     workflow_assignments: dict[tuple[int, int], Path] = {}
 

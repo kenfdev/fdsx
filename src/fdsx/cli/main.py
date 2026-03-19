@@ -24,10 +24,14 @@ def run(
         None, "--input", help="Input variable as KEY=VALUE"
     ),
     tasks_file: Path | None = typer.Option(
-        None, "--tasks", help="Batch task file path"
+        None,
+        "--tasks",
+        help="Batch task file for in-memory splitting and execution (requires workflow argument)",
     ),
     tasks_dir: Path | None = typer.Option(
-        None, "--tasks-dir", help="Directory of task YAML files to execute"
+        None,
+        "--tasks-dir",
+        help="Directory of task YAML files for persistent batch execution with resume support",
     ),
     auto_workflow: bool | None = typer.Option(
         None,
@@ -40,7 +44,7 @@ def run(
         help="Confirm workflow selection before execution (overrides config)",
     ),
 ) -> None:
-    """Run a workflow from a YAML file."""
+    """Run a workflow. Supports single execution, in-memory batch (--tasks), and persistent batch (--tasks-dir) modes."""
     if tasks_dir is not None:
         if input_vars is not None or tasks_file is not None:
             typer.echo(
@@ -142,7 +146,7 @@ def run(
             result = engine.run_flow(workflow, inputs, thread_id, base_dir)
             typer.echo(json.dumps(result, indent=2))
     except FlowValidationError as e:
-        typer.echo(f"Validation error: {e}", err=True)
+        typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2)
     except RuntimeError as e:
         if isinstance(e, typer.Exit):
@@ -168,7 +172,7 @@ def validate(
         raise typer.Exit(code=0)
     else:
         for error in errors:
-            typer.echo(f"Error: {error}", err=True)
+            typer.echo(f"Error: {_sanitize_output(str(error))}", err=True)
         raise typer.Exit(code=2)
 
 
