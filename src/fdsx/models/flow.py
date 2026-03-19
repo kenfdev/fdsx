@@ -2,6 +2,8 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from fdsx.models.validators import validate_llm_provider
+
 
 def _parse_path_segments(path: str) -> list[str | int]:
     """Parse a JSONPath-like string into typed segments.
@@ -49,12 +51,7 @@ class LLMClassifyFallback(BaseModel):
 
     @model_validator(mode="after")
     def validate_provider(self) -> "LLMClassifyFallback":
-        valid_llm_providers = {"claude", "opencode", "codex"}
-        if self.provider not in valid_llm_providers:
-            raise ValueError(
-                f"LLM classify fallback provider must be one of "
-                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
-            )
+        validate_llm_provider(self.provider, "LLM classify fallback")
         return self
 
 
@@ -66,12 +63,7 @@ class TaskSplitter(BaseModel):
 
     @model_validator(mode="after")
     def validate_provider(self) -> "TaskSplitter":
-        valid_llm_providers = {"claude", "opencode", "codex"}
-        if self.provider not in valid_llm_providers:
-            raise ValueError(
-                f"task_splitter provider must be one of "
-                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
-            )
+        validate_llm_provider(self.provider, "task_splitter")
         return self
 
 
