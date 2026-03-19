@@ -1,0 +1,11 @@
+name: Input Test Flow
+start_at: greet
+version: '1.0'
+
+states:
+  greet:
+    type: task
+    provider: system
+    command: "echo Hello {task}"
+    result_path: $.greeting
+    end: true

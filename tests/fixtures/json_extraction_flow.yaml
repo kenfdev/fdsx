@@ -1,0 +1,50 @@
+name: JSON Extraction Flow
+start_at: echo_state
+version: '1.0'
+
+states:
+  echo_state:
+    type: task
+    provider: system
+    command: 'echo ''{"status": "approved", "reason": "looks good"}'''
+    result_path: $.raw_output
+    extract:
+      strategy:
+        - json
+      pattern: "status"
+      result_path: $.extracted_status
+    next: decision
+
+  decision:
+    type: choice
+    choices:
+      - variable: $.extracted_status
+        operator: equals
+        value: approved
+        next: approved_path
+      - variable: $.extracted_status
+        operator: equals
+        value: rejected
+        next: rejected_path
+    default: unknown_path
+
+  approved_path:
+    type: task
+    provider: system
+    command: echo "Approved path taken"
+    result_path: $.approved_result
+    end: true
+
+  rejected_path:
+    type: task
+    provider: system
+    command: echo "Rejected path taken"
+    result_path: $.rejected_result
+    end: true
+
+  unknown_path:
+    type: task
+    provider: system
+    command: echo "Unknown status"
+    result_path: $.unknown_result
+    end: true

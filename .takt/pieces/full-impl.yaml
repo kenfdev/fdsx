@@ -1,5 +1,5 @@
 name: full-impl
-description: Full pipeline — plan → implement → 3-parallel review (code quality, security, performance) → fix loop → finalize with PR creation
+description: Full pipeline — plan → implement → parallel review (code quality, security) → replan (Claude, routes by complexity) → fix-simple (minimax) / fix-complex (Sonnet) → finalize with PR creation
 max_movements: 15
 initial_movement: plan
 
@@ -25,12 +25,14 @@ instructions:
   review-code-quality: ../facets/instructions/review-code-quality.md
   review-security: ../facets/instructions/review-security.md
   review-performance: ../facets/instructions/review-performance.md
+  replan: ../facets/instructions/replan.md
   fix: ../facets/instructions/fix.md
   finalize: ../facets/instructions/finalize.md
 
 report_formats:
   plan: ../facets/output-contracts/plan-report.md
   implementation: ../facets/output-contracts/implementation-report.md
+  replan: ../facets/output-contracts/replan-report.md
 
 # --- Movements ---
 
@@ -96,24 +98,36 @@ movements:
           - condition: approved
           - condition: needs_fix
 
-      - name: performance
-        persona: performance-reviewer
-        instruction: review-performance
-        edit: false
-        provider: codex
-        model: gpt-5.4
-        rules:
-          - condition: approved
-          - condition: needs_fix
-
     rules:
       - condition: all("approved")
         next: finalize
       - condition: any("needs_fix")
-        next: fix
+        next: replan
 
-  # 4. Fix (OpenCode / opencode/minimax-m2.5-free)
-  - name: fix
+  # 4. Replan (Claude — analyze review feedback, classify complexity, route to fix agent)
+  - name: replan
+    persona: planner
+    instruction: replan
+    edit: false
+    provider: claude
+    output_contracts:
+      report:
+        - name: replan.md
+          format: replan
+    rules:
+      - condition: "Simple fixes only — route to cheap model"
+        next: fix-simple
+      - condition: "Complex fixes present — route to capable model"
+        next: fix-complex
+      - condition: "Blocked — fundamental design issues"
+        next: ABORT
+        requires_user_input: true
+        appendix: |
+          The replanner found fundamental design issues that require major rework.
+          Please review the feedback and re-run with updated guidance.
+
+  # 5a. Fix — simple (minimax, cheap)
+  - name: fix-simple
     persona: coder
     instruction: fix
     edit: true
@@ -124,13 +138,29 @@ movements:
       - condition: "Fixes applied"
         next: review
 
-  # 5. Finalize (Claude)
+  # 5b. Fix — complex (Sonnet, capable)
+  - name: fix-complex
+    persona: coder
+    instruction: fix
+    edit: true
+    required_permission_mode: edit
+    provider: claude
+    model: sonnet
+    rules:
+      - condition: "Fixes applied"
+        next: review
+
+  # 6. Finalize (Claude — commit → push → PR)
   - name: finalize
     persona: finalizer
     instruction: finalize
     edit: true
     required_permission_mode: full
     provider: claude
+    quality_gates:
+      - "All changes are committed (git status shows clean working tree)"
+      - "Branch is pushed to remote"
+      - "Pull request is created and URL is included in output"
     rules:
       - condition: "PR created successfully"
         next: COMPLETE
@@ -140,17 +170,52 @@ movements:
 # --- Loop Monitors ---
 
 loop_monitors:
-  - cycle: [review, fix]
-    threshold: 3
+  - cycle: [review, replan, fix-simple]
+    threshold: 2
     judge:
       persona: planner
       instruction: |
-        The review ↔ fix loop has repeated {cycle_count} times.
-        Evaluate whether the fixes are making meaningful progress
-        or if the implementation needs a fundamentally different approach.
+        The review ↔ fix-simple (cheap model) loop has repeated {cycle_count} times.
+
+        Read the latest review report and fix output. Evaluate:
+        1. Did the most recent fix resolve all blocking findings?
+        2. Has the cheap fix agent been making progress or repeating the same mistakes?
+        3. Are the remaining findings (if any) beyond what a simple model can handle?
+
+        Choose one:
+        - If all blocking findings are resolved → proceed to review for final verification
+        - If making progress and remaining issues are simple → continue with cheap model
+        - If the cheap model is struggling with complexity → escalate to capable model
+        - If fundamentally unfixable → abort
       rules:
-        - condition: "Progress is being made, continue"
-          next: fix
-        - condition: "No progress, abort"
+        - condition: "All blocking findings resolved — verify with review"
+          next: review
+        - condition: "Making progress, continue with cheap model"
+          next: fix-simple
+        - condition: "Needs stronger model — escalate"
+          next: fix-complex
+        - condition: "Fundamentally unfixable — abort"
           next: ABORT
 
+  - cycle: [review, replan, fix-complex]
+    threshold: 2
+    judge:
+      persona: planner
+      instruction: |
+        The review ↔ fix-complex (capable model) loop has repeated {cycle_count} times.
+
+        Read the latest review report and fix output. Evaluate:
+        1. Did the most recent fix resolve all blocking findings?
+        2. Has the fix agent been making partial progress or repeating the same mistakes?
+
+        Choose one:
+        - If all blocking findings are resolved → proceed to review for final verification
+        - If making clear progress and remaining issues are straightforward → continue
+        - If stalled with no meaningful code improvement → abort
+      rules:
+        - condition: "All blocking findings resolved — verify with review"
+          next: review
+        - condition: "Clear progress, fixable in one more iteration"
+          next: fix-complex
+        - condition: "Stalled or too complex to converge"
+          next: ABORT

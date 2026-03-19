@@ -1,0 +1,12 @@
+name: Prompt File Test Flow
+start_at: task1
+version: '1.0'
+
+states:
+  task1:
+    type: task
+    provider: claude
+    model: opus
+    prompt_file: prompt.txt
+    result_path: $.result
+    end: true

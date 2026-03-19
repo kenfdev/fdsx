@@ -1,0 +1,11 @@
+name: Invalid Flow - Bad Next Reference
+start_at: start
+version: '1.0'
+
+states:
+  start:
+    type: task
+    provider: system
+    command: 'echo "test"'
+    result_path: $.result
+    next: nonexistent

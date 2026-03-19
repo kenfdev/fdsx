@@ -1,0 +1,207 @@
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from fdsx.core.variables import analyze_variable_references
+from fdsx.models.flow import Flow
+from fdsx.providers.base import check_cli_exists
+
+
+def load_flow(
+    path: Path, input_keys: set[str] | None = None
+) -> tuple[Flow | None, list[str]]:
+    """Load and validate a flow from a YAML file.
+
+    Args:
+        path: Path to the YAML workflow file
+        input_keys: Optional set of CLI --input variable keys known at runtime
+
+    Returns:
+        tuple of (Flow or None, list of error messages)
+    """
+    if not path.exists():
+        return None, [f"File not found: {path}"]
+
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return None, [f"Invalid YAML: {e}"]
+
+    if data is None:
+        return None, ["Empty YAML file"]
+
+    flow, flow_errors = _parse_and_validate_flow(data, path)
+    if flow_errors:
+        return None, flow_errors
+
+    if flow is None:
+        return None, ["Failed to parse flow"]
+
+    var_errors = analyze_variable_references(flow, input_keys=input_keys)
+
+    cli_errors = _check_provider_clis(flow)
+
+    errors = var_errors + cli_errors
+    if errors:
+        return None, errors
+
+    return flow, []
+
+
+def _parse_and_validate_flow(
+    data: dict[str, Any], yaml_path: Path
+) -> tuple[Flow | None, list[str]]:
+    """Parse raw YAML data into Flow model and validate."""
+    errors: list[str] = []
+
+    try:
+        flow = Flow(**data)
+    except Exception as e:
+        return None, [f"Validation error: {e}"]
+
+    flow, resolve_errors = _resolve_prompt_files(flow, yaml_path)
+    if resolve_errors:
+        return None, resolve_errors
+
+    return flow, errors
+
+
+def _validate_prompt_file_path(
+    raw_path: str, prompt_path: Path, yaml_dir: Path, context: str
+) -> str | None:
+    """Validate that a prompt_file path is relative and stays within the workflow directory.
+
+    Returns an error string, or None if the path is safe.
+    """
+    if Path(raw_path).is_absolute():
+        return f"{context}: prompt_file must be a relative path, got absolute: {raw_path}"
+    resolved_dir = yaml_dir.resolve()
+    try:
+        prompt_path.relative_to(resolved_dir)
+    except ValueError:
+        return f"{context}: prompt_file path escapes workflow directory: {raw_path}"
+    return None
+
+
+def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]:
+    """Resolve prompt_file paths relative to YAML location.
+
+    Returns:
+        tuple of (Flow or original flow if errors, list of error messages)
+    """
+    yaml_dir = yaml_path.parent
+
+    import copy
+
+    flow_dict = copy.deepcopy(flow.model_dump())
+    errors: list[str] = []
+
+    for state_name, state_data in flow_dict.get("states", {}).items():
+        if state_data.get("type") == "task":
+            if "prompt_file" in state_data and state_data["prompt_file"]:
+                prompt_path = (yaml_dir / state_data["prompt_file"]).resolve()
+                path_error = _validate_prompt_file_path(
+                    state_data["prompt_file"], prompt_path, yaml_dir, f"State '{state_name}'"
+                )
+                if path_error:
+                    errors.append(path_error)
+                    continue
+                if not prompt_path.exists():
+                    errors.append(
+                        f"State '{state_name}': prompt_file not found: {state_data['prompt_file']}"
+                    )
+                    continue
+                try:
+                    with open(prompt_path) as f:
+                        state_data["prompt_template"] = f.read()
+                    del state_data["prompt_file"]
+                except Exception as e:
+                    errors.append(
+                        f"State '{state_name}': failed to read prompt_file: {e}"
+                    )
+        elif state_data.get("type") == "parallel":
+            for branch_idx, branch in enumerate(state_data.get("branches", [])):
+                if "prompt_file" in branch and branch["prompt_file"]:
+                    prompt_path = (yaml_dir / branch["prompt_file"]).resolve()
+                    path_error = _validate_prompt_file_path(
+                        branch["prompt_file"], prompt_path, yaml_dir, f"Parallel branch {branch_idx}"
+                    )
+                    if path_error:
+                        errors.append(path_error)
+                        continue
+                    if not prompt_path.exists():
+                        errors.append(
+                            f"Parallel branch {branch_idx}: prompt_file not found: {branch['prompt_file']}"
+                        )
+                        continue
+                    try:
+                        with open(prompt_path) as f:
+                            branch["prompt_template"] = f.read()
+                        del branch["prompt_file"]
+                    except Exception as e:
+                        errors.append(
+                            f"Parallel branch {branch_idx}: failed to read prompt_file: {e}"
+                        )
+
+    if errors:
+        return flow, errors
+
+    try:
+        return Flow(**flow_dict), []
+    except Exception as e:
+        return flow, [f"Failed to re-validate flow after prompt_file resolution: {e}"]
+
+
+def _check_provider_clis(flow: Flow) -> list[str]:
+    """Check that all provider CLIs exist on PATH."""
+    errors: list[str] = []
+
+    from fdsx.models.flow import TaskState, ParallelState
+
+    checked_providers: set[str] = set()
+
+    for state_name, state in flow.states.items():
+        if isinstance(state, TaskState):
+            if state.provider != "system" and state.provider not in checked_providers:
+                provider_cli = _get_provider_cli(state.provider)
+                if provider_cli and not check_cli_exists(provider_cli):
+                    errors.append(
+                        f"State '{state_name}': provider CLI '{provider_cli}' not found on PATH"
+                    )
+                checked_providers.add(state.provider)
+        elif isinstance(state, ParallelState):
+            for branch_idx, branch in enumerate(state.branches):
+                if (
+                    branch.provider != "system"
+                    and branch.provider not in checked_providers
+                ):
+                    provider_cli = _get_provider_cli(branch.provider)
+                    if provider_cli and not check_cli_exists(provider_cli):
+                        errors.append(
+                            f"Parallel state '{state_name}' branch {branch_idx}: provider CLI '{provider_cli}' not found on PATH"
+                        )
+                    checked_providers.add(branch.provider)
+
+    return errors
+
+
+def _get_provider_cli(provider: str) -> str | None:
+    """Get the CLI command for a provider."""
+    cli_map = {
+        "claude": "claude",
+        "opencode": "opencode",
+        "codex": "codex",
+    }
+    return cli_map.get(provider)
+
+
+def validate_flow(path: Path) -> tuple[bool, list[str]]:
+    """Validate a flow without executing it.
+
+    Returns:
+        tuple of (is_valid, list of error messages)
+    """
+    flow, errors = load_flow(path)
+    return flow is not None, errors

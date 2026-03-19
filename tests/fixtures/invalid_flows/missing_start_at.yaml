@@ -1,0 +1,11 @@
+name: Invalid Flow - Missing Start At
+start_at: nonexistent_state
+version: '1.0'
+
+states:
+  some_state:
+    type: task
+    provider: system
+    command: 'echo "test"'
+    result_path: $.result
+    end: true
