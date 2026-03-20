@@ -22,10 +22,10 @@
 
 **Goal**: Create typed Pydantic models for each provider's configuration options with `to_cli_flags()` methods.
 
-- [ ] T004 Write unit tests for `ClaudeOptions` model and `to_cli_flags()` in `tests/unit/test_provider_options.py` — test defaults, valid/invalid enum values, flag output for permission_mode, dangerously_skip_permissions, allowed_tools, disallowed_tools, empty flags, extra fields rejected
-- [ ] T005 Implement `ClaudeOptions(BaseModel)` in `src/fdsx/providers/claude.py` — fields: `permission_mode` (Literal), `dangerously_skip_permissions` (bool), `allowed_tools` (list[str]), `disallowed_tools` (list[str]), `to_cli_flags()`, `extra = "forbid"`
-- [ ] T006 [P] Write unit tests and implement `CodexOptions(BaseModel)` in `tests/unit/test_provider_options.py` and `src/fdsx/providers/codex.py` — fields: `sandbox` (Literal), `approval_policy` (Literal), `full_auto` (bool), `dangerously_bypass_approvals_and_sandbox` (bool), `to_cli_flags()`, `extra = "forbid"`
-- [ ] T007 [P] Write unit tests and implement `OpenCodeOptions(BaseModel)` in `tests/unit/test_provider_options.py` and `src/fdsx/providers/opencode.py` — empty options model with `to_cli_flags()` returning `[]`, `extra = "forbid"`
+- [x] T004 Write unit tests for `ClaudeOptions` model and `to_cli_flags()` in `tests/unit/test_provider_options.py` — test defaults, valid/invalid enum values, flag output for permission_mode, dangerously_skip_permissions, allowed_tools, disallowed_tools, empty flags, extra fields rejected
+- [x] T005 Implement `ClaudeOptions(BaseModel)` in `src/fdsx/providers/claude.py` — fields: `permission_mode` (Literal), `dangerously_skip_permissions` (bool), `allowed_tools` (list[str]), `disallowed_tools` (list[str]), `to_cli_flags()`, `extra = "forbid"`
+- [x] T006 [P] Write unit tests and implement `CodexOptions(BaseModel)` in `tests/unit/test_provider_options.py` and `src/fdsx/providers/codex.py` — fields: `sandbox` (Literal), `approval_policy` (Literal), `full_auto` (bool), `dangerously_bypass_approvals_and_sandbox` (bool), `to_cli_flags()`, `extra = "forbid"`
+- [x] T007 [P] Write unit tests and implement `OpenCodeOptions(BaseModel)` in `tests/unit/test_provider_options.py` and `src/fdsx/providers/opencode.py` — empty options model with `to_cli_flags()` returning `[]`, `extra = "forbid"`
 
 ---
 

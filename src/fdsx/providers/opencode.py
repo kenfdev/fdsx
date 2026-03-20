@@ -1,6 +1,18 @@
 from typing import Callable
 
+from pydantic import BaseModel, ConfigDict
+
 from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
+
+
+class OpenCodeOptions(BaseModel):
+    """Options for the OpenCode CLI provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    def to_cli_flags(self) -> list[str]:
+        """Translate options to OpenCode CLI flags (none currently defined)."""
+        return []
 
 
 class OpenCodeProvider(ProviderBase):

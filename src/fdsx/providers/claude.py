@@ -1,6 +1,32 @@
-from typing import Callable
+from typing import Callable, Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
+
+
+class ClaudeOptions(BaseModel):
+    """Options for the Claude CLI provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    permission_mode: Literal["default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"] | None = None
+    dangerously_skip_permissions: bool = False
+    allowed_tools: list[str] = []
+    disallowed_tools: list[str] = []
+
+    def to_cli_flags(self) -> list[str]:
+        """Translate options to Claude CLI flags."""
+        flags: list[str] = []
+        if self.permission_mode is not None:
+            flags.extend(["--permission-mode", self.permission_mode])
+        if self.dangerously_skip_permissions:
+            flags.append("--dangerously-skip-permissions")
+        for tool in self.allowed_tools:
+            flags.extend(["--allowedTools", tool])
+        for tool in self.disallowed_tools:
+            flags.extend(["--disallowedTools", tool])
+        return flags
 
 
 class ClaudeProvider(ProviderBase):
