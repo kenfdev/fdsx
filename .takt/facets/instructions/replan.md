@@ -21,6 +21,9 @@ Create a targeted fix plan based on review feedback, classify complexity, and ro
 - If ANY finding is complex → output `[STEP:2]` (route to capable model)
 - If findings reveal fundamental design issues requiring major rework → output `[STEP:3]` (blocked)
 
+**Scope boundary — plan report:**
+Read {report_dir}/plan.md for the **Out of Scope** section. Any review finding that targets files or areas listed as out of scope MUST be placed in your "Out of Scope" table — do NOT create fix instructions for them, even if the reviewer flagged them as blocking. The plan's scope boundary takes precedence over reviewer findings.
+
 **Important:**
 - Do NOT expand scope beyond what the review findings require
 - The fix agent works best with specific, concrete instructions. Write exact code patterns, not vague guidance like "handle concurrency properly"

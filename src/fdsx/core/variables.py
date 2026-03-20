@@ -1,3 +1,4 @@
+import json
 import re
 import shlex
 from typing import Any
@@ -18,6 +19,8 @@ def resolve_template(template: str, variables: dict[str, Any]) -> str:
         value = resolve_jsonpath(var_path, variables)
         if value is None:
             return match.group(0)
+        if isinstance(value, (list, dict)):
+            return json.dumps(value, indent=2, ensure_ascii=False)
         return str(value)
 
     return pattern.sub(replace_match, template)
@@ -37,6 +40,8 @@ def resolve_template_shell_safe(template: str, variables: dict[str, Any]) -> str
         value = resolve_jsonpath(var_path, variables)
         if value is None:
             return match.group(0)
+        if isinstance(value, (list, dict)):
+            return shlex.quote(json.dumps(value, indent=2, ensure_ascii=False))
         return shlex.quote(str(value))
 
     return pattern.sub(replace_match, template)
@@ -277,7 +282,7 @@ def analyze_variable_references(
 
     def get_prompt_variables(state: State | Branch) -> set[str]:
         variables: set[str] = set()
-        from fdsx.models.flow import TaskState, Branch
+        from fdsx.models.flow import TaskState, Branch, PassState
 
         if isinstance(state, TaskState):
             prompt = state.prompt_template or ""
@@ -287,6 +292,13 @@ def analyze_variable_references(
             prompt = state.prompt_template or ""
             command = state.command or ""
             prompt = prompt + " " + command
+        elif isinstance(state, PassState):
+            parts = []
+            if state.parameters:
+                for val in state.parameters.values():
+                    if isinstance(val, str):
+                        parts.append(val)
+            prompt = " ".join(parts)
         else:
             return variables
 
@@ -302,7 +314,7 @@ def analyze_variable_references(
 
     def get_result_paths(state: State) -> set[str]:
         result_paths: set[str] = set()
-        from fdsx.models.flow import ParallelState, TaskState
+        from fdsx.models.flow import ParallelState, PassState, TaskState
 
         if isinstance(state, TaskState):
             if state.result_path:
@@ -323,6 +335,18 @@ def analyze_variable_references(
                 result_paths.add(path)  # full path, not just root key
             # Do NOT register branch extract paths — they live inside
             # result array elements, not as top-level state variables.
+        elif isinstance(state, PassState):
+            if state.parameters:
+                for key in state.parameters:
+                    path = key
+                    if path.startswith("$."):
+                        path = path[2:]
+                    result_paths.add(path)
+            if state.aggregate and state.aggregate.result_path:
+                path = state.aggregate.result_path
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
         return result_paths
 
     reachable_states = set()
