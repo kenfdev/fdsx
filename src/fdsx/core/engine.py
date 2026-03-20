@@ -20,7 +20,7 @@ from fdsx.core.loader import load_flow
 from fdsx.core.selector import (
     resolve_workflow_for_task,
 )
-from fdsx.display.terminal import _sanitize_output, display_wait_prompt
+from fdsx.display.terminal import Spinner, _sanitize_output, display_wait_prompt
 from fdsx.logging import RunRecorder
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
@@ -646,6 +646,8 @@ def run_tasks_dir(
     project_root = base_dir.parent
     workflows_dir = project_root / config.workflows_dir
 
+    auto_selection_entries: list[tuple[int, int, Path, str]] = []
+
     for file_idx, (file_path, task_file) in enumerate(task_files):
         actionable = _filter_actionable_entries(task_file)
         for entry_idx, entry in actionable:
@@ -655,8 +657,23 @@ def run_tasks_dir(
             elif workflow_path is not None:
                 workflow_assignments[(file_idx, entry_idx)] = workflow_path
             else:
+                auto_selection_entries.append(
+                    (file_idx, entry_idx, file_path, entry.description)
+                )
+
+    if auto_selection_entries:
+        total = len(auto_selection_entries)
+        with Spinner(
+            f"Auto-selecting workflows for {total} task{'s' if total != 1 else ''}..."
+        ) as spinner:
+            for count, (file_idx, entry_idx, file_path, description) in enumerate(
+                auto_selection_entries, start=1
+            ):
+                spinner.update(
+                    f"Auto-selecting workflows for {total} task{'s' if total != 1 else ''}... ({count}/{total})"
+                )
                 resolved = resolve_workflow_for_task(
-                    task_description=entry.description,
+                    task_description=description,
                     workflows_dir=workflows_dir,
                     selector_config=config.workflow_selector,
                     auto_workflow=True,

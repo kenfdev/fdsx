@@ -8,7 +8,7 @@ from fdsx.core import engine
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
-from fdsx.display.terminal import _sanitize_output
+from fdsx.display.terminal import Spinner, _sanitize_output
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
@@ -279,14 +279,17 @@ def split(
 
     try:
         task_content = task_file.read_text()
-        groups = split_tasks_to_groups(task_content, task_splitter)
 
-        if not groups:
-            typer.echo("No tasks were generated from the input file.", err=True)
-            typer.echo(json.dumps([]))
-            return
+        with Spinner("Splitting tasks...") as spinner:
+            groups = split_tasks_to_groups(task_content, task_splitter)
 
-        created_files = write_task_files(groups, tasks_dir)
+            if not groups:
+                typer.echo("No tasks were generated from the input file.", err=True)
+                typer.echo(json.dumps([]))
+                return
+
+            spinner.update(f"Writing {len(groups)} task file(s)...")
+            created_files = write_task_files(groups, tasks_dir)
 
         typer.echo(
             f"Created {len(created_files)} task file(s) in {TASKS_DIR}/", err=True

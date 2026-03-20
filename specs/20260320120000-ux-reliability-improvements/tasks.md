@@ -38,9 +38,9 @@
 **Goal**: Wire spinner into `fdsx split` and `fdsx run` workflow auto-selection.
 **Test criteria**: `pytest tests/integration/test_split_spinner.py -x` passes; spinner starts/stops correctly during split and auto-selection.
 
-- [ ] T010 [US1] Wrap LLM call in `split_tasks_to_groups` (`src/fdsx/core/batch.py`) and `split` CLI command (`src/fdsx/cli/main.py`) with Spinner
-- [ ] T011 [US1] Wrap workflow auto-selection loop in `run_tasks_dir` (`src/fdsx/core/engine.py`) with Spinner showing progress (e.g., "Assigned workflow for 3/5 tasks...")
-- [ ] T012 [US1] Write integration tests for spinner during split and auto-selection operations in `tests/integration/test_split_spinner.py`
+- [x] T010 [US1] Wrap LLM call in `split_tasks_to_groups` (`src/fdsx/core/batch.py`) and `split` CLI command (`src/fdsx/cli/main.py`) with Spinner
+- [x] T011 [US1] Wrap workflow auto-selection loop in `run_tasks_dir` (`src/fdsx/core/engine.py`) with Spinner showing progress (e.g., "Assigned workflow for 3/5 tasks...")
+- [x] T012 [US1] Write integration tests for spinner during split and auto-selection operations in `tests/integration/test_split_spinner.py`
 
 ---
 
