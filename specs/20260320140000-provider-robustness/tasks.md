@@ -33,10 +33,10 @@
 
 **Goal**: Add `providers` section to `FdsxConfig` with deep merge support.
 
-- [ ] T008 Write unit tests for `_deep_merge()` utility in `tests/unit/test_config.py` — test flat dict override, nested recursive merge, scalar-to-dict override, empty override preserves base, providers merge across levels
-- [ ] T009 Implement `_deep_merge(base, override)` and update `load_config()` in `src/fdsx/core/config.py` — replace shallow dict merge with recursive deep merge
-- [ ] T010 Write unit tests for `FdsxConfig` with `providers` section in `tests/unit/test_config.py` — test valid provider options parsed, invalid enum rejected at load, extra fields rejected, deep merge across global/project, backward compatibility without providers
-- [ ] T011 Implement `ProviderConfigs(BaseModel)` and add `providers` field to `FdsxConfig` in `src/fdsx/core/config.py` — fields: `claude: ClaudeOptions | None`, `codex: CodexOptions | None`, `opencode: OpenCodeOptions | None`, `extra = "forbid"`
+- [x] T008 Write unit tests for `_deep_merge()` utility in `tests/unit/test_config.py` — test flat dict override, nested recursive merge, scalar-to-dict override, empty override preserves base, providers merge across levels
+- [x] T009 Implement `_deep_merge(base, override)` and update `load_config()` in `src/fdsx/core/config.py` — replace shallow dict merge with recursive deep merge
+- [x] T010 Write unit tests for `FdsxConfig` with `providers` section in `tests/unit/test_config.py` — test valid provider options parsed, invalid enum rejected at load, extra fields rejected, deep merge across global/project, backward compatibility without providers
+- [x] T011 Implement `ProviderConfigs(BaseModel)` and add `providers` field to `FdsxConfig` in `src/fdsx/core/config.py` — fields: `claude: ClaudeOptions | None`, `codex: CodexOptions | None`, `opencode: OpenCodeOptions | None`, `extra = "forbid"`
 
 ---
 

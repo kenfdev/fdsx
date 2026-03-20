@@ -1,7 +1,7 @@
 """Configuration system for fdsx.
 
 Loads config from XDG global (~/.config/fdsx/config.yaml) and project-level
-.fdsx/config.yaml, shallow-merging with project taking precedence.
+.fdsx/config.yaml, deep-merging with project taking precedence.
 Built-in defaults are used when no config files exist.
 """
 
@@ -15,6 +15,9 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 from fdsx.models.validators import validate_llm_provider
+from fdsx.providers.claude import ClaudeOptions
+from fdsx.providers.codex import CodexOptions
+from fdsx.providers.opencode import OpenCodeOptions
 
 
 class TaskSplitterConfig(BaseModel):
@@ -53,6 +56,25 @@ class WorkflowSelectorConfig(BaseModel):
         return validate_llm_provider(v, "workflow_selector")
 
 
+class ProviderConfigs(BaseModel):
+    """Configuration for provider-specific options."""
+
+    claude: ClaudeOptions | None = Field(
+        default=None,
+        description="Claude provider options",
+    )
+    codex: CodexOptions | None = Field(
+        default=None,
+        description="Codex provider options",
+    )
+    opencode: OpenCodeOptions | None = Field(
+        default=None,
+        description="OpenCode provider options",
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class FdsxConfig(BaseModel):
     """Top-level fdsx configuration."""
 
@@ -72,6 +94,10 @@ class FdsxConfig(BaseModel):
         default=False,
         description="Skip confirmation for auto-selected workflows",
     )
+    providers: ProviderConfigs | None = Field(
+        default=None,
+        description="Provider-specific configuration options",
+    )
 
     @field_validator("workflows_dir")
     @classmethod
@@ -86,6 +112,29 @@ class FdsxConfig(BaseModel):
         return v
 
     model_config = {"extra": "forbid"}
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge override into base, with override taking precedence.
+
+    When both base and override have a dict value for the same key, the dicts
+    are merged recursively. Otherwise, the override value wins outright.
+
+    Args:
+        base: Base dictionary (lower priority).
+        override: Override dictionary (higher priority).
+
+    Returns:
+        New merged dictionary (does not mutate either input).
+    """
+    result: dict[str, Any] = dict(base)
+    for key, override_val in override.items():
+        base_val = result.get(key)
+        if isinstance(base_val, dict) and isinstance(override_val, dict):
+            result[key] = _deep_merge(base_val, override_val)
+        else:
+            result[key] = override_val
+    return result
 
 
 def _load_yaml(path: Path | None) -> dict[str, Any]:
@@ -161,6 +210,8 @@ def load_config(
         if proj_config_dir is not None:
             raw_project = _load_yaml(proj_config_dir / "config.yaml")
 
-    merged: dict[str, Any] = {**defaults.model_dump(), **raw_global, **raw_project}
+    merged: dict[str, Any] = _deep_merge(
+        _deep_merge(defaults.model_dump(), raw_global), raw_project
+    )
 
     return FdsxConfig.model_validate(merged)
