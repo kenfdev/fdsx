@@ -1,11 +1,12 @@
 import operator
 import subprocess
 import time
-from typing import Annotated, Any, Callable, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt, Send
 
+from fdsx.core.config import _deep_merge
 from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
@@ -23,6 +24,9 @@ from fdsx.models.flow import (
     WaitState,
 )
 from fdsx.providers.base import get_provider
+
+if TYPE_CHECKING:
+    from fdsx.core.config import FdsxConfig
 
 
 class FlowState(TypedDict):
@@ -117,11 +121,52 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     return TypedDict("FlowState", annotations, total=False)  # type: ignore[no-any-return,operator]
 
 
+def _merge_provider_options(
+    config: "FdsxConfig | None",
+    flow: Flow,
+    provider_name: str,
+    task_options: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Merge provider options from three levels: config → workflow → task/branch.
+
+    Args:
+        config: Top-level fdsx configuration (level 1 source).
+        flow: The flow definition carrying workflow-level provider options (level 2).
+        provider_name: Provider name (e.g. 'claude', 'codex', 'opencode').
+        task_options: Per-task or per-branch provider_options dict (level 3).
+
+    Returns:
+        Merged options dict, or None if no options were set at any level.
+    """
+    merged: dict[str, Any] = {}
+
+    # Level 1: Config-level options.
+    # Use exclude_defaults=True so that Pydantic default values (False, [], None)
+    # do not override explicit settings at higher-priority levels.
+    if config is not None and config.providers is not None:
+        config_opts = getattr(config.providers, provider_name, None)
+        if config_opts is not None:
+            merged = _deep_merge(merged, config_opts.model_dump(exclude_defaults=True))
+
+    # Level 2: Workflow-level options (from flow.providers dict).
+    if flow.providers is not None:
+        flow_opts = flow.providers.get(provider_name)
+        if flow_opts is not None:
+            merged = _deep_merge(merged, flow_opts)
+
+    # Level 3: Task/Branch-level options.
+    if task_options is not None:
+        merged = _deep_merge(merged, task_options)
+
+    return merged if merged else None
+
+
 def compile_flow(
     flow: Flow,
     input_keys: set[str] | None = None,
     checkpointer: Any = None,
     recorder: Any = None,
+    config: "FdsxConfig | None" = None,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -132,6 +177,7 @@ def compile_flow(
         checkpointer: Optional checkpointer for state persistence.
                       If not provided and the flow contains Wait states,
                       a MemorySaver will be used as default.
+        config: Optional fdsx configuration used to resolve provider options.
 
     Returns:
         CompiledGraph with the compiled state machine
@@ -153,7 +199,7 @@ def compile_flow(
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
             graph.add_node(
-                state_name, _create_task_node(state_name, state, flow, recorder)
+                state_name, _create_task_node(state_name, state, flow, recorder, config)
             )  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):
             graph.add_node(
@@ -165,7 +211,7 @@ def compile_flow(
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_branch_{state_name}",
-                _create_branch_executor(state_name, state, flow, recorder),
+                _create_branch_executor(state_name, state, flow, recorder, config),
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_collect_{state_name}",
@@ -281,9 +327,14 @@ def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, An
 
 
 def _create_task_node(
-    state_name: str, state: TaskState, flow: Flow, recorder: Any = None
+    state_name: str,
+    state: TaskState,
+    flow: Flow,
+    recorder: Any = None,
+    config: "FdsxConfig | None" = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
+    merged_options = _merge_provider_options(config, flow, state.provider, state.provider_options)
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.extraction import extract_value
@@ -303,7 +354,7 @@ def _create_task_node(
         prompt = state.prompt_template or ""
         resolved_prompt = resolve_template(prompt, state_dict)
 
-        provider = get_provider(state.provider)
+        provider = get_provider(state.provider, merged_options)
 
         max_retries = state.retry if state.retry is not None else 3
         last_error = "No attempts made"
@@ -431,7 +482,11 @@ def _create_dispatch_node(
 
 
 def _create_branch_executor(
-    state_name: str, state: ParallelState, flow: Flow, recorder: Any = None
+    state_name: str,
+    state: ParallelState,
+    flow: Flow,
+    recorder: Any = None,
+    config: "FdsxConfig | None" = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a shared branch executor node invoked once per branch via Send.
 
@@ -458,7 +513,8 @@ def _create_branch_executor(
         prompt = branch.prompt_template or ""
         resolved_prompt = resolve_template(prompt, state_dict)
 
-        provider = get_provider(branch.provider)
+        merged_options = _merge_provider_options(config, flow, branch.provider, branch.provider_options)
+        provider = get_provider(branch.provider, merged_options)
 
         max_retries = branch.retry if branch.retry is not None else 3
         last_error = "No attempts made"

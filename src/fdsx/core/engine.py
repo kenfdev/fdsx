@@ -88,11 +88,14 @@ def run_flow(
         flow_version=flow.version,
     )
 
+    fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
+
     compiled = compile_flow(
         flow,
         input_keys=set(inputs.keys()) if inputs else None,
         checkpointer=checkpointer,
         recorder=recorder,
+        config=fdsx_config,
     )
 
     initial_state: dict[str, Any] = {
@@ -403,10 +406,13 @@ def resume_flow(
             flow_version=flow_version,
         )
 
+        fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
+
         compiled = compile_flow(
             flow,
             checkpointer=checkpointer,
             recorder=recorder,
+            config=fdsx_config,
         )
 
         parallel_extra = sum(

@@ -32,6 +32,9 @@ class CodexOptions(BaseModel):
 class CodexProvider(ProviderBase):
     """Codex provider - executes Codex CLI."""
 
+    def __init__(self, options: CodexOptions | None = None) -> None:
+        self.options: CodexOptions = options if options is not None else CodexOptions()
+
     def execute(
         self,
         prompt: str,
@@ -55,6 +58,7 @@ class CodexProvider(ProviderBase):
         args = ["codex", "exec"]
         if model:
             args.extend(["--model", model])
+        args.extend(self.options.to_cli_flags())
         args.append(prompt)
 
         return _run_subprocess(

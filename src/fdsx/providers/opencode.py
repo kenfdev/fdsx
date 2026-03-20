@@ -18,6 +18,9 @@ class OpenCodeOptions(BaseModel):
 class OpenCodeProvider(ProviderBase):
     """OpenCode provider - executes OpenCode CLI."""
 
+    def __init__(self, options: OpenCodeOptions | None = None) -> None:
+        self.options: OpenCodeOptions = options if options is not None else OpenCodeOptions()
+
     def execute(
         self,
         prompt: str,
@@ -41,6 +44,7 @@ class OpenCodeProvider(ProviderBase):
         args = ["opencode", "run"]
         if model:
             args.extend(["-m", model])
+        args.extend(self.options.to_cli_flags())
         args.append(prompt)
 
         return _run_subprocess(

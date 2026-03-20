@@ -53,12 +53,12 @@
 
 **Goal**: Wire config merging in compiler, provider construction with options, and engine config passthrough.
 
-- [ ] T014 Write unit tests for `get_provider()` with options in `tests/unit/test_provider_options.py` — test claude/codex/opencode with and without options, system provider ignores options, unknown provider raises
-- [ ] T015 Implement `get_provider(name, options=None)` and provider constructors in `src/fdsx/providers/base.py`, `src/fdsx/providers/claude.py`, `src/fdsx/providers/codex.py`, `src/fdsx/providers/opencode.py` — add `__init__(self, options)` to each provider, modify `execute()` to append `self.options.to_cli_flags()`
-- [ ] T016 Write unit tests for `_merge_provider_options()` in `tests/unit/test_compiler_merge.py` — test config-only, workflow overrides config, task overrides workflow, full 4-level merge, all-None, different providers across levels
-- [ ] T017 Implement `_merge_provider_options()` and update `compile_flow()` in `src/fdsx/core/compiler.py` — add merge utility, accept `config: FdsxConfig | None`, modify `_create_task_node()` and `_create_branch_executor()` to resolve and pass options to `get_provider()`
-- [ ] T018 Update engine to pass config to compiler in `src/fdsx/core/engine.py` — modify `run_flow()`, `resume_flow()`, `run_batch()`, `run_tasks_dir()` to load and pass config to `compile_flow()`
-- [ ] T019 Write integration tests for end-to-end workflow with provider options in `tests/integration/test_provider_options.py` — test claude with permission_mode, config + workflow merge, task-level override, unchanged workflows without options, parallel branches with mixed providers
+- [x] T014 Write unit tests for `get_provider()` with options in `tests/unit/test_provider_options.py` — test claude/codex/opencode with and without options, system provider ignores options, unknown provider raises
+- [x] T015 Implement `get_provider(name, options=None)` and provider constructors in `src/fdsx/providers/base.py`, `src/fdsx/providers/claude.py`, `src/fdsx/providers/codex.py`, `src/fdsx/providers/opencode.py` — add `__init__(self, options)` to each provider, modify `execute()` to append `self.options.to_cli_flags()`
+- [x] T016 Write unit tests for `_merge_provider_options()` in `tests/unit/test_compiler_merge.py` — test config-only, workflow overrides config, task overrides workflow, full 4-level merge, all-None, different providers across levels
+- [x] T017 Implement `_merge_provider_options()` and update `compile_flow()` in `src/fdsx/core/compiler.py` — add merge utility, accept `config: FdsxConfig | None`, modify `_create_task_node()` and `_create_branch_executor()` to resolve and pass options to `get_provider()`
+- [x] T018 Update engine to pass config to compiler in `src/fdsx/core/engine.py` — modify `run_flow()`, `resume_flow()`, `run_batch()`, `run_tasks_dir()` to load and pass config to `compile_flow()`
+- [x] T019 Write integration tests for end-to-end workflow with provider options in `tests/integration/test_provider_options.py` — test claude with permission_mode, config + workflow merge, task-level override, unchanged workflows without options, parallel branches with mixed providers
 
 ---
 

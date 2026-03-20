@@ -2,7 +2,7 @@ import logging
 import subprocess
 import threading
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -171,23 +171,38 @@ def _run_subprocess(
         )
 
 
-def get_provider(name: str) -> ProviderBase:
-    """Factory function to get a provider by name."""
+def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBase:
+    """Factory function to get a provider by name.
+
+    Args:
+        name: Provider name (claude, codex, opencode, system).
+        options: Optional dict of provider-specific options. Converted to the
+                 appropriate typed options model internally. Ignored for system provider.
+
+    Returns:
+        A ProviderBase instance configured with the given options.
+
+    Raises:
+        ValueError: If the provider name is unknown.
+    """
     if name == "system":
         from fdsx.providers.system import SystemProvider
 
         return SystemProvider()
     elif name == "claude":
-        from fdsx.providers.claude import ClaudeProvider
+        from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
 
-        return ClaudeProvider()
+        claude_opts = ClaudeOptions.model_validate(options) if options else None
+        return ClaudeProvider(claude_opts)
     elif name == "opencode":
-        from fdsx.providers.opencode import OpenCodeProvider
+        from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
 
-        return OpenCodeProvider()
+        opencode_opts = OpenCodeOptions.model_validate(options) if options else None
+        return OpenCodeProvider(opencode_opts)
     elif name == "codex":
-        from fdsx.providers.codex import CodexProvider
+        from fdsx.providers.codex import CodexOptions, CodexProvider
 
-        return CodexProvider()
+        codex_opts = CodexOptions.model_validate(options) if options else None
+        return CodexProvider(codex_opts)
     else:
         raise ValueError(f"Unknown provider: {name}")

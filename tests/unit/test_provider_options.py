@@ -1,11 +1,13 @@
-"""Unit tests for provider option models (T004, T006, T007)."""
+"""Unit tests for provider option models (T004, T006, T007) and get_provider factory (T014)."""
 
 import pytest
 from pydantic import ValidationError
 
-from fdsx.providers.claude import ClaudeOptions
-from fdsx.providers.codex import CodexOptions
-from fdsx.providers.opencode import OpenCodeOptions
+from fdsx.providers.base import get_provider
+from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
+from fdsx.providers.codex import CodexOptions, CodexProvider
+from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
+from fdsx.providers.system import SystemProvider
 
 
 class TestClaudeOptions:
@@ -182,3 +184,74 @@ class TestOpenCodeOptions:
         """Extra fields must be rejected."""
         with pytest.raises(ValidationError):
             OpenCodeOptions(unknown_field="value")  # type: ignore[call-arg]
+
+
+class TestGetProvider:
+    """T014: Tests for get_provider() factory with options parameter."""
+
+    def test_get_provider_claude_no_options(self):
+        """get_provider('claude') returns ClaudeProvider with default options."""
+        provider = get_provider("claude")
+        assert isinstance(provider, ClaudeProvider)
+        assert provider.options == ClaudeOptions()
+
+    def test_get_provider_claude_with_options(self):
+        """get_provider('claude', options) returns ClaudeProvider with typed options."""
+        provider = get_provider("claude", {"permission_mode": "bypassPermissions"})
+        assert isinstance(provider, ClaudeProvider)
+        assert provider.options.permission_mode == "bypassPermissions"
+
+    def test_get_provider_claude_options_reflected_in_flags(self):
+        """Options passed to get_provider are reflected in to_cli_flags()."""
+        provider = get_provider("claude", {"dangerously_skip_permissions": True})
+        assert isinstance(provider, ClaudeProvider)
+        assert "--dangerously-skip-permissions" in provider.options.to_cli_flags()
+
+    def test_get_provider_codex_no_options(self):
+        """get_provider('codex') returns CodexProvider with default options."""
+        provider = get_provider("codex")
+        assert isinstance(provider, CodexProvider)
+        assert provider.options == CodexOptions()
+
+    def test_get_provider_codex_with_options(self):
+        """get_provider('codex', options) returns CodexProvider with typed options."""
+        provider = get_provider("codex", {"sandbox": "workspace-write"})
+        assert isinstance(provider, CodexProvider)
+        assert provider.options.sandbox == "workspace-write"
+
+    def test_get_provider_opencode_no_options(self):
+        """get_provider('opencode') returns OpenCodeProvider with default options."""
+        provider = get_provider("opencode")
+        assert isinstance(provider, OpenCodeProvider)
+        assert provider.options == OpenCodeOptions()
+
+    def test_get_provider_opencode_with_options(self):
+        """get_provider('opencode', options={}) returns OpenCodeProvider."""
+        provider = get_provider("opencode", {})
+        assert isinstance(provider, OpenCodeProvider)
+
+    def test_get_provider_system_no_options(self):
+        """get_provider('system') returns SystemProvider."""
+        provider = get_provider("system")
+        assert isinstance(provider, SystemProvider)
+
+    def test_get_provider_system_ignores_options(self):
+        """get_provider('system', options) ignores options and returns SystemProvider."""
+        provider = get_provider("system", {"some_option": "value"})
+        assert isinstance(provider, SystemProvider)
+
+    def test_get_provider_unknown_raises(self):
+        """get_provider with unknown name raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown provider"):
+            get_provider("unknown_provider")
+
+    def test_get_provider_claude_none_options(self):
+        """get_provider('claude', None) is same as no options."""
+        provider = get_provider("claude", None)
+        assert isinstance(provider, ClaudeProvider)
+        assert provider.options == ClaudeOptions()
+
+    def test_get_provider_claude_invalid_options_raises(self):
+        """get_provider with invalid options dict raises ValidationError."""
+        with pytest.raises(ValidationError):
+            get_provider("claude", {"permission_mode": "invalid_mode"})

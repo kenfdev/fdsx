@@ -32,6 +32,9 @@ class ClaudeOptions(BaseModel):
 class ClaudeProvider(ProviderBase):
     """Claude provider - executes Claude CLI."""
 
+    def __init__(self, options: ClaudeOptions | None = None) -> None:
+        self.options: ClaudeOptions = options if options is not None else ClaudeOptions()
+
     def execute(
         self,
         prompt: str,
@@ -55,6 +58,7 @@ class ClaudeProvider(ProviderBase):
         args = ["claude", "-p", prompt]
         if model:
             args.extend(["--model", model])
+        args.extend(self.options.to_cli_flags())
 
         return _run_subprocess(
             args=args,
