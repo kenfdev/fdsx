@@ -439,6 +439,10 @@ def confirm_workflow_assignments_interactive(
     if not is_interactive():
         return dict(workflow_assignments)
 
+    unassigned = [k for k in display_keys if k not in workflow_assignments]
+    if len(display_keys) == 1 and not unassigned:
+        return dict(workflow_assignments)
+
     assignments = dict(workflow_assignments)
 
     while True:

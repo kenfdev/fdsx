@@ -37,15 +37,20 @@ def run(
     auto_workflow: bool | None = typer.Option(
         None,
         "--auto-workflow",
-        help="Skip confirmation and auto-select workflow (overrides config)",
+        help="Skip interactive workflow confirmation and auto-select (overrides config)",
     ),
     confirm_workflow: bool | None = typer.Option(
         None,
         "--confirm-workflow",
-        help="Confirm workflow selection before execution (overrides config)",
+        help="Show interactive workflow confirmation UI before execution (overrides config)",
     ),
 ) -> None:
-    """Run a workflow. Supports single execution, in-memory batch (--tasks), and persistent batch (--tasks-dir) modes."""
+    """Run a workflow. Supports single execution, in-memory batch (--tasks), and persistent batch (--tasks-dir) modes.
+
+    Shows an animated spinner during workflow auto-selection for tasks-dir mode.
+    Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
+    Use --auto-workflow to skip the confirmation UI.
+    In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
     if tasks_dir is not None:
         if input_vars is not None or tasks_file is not None:
             typer.echo(
@@ -270,6 +275,8 @@ def split(
 
     Reads task_splitter configuration from .fdsx/config.yaml (or defaults).
     Writes numbered task files to .fdsx/tasks/ directory.
+    Shows an animated spinner during LLM splitting. In non-interactive (non-TTY) terminals,
+    prints plain log lines instead of animation.
     """
     if not task_file.exists():
         typer.echo(f"Error: Task file not found: {task_file}", err=True)

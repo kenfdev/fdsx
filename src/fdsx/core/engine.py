@@ -713,6 +713,13 @@ def run_tasks_dir(
             entry = task_file.entries[entry_idx]
             entry.workflow = wf_path.name
             save_task_file(file_path, task_file)
+    elif auto_workflow and auto_selection_keys:
+        for (file_idx, entry_idx), wf_path in workflow_assignments.items():
+            file_path, task_file = task_files[file_idx]
+            entry = task_file.entries[entry_idx]
+            if entry.workflow is None:
+                entry.workflow = wf_path.name
+                save_task_file(file_path, task_file)
 
     for file_idx, (file_path, task_file) in enumerate(task_files):
         actionable = _filter_actionable_entries(task_file)

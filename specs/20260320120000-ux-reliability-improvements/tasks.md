@@ -79,9 +79,9 @@
 **Goal**: Ensure all features work together, edge cases handled.
 **Test criteria**: Full test suite passes (`pytest tests/ -x`); help text updated; edge cases covered.
 
-- [ ] T027 Update `--help` output for `run` and `split` commands to mention spinner and CUI behavior in `src/fdsx/cli/main.py`
-- [ ] T028 Handle edge cases: empty tasks dir, all tasks completed, spinner during zero-task split, CUI with single task — in relevant source files
-- [ ] T029 Write end-to-end test: split (with spinner) → auto-select (with spinner) → CUI confirm → persist → re-run (skip selection) → error → resume command displayed in `tests/integration/`
+- [x] T027 Update `--help` output for `run` and `split` commands to mention spinner and CUI behavior in `src/fdsx/cli/main.py`
+- [x] T028 Handle edge cases: empty tasks dir, all tasks completed, spinner during zero-task split, CUI with single task — in relevant source files
+- [x] T029 Write end-to-end test: split (with spinner) → auto-select (with spinner) → CUI confirm → persist → re-run (skip selection) → error → resume command displayed in `tests/integration/`
 
 ---
 
