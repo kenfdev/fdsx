@@ -548,3 +548,60 @@ def confirm_workflow_assignments_interactive(
         except ValueError:
             stream.write("Invalid input. Enter a number.\n")
             stream.flush()
+
+
+def display_resume_command(
+    mode: str,
+    thread_id: str | None = None,
+    tasks_dir: Path | None = None,
+    extra_args: list[str] | None = None,
+    stream: TextIO | None = None,
+) -> None:
+    """Display a box-formatted resume command for error/interrupt scenarios.
+
+    Args:
+        mode: Either "single-flow" or "tasks-dir".
+        thread_id: Thread ID for single-flow mode.
+        tasks_dir: Tasks directory for tasks-dir mode.
+        extra_args: Additional command-line arguments to include.
+        stream: Output stream (defaults to sys.stderr).
+    """
+    if stream is None:
+        stream = sys.stderr
+
+    if mode == "single-flow":
+        if thread_id is None:
+            raise ValueError("thread_id is required for single-flow mode")
+        cmd_parts = ["fdsx", "resume", "--thread-id", _sanitize_output(thread_id)]
+    elif mode == "tasks-dir":
+        if tasks_dir is None:
+            raise ValueError("tasks_dir is required for tasks-dir mode")
+        cmd_parts = ["fdsx", "run", "--tasks-dir", _sanitize_output(str(tasks_dir))]
+    else:
+        raise ValueError(f"Invalid mode: {mode}. Use 'single-flow' or 'tasks-dir'.")
+
+    if extra_args:
+        for arg in extra_args:
+            cmd_parts.append(_sanitize_output(arg))
+
+    command = " ".join(cmd_parts)
+
+    width = max(len(command) + 4, 50)
+    border = "+" + "-" * (width - 2) + "+"
+    padding = " " * (width - 2)
+
+    stream.write("\n")
+    stream.write(border + "\n")
+    if mode == "single-flow":
+        stream.write(f"|{padding}|\n")
+        stream.write(f"|  To resume this flow, run:\n")
+        stream.write(f"|  $ {command}\n")
+        stream.write(f"|{padding}|\n")
+    else:
+        stream.write(f"|{padding}|\n")
+        stream.write(f"|  To continue processing, run:\n")
+        stream.write(f"|  $ {command}\n")
+        stream.write(f"|{padding}|\n")
+    stream.write(border + "\n")
+    stream.write("\n")
+    stream.flush()

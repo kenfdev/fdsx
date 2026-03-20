@@ -1,4 +1,5 @@
 import json
+import uuid
 from pathlib import Path
 
 import typer
@@ -8,7 +9,7 @@ from fdsx.core import engine
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
-from fdsx.display.terminal import Spinner, _sanitize_output
+from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
@@ -118,6 +119,8 @@ def run(
     if confirm_workflow is not None:
         effective_auto_workflow = not confirm_workflow
 
+    current_thread_id = thread_id if thread_id else None
+
     try:
         if tasks_dir is not None:
             results = engine.run_tasks_dir(
@@ -143,21 +146,39 @@ def run(
                 raise typer.Exit(code=0)
         else:
             assert workflow is not None
-            result = engine.run_flow(workflow, inputs, thread_id, base_dir)
+            if current_thread_id is None:
+                current_thread_id = str(uuid.uuid4())
+            result = engine.run_flow(workflow, inputs, current_thread_id, base_dir)
             typer.echo(json.dumps(result, indent=2))
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2)
+    except KeyboardInterrupt:
+        _display_resume_on_error(tasks_dir, current_thread_id)
+        raise typer.Exit(code=130)
     except RuntimeError as e:
         if isinstance(e, typer.Exit):
             raise
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        _display_resume_on_error(tasks_dir, current_thread_id)
         raise typer.Exit(code=1)
     except Exception as e:
         if not isinstance(e, typer.Exit):
             typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+            _display_resume_on_error(tasks_dir, current_thread_id)
             raise typer.Exit(code=1)
         raise
+
+
+def _display_resume_on_error(
+    tasks_dir: Path | None,
+    thread_id: str | None,
+) -> None:
+    """Display resume command on error, if applicable."""
+    if tasks_dir is not None:
+        display_resume_command(mode="tasks-dir", tasks_dir=tasks_dir)
+    elif thread_id is not None:
+        display_resume_command(mode="single-flow", thread_id=thread_id)
 
 
 @app.command()

@@ -65,12 +65,12 @@
 **Goal**: Display the resume command on all errors and SIGINT interrupts.
 **Test criteria**: `pytest tests/unit/test_resume_display.py tests/integration/test_resume_interrupt.py -x` passes; resume command displayed on errors and Ctrl+C.
 
-- [ ] T021 [US3] TDD: Write tests for `display_resume_command` output format for single-flow, tasks-dir, and with extra args in `tests/unit/test_resume_display.py`
-- [ ] T022 [US3] Implement `display_resume_command()` in `src/fdsx/display/terminal.py` with box-formatted output showing the full resume command
-- [ ] T023 [US3] In `src/fdsx/cli/main.py` `run()`, catch exceptions from engine calls and display resume command before re-raising
-- [ ] T024 [US3] In `src/fdsx/cli/main.py` `run()`, catch `KeyboardInterrupt` from engine calls and display resume command
-- [ ] T025 [US3] For tasks-dir mode, display `fdsx run --tasks-dir <path>` instead of `fdsx resume --thread-id` (tasks-dir has built-in resume) in `src/fdsx/cli/main.py`
-- [ ] T026 [US3] Write integration tests for error and SIGINT scenarios displaying correct resume commands in `tests/integration/test_resume_interrupt.py`
+- [x] T021 [US3] TDD: Write tests for `display_resume_command` output format for single-flow, tasks-dir, and with extra args in `tests/unit/test_resume_display.py`
+- [x] T022 [US3] Implement `display_resume_command()` in `src/fdsx/display/terminal.py` with box-formatted output showing the full resume command
+- [x] T023 [US3] In `src/fdsx/cli/main.py` `run()`, catch exceptions from engine calls and display resume command before re-raising
+- [x] T024 [US3] In `src/fdsx/cli/main.py` `run()`, catch `KeyboardInterrupt` from engine calls and display resume command
+- [x] T025 [US3] For tasks-dir mode, display `fdsx run --tasks-dir <path>` instead of `fdsx resume --thread-id` (tasks-dir has built-in resume) in `src/fdsx/cli/main.py`
+- [x] T026 [US3] Write integration tests for error and SIGINT scenarios displaying correct resume commands in `tests/integration/test_resume_interrupt.py`
 
 ---
 
