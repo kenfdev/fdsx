@@ -1,6 +1,16 @@
 import sys
+import threading
 from datetime import datetime
-from typing import Any
+from typing import Any, TextIO
+
+
+def is_interactive() -> bool:
+    """Check if stderr is connected to an interactive terminal.
+
+    Returns:
+        True if stderr is a TTY, False otherwise.
+    """
+    return sys.stderr.isatty()
 
 
 def _sanitize_output(text: str) -> str:
@@ -16,6 +26,16 @@ def _sanitize_output(text: str) -> str:
         if ch in ("\t", "\n")
         or (ch >= " " and ch != "\x7f" and not ("\x80" <= ch <= "\x9f"))
     )
+
+
+def _sanitize_spinner_text(text: str) -> str:
+    """Sanitize text for single-line spinner display.
+
+    Strips control characters via _sanitize_output(), then replaces
+    newlines and tabs with spaces to prevent log/terminal line injection.
+    """
+    sanitized = _sanitize_output(text)
+    return sanitized.replace("\n", " ").replace("\r", " ").replace("\t", " ")
 
 
 def display_state_start(
@@ -238,3 +258,119 @@ def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> st
                 f"Invalid input. Please enter a number between 1 and {len(choices)}.",
                 file=sys.stderr,
             )
+
+
+class Spinner:
+    """Terminal spinner with TTY and non-TTY fallback modes.
+
+    In TTY mode: displays rotating spinner characters that update in place.
+    In non-TTY mode: prints a simple message without animation (CI/log friendly).
+
+    Attributes:
+        _FRAMES: Sequence of spinner characters for TTY mode.
+        _stream: Output stream (defaults to sys.stderr).
+        _message: Current message to display.
+        _interactive: Whether stderr is connected to an interactive terminal (via is_interactive()).
+        _stop_event: Threading event to signal spinner stop.
+        _thread: Background thread running the spinner animation (TTY mode only).
+        _running: Whether the spinner is currently active.
+    """
+
+    _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self, message: str = "", stream: TextIO | None = None) -> None:
+        """Initialize the spinner.
+
+        Args:
+            message: Initial message to display next to the spinner.
+            stream: Output stream to write to. Defaults to sys.stderr.
+        """
+        self._stream = stream if stream is not None else sys.stderr
+        self._message = message
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._interactive = is_interactive()
+
+    def start(self) -> "Spinner":
+        """Start the spinner.
+
+        In TTY mode: spawns a background thread that animates the spinner.
+        In non-TTY mode: prints the message once and returns immediately (no thread).
+
+        Returns:
+            self, to allow use as a context manager value.
+        """
+        if self._running:
+            self.stop()
+        if self._interactive:
+            self._running = True
+            self._stop_event.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        else:
+            self._stream.write(f"{_sanitize_spinner_text(self._message)}\n")
+            self._stream.flush()
+        return self
+
+    def stop(self, final_message: str = "") -> None:
+        """Stop the spinner.
+
+        In TTY mode: joins the background thread, clears the spinner line,
+        and optionally prints a final message.
+        In non-TTY mode: optionally prints a final message.
+
+        Args:
+            final_message: Optional message to print after stopping.
+        """
+        if self._interactive:
+            self._stop_event.set()
+            if self._thread is not None:
+                self._thread.join(timeout=1.0)
+                self._thread = None
+            self._running = False
+            self._stream.write("\r\033[K")
+            if final_message:
+                self._stream.write(f"{_sanitize_spinner_text(final_message)}\n")
+            self._stream.flush()
+        else:
+            if final_message:
+                self._stream.write(f"{_sanitize_spinner_text(final_message)}\n")
+                self._stream.flush()
+
+    def update(self, message: str) -> None:
+        """Update the spinner message.
+
+        In TTY mode: updates the message shown on the next frame tick.
+        In non-TTY mode: immediately prints the new message as a new line.
+
+        Args:
+            message: New message to display.
+        """
+        self._message = message
+        if not self._interactive:
+            self._stream.write(f"{_sanitize_spinner_text(message)}\n")
+            self._stream.flush()
+
+    def _run(self) -> None:
+        """Main spinner loop running in background thread (TTY mode only)."""
+        idx = 0
+        while not self._stop_event.is_set():
+            frame = self._FRAMES[idx % len(self._FRAMES)]
+            self._stream.write(f"\r{frame} {_sanitize_spinner_text(self._message)}")
+            self._stream.flush()
+            idx += 1
+            self._stop_event.wait(0.08)
+
+    def __enter__(self) -> "Spinner":
+        """Start spinner when used as a context manager."""
+        return self.start()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        """Stop spinner when exiting the context manager."""
+        self.stop()
