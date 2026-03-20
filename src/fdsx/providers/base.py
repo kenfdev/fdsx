@@ -1,7 +1,13 @@
+import logging
 import subprocess
 import threading
 from dataclasses import dataclass
 from typing import Callable, Protocol
+
+logger = logging.getLogger(__name__)
+
+# Commands at or above this byte length are piped via stdin to avoid ARG_MAX limits.
+ARG_MAX_STDIN_THRESHOLD = 131072  # 128 KB
 
 
 @dataclass
@@ -56,17 +62,29 @@ def _run_subprocess(
     """Shared subprocess execution helper for all providers.
 
     Args:
-        args: Command arguments list. If shell=True, args[0] is passed to sh -c.
+        args: Command arguments list. If shell=True, args[0] is the shell command
+            (passed to sh -c, or piped via stdin for large commands).
         timeout: Timeout in seconds.
         output_callback: Optional callback for streaming stdout lines.
         stdin_data: Optional data to pass via stdin.
-        shell: If True, execute via sh -c (for system provider).
+        shell: If True, execute as shell command (via sh -c, or stdin fallback
+            if command exceeds ARG_MAX_STDIN_THRESHOLD).
 
     Returns:
         ProviderResult with exit code and output.
     """
     if shell:
-        cmd: list[str] = ["sh", "-c", args[0]]
+        command_size = len(args[0].encode("utf-8"))
+        if command_size >= ARG_MAX_STDIN_THRESHOLD:
+            logger.debug(
+                "Command size %d bytes exceeds ARG_MAX_STDIN_THRESHOLD (%d bytes); piping via stdin",
+                command_size,
+                ARG_MAX_STDIN_THRESHOLD,
+            )
+            cmd: list[str] = ["sh"]
+            stdin_data = args[0]
+        else:
+            cmd = ["sh", "-c", args[0]]
     else:
         cmd = args
 
