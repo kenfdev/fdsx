@@ -693,3 +693,126 @@ class TestTaskSplitterRemoval:
                     )
                 },
             )
+
+
+class TestFlowModelExtension:
+    """T012-T013: Tests for Flow.providers, TaskState.provider_options, Branch.provider_options."""
+
+    def _make_base_flow(self, **kwargs) -> Flow:
+        return Flow(
+            name="Test Flow",
+            description="Flow model extension test",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+            **kwargs,
+        )
+
+    # T013: Flow.providers field
+
+    def test_flow_providers_defaults_to_none(self):
+        """T013: Flow.providers is None when not specified."""
+        flow = self._make_base_flow()
+        assert flow.providers is None
+
+    def test_flow_providers_accepts_dict(self):
+        """T013: Flow.providers accepts a dict of provider name -> options."""
+        flow = self._make_base_flow(
+            providers={
+                "claude": {"model": "claude-opus-4-5", "temperature": 0.7},
+                "opencode": {"model": "gpt-4o"},
+            }
+        )
+        assert flow.providers is not None
+        assert flow.providers["claude"]["model"] == "claude-opus-4-5"
+        assert flow.providers["opencode"]["model"] == "gpt-4o"
+
+    def test_flow_providers_accepts_unknown_provider_names(self):
+        """T013: Unknown provider names must be accepted at parse time."""
+        flow = self._make_base_flow(
+            providers={"future-provider": {"endpoint": "https://api.example.com"}}
+        )
+        assert flow.providers is not None
+        assert "future-provider" in flow.providers
+
+    def test_flow_providers_accepts_empty_dict(self):
+        """T013: Flow.providers accepts an empty dict."""
+        flow = self._make_base_flow(providers={})
+        assert flow.providers == {}
+
+    # T012: TaskState.provider_options field
+
+    def test_task_state_provider_options_defaults_to_none(self):
+        """T012: TaskState.provider_options is None when not specified."""
+        state = TaskState(
+            type="task",
+            provider="system",
+            command="echo test",
+            result_path="$.result",
+        )
+        assert state.provider_options is None
+
+    def test_task_state_provider_options_accepts_dict(self):
+        """T012: TaskState.provider_options accepts arbitrary key-value pairs."""
+        state = TaskState(
+            type="task",
+            provider="claude",
+            model="opus",
+            prompt_template="Hello",
+            result_path="$.result",
+            provider_options={"temperature": 0.5, "max_tokens": 1000},
+        )
+        assert state.provider_options is not None
+        assert state.provider_options["temperature"] == 0.5
+        assert state.provider_options["max_tokens"] == 1000
+
+    # T012: Branch.provider_options field
+
+    def test_branch_provider_options_defaults_to_none(self):
+        """T012: Branch.provider_options is None when not specified."""
+        branch = Branch(
+            provider="system",
+            command="echo test",
+        )
+        assert branch.provider_options is None
+
+    def test_branch_provider_options_accepts_dict(self):
+        """T012: Branch.provider_options accepts arbitrary key-value pairs."""
+        branch = Branch(
+            provider="system",
+            command="echo test",
+            provider_options={"timeout_override": 30, "retry_delay": 1.5},
+        )
+        assert branch.provider_options is not None
+        assert branch.provider_options["timeout_override"] == 30
+
+    def test_flow_with_all_extension_fields(self):
+        """T012-T013: Flow with providers + TaskState with provider_options round-trips correctly."""
+        flow = Flow(
+            name="Extended Flow",
+            description="Flow with all extension fields",
+            start_at="start",
+            providers={"claude": {"model": "claude-opus-4-5"}},
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="claude",
+                    model="opus",
+                    prompt_template="Hello",
+                    result_path="$.result",
+                    provider_options={"temperature": 0.0},
+                    end=True,
+                )
+            },
+        )
+        assert flow.providers == {"claude": {"model": "claude-opus-4-5"}}
+        task = flow.states["start"]
+        assert isinstance(task, TaskState)
+        assert task.provider_options == {"temperature": 0.0}

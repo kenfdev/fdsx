@@ -44,8 +44,8 @@
 
 **Goal**: Add provider options to workflow YAML schema (`Flow`, `TaskState`, `Branch`).
 
-- [ ] T012 Write unit tests for Flow model with providers field in `tests/unit/test_models.py` — test flow with/without providers, task state with provider_options, branch with provider_options, unknown provider names accepted at parse time
-- [ ] T013 Implement `Flow.providers`, `TaskState.provider_options`, `Branch.provider_options` in `src/fdsx/models/flow.py` — `Flow.providers: dict[str, dict[str, Any]] | None`, `TaskState.provider_options: dict[str, Any] | None`, `Branch.provider_options: dict[str, Any] | None`
+- [x] T012 Write unit tests for Flow model with providers field in `tests/unit/test_models.py` — test flow with/without providers, task state with provider_options, branch with provider_options, unknown provider names accepted at parse time
+- [x] T013 Implement `Flow.providers`, `TaskState.provider_options`, `Branch.provider_options` in `src/fdsx/models/flow.py` — `Flow.providers: dict[str, dict[str, Any]] | None`, `TaskState.provider_options: dict[str, Any] | None`, `Branch.provider_options: dict[str, Any] | None`
 
 ---
 

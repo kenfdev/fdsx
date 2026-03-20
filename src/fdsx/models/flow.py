@@ -167,6 +167,9 @@ class Branch(BaseModel):
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
+    provider_options: dict[str, Any] | None = Field(
+        default=None, description="Per-branch provider option overrides"
+    )
 
     @model_validator(mode="after")
     def validate_provider(self) -> "Branch":
@@ -227,6 +230,9 @@ class TaskState(BaseModel):
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
+    provider_options: dict[str, Any] | None = Field(
+        default=None, description="Per-task provider option overrides"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -363,6 +369,9 @@ class Flow(BaseModel):
     states: dict[str, State] = Field(..., description="State definitions keyed by name")
     version: str | None = Field(default=None, description="Flow version")
     max_loop: int = Field(default=10, description="Max loop iterations")
+    providers: dict[str, dict[str, Any]] | None = Field(
+        default=None, description="Workflow-level provider configurations keyed by name"
+    )
 
     @model_validator(mode="before")
     @classmethod
