@@ -642,10 +642,9 @@ class TestTasksDirCli:
 
 
 class TestBatchEditFlow:
-    """Regression tests for FR-6.3 batch edit flow (Finding 1).
+    """Regression tests for the interactive workflow confirmation CUI (T013-T020).
 
-    When the user rejects the batch workflow assignments, the engine must allow
-    per-entry keep/change instead of aborting immediately.
+    Tests the new CUI flow: confirm ('c') proceeds, cancel ('q') aborts.
     """
 
     def _make_workflow_yaml(self, name: str, description: str) -> str:
@@ -668,8 +667,8 @@ class TestBatchEditFlow:
             }
         )
 
-    def test_reject_then_keep_all_proceeds(self, tmp_path):
-        """Reject batch, then keep all entries — execution should proceed."""
+    def test_confirm_proceeds(self, tmp_path):
+        """CUI confirm ('c') — execution proceeds."""
         project_root = tmp_path
         workflows_dir = project_root / ".fdsx" / "workflows"
         workflows_dir.mkdir(parents=True)
@@ -682,18 +681,15 @@ class TestBatchEditFlow:
         tf = TaskFile(entries=[TaskEntry(description="plan this feature")])
         save_task_file(tasks_dir / "001-test.yaml", tf)
 
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0, stdout="plan.yaml", stderr=""
-        )
+        wf_path = workflows_dir / "plan.yaml"
+        mock_assignments = {(0, 0): wf_path}
 
-        # inputs to engine: "n" = reject batch, "k" = keep entry
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+        with patch("fdsx.core.selector.get_provider", return_value=MagicMock()):
             with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
                     with patch(
-                        "fdsx.core.engine.input",
-                        side_effect=["n", "k"],
+                        "fdsx.display.terminal.confirm_workflow_assignments_interactive",
+                        return_value=mock_assignments,
                     ):
                         results = engine.run_tasks_dir(
                             None,
@@ -704,16 +700,13 @@ class TestBatchEditFlow:
 
         assert len([r for r in results if r["category"] == "new"]) == 1
 
-    def test_reject_then_cancel_during_edit_aborts(self, tmp_path):
-        """Reject batch, then cancel during pick_workflow_manually — aborts."""
+    def test_cancel_aborts(self, tmp_path):
+        """CUI cancel ('q') — execution aborts with empty results."""
         project_root = tmp_path
         workflows_dir = project_root / ".fdsx" / "workflows"
         workflows_dir.mkdir(parents=True)
         (workflows_dir / "plan.yaml").write_text(
             self._make_workflow_yaml("Plan", "Planning workflow")
-        )
-        (workflows_dir / "impl.yaml").write_text(
-            self._make_workflow_yaml("Impl", "Implementation workflow")
         )
 
         tasks_dir = tmp_path / "tasks"
@@ -721,30 +714,23 @@ class TestBatchEditFlow:
         tf = TaskFile(entries=[TaskEntry(description="do something")])
         save_task_file(tasks_dir / "001-test.yaml", tf)
 
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0, stdout="plan.yaml", stderr=""
-        )
+        with patch("fdsx.core.selector.get_provider", return_value=MagicMock()):
+            with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                with patch(
+                    "fdsx.display.terminal.confirm_workflow_assignments_interactive",
+                    return_value=None,
+                ):
+                    results = engine.run_tasks_dir(
+                        None,
+                        tasks_dir,
+                        base_dir=project_root / ".fdsx",
+                        auto_workflow=False,
+                    )
 
-        # engine inputs: "n" = reject batch, "c" = change
-        # selector inputs: "c" = cancel during pick
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.input", side_effect=["n", "c"]):
-                        with patch("fdsx.core.selector.input", return_value="c"):
-                            results = engine.run_tasks_dir(
-                                None,
-                                tasks_dir,
-                                base_dir=project_root / ".fdsx",
-                                auto_workflow=False,
-                            )
-
-        # Cancelled during edit → empty results (aborted)
         assert results == []
 
-    def test_approve_batch_skips_edit_flow(self, tmp_path):
-        """Approve batch on first prompt — no per-entry prompts are called."""
+    def test_auto_workflow_skips_cui(self, tmp_path):
+        """auto_workflow=True skips the CUI entirely."""
         project_root = tmp_path
         workflows_dir = project_root / ".fdsx" / "workflows"
         workflows_dir.mkdir(parents=True)
@@ -757,21 +743,18 @@ class TestBatchEditFlow:
         tf = TaskFile(entries=[TaskEntry(description="plan this feature")])
         save_task_file(tasks_dir / "001-test.yaml", tf)
 
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0, stdout="plan.yaml", stderr=""
-        )
-
-        # Only "y" for batch approve — no keep/change prompts follow
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+        with patch("fdsx.core.selector.get_provider", return_value=MagicMock()):
             with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.input", side_effect=["y"]):
+                    with patch(
+                        "fdsx.display.terminal.confirm_workflow_assignments_interactive"
+                    ) as mock_cui:
                         results = engine.run_tasks_dir(
                             None,
                             tasks_dir,
                             base_dir=project_root / ".fdsx",
-                            auto_workflow=False,
+                            auto_workflow=True,
                         )
 
+        mock_cui.assert_not_called()
         assert len([r for r in results if r["category"] == "new"]) == 1

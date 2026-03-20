@@ -49,14 +49,14 @@
 **Goal**: Replace the existing basic confirm prompt with a numbered-list interactive CUI and persist workflow assignments.
 **Test criteria**: `pytest tests/unit/test_workflow_cui.py tests/integration/test_workflow_persistence.py -x` passes; CUI displays table, accepts number input to change workflow, confirms/cancels, auto-confirms in non-TTY.
 
-- [ ] T013 [US2] TDD: Write CUI unit tests covering table display, number input to change workflow, confirm ('c'), cancel ('q'), non-TTY auto-confirm in `tests/unit/test_workflow_cui.py`
-- [ ] T014 [US2] Implement `confirm_workflow_assignments_interactive()` in `src/fdsx/display/terminal.py` — numbered table, type number to change workflow, 'c' to confirm, 'q' to cancel
-- [ ] T015 [US2] Implement unassigned task handling — tasks where auto-selection failed show "(unassigned)"; block confirm until all assigned in `src/fdsx/display/terminal.py`
-- [ ] T016 [US2] Replace `_display_batch_workflow_confirm` + raw `input()` calls in `run_tasks_dir` (`src/fdsx/core/engine.py`) with new CUI function
-- [ ] T017 [US2] Implement workflow persistence — on CUI confirmation, write `workflow` field to each task YAML via `save_task_file()` in `src/fdsx/core/engine.py`
-- [ ] T018 [US2] Verify tasks with `entry.workflow` already set skip auto-selection in `run_tasks_dir` (`src/fdsx/core/engine.py`) — add test if missing
-- [ ] T019 [US2] Implement non-TTY auto-confirm — in non-TTY mode, CUI auto-confirms and persists without interaction in `src/fdsx/display/terminal.py`
-- [ ] T020 [US2] Write end-to-end integration tests: auto-select → CUI confirm → verify YAML has workflow field → re-run skips selection in `tests/integration/test_workflow_persistence.py`
+- [x] T013 [US2] TDD: Write CUI unit tests covering table display, number input to change workflow, confirm ('c'), cancel ('q'), non-TTY auto-confirm in `tests/unit/test_workflow_cui.py`
+- [x] T014 [US2] Implement `confirm_workflow_assignments_interactive()` in `src/fdsx/display/terminal.py` — numbered table, type number to change workflow, 'c' to confirm, 'q' to cancel
+- [x] T015 [US2] Implement unassigned task handling — tasks where auto-selection failed show "(unassigned)"; block confirm until all assigned in `src/fdsx/display/terminal.py`
+- [x] T016 [US2] Replace `_display_batch_workflow_confirm` + raw `input()` calls in `run_tasks_dir` (`src/fdsx/core/engine.py`) with new CUI function
+- [x] T017 [US2] Implement workflow persistence — on CUI confirmation, write `workflow` field to each task YAML via `save_task_file()` in `src/fdsx/core/engine.py`
+- [x] T018 [US2] Verify tasks with `entry.workflow` already set skip auto-selection in `run_tasks_dir` (`src/fdsx/core/engine.py`) — add test if missing
+- [x] T019 [US2] Implement non-TTY auto-confirm — in non-TTY mode, CUI auto-confirms and persists without interaction in `src/fdsx/display/terminal.py`
+- [x] T020 [US2] Write end-to-end integration tests: auto-select → CUI confirm → verify YAML has workflow field → re-run skips selection in `tests/integration/test_workflow_persistence.py`
 
 ---
 

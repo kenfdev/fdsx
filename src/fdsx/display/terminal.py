@@ -1,6 +1,7 @@
 import sys
 import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any, TextIO
 
 
@@ -14,18 +15,50 @@ def is_interactive() -> bool:
 
 
 def _sanitize_output(text: str) -> str:
-    """Strip control characters from text, preserving only printable content.
+    """Strip control characters and ANSI escape sequences from text.
 
     Uses a whitelist approach: allows tab and newline, strips everything
     else in C0 (0x00-0x1F), DEL (0x7F), and C1 (0x80-0x9F) ranges.
-    This catches all ANSI/OSC/CSI escape sequences by removing the ESC byte.
+    Also strips complete ANSI escape sequences (ESC + bracket + params + letter).
     """
-    return "".join(
-        ch
-        for ch in text
-        if ch in ("\t", "\n")
-        or (ch >= " " and ch != "\x7f" and not ("\x80" <= ch <= "\x9f"))
-    )
+    result = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\x1b" and i + 1 < len(text) and text[i + 1] == "[":
+            j = i + 2
+            while j < len(text) and text[j] in "0123456789;?":
+                j += 1
+            if j < len(text) and text[j] in (
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H",
+                "J",
+                "K",
+                "S",
+                "T",
+                "f",
+                "m",
+                "n",
+                "s",
+                "u",
+            ):
+                i = j + 1
+                continue
+            else:
+                i += 1
+                continue
+        if ch in ("\t", "\n") or (
+            ch >= " " and ch != "\x7f" and not ("\x80" <= ch <= "\x9f")
+        ):
+            result.append(ch)
+        i += 1
+    return "".join(result)
 
 
 def _sanitize_spinner_text(text: str) -> str:
@@ -374,3 +407,144 @@ class Spinner:
     ) -> None:
         """Stop spinner when exiting the context manager."""
         self.stop()
+
+
+def confirm_workflow_assignments_interactive(
+    display_keys: list[tuple[int, int]],
+    workflow_assignments: dict[tuple[int, int], Path],
+    task_files: list[tuple[Path, Any]],
+    available_workflows: list[tuple[Path, str]],
+    stream: TextIO | None = None,
+) -> dict[tuple[int, int], Path] | None:
+    """Present an interactive numbered-list CUI for workflow assignment confirmation.
+
+    Displays a table of all entries (assigned and unassigned), allows the user
+    to change individual assignments by number, and returns the (possibly
+    modified) assignments dict on confirm or None on cancel.
+
+    Args:
+        display_keys: Ordered list of (file_idx, entry_idx) keys to display.
+        workflow_assignments: Map of (file_idx, entry_idx) -> workflow path.
+        task_files: List of (file_path, task_file) tuples.
+        available_workflows: List of (workflow_path, description) tuples.
+        stream: Output stream for prompts (defaults to sys.stderr).
+
+    Returns:
+        The confirmed assignments dict on 'c' confirm,
+        or None if the user cancelled with 'q'.
+    """
+    if stream is None:
+        stream = sys.stderr
+
+    if not is_interactive():
+        return dict(workflow_assignments)
+
+    assignments = dict(workflow_assignments)
+
+    while True:
+        stream.write("\n")
+        stream.write("=" * 79 + "\n")
+        stream.write("WORKFLOW ASSIGNMENTS\n")
+        stream.write("=" * 79 + "\n")
+        stream.write(
+            f"{'#':<4} {'FILE':<30} {'ENTRY':<6} {'WORKFLOW':<30} {'TASK':<15}\n"
+        )
+        stream.write("-" * 79 + "\n")
+
+        for row_num, key in enumerate(display_keys, start=1):
+            file_idx, entry_idx = key
+            file_path, task_file = task_files[file_idx]
+            entry = task_file.entries[entry_idx]
+            wf_path = assignments.get(key)
+            wf_name = wf_path.name if wf_path else "(unassigned)"
+
+            file_name = file_path.name[:29]
+            entry_num = str(entry_idx + 1)
+            task_preview = _sanitize_output(entry.description)[:14]
+
+            stream.write(
+                f"{row_num:<4} "
+                f"{_sanitize_output(file_name):<30} "
+                f"{entry_num:<6} "
+                f"{_sanitize_output(wf_name):<30} "
+                f"{_sanitize_output(task_preview):<15}\n"
+            )
+
+        stream.write("=" * 79 + "\n")
+
+        has_unassigned = any(key not in assignments for key in display_keys)
+
+        if has_unassigned:
+            stream.write(
+                "Enter number to change workflow, 'c' to confirm, 'q' to cancel\n"
+            )
+            stream.write(
+                "(Note: unassigned entries must be assigned before confirming)\n"
+            )
+        else:
+            stream.write(
+                "Enter number to change workflow, 'c' to confirm, 'q' to cancel: "
+            )
+
+        stream.flush()
+        user_input = input().strip()
+
+        if user_input.lower() == "c":
+            if has_unassigned:
+                unassigned_count = sum(
+                    1 for key in display_keys if key not in assignments
+                )
+                stream.write(
+                    f"Cannot confirm: {unassigned_count} task(s) have no "
+                    f"workflow assigned. Assign workflows to all tasks first.\n"
+                )
+                stream.flush()
+                continue
+            return assignments
+
+        if user_input.lower() == "q":
+            return None
+
+        try:
+            row_num = int(user_input)
+            if not (1 <= row_num <= len(display_keys)):
+                stream.write(f"Invalid number. Enter 1-{len(display_keys)}.\n")
+                stream.flush()
+                continue
+        except ValueError:
+            stream.write("Invalid input. Enter a number, 'c', or 'q'.\n")
+            stream.flush()
+            continue
+
+        key = display_keys[row_num - 1]
+
+        if not available_workflows:
+            stream.write("No alternative workflows available to select.\n")
+            stream.flush()
+            continue
+
+        stream.write("\nAvailable workflows:\n")
+        stream.write("-" * 60 + "\n")
+        for i, (wf_path, description) in enumerate(available_workflows, 1):
+            desc_preview = (
+                description[:50] + "..." if len(description) > 50 else description
+            )
+            stream.write(f"  {i}. {_sanitize_output(wf_path.name)}\n")
+            stream.write(f"      {_sanitize_output(desc_preview)}\n")
+        stream.write("-" * 60 + "\n")
+        stream.write("Enter number (or 'c' to cancel): ")
+        stream.flush()
+
+        pick_input = input().strip()
+        if pick_input.lower() == "c":
+            continue
+        try:
+            pick_idx = int(pick_input) - 1
+            if 0 <= pick_idx < len(available_workflows):
+                assignments[key] = available_workflows[pick_idx][0]
+            else:
+                stream.write(f"Invalid number. Enter 1-{len(available_workflows)}.\n")
+                stream.flush()
+        except ValueError:
+            stream.write("Invalid input. Enter a number.\n")
+            stream.flush()
