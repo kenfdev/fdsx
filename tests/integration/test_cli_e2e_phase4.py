@@ -1,6 +1,5 @@
 """End-to-end CLI tests for Phase 4 batch task scenarios."""
 
-import json
 import subprocess
 import sys
 import tempfile
@@ -23,7 +22,7 @@ class TestBatchCLIE2E:
     """End-to-end CLI tests for batch task execution (T070)."""
 
     def test_batch_full_execution_with_approval(self):
-        """Test fdsx run --tasks via CLI: approve → all tasks execute → exit 0 + JSON."""
+        """Test fdsx run --tasks via CLI: approve → all tasks execute → exit 0, no JSON."""
         runner = CliRunner()
         flow_path = str(Path("tests/fixtures/batch_flow.yaml").resolve())
         tasks_path = str(Path("tests/fixtures/sample_tasks.md").resolve())
@@ -51,14 +50,8 @@ class TestBatchCLIE2E:
         assert result.exit_code == 0, (
             f"output: {result.output}\nexception: {result.exception}"
         )
-        json_text = result.output.split("\n\n")[0]
-        output = json.loads(json_text)
-        assert isinstance(output, list)
-        assert len(output) == 3
-        for item in output:
-            assert item["status"] == "completed"
-            assert "thread_id" in item
-            assert item["error"] is None
+        # FR-1.3: No JSON on stdout
+        assert result.output == "" or not result.output.startswith("[")
 
     def test_input_tasks_mutual_exclusion(self):
         """Test --input and --tasks together → exit code 2, mutual exclusion error."""

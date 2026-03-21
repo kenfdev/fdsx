@@ -1,5 +1,6 @@
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -20,7 +21,12 @@ from fdsx.core.loader import load_flow
 from fdsx.core.selector import (
     resolve_workflow_for_task,
 )
-from fdsx.display.terminal import Spinner, _sanitize_output, display_wait_prompt
+from fdsx.display.terminal import (
+    Spinner,
+    _sanitize_output,
+    display_completion_summary,
+    display_wait_prompt,
+)
 from fdsx.logging import RunRecorder
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
@@ -171,12 +177,14 @@ def run_flow(
         results = _extract_results(last_state, compiled.result_paths)
         recorder.finalize(_sanitize_state_for_log(last_state), "completed")
         recorder.save(base_dir=base_dir)
+        display_completion_summary(flow.name, _calc_elapsed(recorder))
         return results
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
         recorder.finalize(_sanitize_state_for_log(last_state), "completed")
         recorder.save(base_dir=base_dir)
+        display_completion_summary(flow.name, _calc_elapsed(recorder))
         return results
     except Exception as e:
         if checkpoint_manager is not None:
@@ -186,6 +194,12 @@ def run_flow(
             )
         recorder.finalize(_sanitize_state_for_log(last_state), "error")
         recorder.save(base_dir=base_dir)
+        failed = _find_failed_state(recorder)
+        failed_state_name = failed[0] if failed else "unknown"
+        error_message = failed[1] if (failed and failed[1]) else str(e)
+        display_completion_summary(
+            flow.name, _calc_elapsed(recorder), failed_state_name, error_message
+        )
         raise RuntimeError(f"Flow execution failed: {e}")
     finally:
         if checkpoint_manager is not None:
@@ -215,6 +229,48 @@ def _sanitize_state_for_log(state: dict[str, Any]) -> dict[str, Any]:
         and not k.startswith("__")
         and not k.startswith("_br_")
     }
+
+
+def _calc_elapsed(recorder: RunRecorder) -> float:
+    """Calculate elapsed seconds between recorder.started_at and completed_at.
+
+    Falls back to current time if completed_at is not set.
+
+    Args:
+        recorder: The RunRecorder instance
+
+    Returns:
+        Elapsed time in seconds as a float
+    """
+    try:
+        start = datetime.fromisoformat(recorder.started_at.replace("Z", "+00:00"))
+        end_str = recorder.completed_at
+        end = (
+            datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            if end_str is not None
+            else datetime.now(timezone.utc)
+        )
+        return (end - start).total_seconds()
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _find_failed_state(recorder: RunRecorder) -> tuple[str, str] | None:
+    """Return (state_name, error_message) for the most recent error state.
+
+    Searches recorder.states in reverse order for the first state with
+    status=="error".
+
+    Args:
+        recorder: The RunRecorder instance
+
+    Returns:
+        Tuple of (state_name, error_message) or None if no error state found
+    """
+    for state in reversed(recorder.states):
+        if state.get("status") == "error":
+            return (str(state.get("name", "unknown")), str(state.get("error", "")))
+    return None
 
 
 def run_batch(
@@ -503,6 +559,7 @@ def resume_flow(
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "completed")
             recorder.save(base_dir=base_dir)
+            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
         return results
     except GraphRecursionError:
         if flow is not None:
@@ -510,11 +567,21 @@ def resume_flow(
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "completed")
             recorder.save(base_dir=base_dir)
+            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
         return {}
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
             recorder.save(base_dir=base_dir)
+            failed = _find_failed_state(recorder)
+            failed_state_name = failed[0] if failed else "unknown"
+            error_message = failed[1] if (failed and failed[1]) else str(e)
+            display_completion_summary(
+                recorder.flow_name,
+                _calc_elapsed(recorder),
+                failed_state_name,
+                error_message,
+            )
         raise RuntimeError(f"Flow resume failed: {e}")
     finally:
         checkpoint_manager.release_lock(thread_id)

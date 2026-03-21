@@ -134,7 +134,6 @@ def run(
                 base_dir,
                 auto_workflow=effective_auto_workflow,
             )
-            typer.echo(json.dumps(results, indent=2))
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:
                 raise typer.Exit(code=1)
@@ -143,7 +142,6 @@ def run(
         elif tasks_file is not None:
             assert workflow is not None
             results = engine.run_batch(workflow, tasks_file, base_dir)
-            typer.echo(json.dumps(results, indent=2))
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:
                 raise typer.Exit(code=1)
@@ -153,8 +151,7 @@ def run(
             assert workflow is not None
             if current_thread_id is None:
                 current_thread_id = str(uuid.uuid4())
-            result = engine.run_flow(workflow, inputs, current_thread_id, base_dir)
-            typer.echo(json.dumps(result, indent=2))
+            engine.run_flow(workflow, inputs, current_thread_id, base_dir)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2)
@@ -211,8 +208,7 @@ def resume(
 ) -> None:
     """Resume a flow from a checkpoint."""
     try:
-        result = engine.resume_flow(thread_id, base_dir)
-        typer.echo(json.dumps(result, indent=2))
+        engine.resume_flow(thread_id, base_dir)
     except RuntimeError as e:
         error_msg = str(e)
         if "No checkpoint found" in error_msg:

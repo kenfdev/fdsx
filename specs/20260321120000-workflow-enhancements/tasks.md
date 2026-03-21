@@ -32,9 +32,9 @@
 
 **Independent Test Criteria**: Run a workflow and see `✓ Workflow 'name' completed successfully in Xs` on stderr. On failure, see `✗ Workflow 'name' failed at state 'X' — error`. No JSON printed to stdout or stderr.
 
-- [ ] T005 Add `display_completion_summary()` function to `src/fdsx/display/terminal.py` with success and failure formatting (TDD: `tests/unit/test_terminal.py`)
-- [ ] T006 Wire `display_completion_summary()` into `run_flow()` in `src/fdsx/core/engine.py` — call on success and failure paths, calculate elapsed time from recorder timestamps (TDD: `tests/unit/test_engine.py`)
-- [ ] T007 Suppress `typer.echo(json.dumps(...))` for all modes (single-flow, batch, tasks-dir) in `src/fdsx/cli/main.py` (TDD: integration test verifying no JSON on terminal)
+- [x] T005 Add `display_completion_summary()` function to `src/fdsx/display/terminal.py` with success and failure formatting (TDD: `tests/unit/test_terminal.py`)
+- [x] T006 Wire `display_completion_summary()` into `run_flow()` in `src/fdsx/core/engine.py` — call on success and failure paths, calculate elapsed time from recorder timestamps (TDD: `tests/unit/test_engine.py`)
+- [x] T007 Suppress `typer.echo(json.dumps(...))` for all modes (single-flow, batch, tasks-dir) in `src/fdsx/cli/main.py` (TDD: integration test verifying no JSON on terminal)
 
 ---
 

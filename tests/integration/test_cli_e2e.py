@@ -1,4 +1,3 @@
-import json
 import subprocess
 
 
@@ -45,11 +44,10 @@ class TestCLIE2E:
             text=True,
         )
         assert result.returncode == 0
-
-        output = json.loads(result.stdout)
-        assert "plan" in output
-        assert "implementation" in output
-        assert "review" in output
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr
 
     def test_run_with_input(self):
         result = subprocess.run(
@@ -64,14 +62,13 @@ class TestCLIE2E:
             text=True,
         )
         assert result.returncode == 0
-
-        output = json.loads(result.stdout)
-        assert "plan" in output
-        assert "implementation" in output
-        assert "review" in output
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr
 
     def test_run_with_input_uses_value(self):
-        """R2-F4: --input value must be consumed and appear in the output."""
+        """R2-F4: --input value must be consumed; workflow completes successfully."""
         result = subprocess.run(
             get_fdsx_command()
             + [
@@ -84,9 +81,10 @@ class TestCLIE2E:
             text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
-        output = json.loads(result.stdout)
-        assert "greeting" in output
-        assert "world" in output["greeting"]
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr
 
     def test_run_with_invalid_flow_returns_exit_code_2(self):
         result = subprocess.run(

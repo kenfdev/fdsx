@@ -245,6 +245,60 @@ def display_parallel_results(
                 print(_sanitize_output(line), file=sys.stderr)
 
 
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed time as a human-readable string.
+
+    Args:
+        seconds: Elapsed time in seconds
+
+    Returns:
+        Formatted string like '34s', '2m 34s', or '1h 2m 34s'
+    """
+    total = int(seconds)
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    if h > 0:
+        return f"{h}h {m}m {s}s"
+    elif m > 0:
+        return f"{m}m {s}s"
+    else:
+        return f"{s}s"
+
+
+def display_completion_summary(
+    flow_name: str,
+    elapsed_seconds: float,
+    failed_state: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Display workflow completion summary to stderr.
+
+    On success, prints a single line with flow name and elapsed time.
+    On failure, prints flow name, the failed state name, and a brief error.
+
+    Args:
+        flow_name: Name of the workflow
+        elapsed_seconds: Total elapsed time in seconds
+        failed_state: Name of the failed state (None on success)
+        error: Error message (None on success)
+    """
+    flow_name_safe = _sanitize_output(flow_name)
+    time_str = _format_elapsed(elapsed_seconds)
+    if failed_state is None:
+        print(
+            f"✓ Workflow '{flow_name_safe}' completed successfully in {time_str}",
+            file=sys.stderr,
+        )
+    else:
+        failed_state_safe = _sanitize_output(failed_state)
+        error_str = _sanitize_output(error) if error else "unknown error"
+        print(
+            f"✗ Workflow '{flow_name_safe}' failed at state '{failed_state_safe}' — {error_str}",
+            file=sys.stderr,
+        )
+
+
 def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> str:
     """Display a wait prompt and get user selection.
 

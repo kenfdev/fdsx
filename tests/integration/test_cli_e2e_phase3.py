@@ -1,4 +1,3 @@
-import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -26,10 +25,10 @@ class TestCLIE2EPhase3:
             timeout=30,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
-        output = json.loads(result.stdout)
-        assert "plan_output" in output
-        assert "approval_decision" in output
-        assert output["approval_decision"] == "approve"
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr
 
     def test_resume_interrupted_flow(self):
         """Test fdsx resume --thread-id with previously interrupted flow."""
@@ -67,9 +66,10 @@ class TestCLIE2EPhase3:
                 timeout=30,
             )
             assert resume_result.returncode == 0, f"stderr: {resume_result.stderr}"
-            output = json.loads(resume_result.stdout)
-            assert "approval_decision" in output
-            assert output["approval_decision"] == "approve"
+            # FR-1.3: No JSON on stdout
+            assert resume_result.stdout == ""
+            # FR-1.1: Completion message on stderr
+            assert "completed successfully" in resume_result.stderr
 
     def test_resume_nonexistent_thread(self):
         """Test fdsx resume --thread-id with non-existent thread returns exit code 2."""
