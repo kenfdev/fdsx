@@ -58,8 +58,8 @@
 
 ## Phase 4: Verification
 
-- [ ] T008 Run `pytest tests/unit/test_provider_stdin_fallback.py` — all new tests pass
-- [ ] T009 Run `pytest tests/` — no regressions in existing tests
+- [x] T008 Run `pytest tests/unit/test_provider_stdin_fallback.py` — all new tests pass
+- [x] T009 Run `pytest tests/` — no regressions in existing tests
 
 ---
 

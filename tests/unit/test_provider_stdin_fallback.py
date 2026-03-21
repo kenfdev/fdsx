@@ -10,7 +10,7 @@ from unittest.mock import patch
 from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult
 from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
 from fdsx.providers.codex import CodexOptions, CodexProvider
-from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
+from fdsx.providers.opencode import OpenCodeProvider
 
 # ---------------------------------------------------------------------------
 # Shared test constants
