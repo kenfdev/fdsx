@@ -103,9 +103,9 @@
 
 **Goal**: Final integration verification and cleanup.
 
-- [ ] T024 Run full test suite (`uv run pytest tests/ -x`) and fix any regressions across all phases
-- [ ] T025 Manual smoke test: run a multi-state workflow and verify all features work together — completion message, streaming labels, log files, run directory layout
-- [ ] T026 [P] Verify hook + streaming interaction: hooks fire correctly around states that produce streaming output
+- [x] T024 Run full test suite (`uv run pytest tests/ -x`) and fix any regressions across all phases
+- [x] T025 Manual smoke test: run a multi-state workflow and verify all features work together — completion message, streaming labels, log files, run directory layout
+- [x] T026 [P] Verify hook + streaming interaction: hooks fire correctly around states that produce streaming output
 
 ---
 

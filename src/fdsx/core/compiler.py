@@ -1,3 +1,4 @@
+import logging
 import operator
 import subprocess
 import time
@@ -36,6 +37,8 @@ from fdsx.providers.base import get_provider
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
+
+logger = logging.getLogger(__name__)
 
 
 class FlowState(TypedDict):
@@ -448,23 +451,29 @@ def _wrap_with_hooks(
 
         status = "completed" if node_error is None else "failed"
 
-        output_data_path = write_hook_data(
-            result,
-            state_name=state_name,
-            filename=OUTPUT_FILENAME,
-            thread_id=thread_id,
-            base_dir=fdsx_base_dir,
-        )
-
-        if on_complete_hooks:
-            execute_hooks(
-                on_complete_hooks,
+        try:
+            output_data_path = write_hook_data(
+                result,
                 state_name=state_name,
-                status=status,
-                data_path=output_data_path,
+                filename=OUTPUT_FILENAME,
                 thread_id=thread_id,
-                flow_name=flow_name,
+                base_dir=fdsx_base_dir,
             )
+
+            if on_complete_hooks:
+                execute_hooks(
+                    on_complete_hooks,
+                    state_name=state_name,
+                    status=status,
+                    data_path=output_data_path,
+                    thread_id=thread_id,
+                    flow_name=flow_name,
+                )
+        except BaseException:
+            if node_error is not None:
+                logger.warning("Hook cleanup failed after node error", exc_info=True)
+                raise node_error
+            raise
 
         if node_error is not None:
             raise node_error

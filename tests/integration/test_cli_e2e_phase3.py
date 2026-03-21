@@ -165,6 +165,7 @@ class TestCLIE2EPhase3:
             flow_path = Path(tmp_dir) / "flow.yaml"
             flow_path.write_text(
                 "name: Prompt File Validate Test\n"
+                "description: Test prompt file validation\n"
                 "start_at: task1\n"
                 "version: '1.0'\n"
                 "\n"
@@ -196,6 +197,7 @@ class TestCLIE2EPhase3:
             flow_path = Path(tmp_dir) / "flow.yaml"
             flow_path.write_text(
                 "name: Missing Prompt File Test\n"
+                "description: Test missing prompt file\n"
                 "start_at: task1\n"
                 "version: '1.0'\n"
                 "\n"

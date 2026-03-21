@@ -12,15 +12,16 @@ Tests:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fdsx.core.compiler import _wrap_with_hooks
-from fdsx.core.hooks import INPUT_FILENAME, OUTPUT_FILENAME, RUNS_DIR_NAME, HOOKS_DIR_NAME
+from fdsx.core.compiler import _wrap_with_hooks, compile_flow
+from fdsx.core.config import FdsxConfig
+from fdsx.core.hooks import INPUT_FILENAME, OUTPUT_FILENAME
+from fdsx.core.loader import load_flow
 from fdsx.models.flow import HookConfig, HookEntry
 
 
@@ -506,29 +507,8 @@ class TestWrapWithHooksRecorderFallback:
 class TestCompileFlowHooksWiring:
     """Verify compile_flow applies _wrap_with_hooks for all node types."""
 
-    def _make_simple_flow_yaml(self, hooks_yaml: str = "") -> str:
-        return f"""
-name: Hook Test Flow
-description: Test hooks wiring
-start_at: step1
-states:
-  step1:
-    type: task
-    provider: system
-    command: "echo hello"
-    result_path: $.result
-    end: true
-{hooks_yaml}
-"""
-
     def test_task_state_hooks_fire_via_compile_flow(self, tmp_path: Path) -> None:
         """on_start and on_complete hooks fire for TaskState via compile_flow."""
-        import yaml
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-        from fdsx.core.config import FdsxConfig
-        from fdsx.models.flow import HookConfig, HookEntry
-
         flow_yaml = """
 name: Task Hook Flow
 description: Task with hooks
@@ -549,7 +529,6 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        from fdsx.core.loader import load_flow
         flow, errors = load_flow(flow_path)
         assert flow is not None, f"Load errors: {errors}"
 
@@ -608,9 +587,6 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-
         flow, errors = load_flow(flow_path)
         assert flow is not None, f"Load errors: {errors}"
 
@@ -650,10 +626,6 @@ states:
 """
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
-
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-        from fdsx.core.config import FdsxConfig
 
         flow, errors = load_flow(flow_path)
         assert flow is not None
@@ -709,10 +681,6 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-        from fdsx.core.config import FdsxConfig
-
         flow, errors = load_flow(flow_path)
         assert flow is not None
 
@@ -761,9 +729,6 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-
         flow, errors = load_flow(flow_path)
         assert flow is not None
 
@@ -795,9 +760,6 @@ states:
 """
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
-
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
 
         flow, errors = load_flow(flow_path)
         assert flow is not None, f"Load errors: {errors}"
@@ -849,9 +811,6 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-
         flow, errors = load_flow(flow_path)
         assert flow is not None, f"Load errors: {errors}"
 
@@ -901,9 +860,6 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
-
         flow, errors = load_flow(flow_path)
         assert flow is not None
 
@@ -947,9 +903,6 @@ states:
 """
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
-
-        from fdsx.core.loader import load_flow
-        from fdsx.core.compiler import compile_flow
 
         flow, errors = load_flow(flow_path)
         assert flow is not None
