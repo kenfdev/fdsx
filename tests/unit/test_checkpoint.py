@@ -129,6 +129,107 @@ class TestCheckpointManager:
         threads = manager.list_threads()
         assert threads == []
 
+    def test_list_threads_includes_run_log_only_threads(self, manager, temp_dir):
+        """T003: list_threads must include threads that have a run log but no checkpoint."""
+        import json
+
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+
+        # Create a run log directory for a thread with no checkpoint
+        runs_dir = manager.base_dir / RUNS_DIR_NAME
+        thread_dir = runs_dir / "run-log-only-thread"
+        thread_dir.mkdir(parents=True, exist_ok=True)
+        run_log = {
+            "thread_id": "run-log-only-thread",
+            "flow_name": "my_flow",
+            "started_at": "2026-03-21T10:00:00+00:00",
+            "status": "completed",
+            "states": [],
+        }
+        run_log_path = thread_dir / RUN_FILENAME
+        run_log_path.write_text(json.dumps(run_log))
+
+        threads = manager.list_threads()
+
+        thread_ids = [t["thread_id"] for t in threads]
+        assert "run-log-only-thread" in thread_ids
+
+        entry = next(t for t in threads if t["thread_id"] == "run-log-only-thread")
+        assert entry["flow_name"] == "my_flow"
+
+    def test_list_threads_no_duplicate_for_run_log_and_checkpoint(self, manager, temp_dir):
+        """T003: a thread present in both DB and run log must appear only once."""
+        import json
+        import sqlite3
+
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+
+        # Add thread to checkpoint DB
+        db_path = manager.checkpoints_dir / "checkpoints.db"
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS checkpoints (
+                thread_id TEXT PRIMARY KEY, checkpoint BLOB, metadata BLOB
+            )"""
+        )
+        cursor.execute(
+            "INSERT INTO checkpoints (thread_id, checkpoint, metadata) VALUES (?, ?, ?)",
+            ("dual-thread", b"fake", b"fake"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Also create a run log for the same thread
+        runs_dir = manager.base_dir / RUNS_DIR_NAME
+        thread_dir = runs_dir / "dual-thread"
+        thread_dir.mkdir(parents=True, exist_ok=True)
+        run_log = {
+            "thread_id": "dual-thread",
+            "flow_name": "my_flow",
+            "started_at": "2026-03-21T10:00:00+00:00",
+            "status": "completed",
+            "states": [],
+        }
+        (thread_dir / RUN_FILENAME).write_text(json.dumps(run_log))
+
+        threads = manager.list_threads()
+
+        dual_entries = [t for t in threads if t["thread_id"] == "dual-thread"]
+        assert len(dual_entries) == 1, "Thread must appear exactly once even if in both DB and run log"
+
+    def test_list_threads_ignores_dirs_without_run_json(self, manager, temp_dir):
+        """T003: directories in runs/ without a run.json file must not appear."""
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+
+        runs_dir = manager.base_dir / RUNS_DIR_NAME
+        # A directory without run.json
+        empty_dir = runs_dir / "no-run-json-thread"
+        empty_dir.mkdir(parents=True, exist_ok=True)
+
+        threads = manager.list_threads()
+
+        thread_ids = [t["thread_id"] for t in threads]
+        assert "no-run-json-thread" not in thread_ids
+
+    def test_list_threads_tolerates_corrupt_run_json(self, manager, temp_dir):
+        """F3: corrupt run.json must not crash list_threads — targeted exception handling."""
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+
+        runs_dir = manager.base_dir / RUNS_DIR_NAME
+        thread_dir = runs_dir / "corrupt-thread"
+        thread_dir.mkdir(parents=True, exist_ok=True)
+        # Write invalid JSON
+        (thread_dir / RUN_FILENAME).write_text("not valid json {{{")
+
+        # Must not raise; thread appears with fallback values
+        threads = manager.list_threads()
+        thread_ids = [t["thread_id"] for t in threads]
+        assert "corrupt-thread" in thread_ids
+        entry = next(t for t in threads if t["thread_id"] == "corrupt-thread")
+        # flow_name falls back to thread_id when JSON cannot be parsed
+        assert entry["flow_name"] == "corrupt-thread"
+
 
 class TestCheckpointManagerWithMock:
     def test_acquire_lock_concurrent_execution(self, manager):

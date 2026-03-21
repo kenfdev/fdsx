@@ -170,13 +170,13 @@ def run_flow(
 
         results = _extract_results(last_state, compiled.result_paths)
         recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-        recorder.save()
+        recorder.save(base_dir=base_dir)
         return results
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
         recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-        recorder.save()
+        recorder.save(base_dir=base_dir)
         return results
     except Exception as e:
         if checkpoint_manager is not None:
@@ -185,7 +185,7 @@ def run_flow(
                 file=sys.stderr,
             )
         recorder.finalize(_sanitize_state_for_log(last_state), "error")
-        recorder.save()
+        recorder.save(base_dir=base_dir)
         raise RuntimeError(f"Flow execution failed: {e}")
     finally:
         if checkpoint_manager is not None:
@@ -385,9 +385,10 @@ def resume_flow(
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
         from fdsx.models.flow import WaitState, ParallelState
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
 
-        runs_dir = Path.cwd() / "runs"
-        existing_log_path = runs_dir / f"{thread_id}.json"
+        runs_dir = base_dir / RUNS_DIR_NAME
+        existing_log_path = runs_dir / thread_id / RUN_FILENAME
 
         if existing_log_path.exists():
             import json
@@ -501,19 +502,19 @@ def resume_flow(
         results = _extract_results(last_state, compiled.result_paths)
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-            recorder.save()
+            recorder.save(base_dir=base_dir)
         return results
     except GraphRecursionError:
         if flow is not None:
             print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-            recorder.save()
+            recorder.save(base_dir=base_dir)
         return {}
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
-            recorder.save()
+            recorder.save(base_dir=base_dir)
         raise RuntimeError(f"Flow resume failed: {e}")
     finally:
         checkpoint_manager.release_lock(thread_id)

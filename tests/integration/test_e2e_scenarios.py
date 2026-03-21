@@ -92,7 +92,8 @@ class TestScenario1LinearFlow:
 
     @staticmethod
     def _read_run_log(base_dir: Path, thread_id: str) -> dict:
-        log_path = base_dir / "runs" / f"{thread_id}.json"
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        log_path = base_dir / RUNS_DIR_NAME / thread_id / RUN_FILENAME
         assert log_path.exists(), f"Run log not found at {log_path}"
         with open(log_path, "r") as f:
             return json.load(f)
@@ -273,7 +274,7 @@ class TestScenario4CheckpointResume:
                         base_dir=base_dir,
                     )
 
-            initial_log = TestScenario1LinearFlow._read_run_log(Path(tmpdir), thread_id)
+            initial_log = TestScenario1LinearFlow._read_run_log(base_dir, thread_id)
             initial_started_at = initial_log["started_at"]
 
             engine.resume_flow(
@@ -282,7 +283,7 @@ class TestScenario4CheckpointResume:
                 flow_path,
             )
 
-            resumed_log = TestScenario1LinearFlow._read_run_log(Path(tmpdir), thread_id)
+            resumed_log = TestScenario1LinearFlow._read_run_log(base_dir, thread_id)
             resumed_state_names = [s["name"] for s in resumed_log["states"]]
             resumed_started_at = resumed_log["started_at"]
 
@@ -315,7 +316,7 @@ class TestScenario4CheckpointResume:
                 base_dir=base_dir,
             )
 
-            run_log = TestScenario1LinearFlow._read_run_log(Path(tmpdir), thread_id)
+            run_log = TestScenario1LinearFlow._read_run_log(base_dir, thread_id)
 
             assert run_log["thread_id"] == thread_id
             assert "started_at" in run_log

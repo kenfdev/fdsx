@@ -179,23 +179,50 @@ class CheckpointManager:
     def list_threads(self) -> list[dict[str, Any]]:
         """List all known thread executions.
 
+        Merges threads from the checkpoint database and from run log directories
+        under <base_dir>/runs/.
+
         Returns:
             List of thread info dictionaries with thread_id, status, flow_name
         """
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+
+        # Collect thread IDs from checkpoint DB
+        checkpoint_thread_ids: list[str] = []
         db_path = self.checkpoints_dir / "checkpoints.db"
-        if not db_path.exists():
+        if db_path.exists():
+            try:
+                conn = sqlite3.connect(str(db_path), check_same_thread=False)
+                cursor = conn.cursor()
+                cursor.execute("SELECT DISTINCT thread_id FROM checkpoints")
+                checkpoint_thread_ids = [row[0] for row in cursor.fetchall()]
+                conn.close()
+            except Exception:
+                pass
+
+        # Collect thread IDs from run log directories
+        runs_dir = self.base_dir / RUNS_DIR_NAME
+        run_log_thread_ids: list[str] = []
+        if runs_dir.is_dir():
+            for entry in runs_dir.iterdir():
+                if entry.is_dir() and (entry / RUN_FILENAME).is_file():
+                    run_log_thread_ids.append(entry.name)
+
+        # Merge, preserving checkpoint-DB entries first, then run-log-only entries
+        seen: set[str] = set(checkpoint_thread_ids)
+        all_thread_ids = list(checkpoint_thread_ids)
+        for tid in run_log_thread_ids:
+            if tid not in seen:
+                seen.add(tid)
+                all_thread_ids.append(tid)
+
+        if not all_thread_ids:
             return []
 
         try:
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT thread_id FROM checkpoints")
-            thread_rows = cursor.fetchall()
-            conn.close()
-
             threads = []
-            checkpointer = self.get_checkpointer()
-            for (thread_id,) in thread_rows:
+            checkpointer = self.get_checkpointer() if db_path.exists() else None
+            for thread_id in all_thread_ids:
                 is_locked, pid = self.is_locked(thread_id)
                 status = "running" if is_locked else "stopped"
                 flow_name = thread_id  # fallback default
@@ -204,7 +231,7 @@ class CheckpointManager:
                 started_at = ""
                 config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
                 try:
-                    checkpoint_tuple = checkpointer.get_tuple(config)
+                    checkpoint_tuple = checkpointer.get_tuple(config) if checkpointer is not None else None
                     if checkpoint_tuple is not None:
                         checkpoint_data = checkpoint_tuple.checkpoint
                         meta = _extract_meta_from_checkpoint(checkpoint_data)
@@ -241,6 +268,29 @@ class CheckpointManager:
                             started_at = str(ts)[:16].replace("T", " ")
                 except Exception:
                     pass
+
+                # Fallback: read flow_name and started_at from run log when
+                # the checkpoint did not provide them.
+                if flow_name == thread_id or not started_at:
+                    try:
+                        import json
+                        run_log_path = runs_dir / thread_id / RUN_FILENAME
+                        if run_log_path.is_file():
+                            with open(run_log_path, "r") as f:
+                                run_log = json.load(f)
+                            if flow_name == thread_id:
+                                flow_name = run_log.get("flow_name", thread_id)
+                            if not started_at:
+                                ts_str = run_log.get("started_at", "")
+                                if ts_str and "T" in ts_str:
+                                    started_at = ts_str[:16].replace("T", " ")
+                            if not is_locked and flow_name != thread_id:
+                                # Run-log-only thread: derive status from log status
+                                log_status = run_log.get("status", "")
+                                if log_status == "completed":
+                                    status = "completed"
+                    except (json.JSONDecodeError, OSError, KeyError):
+                        pass
 
                 threads.append(
                     {

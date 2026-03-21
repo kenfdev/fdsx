@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from fdsx.logging.recorder import RunRecorder, OUTPUT_PREVIEW_MAX_LENGTH
+from fdsx.logging.recorder import RunRecorder, OUTPUT_PREVIEW_MAX_LENGTH, RUN_FILENAME
 
 
 class TestRunRecorder:
@@ -178,7 +178,7 @@ class TestRunRecorder:
 
             file_path = recorder.save(base_dir=Path(tmpdir))
 
-            assert file_path == Path(tmpdir) / "runs" / "test-123.json"
+            assert file_path == Path(tmpdir) / "runs" / "test-123" / RUN_FILENAME
             assert file_path.exists()
 
             with open(file_path, "r") as f:
@@ -202,11 +202,15 @@ class TestRunRecorder:
             runs_dir = Path(tmpdir) / "runs"
             assert runs_dir.exists()
             assert runs_dir.is_dir()
+            thread_dir = runs_dir / "test-123"
+            assert thread_dir.exists()
+            assert thread_dir.is_dir()
 
     def test_save_resume_append(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runs_dir = Path(tmpdir) / "runs"
-            runs_dir.mkdir()
+            thread_dir = runs_dir / "test-123"
+            thread_dir.mkdir(parents=True)
 
             existing_log = {
                 "thread_id": "test-123",
@@ -227,7 +231,7 @@ class TestRunRecorder:
                 ],
             }
 
-            existing_file = runs_dir / "test-123.json"
+            existing_file = thread_dir / RUN_FILENAME
             with open(existing_file, "w") as f:
                 json.dump(existing_log, f)
 
@@ -256,6 +260,27 @@ class TestRunRecorder:
             assert data["states"][0]["name"] == "planner"
             assert data["states"][1]["name"] == "implementer"
             assert data["started_at"] == "2026-03-14T10:00:00Z"
+
+    def test_save_no_base_dir_uses_fdsx_dir(self):
+        """T001: save() with no base_dir saves to {CWD}/.fdsx/runs/<thread_id>/run.json."""
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(tmpdir)
+                recorder = RunRecorder(
+                    thread_id="test-nobase",
+                    flow_name="test_flow",
+                )
+                recorder.finalize({"key": "value"}, "completed")
+                file_path = recorder.save()
+
+                expected = Path(tmpdir) / ".fdsx" / "runs" / "test-nobase" / RUN_FILENAME
+                assert file_path == expected
+                assert file_path.exists()
+            finally:
+                os.chdir(original_cwd)
 
     def test_to_dict(self):
         recorder = RunRecorder(
@@ -382,9 +407,14 @@ class TestRunRecorderSecurity:
             recorder.save(base_dir=Path(tmpdir))
 
             runs_dir = Path(tmpdir) / "runs"
+            thread_dir = runs_dir / "test-123"
             import os
 
             stat_info = os.stat(runs_dir)
+            mode = stat_info.st_mode & 0o777
+            assert mode == 0o700
+
+            stat_info = os.stat(thread_dir)
             mode = stat_info.st_mode & 0o777
             assert mode == 0o700
 
@@ -405,6 +435,11 @@ class TestRunRecorderSecurity:
             recorder.save(base_dir=Path(tmpdir))
 
             stat_info = os.stat(runs_dir)
+            mode = stat_info.st_mode & 0o777
+            assert mode == 0o700
+
+            thread_dir = runs_dir / "test-hardendir"
+            stat_info = os.stat(thread_dir)
             mode = stat_info.st_mode & 0o777
             assert mode == 0o700
 
