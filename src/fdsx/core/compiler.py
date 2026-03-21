@@ -8,6 +8,13 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt, Send
 
 from fdsx.core.config import _deep_merge
+from fdsx.core.hooks import (
+    INPUT_FILENAME,
+    OUTPUT_FILENAME,
+    collect_hooks,
+    execute_hooks,
+    write_hook_data,
+)
 from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
@@ -19,6 +26,7 @@ from fdsx.models.flow import (
     AggregateRule,
     ChoiceState,
     Flow,
+    HookEntry,
     ParallelState,
     PassState,
     TaskState,
@@ -201,38 +209,83 @@ def compile_flow(
 
             checkpointer = MemorySaver()
 
+    # Derive the .fdsx base directory for hook data files from log_dir.
+    # log_dir = .fdsx/runs/<thread-id>/logs/ → parent×3 = .fdsx/
+    fdsx_base_dir: Path | None = log_dir.parent.parent.parent if log_dir is not None else None
+
+    # Resolve config-level hooks (merged global+project hooks are in fdsx_config.hooks)
+    config_hooks = config.hooks if config is not None else None
+
+    def _collect_state_hooks(state_obj: Any) -> tuple[list[HookEntry], list[HookEntry]]:
+        """Collect on_start and on_complete hooks for a state from all levels."""
+        on_s = collect_hooks(
+            "on_start",
+            global_hooks=config_hooks,
+            project_hooks=None,
+            flow_hooks=flow.hooks,
+            state_hooks=state_obj.hooks,
+        )
+        on_c = collect_hooks(
+            "on_complete",
+            global_hooks=config_hooks,
+            project_hooks=None,
+            flow_hooks=flow.hooks,
+            state_hooks=state_obj.hooks,
+        )
+        return on_s, on_c
+
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
+            on_start, on_complete = _collect_state_hooks(state)
+            node = _create_task_node(state_name, state, flow, recorder, config, log_dir)
             graph.add_node(
-                state_name, _create_task_node(state_name, state, flow, recorder, config, log_dir)
+                state_name,
+                _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):
+            on_start, on_complete = _collect_state_hooks(state)
+            node = _create_choice_node(state_name, state, flow, recorder)
             graph.add_node(
-                state_name, _create_choice_node(state_name, state, flow, recorder)
+                state_name,
+                _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
         elif isinstance(state, ParallelState):
+            on_start, on_complete = _collect_state_hooks(state)
+            # Hooks wrap dispatch (on_start) and collector (on_complete), not branch executor.
+            dispatch_node = _create_dispatch_node(state_name, state, recorder)
             graph.add_node(
-                state_name, _create_dispatch_node(state_name, state, recorder)
+                state_name,
+                _wrap_with_hooks(dispatch_node, state_name, on_start, [], recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_branch_{state_name}",
                 _create_branch_executor(state_name, state, flow, recorder, config, log_dir),
             )  # type: ignore[call-overload]
+            collector_node = _create_collector_node(state_name, state, flow, recorder)
             graph.add_node(
                 f"_collect_{state_name}",
-                _create_collector_node(state_name, state, flow, recorder),
+                _wrap_with_hooks(collector_node, state_name, [], on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
         elif state.type == "pass":
+            on_start, on_complete = _collect_state_hooks(state)
+            node = _create_pass_node(state_name, state, flow, recorder)
             graph.add_node(
-                state_name, _create_pass_node(state_name, state, flow, recorder)
+                state_name,
+                _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
         elif state.type == "wait":
+            on_start, on_complete = _collect_state_hooks(state)
+            # WaitState is split into two nodes: notify (pre-interrupt) and interrupt.
+            # on_start hooks fire in the notify node; on_complete hooks fire in the interrupt node.
+            notify_node = _create_wait_notify_node(state_name, state, recorder)
             graph.add_node(
-                state_name, _create_wait_notify_node(state_name, state, recorder)
+                state_name,
+                _wrap_with_hooks(notify_node, state_name, on_start, [], recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
+            interrupt_node = _create_wait_interrupt_node(state_name, state, recorder)
             graph.add_node(
                 f"_{state_name}_int",
-                _create_wait_interrupt_node(state_name, state, recorder),
+                _wrap_with_hooks(interrupt_node, state_name, [], on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
             )  # type: ignore[call-overload]
             graph.add_edge(state_name, f"_{state_name}_int")
 
@@ -329,6 +382,96 @@ def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, An
     else:
         state_dict["_meta"] = {"next_state": next_name}
     return state_dict
+
+
+def _wrap_with_hooks(
+    node_fn: Callable[[dict[str, Any]], dict[str, Any]],
+    state_name: str,
+    on_start_hooks: list[HookEntry],
+    on_complete_hooks: list[HookEntry],
+    *,
+    recorder: Any = None,
+    fdsx_base_dir: Path | None = None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Wrap a node function with hook execution.
+
+    Calls execute_hooks(on_start_hooks) with status "starting" before node
+    execution and execute_hooks(on_complete_hooks) with status "completed"
+    after.  Hook data (input/output state dicts) is written to
+    .fdsx/runs/<thread-id>/hooks/<state-name>/{input,output}.json.
+
+    If both hook lists are empty, returns node_fn unchanged (no-op).
+
+    Args:
+        node_fn: The original node function to wrap.
+        state_name: Logical state name used for hook data paths.
+        on_start_hooks: Hooks to execute before the node runs.
+        on_complete_hooks: Hooks to execute after the node runs.
+        recorder: RunRecorder providing thread_id and flow_name.
+        fdsx_base_dir: The .fdsx root directory for hook data files.
+                       When None, defaults to CWD/.fdsx.
+
+    Returns:
+        Wrapped node function, or the original node_fn when both lists are empty.
+    """
+    if not on_start_hooks and not on_complete_hooks:
+        return node_fn
+
+    def wrapped(state_dict: dict[str, Any]) -> dict[str, Any]:
+        thread_id: str = recorder.thread_id if recorder is not None else ""
+        flow_name: str = recorder.flow_name if recorder is not None else ""
+
+        input_data_path = write_hook_data(
+            state_dict,
+            state_name=state_name,
+            filename=INPUT_FILENAME,
+            thread_id=thread_id,
+            base_dir=fdsx_base_dir,
+        )
+
+        if on_start_hooks:
+            execute_hooks(
+                on_start_hooks,
+                state_name=state_name,
+                status="starting",
+                data_path=input_data_path,
+                thread_id=thread_id,
+                flow_name=flow_name,
+            )
+
+        node_error: BaseException | None = None
+        result: dict[str, Any] = state_dict  # fallback data written to output.json on failure
+        try:
+            result = node_fn(state_dict)
+        except BaseException as exc:
+            node_error = exc
+
+        status = "completed" if node_error is None else "failed"
+
+        output_data_path = write_hook_data(
+            result,
+            state_name=state_name,
+            filename=OUTPUT_FILENAME,
+            thread_id=thread_id,
+            base_dir=fdsx_base_dir,
+        )
+
+        if on_complete_hooks:
+            execute_hooks(
+                on_complete_hooks,
+                state_name=state_name,
+                status=status,
+                data_path=output_data_path,
+                thread_id=thread_id,
+                flow_name=flow_name,
+            )
+
+        if node_error is not None:
+            raise node_error
+
+        return result
+
+    return wrapped
 
 
 def _create_task_node(

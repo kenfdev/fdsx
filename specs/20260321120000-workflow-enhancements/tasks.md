@@ -94,8 +94,8 @@
 
 **Independent Test Criteria**: End-to-end flow with hooks configured at multiple levels fires hooks in correct order. Abort-hook failure halts workflow. Warn-hook failure continues. ParallelState hooks wrap dispatch/collector, not individual branches.
 
-- [ ] T022 Create `_wrap_with_hooks()` in `src/fdsx/core/compiler.py` — wrapper function that calls `execute_hooks(on_start)` before node execution and `execute_hooks(on_complete)` after (TDD: `tests/integration/test_hooks_integration.py`)
-- [ ] T023 Apply `_wrap_with_hooks()` in `compile_flow()` for all node types in `src/fdsx/core/compiler.py` — use `collect_hooks()` at compile time, handle ParallelState dispatch/collector wrapping (TDD: `tests/integration/test_hooks_integration.py`)
+- [x] T022 Create `_wrap_with_hooks()` in `src/fdsx/core/compiler.py` — wrapper function that calls `execute_hooks(on_start)` before node execution and `execute_hooks(on_complete)` after (TDD: `tests/integration/test_hooks_integration.py`)
+- [x] T023 Apply `_wrap_with_hooks()` in `compile_flow()` for all node types in `src/fdsx/core/compiler.py` — use `collect_hooks()` at compile time, handle ParallelState dispatch/collector wrapping (TDD: `tests/integration/test_hooks_integration.py`)
 
 ---
 
