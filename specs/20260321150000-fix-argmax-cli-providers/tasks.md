@@ -15,18 +15,18 @@
 
 > Write all unit tests before implementation. Tests should fail until Phase 3.
 
-- [ ] T002 [P] Write Claude provider stdin fallback tests (T01-T03, T10 from plan) in `tests/unit/test_provider_stdin_fallback.py`
+- [x] T002 [P] Write Claude provider stdin fallback tests (T01-T03, T10 from plan) in `tests/unit/test_provider_stdin_fallback.py`
   - T01: prompt < threshold → prompt in args, stdin_data=None
   - T02: prompt >= threshold → prompt NOT in args, stdin_data=prompt
   - T03: prompt >= threshold + flags → flags in args, prompt NOT in args, stdin_data=prompt
   - T10: prompt exactly at threshold → uses stdin (boundary case)
 
-- [ ] T003 [P] Write Codex provider stdin fallback tests (T04-T06 from plan) in `tests/unit/test_provider_stdin_fallback.py`
+- [x] T003 [P] Write Codex provider stdin fallback tests (T04-T06 from plan) in `tests/unit/test_provider_stdin_fallback.py`
   - T04: prompt < threshold → prompt in args, stdin_data=None
   - T05: prompt >= threshold → prompt NOT in args, stdin_data=prompt
   - T06: prompt >= threshold + flags → flags in args, prompt NOT in args, stdin_data=prompt
 
-- [ ] T004 [P] Write OpenCode provider stdin fallback tests (T07-T09 from plan) in `tests/unit/test_provider_stdin_fallback.py`
+- [x] T004 [P] Write OpenCode provider stdin fallback tests (T07-T09 from plan) in `tests/unit/test_provider_stdin_fallback.py`
   - T07: prompt < threshold → prompt in args, stdin_data=None
   - T08: prompt >= threshold → prompt NOT in args, stdin_data=prompt
   - T09: prompt >= threshold + model flag → `-m model` in args, prompt NOT in args, stdin_data=prompt
