@@ -180,6 +180,7 @@ def compile_flow(
     recorder: Any = None,
     config: "FdsxConfig | None" = None,
     log_dir: Path | None = None,
+    quiet: bool = False,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -194,6 +195,8 @@ def compile_flow(
         log_dir: Optional directory for per-state streaming log files
                  (.fdsx/runs/<thread-id>/logs/). When None, streaming still
                  works on the terminal but no log files are written.
+        quiet: When True, suppresses stderr streaming output from StreamLogger.
+               Log files are still written.
 
     Returns:
         CompiledGraph with the compiled state machine
@@ -240,7 +243,7 @@ def compile_flow(
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
             on_start, on_complete = _collect_state_hooks(state)
-            node = _create_task_node(state_name, state, flow, recorder, config, log_dir)
+            node = _create_task_node(state_name, state, flow, recorder, config, log_dir, quiet)
             graph.add_node(
                 state_name,
                 _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
@@ -262,7 +265,7 @@ def compile_flow(
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_branch_{state_name}",
-                _create_branch_executor(state_name, state, flow, recorder, config, log_dir),
+                _create_branch_executor(state_name, state, flow, recorder, config, log_dir, quiet),
             )  # type: ignore[call-overload]
             collector_node = _create_collector_node(state_name, state, flow, recorder)
             graph.add_node(
@@ -490,6 +493,7 @@ def _create_task_node(
     recorder: Any = None,
     config: "FdsxConfig | None" = None,
     log_dir: Path | None = None,
+    quiet: bool = False,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
     merged_options = _merge_provider_options(config, flow, state.provider, state.provider_options)
@@ -520,7 +524,7 @@ def _create_task_node(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        stream_logger = StreamLogger(state_name, log_dir)
+        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet)
         try:
             for attempt in range(max_retries + 1):
                 if attempt > 0:
@@ -653,6 +657,7 @@ def _create_branch_executor(
     recorder: Any = None,
     config: "FdsxConfig | None" = None,
     log_dir: Path | None = None,
+    quiet: bool = False,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a shared branch executor node invoked once per branch via Send.
 
@@ -688,7 +693,7 @@ def _create_branch_executor(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        stream_logger = StreamLogger(state_name, log_dir)
+        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet)
         try:
             for attempt in range(max_retries + 1):
                 if attempt > 0:

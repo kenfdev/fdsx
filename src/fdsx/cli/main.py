@@ -44,6 +44,11 @@ def run(
         "--confirm-workflow",
         help="Show interactive workflow confirmation UI before execution (overrides config)",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        help="Suppress stderr streaming output from providers. Log files are still written and completion summary is still shown.",
+    ),
 ) -> None:
     """Run a workflow. Supports single execution, in-memory batch (--tasks), and persistent batch (--tasks-dir) modes.
 
@@ -151,7 +156,7 @@ def run(
             assert workflow is not None
             if current_thread_id is None:
                 current_thread_id = str(uuid_utils.uuid7())
-            engine.run_flow(workflow, inputs, current_thread_id, base_dir)
+            engine.run_flow(workflow, inputs, current_thread_id, base_dir, quiet=quiet)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2)

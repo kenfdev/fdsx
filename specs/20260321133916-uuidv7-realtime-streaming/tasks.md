@@ -50,11 +50,11 @@
 **Goal:** Add `--quiet` flag that suppresses stderr streaming output while keeping log file writes and completion summary.
 **Test criteria:** `quiet=True` suppresses stderr print but log file content is identical to non-quiet mode. CLI `--quiet` flag wires through engine/compiler to StreamLogger.
 
-- [ ] T015 Write TDD tests for StreamLogger quiet mode in `tests/unit/test_stream_logger.py` — quiet=False default behavior, quiet=True no stderr print, quiet=True log file content matches
-- [ ] T016 Add `quiet: bool = False` parameter to StreamLogger `__init__` in `src/fdsx/logging/stream_logger.py` — guard `print()` calls with `if not self.quiet`
-- [ ] T017 Add `--quiet` flag to CLI `run` command in `src/fdsx/cli/main.py` — pass quiet value through to engine
-- [ ] T018 Wire quiet flag through compiler to StreamLogger — accept `quiet` in `src/fdsx/core/compiler.py` `compile_flow()` and `src/fdsx/core/engine.py` `run_flow()`, pass to StreamLogger construction
-- [ ] T019 Write integration test for quiet mode end-to-end in `tests/integration/test_quiet_mode.py` — `--quiet` suppresses stderr, log files written, completion summary still prints
+- [x] T015 Write TDD tests for StreamLogger quiet mode in `tests/unit/test_stream_logger.py` — quiet=False default behavior, quiet=True no stderr print, quiet=True log file content matches
+- [x] T016 Add `quiet: bool = False` parameter to StreamLogger `__init__` in `src/fdsx/logging/stream_logger.py` — guard `print()` calls with `if not self.quiet`
+- [x] T017 Add `--quiet` flag to CLI `run` command in `src/fdsx/cli/main.py` — pass quiet value through to engine
+- [x] T018 Wire quiet flag through compiler to StreamLogger — accept `quiet` in `src/fdsx/core/compiler.py` `compile_flow()` and `src/fdsx/core/engine.py` `run_flow()`, pass to StreamLogger construction
+- [x] T019 Write integration test for quiet mode end-to-end in `tests/integration/test_quiet_mode.py` — `--quiet` suppresses stderr, log files written, completion summary still prints
 
 ---
 

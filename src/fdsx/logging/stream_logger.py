@@ -32,11 +32,19 @@ class StreamLogger:
                     log file stem ``<state_name>.log``.
         log_dir: Directory for per-state log files. When None, terminal
                  streaming still works but no log file is written.
+        quiet: When True, suppresses print to stderr. Log file writes are
+               unaffected.
     """
 
-    def __init__(self, state_name: str, log_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        state_name: str,
+        log_dir: Path | None = None,
+        quiet: bool = False,
+    ) -> None:
         self.state_name = state_name
         self.log_dir = log_dir
+        self.quiet = quiet
         self._lock = threading.Lock()
         self._file: IO[str] | None = None
 
@@ -45,8 +53,10 @@ class StreamLogger:
 
         Prefixes the line with ``[state_name]`` and prints to stderr,
         then appends the raw line to the log file.
+        When quiet=True, the print to stderr is suppressed.
         """
-        print(f"[{self.state_name}] {line}", file=sys.stderr)
+        if not self.quiet:
+            print(f"[{self.state_name}] {line}", file=sys.stderr)
         self._write_to_file(line)
 
     def on_stderr(self, line: str) -> None:
@@ -54,8 +64,10 @@ class StreamLogger:
 
         Prefixes the line with ``[state_name]`` and prints to stderr,
         then appends the raw line to the log file.
+        When quiet=True, the print to stderr is suppressed.
         """
-        print(f"[{self.state_name}] {line}", file=sys.stderr)
+        if not self.quiet:
+            print(f"[{self.state_name}] {line}", file=sys.stderr)
         self._write_to_file(line)
 
     def _write_to_file(self, line: str) -> None:

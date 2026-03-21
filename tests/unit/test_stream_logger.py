@@ -198,6 +198,60 @@ class TestStreamLoggerFileWriting:
         logger.close()  # Should not raise
 
 
+class TestStreamLoggerQuietMode:
+    """Tests for StreamLogger quiet mode (T015, FR-5.1, FR-5.4)."""
+
+    def test_quiet_false_is_default(self, capsys):
+        """quiet=False is the default: stderr output is produced."""
+        logger = StreamLogger("State")
+        assert logger.quiet is False
+        logger.on_stdout("hello")
+        captured = capsys.readouterr()
+        assert "[State] hello" in captured.err
+
+    def test_quiet_true_suppresses_stdout_stderr_print(self, capsys):
+        """quiet=True suppresses print to stderr for on_stdout."""
+        logger = StreamLogger("State", quiet=True)
+        logger.on_stdout("hello")
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_quiet_true_suppresses_on_stderr_print(self, capsys):
+        """quiet=True suppresses print to stderr for on_stderr."""
+        logger = StreamLogger("State", quiet=True)
+        logger.on_stderr("error line")
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_quiet_true_log_file_content_matches_non_quiet(self, tmp_path):
+        """quiet=True writes identical log file content as quiet=False."""
+        log_dir_normal = tmp_path / "normal"
+        log_dir_quiet = tmp_path / "quiet"
+
+        logger_normal = StreamLogger("State", log_dir_normal, quiet=False)
+        logger_normal.on_stdout("line one")
+        logger_normal.on_stderr("line two")
+        logger_normal.close()
+
+        logger_quiet = StreamLogger("State", log_dir_quiet, quiet=True)
+        logger_quiet.on_stdout("line one")
+        logger_quiet.on_stderr("line two")
+        logger_quiet.close()
+
+        normal_content = (log_dir_normal / f"State{LOG_FILE_SUFFIX}").read_text(encoding="utf-8")
+        quiet_content = (log_dir_quiet / f"State{LOG_FILE_SUFFIX}").read_text(encoding="utf-8")
+        assert normal_content == quiet_content
+
+    def test_quiet_true_log_file_still_created(self, tmp_path):
+        """quiet=True still creates the log file on first write (FR-5.4)."""
+        log_dir = tmp_path / "logs"
+        logger = StreamLogger("State", log_dir, quiet=True)
+        logger.on_stdout("trigger")
+        logger.close()
+
+        assert (log_dir / f"State{LOG_FILE_SUFFIX}").exists()
+
+
 class TestStreamLoggerThreadSafety:
     """Tests for thread-safe behaviour."""
 

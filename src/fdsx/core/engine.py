@@ -45,6 +45,7 @@ def run_flow(
     inputs: dict[str, str] | None = None,
     thread_id: str | None = None,
     base_dir: Path | None = None,
+    quiet: bool = False,
 ) -> dict[str, Any]:
     """Run a flow from a YAML file.
 
@@ -54,6 +55,8 @@ def run_flow(
         thread_id: Optional thread ID (generated if not provided)
         base_dir: Optional base directory for checkpoints (.fdsx/).
                   If None, uses MemorySaver (no persistence).
+        quiet: When True, suppresses stderr streaming output from StreamLogger.
+               Log files are still written and completion summary is still shown.
 
     Returns:
         Final state variables as result dict. When max_loop is reached,
@@ -109,6 +112,7 @@ def run_flow(
         recorder=recorder,
         config=fdsx_config,
         log_dir=log_dir,
+        quiet=quiet,
     )
 
     initial_state: dict[str, Any] = {
