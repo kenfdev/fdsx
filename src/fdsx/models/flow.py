@@ -102,6 +102,26 @@ class NotifyConfig(BaseModel):
     webhook: WebhookConfig = Field(..., description="Webhook configuration")
 
 
+class HookEntry(BaseModel):
+    """Single hook entry with a command and failure handling policy."""
+
+    command: str = Field(..., min_length=1, description="Shell command to execute")
+    on_failure: Literal["abort", "warn"] = Field(
+        default="warn", description="Action on hook failure: abort or warn"
+    )
+
+
+class HookConfig(BaseModel):
+    """Hook configuration for a state or flow."""
+
+    on_start: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run before execution"
+    )
+    on_complete: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run after execution"
+    )
+
+
 class ChoiceRule(BaseModel):
     """Choice rule for branching."""
 
@@ -233,6 +253,7 @@ class TaskState(BaseModel):
     provider_options: dict[str, Any] | None = Field(
         default=None, description="Per-task provider option overrides"
     )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -288,6 +309,7 @@ class ChoiceState(BaseModel):
     type: Literal["choice"] = "choice"
     choices: list[ChoiceRule] = Field(..., description="Condition-transition pairs")
     default: str | None = Field(default=None, description="Fallback transition")
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
 
 
 class ParallelState(BaseModel):
@@ -297,6 +319,7 @@ class ParallelState(BaseModel):
     branches: list[Branch] = Field(..., description="Parallel branch definitions")
     result_path: str = Field(..., description="JSONPath for results array")
     min_success: int | None = Field(default=None, description="Min successful branches")
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -319,6 +342,7 @@ class PassState(BaseModel):
     aggregate: AggregateRule | None = Field(
         default=None, description="Parallel result aggregation"
     )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -342,6 +366,7 @@ class WaitState(BaseModel):
     notify: NotifyConfig | None = Field(
         default=None, description="Webhook notification"
     )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -371,6 +396,9 @@ class Flow(BaseModel):
     max_loop: int = Field(default=10, description="Max loop iterations")
     providers: dict[str, dict[str, Any]] | None = Field(
         default=None, description="Workflow-level provider configurations keyed by name"
+    )
+    hooks: HookConfig | None = Field(
+        default=None, description="Flow-level hook configuration"
     )
 
     @model_validator(mode="before")

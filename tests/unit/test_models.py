@@ -7,6 +7,8 @@ from fdsx.models.flow import (
     ChoiceRule,
     ExtractRule,
     Flow,
+    HookConfig,
+    HookEntry,
     LLMClassifyFallback,
     ParallelState,
     PassState,
@@ -693,6 +695,172 @@ class TestTaskSplitterRemoval:
                     )
                 },
             )
+
+
+class TestHookEntryAndHookConfig:
+    """T016: Tests for HookEntry and HookConfig models."""
+
+    def test_hook_entry_defaults_on_failure_to_warn(self):
+        """T016: HookEntry.on_failure defaults to 'warn'."""
+        entry = HookEntry(command="echo hello")
+        assert entry.command == "echo hello"
+        assert entry.on_failure == "warn"
+
+    def test_hook_entry_accepts_abort(self):
+        """T016: HookEntry.on_failure accepts 'abort'."""
+        entry = HookEntry(command="./check.sh", on_failure="abort")
+        assert entry.on_failure == "abort"
+
+    def test_hook_entry_rejects_empty_command(self):
+        """T016: HookEntry.command must not be empty."""
+        with pytest.raises(ValidationError):
+            HookEntry(command="")
+
+    def test_hook_entry_rejects_invalid_on_failure(self):
+        """T016: HookEntry.on_failure must be 'abort' or 'warn'."""
+        with pytest.raises(ValidationError):
+            HookEntry(command="echo hello", on_failure="ignore")
+
+    def test_hook_config_defaults_to_empty_lists(self):
+        """T016: HookConfig.on_start and on_complete default to empty lists."""
+        config = HookConfig()
+        assert config.on_start == []
+        assert config.on_complete == []
+
+    def test_hook_config_accepts_entries(self):
+        """T016: HookConfig accepts HookEntry objects in both lists."""
+        config = HookConfig(
+            on_start=[HookEntry(command="echo start")],
+            on_complete=[HookEntry(command="echo done", on_failure="abort")],
+        )
+        assert len(config.on_start) == 1
+        assert config.on_start[0].command == "echo start"
+        assert len(config.on_complete) == 1
+        assert config.on_complete[0].on_failure == "abort"
+
+
+class TestHooksFieldOnStates:
+    """T017: Tests for hooks field on state types and Flow."""
+
+    def _base_task_state(self, **kwargs) -> TaskState:
+        return TaskState(
+            type="task",
+            provider="system",
+            command="echo test",
+            result_path="$.result",
+            end=True,
+            **kwargs,
+        )
+
+    def test_task_state_hooks_defaults_to_none(self):
+        """T017: TaskState.hooks is None when not specified."""
+        assert self._base_task_state().hooks is None
+
+    def test_task_state_accepts_hooks(self):
+        """T017: TaskState accepts a HookConfig."""
+        state = self._base_task_state(
+            hooks=HookConfig(on_start=[HookEntry(command="echo pre")])
+        )
+        assert state.hooks is not None
+        assert state.hooks.on_start[0].command == "echo pre"
+
+    def test_choice_state_hooks_defaults_to_none(self):
+        """T017: ChoiceState.hooks is None when not specified."""
+        state = ChoiceState(
+            type="choice",
+            choices=[ChoiceRule(variable="$.x", operator="equals", value="a", next="b")],
+        )
+        assert state.hooks is None
+
+    def test_choice_state_accepts_hooks(self):
+        """T017: ChoiceState accepts a HookConfig."""
+        state = ChoiceState(
+            type="choice",
+            choices=[ChoiceRule(variable="$.x", operator="equals", value="a", next="b")],
+            hooks=HookConfig(on_complete=[HookEntry(command="echo done")]),
+        )
+        assert state.hooks is not None
+
+    def test_parallel_state_hooks_defaults_to_none(self):
+        """T017: ParallelState.hooks is None when not specified."""
+        state = ParallelState(type="parallel", branches=[], result_path="$.r", end=True)
+        assert state.hooks is None
+
+    def test_parallel_state_accepts_hooks(self):
+        """T017: ParallelState accepts a HookConfig."""
+        state = ParallelState(
+            type="parallel",
+            branches=[],
+            result_path="$.r",
+            end=True,
+            hooks=HookConfig(on_start=[HookEntry(command="init.sh", on_failure="abort")]),
+        )
+        assert state.hooks is not None
+
+    def test_pass_state_hooks_defaults_to_none(self):
+        """T017: PassState.hooks is None when not specified."""
+        state = PassState(type="pass", end=True)
+        assert state.hooks is None
+
+    def test_pass_state_accepts_hooks(self):
+        """T017: PassState accepts a HookConfig."""
+        state = PassState(
+            type="pass",
+            end=True,
+            hooks=HookConfig(on_complete=[HookEntry(command="cleanup.sh")]),
+        )
+        assert state.hooks is not None
+
+    def test_wait_state_hooks_defaults_to_none(self):
+        """T017: WaitState.hooks is None when not specified."""
+        state = WaitState(
+            type="wait",
+            mode="prompt",
+            message="Go?",
+            choices=["yes"],
+            result_path="$.c",
+            end=True,
+        )
+        assert state.hooks is None
+
+    def test_wait_state_accepts_hooks(self):
+        """T017: WaitState accepts a HookConfig."""
+        state = WaitState(
+            type="wait",
+            mode="prompt",
+            message="Go?",
+            choices=["yes"],
+            result_path="$.c",
+            end=True,
+            hooks=HookConfig(on_start=[HookEntry(command="notify.sh")]),
+        )
+        assert state.hooks is not None
+
+    def test_flow_hooks_defaults_to_none(self):
+        """T017: Flow.hooks is None when not specified."""
+        flow = Flow(
+            name="Test",
+            description="Test flow",
+            start_at="s",
+            states={"s": self._base_task_state()},
+        )
+        assert flow.hooks is None
+
+    def test_flow_accepts_hooks(self):
+        """T017: Flow accepts a HookConfig at flow level."""
+        flow = Flow(
+            name="Test",
+            description="Test flow",
+            start_at="s",
+            states={"s": self._base_task_state()},
+            hooks=HookConfig(
+                on_start=[HookEntry(command="setup.sh")],
+                on_complete=[HookEntry(command="teardown.sh")],
+            ),
+        )
+        assert flow.hooks is not None
+        assert flow.hooks.on_start[0].command == "setup.sh"
+        assert flow.hooks.on_complete[0].command == "teardown.sh"
 
 
 class TestFlowModelExtension:

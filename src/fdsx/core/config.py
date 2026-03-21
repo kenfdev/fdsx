@@ -14,10 +14,14 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+from fdsx.models.flow import HookConfig
 from fdsx.models.validators import validate_llm_provider
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
 from fdsx.providers.opencode import OpenCodeOptions
+
+# Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
+_HOOK_LIST_KEYS: frozenset[str] = frozenset({"on_start", "on_complete"})
 
 
 class TaskSplitterConfig(BaseModel):
@@ -98,6 +102,10 @@ class FdsxConfig(BaseModel):
         default=None,
         description="Provider-specific configuration options",
     )
+    hooks: HookConfig | None = Field(
+        default=None,
+        description="Global hook configuration applied to all flows",
+    )
 
     @field_validator("workflows_dir")
     @classmethod
@@ -118,7 +126,9 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     """Recursively merge override into base, with override taking precedence.
 
     When both base and override have a dict value for the same key, the dicts
-    are merged recursively. Otherwise, the override value wins outright.
+    are merged recursively. For keys in _HOOK_LIST_KEYS (on_start, on_complete),
+    list values are concatenated (base + override) rather than replaced.
+    Otherwise, the override value wins outright.
 
     Args:
         base: Base dictionary (lower priority).
@@ -132,6 +142,12 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         base_val = result.get(key)
         if isinstance(base_val, dict) and isinstance(override_val, dict):
             result[key] = _deep_merge(base_val, override_val)
+        elif (
+            key in _HOOK_LIST_KEYS
+            and isinstance(base_val, list)
+            and isinstance(override_val, list)
+        ):
+            result[key] = base_val + override_val
         else:
             result[key] = override_val
     return result

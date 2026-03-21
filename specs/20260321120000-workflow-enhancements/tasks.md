@@ -70,9 +70,9 @@
 
 **Independent Test Criteria**: Hook models validate correctly. YAML with `hooks` field parses without error on Flow and all state types. Config merging handles hooks with list concatenation.
 
-- [ ] T016 Define `HookEntry` and `HookConfig` Pydantic models in `src/fdsx/models/flow.py` (TDD: `tests/unit/test_models.py`)
-- [ ] T017 [P] Add `hooks: HookConfig | None = None` field to `Flow`, `TaskState`, `ChoiceState`, `ParallelState`, `PassState`, `WaitState` in `src/fdsx/models/flow.py` (TDD: `tests/unit/test_models.py`)
-- [ ] T018 [P] Add `hooks: HookConfig | None = None` to `FdsxConfig` in `src/fdsx/core/config.py` with correct `_deep_merge` handling for hook list concatenation (TDD: `tests/unit/test_config.py`)
+- [x] T016 Define `HookEntry` and `HookConfig` Pydantic models in `src/fdsx/models/flow.py` (TDD: `tests/unit/test_models.py`)
+- [x] T017 [P] Add `hooks: HookConfig | None = None` field to `Flow`, `TaskState`, `ChoiceState`, `ParallelState`, `PassState`, `WaitState` in `src/fdsx/models/flow.py` (TDD: `tests/unit/test_models.py`)
+- [x] T018 [P] Add `hooks: HookConfig | None = None` to `FdsxConfig` in `src/fdsx/core/config.py` with correct `_deep_merge` handling for hook list concatenation (TDD: `tests/unit/test_config.py`)
 
 ---
 
