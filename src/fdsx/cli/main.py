@@ -1,8 +1,8 @@
 import json
-import uuid
 from pathlib import Path
 
 import typer
+import uuid_utils
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
@@ -150,7 +150,7 @@ def run(
         else:
             assert workflow is not None
             if current_thread_id is None:
-                current_thread_id = str(uuid.uuid4())
+                current_thread_id = str(uuid_utils.uuid7())
             engine.run_flow(workflow, inputs, current_thread_id, base_dir)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)

@@ -1,8 +1,9 @@
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
+
+import uuid_utils
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
@@ -63,7 +64,7 @@ def run_flow(
         RuntimeError: If flow validation fails or execution fails
     """
     if thread_id is None:
-        thread_id = str(uuid.uuid4())
+        thread_id = str(uuid_utils.uuid7())
 
     print(f"Thread ID: {_sanitize_output(thread_id)}", file=sys.stderr)
 
@@ -298,8 +299,6 @@ def run_batch(
         FlowValidationError: If flow validation fails
         RuntimeError: If task_splitter is missing or execution fails
     """
-    import uuid
-
     flow, errors = load_flow(workflow_path)
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
@@ -331,7 +330,7 @@ def run_batch(
     results: list[dict[str, Any]] = []
 
     for i, task_description in enumerate(tasks):
-        thread_id = str(uuid.uuid4())
+        thread_id = str(uuid_utils.uuid7())
 
         print(
             f"\nExecuting task {i + 1}/{len(tasks)}: {_sanitize_output(task_description[:50])}...",
@@ -712,8 +711,6 @@ def run_tasks_dir(
     Raises:
         FlowValidationError: If flow validation fails.
     """
-    import uuid
-
     try:
         task_files = load_tasks_dir(tasks_dir)
     except ValueError as e:
@@ -857,7 +854,7 @@ def run_tasks_dir(
                 )
 
         for entry_idx, entry in actionable:
-            thread_id = str(uuid.uuid4())
+            thread_id = str(uuid_utils.uuid7())
             description = entry.description
             original_status = entry.status
             category = "retried" if original_status in ("failed", "running") else "new"
