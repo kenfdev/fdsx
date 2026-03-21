@@ -24,11 +24,11 @@
 **Goal:** Enable realtime token-level streaming from Claude CLI via `stream-json` format.
 **Test criteria:** Stream parser correctly extracts text_delta, thinking_delta, tool_use events. ProviderResult.stdout matches expected final text from `result` event. Malformed JSON lines are skipped gracefully.
 
-- [ ] T005 Record real Claude stream-json fixture — run `claude -p "Say hello and list 3 items" --output-format stream-json --verbose --include-partial-messages` and save to `tests/fixtures/claude_stream.ndjson`
-- [ ] T006 Write TDD tests for Claude stream parser in `tests/unit/test_claude_stream_parser.py` — text_delta, thinking_delta, tool_use content_block_start, result event stdout extraction, malformed JSON skip, missing result fallback, non-streaming event ignore
-- [ ] T007 Implement Claude stream line parser `_make_stream_callback()` in `src/fdsx/providers/claude.py` — closure that parses each JSON line and dispatches to output_callback
-- [ ] T008 Wire streaming flags in Claude provider `execute()` in `src/fdsx/providers/claude.py` — add `--output-format stream-json --verbose --include-partial-messages` when output_callback provided, return ProviderResult with stdout from result event
-- [ ] T009 Write integration test for Claude streaming end-to-end in `tests/integration/test_claude_streaming.py` — mocked subprocess replaying fixture, verify callbacks and ProviderResult.stdout
+- [x] T005 Record real Claude stream-json fixture — run `claude -p "Say hello and list 3 items" --output-format stream-json --verbose --include-partial-messages` and save to `tests/fixtures/claude_stream.ndjson`
+- [x] T006 Write TDD tests for Claude stream parser in `tests/unit/test_claude_stream_parser.py` — text_delta, thinking_delta, tool_use content_block_start, result event stdout extraction, malformed JSON skip, missing result fallback, non-streaming event ignore
+- [x] T007 Implement Claude stream line parser `_make_stream_callback()` in `src/fdsx/providers/claude.py` — closure that parses each JSON line and dispatches to output_callback
+- [x] T008 Wire streaming flags in Claude provider `execute()` in `src/fdsx/providers/claude.py` — add `--output-format stream-json --verbose --include-partial-messages` when output_callback provided, return ProviderResult with stdout from result event
+- [x] T009 Write integration test for Claude streaming end-to-end in `tests/integration/test_claude_streaming.py` — mocked subprocess replaying fixture, verify callbacks and ProviderResult.stdout
 
 ---
 
