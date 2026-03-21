@@ -37,11 +37,11 @@
 **Goal:** Enable event-level streaming from Codex CLI via `--json` JSONL format.
 **Test criteria:** Stream parser correctly extracts agent_message, reasoning, command_execution, file_change, mcp_tool_call events. ProviderResult.stdout matches concatenated agent_message texts. Malformed JSON and turn.failed handled gracefully.
 
-- [ ] T010 Record real Codex JSONL fixture — run `codex exec --json "Say hello"` and save to `tests/fixtures/codex_stream.jsonl`
-- [ ] T011 Write TDD tests for Codex stream parser in `tests/unit/test_codex_stream_parser.py` — agent_message completed, reasoning completed, command_execution started, file_change started, mcp_tool_call started, turn.failed warning, malformed JSON skip, multiple agent_message concatenation, partial collection on crash
-- [ ] T012 Implement Codex stream line parser `_make_stream_callback()` in `src/fdsx/providers/codex.py`
-- [ ] T013 Wire streaming flags in Codex provider `execute()` in `src/fdsx/providers/codex.py` — add `--json` when output_callback provided, reconstruct stdout from accumulated agent_message texts
-- [ ] T014 Write integration test for Codex streaming end-to-end in `tests/integration/test_codex_streaming.py` — mocked subprocess replaying fixture
+- [x] T010 Record real Codex JSONL fixture — run `codex exec --json "Say hello"` and save to `tests/fixtures/codex_stream.jsonl`
+- [x] T011 Write TDD tests for Codex stream parser in `tests/unit/test_codex_stream_parser.py` — agent_message completed, reasoning completed, command_execution started, file_change started, mcp_tool_call started, turn.failed warning, malformed JSON skip, multiple agent_message concatenation, partial collection on crash
+- [x] T012 Implement Codex stream line parser `_make_stream_callback()` in `src/fdsx/providers/codex.py`
+- [x] T013 Wire streaming flags in Codex provider `execute()` in `src/fdsx/providers/codex.py` — add `--json` when output_callback provided, reconstruct stdout from accumulated agent_message texts
+- [x] T014 Write integration test for Codex streaming end-to-end in `tests/integration/test_codex_streaming.py` — mocked subprocess replaying fixture
 
 ---
 
