@@ -186,10 +186,11 @@ class TestRunTasksDir:
                 assert r["status"] == "completed"
                 assert r["category"] == "new"
 
-            loaded_a = load_task_file(tasks_dir / "001-a.yaml")
+            # Files are moved to completed/ once all entries finish
+            loaded_a = load_task_file(tasks_dir / "completed" / "001-a.yaml")
             assert loaded_a.entries[0].status == "completed"
 
-            loaded_b = load_task_file(tasks_dir / "002-b.yaml")
+            loaded_b = load_task_file(tasks_dir / "completed" / "002-b.yaml")
             assert loaded_b.entries[0].status == "completed"
 
     def test_skips_completed_entries(self):
@@ -255,7 +256,8 @@ class TestRunTasksDir:
             assert results[0]["status"] == "completed"
             assert results[0]["category"] == "retried"
 
-            loaded = load_task_file(tasks_dir / "001-test.yaml")
+            # File is moved to completed/ once all entries finish
+            loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
             assert loaded.entries[0].status == "completed"
             assert loaded.entries[0].error is None
 
@@ -314,7 +316,8 @@ class TestRunTasksDir:
             assert call_count[0] == 3
             assert len(results) == 3
 
-            loaded = load_task_file(tasks_dir / "001-multi.yaml")
+            # File is moved to completed/ once all entries finish
+            loaded = load_task_file(tasks_dir / "completed" / "001-multi.yaml")
             for entry in loaded.entries:
                 assert entry.status == "completed"
 
@@ -639,6 +642,142 @@ class TestTasksDirCli:
         )
         assert result.exit_code == 2
         assert "mutually exclusive" in result.stderr.lower()
+
+
+class TestMoveToCompletedOnRunTasksDir:
+    """Tests for FR-3: files are moved to completed/ after all entries complete."""
+
+    def test_completed_file_moved_to_completed_subdir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(entries=[TaskEntry(description="task A")])
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            assert not (tasks_dir / "001-a.yaml").exists()
+            assert (tasks_dir / "completed" / "001-a.yaml").exists()
+
+    def test_failed_file_stays_in_tasks_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(entries=[TaskEntry(description="task A")])
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow", side_effect=RuntimeError("fail")):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    with patch("fdsx.core.engine.input", side_effect=["n"]):
+                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            # File with failed entry must remain in tasks_dir
+            assert (tasks_dir / "001-a.yaml").exists()
+            assert not (tasks_dir / "completed" / "001-a.yaml").exists()
+
+    def test_partial_completion_file_stays_in_tasks_dir(self):
+        """File with mixed completed/failed entries must not be moved."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(
+                entries=[
+                    TaskEntry(description="task 1"),
+                    TaskEntry(description="task 2"),
+                ]
+            )
+            save_task_file(tasks_dir / "001-mixed.yaml", tf)
+
+            call_count = [0]
+
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    raise RuntimeError("first fails")
+                return {"result": "ok"}
+
+            with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    with patch("fdsx.core.engine.input", side_effect=["y"]):
+                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            assert (tasks_dir / "001-mixed.yaml").exists()
+            assert not (tasks_dir / "completed" / "001-mixed.yaml").exists()
+
+    def test_pre_completed_file_moved_to_completed_subdir(self):
+        """Files that were already fully completed (skipped) should also be moved."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(
+                entries=[TaskEntry(description="already done", status="completed")]
+            )
+            save_task_file(tasks_dir / "001-done.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow") as mock_run:
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            mock_run.assert_not_called()
+            assert not (tasks_dir / "001-done.yaml").exists()
+            assert (tasks_dir / "completed" / "001-done.yaml").exists()
+
+    def test_move_failure_logs_warning_and_does_not_abort(self, capsys):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(entries=[TaskEntry(description="task A")])
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    with patch(
+                        "fdsx.core.engine.move_task_to_completed",
+                        side_effect=OSError("disk full"),
+                    ):
+                        results = engine.run_tasks_dir(
+                            flow_path, tasks_dir, auto_workflow=True
+                        )
+
+            captured = capsys.readouterr()
+            assert "Warning" in captured.err
+            assert "001-a.yaml" in captured.err
+            # Execution should still complete
+            assert len(results) == 1
+            assert results[0]["status"] == "completed"
+
+    def test_collision_logs_warning(self, capsys):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            # Put a file in completed/ to trigger a collision
+            completed_dir = tasks_dir / "completed"
+            completed_dir.mkdir()
+            (completed_dir / "001-a.yaml").write_text("collision\n")
+
+            tf = TaskFile(entries=[TaskEntry(description="task A")])
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
+
+            captured = capsys.readouterr()
+            assert "Warning" in captured.err
+            # Original file not lost on collision
+            assert (tasks_dir / "001-a.yaml").exists()
+            assert len(results) == 1
+            assert results[0]["status"] == "completed"
 
 
 class TestBatchEditFlow:

@@ -5,8 +5,11 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from fdsx.core.batch import (
+    COMPLETED_SUBDIR,
     TASKS_DIR,
+    _scan_max_task_index,
     _slugify,
+    move_task_to_completed,
     split_tasks,
     split_tasks_to_groups,
     display_task_list,
@@ -599,6 +602,9 @@ class TestTaskConstants:
     def test_tasks_dir_constant(self):
         assert TASKS_DIR == ".fdsx/tasks"
 
+    def test_completed_subdir_constant(self):
+        assert COMPLETED_SUBDIR == "completed"
+
 
 class TestSlugify:
     def test_basic_text(self):
@@ -631,3 +637,166 @@ class TestSlugify:
         result = _slugify("  leading and trailing  ")
         assert not result.startswith("-")
         assert not result.endswith("-")
+
+
+class TestScanMaxTaskIndex:
+    def test_returns_zero_for_empty_dir(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        assert _scan_max_task_index(tasks_dir) == 0
+
+    def test_returns_zero_for_nonexistent_dir(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        assert _scan_max_task_index(tasks_dir) == 0
+
+    def test_finds_max_in_tasks_dir(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "001-a.yaml").write_text("")
+        (tasks_dir / "003-b.yaml").write_text("")
+        (tasks_dir / "002-c.yaml").write_text("")
+        assert _scan_max_task_index(tasks_dir) == 3
+
+    def test_finds_max_in_completed_subdir(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "001-a.yaml").write_text("")
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir()
+        (completed_dir / "005-old.yaml").write_text("")
+        assert _scan_max_task_index(tasks_dir) == 5
+
+    def test_returns_max_across_both_dirs(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "003-active.yaml").write_text("")
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir()
+        (completed_dir / "007-old.yaml").write_text("")
+        (completed_dir / "002-older.yaml").write_text("")
+        assert _scan_max_task_index(tasks_dir) == 7
+
+    def test_ignores_files_without_numeric_prefix(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "no-prefix.yaml").write_text("")
+        (tasks_dir / "abc-task.yaml").write_text("")
+        assert _scan_max_task_index(tasks_dir) == 0
+
+    def test_ignores_non_yaml_files(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "001-a.txt").write_text("")
+        (tasks_dir / "002-b.json").write_text("")
+        assert _scan_max_task_index(tasks_dir) == 0
+
+
+class TestWriteTaskFilesIndexContinuation:
+    def test_new_files_start_after_existing(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "003-existing.yaml").write_text("")
+
+        groups = [[TaskEntry(description="New task")]]
+        created = write_task_files(groups, tasks_dir)
+
+        assert len(created) == 1
+        assert created[0].name == "004-new-task.yaml"
+
+    def test_new_files_start_after_completed_dir(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir()
+        (completed_dir / "005-done.yaml").write_text("")
+
+        groups = [[TaskEntry(description="Another task")]]
+        created = write_task_files(groups, tasks_dir)
+
+        assert len(created) == 1
+        assert created[0].name == "006-another-task.yaml"
+
+    def test_fresh_dir_starts_from_001(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        groups = [[TaskEntry(description="First task")]]
+        created = write_task_files(groups, tasks_dir)
+
+        assert len(created) == 1
+        assert created[0].name == "001-first-task.yaml"
+
+
+class TestMoveTaskToCompleted:
+    def test_moves_file_to_completed_subdir(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_file = tasks_dir / "001-test.yaml"
+        task_file.write_text("description: test\n")
+
+        move_task_to_completed(task_file)
+
+        assert not task_file.exists()
+        assert (tasks_dir / COMPLETED_SUBDIR / "001-test.yaml").exists()
+
+    def test_creates_completed_dir_if_absent(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_file = tasks_dir / "001-task.yaml"
+        task_file.write_text("description: task\n")
+
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        assert not completed_dir.exists()
+
+        move_task_to_completed(task_file)
+
+        assert completed_dir.exists()
+        assert completed_dir.is_dir()
+
+    def test_preserves_original_filename(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_file = tasks_dir / "042-my-important-task.yaml"
+        task_file.write_text("description: task\n")
+
+        move_task_to_completed(task_file)
+
+        assert (tasks_dir / COMPLETED_SUBDIR / "042-my-important-task.yaml").exists()
+
+    def test_raises_on_collision(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir()
+
+        task_file = tasks_dir / "001-test.yaml"
+        task_file.write_text("description: test\n")
+        (completed_dir / "001-test.yaml").write_text("description: existing\n")
+
+        with pytest.raises(FileExistsError, match="already exists"):
+            move_task_to_completed(task_file)
+
+        # Original file must not be removed on collision
+        assert task_file.exists()
+
+    def test_raises_on_symlinked_ancestor(self, tmp_path):
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        link_dir = tmp_path / "link"
+        link_dir.symlink_to(real_dir)
+
+        task_file = link_dir / "001-task.yaml"
+        task_file.write_text("description: task\n")
+
+        with pytest.raises(ValueError, match="symlink"):
+            move_task_to_completed(task_file)
+
+    def test_preserves_file_content(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_file = tasks_dir / "001-content.yaml"
+        content = "entries:\n- description: important content\n  status: completed\n"
+        task_file.write_text(content)
+
+        move_task_to_completed(task_file)
+
+        dest = tasks_dir / COMPLETED_SUBDIR / "001-content.yaml"
+        assert dest.read_text() == content

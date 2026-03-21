@@ -13,6 +13,7 @@ from fdsx.core.batch import (
     display_batch_summary,
     display_task_list,
     display_tasks_dir_summary,
+    move_task_to_completed,
     split_tasks,
 )
 from fdsx.core.compiler import compile_flow
@@ -820,6 +821,15 @@ def run_tasks_dir(
                         "category": "skipped",
                     }
                 )
+            # All entries were already completed — move to completed/
+            try:
+                move_task_to_completed(file_path)
+            except Exception as e:
+                print(
+                    f"  Warning: could not move {_sanitize_output(file_path.name)} "
+                    f"to completed/: {_sanitize_output(str(e))}",
+                    file=sys.stderr,
+                )
             continue
 
         print(
@@ -931,6 +941,17 @@ def run_tasks_dir(
                         print("Stopping tasks-dir execution.", file=sys.stderr)
                         display_tasks_dir_summary(results)
                         return results
+
+        # Move the file to completed/ if all entries finished successfully
+        if all(entry.status == "completed" for entry in task_file.entries):
+            try:
+                move_task_to_completed(file_path)
+            except Exception as e:
+                print(
+                    f"  Warning: could not move {_sanitize_output(file_path.name)} "
+                    f"to completed/: {_sanitize_output(str(e))}",
+                    file=sys.stderr,
+                )
 
     display_tasks_dir_summary(results)
     return results

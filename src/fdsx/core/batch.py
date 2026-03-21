@@ -1,5 +1,6 @@
 import json
 import re as _re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from fdsx.providers.base import get_provider
 
 
 TASKS_DIR = ".fdsx/tasks"
+COMPLETED_SUBDIR = "completed"
 
 
 def _slugify(text: str, max_length: int = 40) -> str:
@@ -263,11 +265,40 @@ def _parse_structured_tasks(response: str) -> list[list[TaskEntry]]:
     return groups
 
 
+def _scan_max_task_index(tasks_dir: Path) -> int:
+    """Scan tasks_dir and tasks_dir/completed/ for existing numeric file indices.
+
+    Looks for files whose names start with one or more digits followed by a hyphen
+    (e.g. ``001-some-task.yaml``).  Returns the highest index found, or 0 if no
+    such files exist.
+
+    Args:
+        tasks_dir: The active tasks directory to scan (completed/ is derived from it).
+
+    Returns:
+        Maximum index found across both directories, or 0 if none found.
+    """
+    max_idx = 0
+    dirs_to_scan = [tasks_dir, tasks_dir / COMPLETED_SUBDIR]
+    for scan_dir in dirs_to_scan:
+        if not scan_dir.exists() or not scan_dir.is_dir():
+            continue
+        for f in scan_dir.glob("*.yaml"):
+            m = _re.match(r"^(\d+)-", f.name)
+            if m:
+                idx = int(m.group(1))
+                if idx > max_idx:
+                    max_idx = idx
+    return max_idx
+
+
 def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Path]:
     """Write task groups to numbered YAML files in the tasks directory.
 
-    Creates files in the format: tasks_dir/001-<slug>.yaml, tasks_dir/002-<slug>.yaml, etc.
-    Each file contains sequentially-dependent tasks from one file group.
+    Creates files in the format: tasks_dir/NNN-<slug>.yaml where NNN continues
+    from the highest existing index found in both tasks_dir and
+    tasks_dir/completed/.  Each file contains sequentially-dependent tasks from
+    one file group.
 
     Args:
         groups: List of file groups, each containing TaskEntry objects
@@ -287,6 +318,8 @@ def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Pat
 
     tasks_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
+    base_index = _scan_max_task_index(tasks_dir)
+
     created_files: list[Path] = []
     for i, group in enumerate(groups):
         if not group:
@@ -294,11 +327,46 @@ def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Pat
 
         task_file = TaskFile(entries=group)
         slug = _slugify(group[0].description)
-        file_path = tasks_dir / f"{i + 1:03d}-{slug}.yaml"
+        file_path = tasks_dir / f"{base_index + i + 1:03d}-{slug}.yaml"
         save_task_file(file_path, task_file)
         created_files.append(file_path)
 
     return created_files
+
+
+def move_task_to_completed(file_path: Path) -> None:
+    """Move a task file to the ``completed/`` subdirectory alongside it.
+
+    The ``completed/`` directory is created automatically if it does not exist.
+    The original filename is preserved.
+
+    Args:
+        file_path: Absolute (or relative) path to the task YAML file to move.
+
+    Raises:
+        ValueError: If a symlink is detected anywhere in the ancestor path of
+            the destination directory.
+        FileExistsError: If a file with the same name already exists inside
+            ``completed/``.
+    """
+    completed_dir = file_path.parent / COMPLETED_SUBDIR
+
+    # Security check: no symlinks in the ancestor path
+    current = completed_dir
+    while current != current.parent:
+        if current.exists() and current.is_symlink():
+            raise ValueError(f"Refusing to write: ancestor is a symlink: {current}")
+        current = current.parent
+
+    completed_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    dest = completed_dir / file_path.name
+    if dest.exists():
+        raise FileExistsError(
+            f"Destination already exists in completed/: {dest}"
+        )
+
+    shutil.move(str(file_path), str(dest))
 
 
 def display_task_list(tasks: list[str]) -> bool:

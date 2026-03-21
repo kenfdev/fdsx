@@ -58,9 +58,9 @@
 
 **Independent Test Criteria**: After batch run, completed task files are in `tasks/completed/`. Failed tasks remain in `tasks/`. New task index scans both directories. Collision raises error, move failure logs warning but doesn't abort.
 
-- [ ] T013 Add `move_task_to_completed()` utility in `src/fdsx/core/batch.py` — auto-create `tasks/completed/`, collision detection, warning on failure (TDD: `tests/unit/test_batch.py`)
-- [ ] T014 Wire `move_task_to_completed()` into `run_tasks_dir` loop in `src/fdsx/core/engine.py` — move file only when ALL entries have status="completed" (TDD: `tests/integration/test_tasks_dir.py`)
-- [ ] T015 Update task index scanning in `src/fdsx/core/batch.py` to scan both `tasks/` and `tasks/completed/` for max existing index in `write_task_files` (TDD: `tests/unit/test_batch.py`)
+- [x] T013 Add `move_task_to_completed()` utility in `src/fdsx/core/batch.py` — auto-create `tasks/completed/`, collision detection, warning on failure (TDD: `tests/unit/test_batch.py`)
+- [x] T014 Wire `move_task_to_completed()` into `run_tasks_dir` loop in `src/fdsx/core/engine.py` — move file only when ALL entries have status="completed" (TDD: `tests/integration/test_tasks_dir.py`)
+- [x] T015 Update task index scanning in `src/fdsx/core/batch.py` to scan both `tasks/` and `tasks/completed/` for max existing index in `write_task_files` (TDD: `tests/unit/test_batch.py`)
 
 ---
 
