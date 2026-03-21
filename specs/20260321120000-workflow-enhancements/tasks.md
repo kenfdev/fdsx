@@ -82,9 +82,9 @@
 
 **Independent Test Criteria**: Hook commands execute with correct positional args and env vars. Abort-on-failure stops execution. Warn-on-failure logs and continues. Hooks collected in correct order: global → project → flow → state.
 
-- [ ] T019 Create hook executor `execute_hooks()` in `src/fdsx/core/hooks.py` — iterate hooks, set env vars (FDSX_STATE_NAME, FDSX_STATUS, FDSX_DATA_PATH, FDSX_THREAD_ID, FDSX_FLOW_NAME), run subprocess, handle abort/warn failure policies (TDD: `tests/unit/test_hooks.py`)
-- [ ] T020 Add hook data file generation in `src/fdsx/core/hooks.py` — write per-state JSON to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` and `output.json` with `0o600`/`0o700` permissions (TDD: `tests/unit/test_hooks.py`)
-- [ ] T021 Create hook collector `collect_hooks()` in `src/fdsx/core/hooks.py` — merge hooks across global → project → flow → state levels, return concatenated list (TDD: `tests/unit/test_hooks.py`)
+- [x] T019 Create hook executor `execute_hooks()` in `src/fdsx/core/hooks.py` — iterate hooks, set env vars (FDSX_STATE_NAME, FDSX_STATUS, FDSX_DATA_PATH, FDSX_THREAD_ID, FDSX_FLOW_NAME), run subprocess, handle abort/warn failure policies (TDD: `tests/unit/test_hooks.py`)
+- [x] T020 Add hook data file generation in `src/fdsx/core/hooks.py` — write per-state JSON to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` and `output.json` with `0o600`/`0o700` permissions (TDD: `tests/unit/test_hooks.py`)
+- [x] T021 Create hook collector `collect_hooks()` in `src/fdsx/core/hooks.py` — merge hooks across global → project → flow → state levels, return concatenated list (TDD: `tests/unit/test_hooks.py`)
 
 ---
 
