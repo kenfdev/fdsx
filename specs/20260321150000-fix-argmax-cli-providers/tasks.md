@@ -35,21 +35,21 @@
 
 > Modify each provider's `execute()` method to detect oversized prompts and pipe via stdin.
 
-- [ ] T005 [P] Implement stdin fallback in ClaudeProvider.execute() in `src/fdsx/providers/claude.py`
+- [x] T005 [P] Implement stdin fallback in ClaudeProvider.execute() in `src/fdsx/providers/claude.py`
   - Import `ARG_MAX_STDIN_THRESHOLD` from `base`
   - Check `len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD`
   - If true: build args as `["claude", "-p"]` + flags, pass `stdin_data=prompt`
   - If false: existing behavior (prompt in args)
   - Emit debug log when stdin fallback is used
 
-- [ ] T006 [P] Implement stdin fallback in CodexProvider.execute() in `src/fdsx/providers/codex.py`
+- [x] T006 [P] Implement stdin fallback in CodexProvider.execute() in `src/fdsx/providers/codex.py`
   - Import `ARG_MAX_STDIN_THRESHOLD` from `base`
   - Check `len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD`
   - If true: build args as `["codex", "exec"]` + flags (no prompt), pass `stdin_data=prompt`
   - If false: existing behavior (prompt appended to args)
   - Emit debug log when stdin fallback is used
 
-- [ ] T007 [P] Implement stdin fallback in OpenCodeProvider.execute() in `src/fdsx/providers/opencode.py`
+- [x] T007 [P] Implement stdin fallback in OpenCodeProvider.execute() in `src/fdsx/providers/opencode.py`
   - Import `ARG_MAX_STDIN_THRESHOLD` from `base`
   - Check `len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD`
   - If true: build args as `["opencode", "run"]` + flags (no prompt), pass `stdin_data=prompt`

@@ -2,7 +2,7 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
+from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderBase, ProviderResult, _run_subprocess
 
 
 class CodexOptions(BaseModel):
@@ -57,15 +57,21 @@ class CodexProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
+        use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         args = ["codex", "exec"]
         if model:
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
-        args.append(prompt)
+        if use_stdin:
+            stdin_data: str | None = prompt
+        else:
+            args.append(prompt)
+            stdin_data = None
 
         return _run_subprocess(
             args=args,
             timeout=timeout,
             output_callback=output_callback,
             stderr_callback=stderr_callback,
+            stdin_data=stdin_data,
         )

@@ -2,7 +2,7 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
+from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderBase, ProviderResult, _run_subprocess
 
 
 class ClaudeOptions(BaseModel):
@@ -57,7 +57,13 @@ class ClaudeProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
-        args = ["claude", "-p", prompt]
+        use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
+        if use_stdin:
+            args = ["claude", "-p", "-"]
+            stdin_data: str | None = prompt
+        else:
+            args = ["claude", "-p", prompt]
+            stdin_data = None
         if model:
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
@@ -67,4 +73,5 @@ class ClaudeProvider(ProviderBase):
             timeout=timeout,
             output_callback=output_callback,
             stderr_callback=stderr_callback,
+            stdin_data=stdin_data,
         )
