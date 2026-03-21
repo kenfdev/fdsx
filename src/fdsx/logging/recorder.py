@@ -13,6 +13,7 @@ THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 # Directory layout constants
 FDSX_DIR_NAME = ".fdsx"
 RUNS_DIR_NAME = "runs"
+LOGS_DIR_NAME = "logs"
 RUN_FILENAME = "run.json"
 
 

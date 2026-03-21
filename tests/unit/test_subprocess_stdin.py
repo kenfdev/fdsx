@@ -1,7 +1,9 @@
-"""Unit tests for _run_subprocess stdin fallback (T001).
+"""Unit tests for _run_subprocess stdin fallback and stderr_callback (T001, T008).
 
 Tests verify that commands >= 128KB are piped via stdin to `sh` instead of
 passed as argv to `sh -c`, preventing ARG_MAX overflow errors.
+
+T008 tests verify that stderr lines are streamed line-by-line via stderr_callback.
 """
 
 from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, _run_subprocess
@@ -105,3 +107,91 @@ class TestSubprocessStdinFallback:
         result = _run_subprocess(args=[cmd], shell=True)
 
         assert result.exit_code == 42
+
+
+class TestStderrCallback:
+    """Tests for stderr_callback line-by-line streaming (T008)."""
+
+    def test_stderr_callback_receives_lines(self):
+        """stderr_callback is called once per stderr line."""
+        received: list[str] = []
+
+        result = _run_subprocess(
+            args=["echo errline >&2"],
+            shell=True,
+            stderr_callback=received.append,
+        )
+
+        assert result.exit_code == 0
+        assert "errline" in received
+
+    def test_stderr_callback_multiple_lines(self):
+        """Each stderr line triggers a separate callback invocation."""
+        received: list[str] = []
+
+        result = _run_subprocess(
+            args=["echo line1 >&2; echo line2 >&2"],
+            shell=True,
+            stderr_callback=received.append,
+        )
+
+        assert result.exit_code == 0
+        assert "line1" in received
+        assert "line2" in received
+
+    def test_stderr_still_in_result_with_callback(self):
+        """ProviderResult.stderr still contains full stderr even when callback is used."""
+        received: list[str] = []
+
+        result = _run_subprocess(
+            args=["echo captured >&2"],
+            shell=True,
+            stderr_callback=received.append,
+        )
+
+        assert result.exit_code == 0
+        assert "captured" in result.stderr
+        assert "captured" in received
+
+    def test_stderr_callback_none_does_not_raise(self):
+        """Passing stderr_callback=None (default) works without errors."""
+        result = _run_subprocess(
+            args=["echo no_callback >&2"],
+            shell=True,
+            stderr_callback=None,
+        )
+
+        assert result.exit_code == 0
+        assert "no_callback" in result.stderr
+
+    def test_stderr_lines_have_no_trailing_newline(self):
+        """Lines delivered to stderr_callback do not include trailing newline."""
+        received: list[str] = []
+
+        _run_subprocess(
+            args=["printf 'line_a\\nline_b\\n' >&2"],
+            shell=True,
+            stderr_callback=received.append,
+        )
+
+        for line in received:
+            assert not line.endswith("\n"), f"Line has trailing newline: {line!r}"
+
+    def test_stdout_and_stderr_callbacks_independent(self):
+        """stdout and stderr callbacks are called independently."""
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        result = _run_subprocess(
+            args=["echo stdout_line; echo stderr_line >&2"],
+            shell=True,
+            output_callback=stdout_lines.append,
+            stderr_callback=stderr_lines.append,
+        )
+
+        assert result.exit_code == 0
+        assert "stdout_line" in stdout_lines
+        assert "stderr_line" in stderr_lines
+        # Lines should not cross-contaminate
+        assert not any("stderr_line" in l for l in stdout_lines)
+        assert not any("stdout_line" in l for l in stderr_lines)

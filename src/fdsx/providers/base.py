@@ -29,6 +29,7 @@ class ProviderBase(Protocol):
         timeout: int | None = None,
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
+        stderr_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute a provider.
 
@@ -37,7 +38,8 @@ class ProviderBase(Protocol):
             model: Model name (provider-specific)
             timeout: Timeout in seconds
             command: Command for system provider
-            output_callback: Optional callback for streaming output
+            output_callback: Optional callback for streaming stdout lines
+            stderr_callback: Optional callback for streaming stderr lines
 
         Returns:
             ProviderResult with exit code and output
@@ -56,6 +58,7 @@ def _run_subprocess(
     args: list[str],
     timeout: int | None = None,
     output_callback: Callable[[str], None] | None = None,
+    stderr_callback: Callable[[str], None] | None = None,
     stdin_data: str | None = None,
     shell: bool = False,
 ) -> ProviderResult:
@@ -66,6 +69,7 @@ def _run_subprocess(
             (passed to sh -c, or piped via stdin for large commands).
         timeout: Timeout in seconds.
         output_callback: Optional callback for streaming stdout lines.
+        stderr_callback: Optional callback for streaming stderr lines.
         stdin_data: Optional data to pass via stdin.
         shell: If True, execute as shell command (via sh -c, or stdin fallback
             if command exceeds ARG_MAX_STDIN_THRESHOLD).
@@ -122,11 +126,18 @@ def _run_subprocess(
             except BrokenPipeError:
                 pass
 
-        stderr_output: list[str] = []
+        stderr_lines: list[str] = []
 
         def _read_stderr() -> None:
             if process.stderr:
-                stderr_output.append(process.stderr.read())
+                try:
+                    for raw_line in process.stderr:
+                        line = raw_line.rstrip("\n")
+                        stderr_lines.append(line)
+                        if stderr_callback:
+                            stderr_callback(line)
+                except BrokenPipeError:
+                    pass
 
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
@@ -155,7 +166,7 @@ def _run_subprocess(
             )
 
         stdout = "\n".join(stdout_lines)
-        stderr = stderr_output[0] if stderr_output else ""
+        stderr = "\n".join(stderr_lines)
 
         return ProviderResult(
             exit_code=process.returncode,

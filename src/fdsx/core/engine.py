@@ -28,6 +28,7 @@ from fdsx.display.terminal import (
     display_wait_prompt,
 )
 from fdsx.logging import RunRecorder
+from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
 
@@ -96,12 +97,16 @@ def run_flow(
 
     fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
 
+    _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME
+    log_dir = _runs_base / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
+
     compiled = compile_flow(
         flow,
         input_keys=set(inputs.keys()) if inputs else None,
         checkpointer=checkpointer,
         recorder=recorder,
         config=fdsx_config,
+        log_dir=log_dir,
     )
 
     initial_state: dict[str, Any] = {
@@ -465,11 +470,14 @@ def resume_flow(
 
         fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
 
+        resume_log_dir = base_dir / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
+
         compiled = compile_flow(
             flow,
             checkpointer=checkpointer,
             recorder=recorder,
             config=fdsx_config,
+            log_dir=resume_log_dir,
         )
 
         parallel_extra = sum(

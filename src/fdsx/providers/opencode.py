@@ -28,6 +28,7 @@ class OpenCodeProvider(ProviderBase):
         timeout: int | None = None,
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
+        stderr_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute OpenCode CLI with a prompt.
 
@@ -36,7 +37,8 @@ class OpenCodeProvider(ProviderBase):
             model: Model name
             timeout: Timeout in seconds
             command: Ignored for opencode provider
-            output_callback: Optional callback for streaming output
+            output_callback: Optional callback for streaming stdout lines
+            stderr_callback: Optional callback for streaming stderr lines
 
         Returns:
             ProviderResult with exit code and output
@@ -51,4 +53,5 @@ class OpenCodeProvider(ProviderBase):
             args=args,
             timeout=timeout,
             output_callback=output_callback,
+            stderr_callback=stderr_callback,
         )

@@ -44,11 +44,11 @@
 
 **Independent Test Criteria**: Run a workflow and see labeled, real-time output like `[Planner] ...` on stderr. Verify per-state `.log` files exist under `.fdsx/runs/<thread-id>/logs/`. No log file created for states with no output.
 
-- [ ] T008 Refactor `_run_subprocess` in `src/fdsx/providers/base.py` to add `stderr_callback` parameter with line-by-line stderr streaming (TDD: `tests/unit/test_subprocess_stdin.py`)
-- [ ] T009 Add `stderr_callback` parameter to `execute()` in ProviderBase protocol and all providers: `src/fdsx/providers/base.py`, `claude.py`, `opencode.py`, `codex.py`, `system.py` (TDD: unit tests per provider)
-- [ ] T010 Create `StreamLogger` class in `src/fdsx/logging/stream_logger.py` with `on_stdout(line)`/`on_stderr(line)` callbacks, `[state_name]` prefixing to stderr, per-state log file writing, lazy file creation, and ANSI passthrough (TDD: `tests/unit/test_stream_logger.py`)
-- [ ] T011 Wire StreamLogger into compiler in `src/fdsx/core/compiler.py` — create StreamLogger instances in `_create_task_node` and `_create_branch_executor`, pass callbacks as `output_callback`/`stderr_callback` (TDD: integration test verifying log files and prefixed output)
-- [ ] T012 [P] Verify parallel branch labeling works correctly — each branch's StreamLogger uses its own state name, output is interleaved with distinct labels (TDD: `tests/integration/test_parallel_flow.py`)
+- [x] T008 Refactor `_run_subprocess` in `src/fdsx/providers/base.py` to add `stderr_callback` parameter with line-by-line stderr streaming (TDD: `tests/unit/test_subprocess_stdin.py`)
+- [x] T009 Add `stderr_callback` parameter to `execute()` in ProviderBase protocol and all providers: `src/fdsx/providers/base.py`, `claude.py`, `opencode.py`, `codex.py`, `system.py` (TDD: unit tests per provider)
+- [x] T010 Create `StreamLogger` class in `src/fdsx/logging/stream_logger.py` with `on_stdout(line)`/`on_stderr(line)` callbacks, `[state_name]` prefixing to stderr, per-state log file writing, lazy file creation, and ANSI passthrough (TDD: `tests/unit/test_stream_logger.py`)
+- [x] T011 Wire StreamLogger into compiler in `src/fdsx/core/compiler.py` — create StreamLogger instances in `_create_task_node` and `_create_branch_executor`, pass callbacks as `output_callback`/`stderr_callback` (TDD: integration test verifying log files and prefixed output)
+- [x] T012 [P] Verify parallel branch labeling works correctly — each branch's StreamLogger uses its own state name, output is interleaved with distinct labels (TDD: `tests/integration/test_parallel_flow.py`)
 
 ---
 

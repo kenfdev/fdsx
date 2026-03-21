@@ -1,6 +1,7 @@
 import operator
 import subprocess
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -167,6 +168,7 @@ def compile_flow(
     checkpointer: Any = None,
     recorder: Any = None,
     config: "FdsxConfig | None" = None,
+    log_dir: Path | None = None,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -178,6 +180,9 @@ def compile_flow(
                       If not provided and the flow contains Wait states,
                       a MemorySaver will be used as default.
         config: Optional fdsx configuration used to resolve provider options.
+        log_dir: Optional directory for per-state streaming log files
+                 (.fdsx/runs/<thread-id>/logs/). When None, streaming still
+                 works on the terminal but no log files are written.
 
     Returns:
         CompiledGraph with the compiled state machine
@@ -199,7 +204,7 @@ def compile_flow(
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
             graph.add_node(
-                state_name, _create_task_node(state_name, state, flow, recorder, config)
+                state_name, _create_task_node(state_name, state, flow, recorder, config, log_dir)
             )  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):
             graph.add_node(
@@ -211,7 +216,7 @@ def compile_flow(
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_branch_{state_name}",
-                _create_branch_executor(state_name, state, flow, recorder, config),
+                _create_branch_executor(state_name, state, flow, recorder, config, log_dir),
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_collect_{state_name}",
@@ -332,12 +337,14 @@ def _create_task_node(
     flow: Flow,
     recorder: Any = None,
     config: "FdsxConfig | None" = None,
+    log_dir: Path | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
     merged_options = _merge_provider_options(config, flow, state.provider, state.provider_options)
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.extraction import extract_value
+        from fdsx.logging.stream_logger import StreamLogger
         from fdsx.providers.base import ProviderResult
 
         start_time = time.time()
@@ -361,48 +368,54 @@ def _create_task_node(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        for attempt in range(max_retries + 1):
-            if attempt > 0:
-                time.sleep(min(2 ** (attempt - 1), 30))
-            try:
-                if state.provider == "system":
-                    resolved_command = resolve_template_shell_safe(
-                        state.command or "", state_dict
-                    )
-                    result = provider.execute(
-                        prompt="",
-                        model=state.model,
-                        timeout=state.timeout_seconds,
-                        command=resolved_command,
-                        output_callback=None,
-                    )
-                else:
-                    result = provider.execute(
-                        prompt=resolved_prompt,
-                        model=state.model,
-                        timeout=state.timeout_seconds,
-                        output_callback=terminal.display_output_line,
-                    )
-            except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                last_error = str(exc)
-                result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
-                continue
+        stream_logger = StreamLogger(state_name, log_dir)
+        try:
+            for attempt in range(max_retries + 1):
+                if attempt > 0:
+                    time.sleep(min(2 ** (attempt - 1), 30))
+                try:
+                    if state.provider == "system":
+                        resolved_command = resolve_template_shell_safe(
+                            state.command or "", state_dict
+                        )
+                        result = provider.execute(
+                            prompt="",
+                            model=state.model,
+                            timeout=state.timeout_seconds,
+                            command=resolved_command,
+                            output_callback=stream_logger.on_stdout,
+                            stderr_callback=stream_logger.on_stderr,
+                        )
+                    else:
+                        result = provider.execute(
+                            prompt=resolved_prompt,
+                            model=state.model,
+                            timeout=state.timeout_seconds,
+                            output_callback=stream_logger.on_stdout,
+                            stderr_callback=stream_logger.on_stderr,
+                        )
+                except (subprocess.TimeoutExpired, TimeoutError) as exc:
+                    last_error = str(exc)
+                    result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
+                    continue
 
-            if result.exit_code == 0:
-                if state.extract:
-                    extracted = extract_value(
-                        result.stdout.strip(),
-                        state.extract,
-                        get_provider,
-                        source_provider=state.provider,
-                    )
-                    if extracted is not None:
+                if result.exit_code == 0:
+                    if state.extract:
+                        extracted = extract_value(
+                            result.stdout.strip(),
+                            state.extract,
+                            get_provider,
+                            source_provider=state.provider,
+                        )
+                        if extracted is not None:
+                            break
+                        last_error = "Extraction failed: all strategies returned None"
+                    else:
                         break
-                    last_error = "Extraction failed: all strategies returned None"
                 else:
-                    break
-            else:
-                last_error = result.stderr
+                    last_error = result.stderr
+        finally:
+            stream_logger.close()
 
         if result.exit_code != 0:
             terminal.display_state_error(state_name, last_error)
@@ -487,6 +500,7 @@ def _create_branch_executor(
     flow: Flow,
     recorder: Any = None,
     config: "FdsxConfig | None" = None,
+    log_dir: Path | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a shared branch executor node invoked once per branch via Send.
 
@@ -497,6 +511,7 @@ def _create_branch_executor(
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.extraction import extract_value
+        from fdsx.logging.stream_logger import StreamLogger
         from fdsx.providers.base import ProviderResult
 
         branch_index: int = state_dict.get("_branch_index", 0)
@@ -521,48 +536,54 @@ def _create_branch_executor(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        for attempt in range(max_retries + 1):
-            if attempt > 0:
-                time.sleep(min(2 ** (attempt - 1), 30))
-            try:
-                if branch.provider == "system":
-                    resolved_command = resolve_template_shell_safe(
-                        branch.command or "", state_dict
-                    )
-                    result = provider.execute(
-                        prompt="",
-                        model=branch.model,
-                        timeout=branch.timeout_seconds,
-                        command=resolved_command,
-                        output_callback=None,
-                    )
-                else:
-                    result = provider.execute(
-                        prompt=resolved_prompt,
-                        model=branch.model,
-                        timeout=branch.timeout_seconds,
-                        output_callback=terminal.display_output_line,
-                    )
-            except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                last_error = str(exc)
-                result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
-                continue
+        stream_logger = StreamLogger(state_name, log_dir)
+        try:
+            for attempt in range(max_retries + 1):
+                if attempt > 0:
+                    time.sleep(min(2 ** (attempt - 1), 30))
+                try:
+                    if branch.provider == "system":
+                        resolved_command = resolve_template_shell_safe(
+                            branch.command or "", state_dict
+                        )
+                        result = provider.execute(
+                            prompt="",
+                            model=branch.model,
+                            timeout=branch.timeout_seconds,
+                            command=resolved_command,
+                            output_callback=stream_logger.on_stdout,
+                            stderr_callback=stream_logger.on_stderr,
+                        )
+                    else:
+                        result = provider.execute(
+                            prompt=resolved_prompt,
+                            model=branch.model,
+                            timeout=branch.timeout_seconds,
+                            output_callback=stream_logger.on_stdout,
+                            stderr_callback=stream_logger.on_stderr,
+                        )
+                except (subprocess.TimeoutExpired, TimeoutError) as exc:
+                    last_error = str(exc)
+                    result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
+                    continue
 
-            if result.exit_code == 0:
-                if branch.extract:
-                    extracted = extract_value(
-                        result.stdout.strip(),
-                        branch.extract,
-                        get_provider,
-                        source_provider=branch.provider,
-                    )
-                    if extracted is not None:
+                if result.exit_code == 0:
+                    if branch.extract:
+                        extracted = extract_value(
+                            result.stdout.strip(),
+                            branch.extract,
+                            get_provider,
+                            source_provider=branch.provider,
+                        )
+                        if extracted is not None:
+                            break
+                        last_error = "Extraction failed: all strategies returned None"
+                    else:
                         break
-                    last_error = "Extraction failed: all strategies returned None"
                 else:
-                    break
-            else:
-                last_error = result.stderr
+                    last_error = result.stderr
+        finally:
+            stream_logger.close()
 
         duration = time.time() - start_time
 

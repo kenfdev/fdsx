@@ -13,6 +13,7 @@ class SystemProvider(ProviderBase):
         timeout: int | None = None,
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
+        stderr_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute a shell command.
 
@@ -21,7 +22,8 @@ class SystemProvider(ProviderBase):
             model: Ignored for system provider
             timeout: Timeout in seconds
             command: Shell command to execute
-            output_callback: Optional callback for streaming output
+            output_callback: Optional callback for streaming stdout lines
+            stderr_callback: Optional callback for streaming stderr lines
 
         Returns:
             ProviderResult with exit code and output
@@ -39,5 +41,6 @@ class SystemProvider(ProviderBase):
             args=[cmd],
             timeout=timeout,
             output_callback=output_callback,
+            stderr_callback=stderr_callback,
             shell=True,
         )
