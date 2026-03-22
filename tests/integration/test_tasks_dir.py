@@ -212,7 +212,7 @@ class TestRunTasksDir:
 
             run_count = [0]
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 run_count[0] += 1
                 return {"result": "ok"}
 
@@ -303,7 +303,7 @@ class TestRunTasksDir:
 
             call_count = [0]
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 call_count[0] += 1
                 return {"result": "ok"}
 
@@ -336,7 +336,7 @@ class TestRunTasksDir:
 
             call_count = [0]
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
                     raise RuntimeError("Task 1 failed")
@@ -372,7 +372,7 @@ class TestRunTasksDir:
 
             call_count = [0]
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
                     raise RuntimeError("Task 1 failed")
@@ -459,7 +459,7 @@ class TestRunTasksDir:
             )
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 raise RuntimeError("Failed again")
 
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
@@ -485,7 +485,7 @@ class TestRunTasksDir:
             )
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 raise RuntimeError("Task failed")
 
             with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
@@ -695,7 +695,7 @@ class TestMoveToCompletedOnRunTasksDir:
 
             call_count = [0]
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
                     raise RuntimeError("first fails")
@@ -897,3 +897,41 @@ class TestBatchEditFlow:
 
         mock_cui.assert_not_called()
         assert len([r for r in results if r["category"] == "new"]) == 1
+
+
+class TestRunTasksDirQuietFlagPropagation:
+    def test_run_tasks_dir_passes_quiet_true_to_run_flow(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(entries=[TaskEntry(description="task A")])
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow") as mock_run_flow:
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True, quiet=True
+                    )
+
+            assert mock_run_flow.called
+            for call_args in mock_run_flow.call_args_list:
+                assert call_args.kwargs.get("quiet") is True
+
+    def test_run_tasks_dir_passes_quiet_false_by_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = Path("tests/fixtures/batch_flow.yaml")
+
+            tf = TaskFile(entries=[TaskEntry(description="task A")])
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            with patch("fdsx.core.engine.run_flow") as mock_run_flow:
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
+
+            assert mock_run_flow.called
+            for call_args in mock_run_flow.call_args_list:
+                assert call_args.kwargs.get("quiet") is False

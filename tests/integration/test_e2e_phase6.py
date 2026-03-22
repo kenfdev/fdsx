@@ -289,7 +289,7 @@ class TestFullPipelineE2E:
 
         run_count = [0]
 
-        def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+        def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
             run_count[0] += 1
             task_desc = ""
             if inputs:
@@ -320,7 +320,7 @@ class TestFullPipelineE2E:
 
         run_count_after_resume = [0]
 
-        def mock_run_flow_resume(flow_path, inputs, thread_id, base_dir):
+        def mock_run_flow_resume(flow_path, inputs, thread_id, base_dir, **kwargs):
             run_count_after_resume[0] += 1
             return {"result": "ok"}
 
@@ -466,7 +466,7 @@ class TestFullPipelineE2E:
 
         run_count = [0]
 
-        def mock_run_flow(flow_path, inputs, thread_id, base_dir):
+        def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
             run_count[0] += 1
             if inputs and "E2E Task 2" in inputs.get("task", ""):
                 raise RuntimeError("Simulated error on Task 2")
@@ -523,7 +523,7 @@ class TestFullPipelineE2E:
 
         run_count_rerun = [0]
 
-        def mock_run_flow_rerun(flow_path, inputs, thread_id, base_dir):
+        def mock_run_flow_rerun(flow_path, inputs, thread_id, base_dir, **kwargs):
             run_count_rerun[0] += 1
             return {"result": "ok"}
 

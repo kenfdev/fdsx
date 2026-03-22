@@ -288,6 +288,7 @@ def run_batch(
     workflow_path: Path,
     tasks_file: Path,
     base_dir: Path | None = None,
+    quiet: bool = False,
 ) -> list[dict[str, Any]]:
     """Orchestrate batch execution of tasks.
 
@@ -295,6 +296,7 @@ def run_batch(
         workflow_path: Path to the YAML workflow file
         tasks_file: Path to the task file
         base_dir: Optional base directory for checkpoints (.fdsx/).
+        quiet: If True, suppress streaming output during execution.
 
     Returns:
         List of result dicts with task_index, task_description, thread_id, status, error
@@ -348,6 +350,7 @@ def run_batch(
                 inputs=task_inputs,
                 thread_id=thread_id,
                 base_dir=base_dir,
+                quiet=quiet,
             )
             results.append(
                 {
@@ -698,6 +701,7 @@ def run_tasks_dir(
     tasks_dir: Path,
     base_dir: Path | None = None,
     auto_workflow: bool = False,
+    quiet: bool = False,
 ) -> list[dict[str, Any]]:
     """Execute tasks from a directory of YAML task files with crash-resilient persistence.
 
@@ -707,6 +711,7 @@ def run_tasks_dir(
         tasks_dir: Directory containing task YAML files.
         base_dir: Optional base directory for checkpoints (.fdsx/).
         auto_workflow: If True, skip workflow confirmation prompts and auto-select.
+        quiet: If True, suppress streaming output during execution.
 
     Returns:
         List of result dicts with file_index, file_name, entry_index,
@@ -888,6 +893,7 @@ def run_tasks_dir(
                     inputs=task_inputs,
                     thread_id=thread_id,
                     base_dir=base_dir,
+                    quiet=quiet,
                 )
                 _update_task_status(
                     file_path, task_file, entry_idx, "completed", thread_id=thread_id

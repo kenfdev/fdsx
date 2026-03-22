@@ -62,8 +62,8 @@
 
 **Goal:** Ensure no regressions across the full test suite and verify with real providers.
 
-- [ ] T020 Run full test suite, fix any regressions
-- [ ] T021 Verify existing integration tests still pass — linear, choice, parallel, checkpoint, batch flows
+- [x] T020 Run full test suite, fix any regressions
+- [x] T021 Verify existing integration tests still pass — linear, choice, parallel, checkpoint, batch flows
 - [ ] T022 Manual verification with real providers (if available) — Claude streaming, Codex streaming, quiet mode
 
 ---

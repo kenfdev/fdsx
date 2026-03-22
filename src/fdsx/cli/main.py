@@ -138,6 +138,7 @@ def run(
                 tasks_dir,
                 base_dir,
                 auto_workflow=effective_auto_workflow,
+                quiet=quiet,
             )
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:
@@ -146,7 +147,7 @@ def run(
                 raise typer.Exit(code=0)
         elif tasks_file is not None:
             assert workflow is not None
-            results = engine.run_batch(workflow, tasks_file, base_dir)
+            results = engine.run_batch(workflow, tasks_file, base_dir, quiet=quiet)
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:
                 raise typer.Exit(code=1)
