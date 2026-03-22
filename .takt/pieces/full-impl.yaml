@@ -57,14 +57,16 @@ movements:
           The planner has identified blockers.
           Please provide clarification and re-run.
 
-  # 2. Implementation (OpenCode / opencode-go/minimax-m2.5)
+  # 2. Implementation (OpenCode / opencode-go/minimax-m2.7)
   - name: implement
     persona: coder
     instruction: implement
     edit: true
     required_permission_mode: edit
-    provider: opencode
-    model: opencode-go/minimax-m2.5
+#    provider: opencode
+#    model: opencode-go/minimax-m2.7
+    provider: claude
+    model: claude-sonnet-4-6
     output_contracts:
       report:
         - name: implementation.md
@@ -82,8 +84,10 @@ movements:
         persona: code-quality-reviewer
         instruction: review-code-quality
         edit: false
-        provider: codex
-        model: gpt-5.4
+#        provider: codex
+#        model: gpt-5.4
+        provider: claude
+        model: claude-opus-4-6
         rules:
           - condition: approved
           - condition: needs_fix
@@ -92,8 +96,10 @@ movements:
         persona: security-reviewer
         instruction: review-security
         edit: false
-        provider: codex
-        model: gpt-5.4
+#        provider: codex
+#        model: gpt-5.4
+        provider: claude
+        model: claude-opus-4-6
         rules:
           - condition: approved
           - condition: needs_fix
@@ -132,8 +138,10 @@ movements:
     instruction: fix
     edit: true
     required_permission_mode: edit
-    provider: opencode
-    model: opencode-go/minimax-m2.5
+#    provider: opencode
+#    model: opencode-go/minimax-m2.7
+    provider: claude
+    model: claude-sonnet-4-6
     rules:
       - condition: "Fixes applied successfully"
         next: review
