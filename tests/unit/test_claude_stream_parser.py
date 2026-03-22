@@ -1,13 +1,15 @@
 """Unit tests for Claude stream-json NDJSON parser (_make_stream_callback).
 
 Tests verify correct handling of:
-- text_delta events → text forwarded to callback and accumulated
-- thinking_delta events → thinking text forwarded to callback
+- text_delta events → text buffered and emitted as lines
+- thinking_delta events → thinking text buffered with [thinking] prefix
 - tool_use content_block_start → tool name notification dispatched
 - result event → get_result() returns result field text
 - malformed JSON lines → silently skipped
 - missing result event → fallback to concatenated text_delta content
 - non-streaming / unknown event types → silently ignored
+- line buffering: fragments accumulated, emitted on newline or content_block_stop
+- stream_event envelope unwrapping
 """
 
 import json
@@ -19,6 +21,7 @@ from fdsx.providers.claude import (
     _DELTA_TYPE_THINKING,
     _EVENT_CONTENT_BLOCK_DELTA,
     _EVENT_CONTENT_BLOCK_START,
+    _EVENT_CONTENT_BLOCK_STOP,
     _EVENT_RESULT,
 )
 
@@ -44,8 +47,17 @@ def _build_tool_use_start_line(tool_name: str, index: int = 1) -> str:
     return json.dumps({"type": _EVENT_CONTENT_BLOCK_START, "index": index, "content_block": {"type": _CONTENT_TYPE_TOOL_USE, "id": "tu_001", "name": tool_name}})
 
 
+def _build_content_block_stop_line(index: int = 0) -> str:
+    return json.dumps({"type": _EVENT_CONTENT_BLOCK_STOP, "index": index})
+
+
 def _build_result_line(result_text: str) -> str:
     return json.dumps({"type": _EVENT_RESULT, "subtype": "success", "is_error": False, "result": result_text})
+
+
+def _wrap_in_stream_event(inner_json: str) -> str:
+    """Wrap a raw event JSON string in the Claude CLI stream_event envelope."""
+    return json.dumps({"type": "stream_event", "event": json.loads(inner_json)})
 
 
 # ---------------------------------------------------------------------------
@@ -57,30 +69,32 @@ class TestTextDelta:
     """text_delta events dispatch text to callback and accumulate for fallback."""
 
     def test_text_dispatched_to_callback(self) -> None:
-        """Each text_delta fragment is dispatched to output_callback."""
+        """text_delta fragments are buffered and emitted as one line on flush."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb(_build_text_delta_line("Hello"))
         cb(_build_text_delta_line(" world"))
+        flush()
 
-        assert received == ["Hello", " world"]
+        assert received == ["Hello world"]
 
     def test_empty_text_delta_not_dispatched(self) -> None:
-        """An empty text_delta string is not forwarded to output_callback."""
+        """An empty text_delta string produces no output even after flush."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb(_build_text_delta_line(""))
+        flush()
 
         assert received == []
 
     def test_text_accumulated_for_fallback(self) -> None:
         """text_delta fragments are concatenated when result event is absent."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_text_delta_line("foo"))
         cb(_build_text_delta_line("bar"))
@@ -90,7 +104,7 @@ class TestTextDelta:
     def test_empty_text_delta_not_accumulated_in_fallback(self) -> None:
         """Empty text_delta strings are not accumulated into text_parts (boundary-check)."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_text_delta_line(""))
         cb(_build_text_delta_line(""))
@@ -102,12 +116,13 @@ class TestThinkingDelta:
     """thinking_delta events dispatch thinking text to callback."""
 
     def test_thinking_dispatched_to_callback(self) -> None:
-        """Non-empty thinking text is forwarded to output_callback with [thinking] prefix."""
+        """Non-empty thinking text is forwarded to output_callback with [thinking] prefix on flush."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb(_build_thinking_delta_line("Let me think..."))
+        flush()
 
         assert received == ["[thinking] Let me think..."]
 
@@ -115,16 +130,17 @@ class TestThinkingDelta:
         """An empty thinking string is not forwarded to output_callback."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb(_build_thinking_delta_line(""))
+        flush()
 
         assert received == []
 
     def test_thinking_does_not_contribute_to_fallback(self) -> None:
         """thinking_delta content is NOT included in the fallback text accumulation."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_thinking_delta_line("internal reasoning"))
         # No text_delta lines, no result event → get_result should return None
@@ -138,7 +154,7 @@ class TestToolUseContentBlockStart:
         """Tool name is dispatched to output_callback as '[tool: <name>]'."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, _ = provider._make_stream_callback(received.append)
 
         cb(_build_tool_use_start_line("Bash"))
 
@@ -148,7 +164,7 @@ class TestToolUseContentBlockStart:
         """Missing tool name in content_block falls back to 'unknown'."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, _ = provider._make_stream_callback(received.append)
 
         line = json.dumps({"type": _EVENT_CONTENT_BLOCK_START, "index": 0, "content_block": {"type": _CONTENT_TYPE_TOOL_USE}})
         cb(line)
@@ -159,7 +175,7 @@ class TestToolUseContentBlockStart:
         """content_block_start with type != tool_use is silently ignored."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, _ = provider._make_stream_callback(received.append)
 
         line = json.dumps({"type": _EVENT_CONTENT_BLOCK_START, "index": 0, "content_block": {"type": "text", "text": ""}})
         cb(line)
@@ -173,7 +189,7 @@ class TestResultEvent:
     def test_result_text_returned_by_get_result(self) -> None:
         """get_result() returns the result field from the result event."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_result_line("Final answer text"))
 
@@ -182,7 +198,7 @@ class TestResultEvent:
     def test_result_takes_precedence_over_fallback(self) -> None:
         """result event text takes precedence over accumulated text_delta content."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_text_delta_line("delta text"))
         cb(_build_result_line("canonical result"))
@@ -192,7 +208,7 @@ class TestResultEvent:
     def test_result_with_error_subtype_still_captured(self) -> None:
         """result event with error subtype still captures text (exit_code conveys error)."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         line = json.dumps({"type": _EVENT_RESULT, "subtype": "error", "result": "error message text"})
         cb(line)
@@ -202,7 +218,7 @@ class TestResultEvent:
     def test_empty_result_field(self) -> None:
         """result event with empty string result field returns empty string."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_result_line(""))
 
@@ -216,20 +232,20 @@ class TestMalformedJsonSkip:
         """A line that is not valid JSON is silently ignored."""
         received: list[str] = []
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(received.append)
+        cb, get_result, flush = provider._make_stream_callback(received.append)
 
         cb("not valid json {{{")
+        flush()
 
         assert received == []
         assert get_result() is None
 
     def test_malformed_line_logs_warning(self) -> None:
         """A malformed JSON line causes logger.warning to be called (FR-2.8)."""
-        import logging
         from unittest.mock import patch
 
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(lambda _: None)
+        cb, _, _ = provider._make_stream_callback(lambda _: None)
 
         with patch("fdsx.providers.claude.logger") as mock_logger:
             cb("not valid json {{{")
@@ -241,10 +257,11 @@ class TestMalformedJsonSkip:
         """Valid lines after a malformed line are still processed."""
         received: list[str] = []
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb("not valid json")
         cb(_build_text_delta_line("good"))
+        flush()
 
         assert received == ["good"]
 
@@ -252,11 +269,12 @@ class TestMalformedJsonSkip:
         """Empty and whitespace-only lines are silently skipped."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb("")
         cb("   ")
         cb("\t\n")
+        flush()
 
         assert received == []
 
@@ -267,14 +285,14 @@ class TestMissingResultFallback:
     def test_no_events_returns_none(self) -> None:
         """With no events processed, get_result() returns None."""
         provider = _make_provider()
-        _, get_result = provider._make_stream_callback(lambda _: None)
+        _, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         assert get_result() is None
 
     def test_fallback_to_text_delta_accumulation(self) -> None:
         """Accumulated text_delta fragments are returned when result event is absent."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None)
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_text_delta_line("Hello"))
         cb(_build_text_delta_line("! "))
@@ -291,10 +309,11 @@ class TestNonStreamingEventIgnore:
         """system/init events produce no callback calls and no result."""
         received: list[str] = []
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(received.append)
+        cb, get_result, flush = provider._make_stream_callback(received.append)
 
         line = json.dumps({"type": "system", "subtype": "init", "session_id": "abc"})
         cb(line)
+        flush()
 
         assert received == []
         assert get_result() is None
@@ -303,10 +322,11 @@ class TestNonStreamingEventIgnore:
         """message_start events are silently ignored."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         line = json.dumps({"type": "message_start", "message": {}})
         cb(line)
+        flush()
 
         assert received == []
 
@@ -314,19 +334,20 @@ class TestNonStreamingEventIgnore:
         """message_stop events are silently ignored."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb(json.dumps({"type": "message_stop"}))
+        flush()
 
         assert received == []
 
-    def test_content_block_stop_ignored(self) -> None:
-        """content_block_stop events are silently ignored."""
+    def test_content_block_stop_with_empty_buffer(self) -> None:
+        """content_block_stop with no buffered content produces no output."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, _ = provider._make_stream_callback(received.append)
 
-        cb(json.dumps({"type": "content_block_stop", "index": 0}))
+        cb(_build_content_block_stop_line())
 
         assert received == []
 
@@ -334,8 +355,213 @@ class TestNonStreamingEventIgnore:
         """Completely unknown event types are silently ignored."""
         received: list[str] = []
         provider = _make_provider()
-        cb, _ = provider._make_stream_callback(received.append)
+        cb, _, flush = provider._make_stream_callback(received.append)
 
         cb(json.dumps({"type": "some_future_event", "data": "stuff"}))
+        flush()
+
+        assert received == []
+
+
+# ---------------------------------------------------------------------------
+# Line buffering behavior
+# ---------------------------------------------------------------------------
+
+
+class TestLineBuffering:
+    """Fragments are buffered and emitted as complete lines."""
+
+    def test_fragments_combined_on_content_block_stop(self) -> None:
+        """Multiple fragments without newlines combine into one line on content_block_stop."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("Hello"))
+        cb(_build_text_delta_line(" world"))
+        cb(_build_text_delta_line("!"))
+        assert received == []  # nothing emitted yet
+
+        cb(_build_content_block_stop_line())
+        assert received == ["Hello world!"]
+
+    def test_newlines_split_into_separate_callbacks(self) -> None:
+        """Fragments containing newlines emit complete lines immediately."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("line one\nline two\nline three"))
+        flush()
+
+        assert received == ["line one", "line two", "line three"]
+
+    def test_newline_mid_stream_emits_partial(self) -> None:
+        """A newline in the middle of streaming emits the first part, buffers the rest."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("first part"))
+        cb(_build_text_delta_line(" end\nsecond"))
+        assert received == ["first part end"]
+
+        cb(_build_text_delta_line(" part"))
+        flush()
+        assert received == ["first part end", "second part"]
+
+    def test_thinking_fragments_combined(self) -> None:
+        """Thinking fragments are combined with [thinking] prefix on flush."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_thinking_delta_line("The"))
+        cb(_build_thinking_delta_line(" user wants"))
+        cb(_build_thinking_delta_line(" to update docs"))
+        flush()
+
+        assert received == ["[thinking] The user wants to update docs"]
+
+    def test_thinking_to_text_transition_flushes(self) -> None:
+        """Switching from thinking to text flushes the thinking buffer first."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_thinking_delta_line("reasoning"))
+        assert received == []
+
+        cb(_build_text_delta_line("visible output"))
+        # Thinking should have been flushed by the type transition
+        assert received == ["[thinking] reasoning"]
+
+        flush()
+        assert received == ["[thinking] reasoning", "visible output"]
+
+    def test_text_to_thinking_transition_flushes(self) -> None:
+        """Switching from text to thinking flushes the text buffer first."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("some text"))
+        cb(_build_thinking_delta_line("now thinking"))
+        assert received == ["some text"]
+
+        flush()
+        assert received == ["some text", "[thinking] now thinking"]
+
+    def test_tool_use_flushes_buffer(self) -> None:
+        """tool_use content_block_start flushes any buffered text first."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("before tool"))
+        cb(_build_tool_use_start_line("Read"))
+
+        assert received == ["before tool", "[tool: Read]"]
+
+    def test_result_flushes_buffer(self) -> None:
+        """result event flushes any remaining buffered text."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, get_result, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("trailing text"))
+        cb(_build_result_line("final"))
+
+        assert received == ["trailing text"]
+        assert get_result() == "final"
+
+    def test_flush_is_idempotent(self) -> None:
+        """Calling flush() multiple times does not duplicate output."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_text_delta_line("hello"))
+        flush()
+        flush()
+        flush()
+
+        assert received == ["hello"]
+
+
+# ---------------------------------------------------------------------------
+# stream_event envelope unwrapping (Claude CLI wraps API events)
+# ---------------------------------------------------------------------------
+
+
+class TestStreamEventEnvelope:
+    """Claude CLI wraps API-style events in {"type":"stream_event","event":{...}}.
+
+    The parser must unwrap this envelope to extract the inner event.
+    """
+
+    def test_text_delta_in_envelope(self) -> None:
+        """text_delta inside stream_event envelope is dispatched correctly."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_wrap_in_stream_event(_build_text_delta_line("Hello")))
+        flush()
+
+        assert received == ["Hello"]
+
+    def test_thinking_delta_in_envelope(self) -> None:
+        """thinking_delta inside stream_event envelope is dispatched correctly."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(_wrap_in_stream_event(_build_thinking_delta_line("reasoning...")))
+        flush()
+
+        assert received == ["[thinking] reasoning..."]
+
+    def test_tool_use_in_envelope(self) -> None:
+        """tool_use content_block_start inside stream_event envelope is dispatched."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_wrap_in_stream_event(_build_tool_use_start_line("Edit")))
+
+        assert received == ["[tool: Edit]"]
+
+    def test_text_accumulated_from_envelope(self) -> None:
+        """text_delta fragments from enveloped events accumulate for fallback."""
+        provider = _make_provider()
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
+
+        cb(_wrap_in_stream_event(_build_text_delta_line("foo")))
+        cb(_wrap_in_stream_event(_build_text_delta_line("bar")))
+
+        assert get_result() == "foobar"
+
+    def test_content_block_stop_in_envelope_flushes(self) -> None:
+        """content_block_stop inside stream_event envelope flushes buffer."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_wrap_in_stream_event(_build_text_delta_line("buffered")))
+        assert received == []
+
+        cb(_wrap_in_stream_event(_build_content_block_stop_line()))
+        assert received == ["buffered"]
+
+    def test_empty_inner_event_ignored(self) -> None:
+        """stream_event with missing/empty inner event is silently ignored."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, flush = provider._make_stream_callback(received.append)
+
+        cb(json.dumps({"type": "stream_event"}))
+        cb(json.dumps({"type": "stream_event", "event": {}}))
+        flush()
 
         assert received == []

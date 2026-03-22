@@ -25,6 +25,8 @@ FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "claude_stream.ndjson
 # Expected values derived from the fixture file
 FIXTURE_RESULT_TEXT = "Hello! Here are 3 items:\n\n1. Apple\n2. Banana\n3. Cherry"
 FIXTURE_TEXT_DELTAS = ["Hello", "! Here are 3 items:\n\n", "1. Apple\n2. Banana\n3. Cherry"]
+# After line buffering, fragments are combined and split at newlines
+FIXTURE_BUFFERED_LINES = ["Hello! Here are 3 items:", "1. Apple", "2. Banana", "3. Cherry"]
 
 
 def _load_fixture_lines() -> list[str]:
@@ -76,16 +78,15 @@ class TestClaudeStreamingEndToEnd:
 
         assert result.stdout == FIXTURE_RESULT_TEXT
 
-    def test_output_callback_receives_text_fragments(self) -> None:
-        """output_callback must be called with human-readable text fragments."""
+    def test_output_callback_receives_text_lines(self) -> None:
+        """output_callback must be called with buffered, line-delimited text."""
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.claude._run_subprocess", mock_run):
             self.provider.execute("Say hello and list 3 items", output_callback=received.append)
 
-        # Must have received each text_delta fragment
-        for fragment in FIXTURE_TEXT_DELTAS:
-            assert fragment in received, f"Expected fragment not received: {fragment!r}"
+        # Fragments are buffered and emitted as complete lines
+        assert received == FIXTURE_BUFFERED_LINES
 
     def test_no_raw_json_leaks_to_callback(self) -> None:
         """output_callback must not receive any raw JSON NDJSON lines."""
