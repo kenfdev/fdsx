@@ -1,6 +1,6 @@
 name: full-impl
-description: Full pipeline — plan → implement → parallel review (code quality, security) → replan (Claude, routes by complexity) → fix-simple (minimax) / fix-complex (Sonnet) → finalize with PR creation
-max_movements: 15
+description: Full pipeline — plan → implement → parallel review (code quality, security) → replan (Claude, routes by complexity) → fix-simple (minimax, escalates to fix-complex on failure) / fix-complex (Sonnet) → finalize with PR creation
+max_movements: 25
 initial_movement: plan
 
 piece_config:
@@ -57,14 +57,16 @@ movements:
           The planner has identified blockers.
           Please provide clarification and re-run.
 
-  # 2. Implementation (OpenCode / opencode/minimax-m2.5-free)
+  # 2. Implementation (OpenCode / opencode-go/minimax-m2.7)
   - name: implement
     persona: coder
     instruction: implement
     edit: true
     required_permission_mode: edit
-    provider: opencode
-    model: opencode/minimax-m2.5-free
+#    provider: opencode
+#    model: opencode-go/minimax-m2.7
+    provider: claude
+    model: claude-sonnet-4-6
     output_contracts:
       report:
         - name: implementation.md
@@ -82,8 +84,10 @@ movements:
         persona: code-quality-reviewer
         instruction: review-code-quality
         edit: false
-        provider: codex
-        model: gpt-5.4
+#        provider: codex
+#        model: gpt-5.4
+        provider: claude
+        model: claude-opus-4-6
         rules:
           - condition: approved
           - condition: needs_fix
@@ -92,8 +96,10 @@ movements:
         persona: security-reviewer
         instruction: review-security
         edit: false
-        provider: codex
-        model: gpt-5.4
+#        provider: codex
+#        model: gpt-5.4
+        provider: claude
+        model: claude-opus-4-6
         rules:
           - condition: approved
           - condition: needs_fix
@@ -132,11 +138,19 @@ movements:
     instruction: fix
     edit: true
     required_permission_mode: edit
-    provider: opencode
-    model: opencode/minimax-m2.5-free
+#    provider: opencode
+#    model: opencode-go/minimax-m2.7
+    provider: claude
+    model: claude-sonnet-4-6
     rules:
-      - condition: "Fixes applied"
+      - condition: "Fixes applied successfully"
         next: review
+      - condition: "Fixes attempted but build or tests fail"
+        next: review
+      - condition: "Cannot fix — beyond capability"
+        next: fix-complex
+      - condition: "Agent produced no output or an unrecognizable response"
+        next: fix-complex
 
   # 5b. Fix — complex (Sonnet, capable)
   - name: fix-complex
@@ -147,8 +161,16 @@ movements:
     provider: claude
     model: sonnet
     rules:
-      - condition: "Fixes applied"
+      - condition: "Fixes applied successfully"
         next: review
+      - condition: "Fixes attempted but build or tests fail"
+        next: review
+      - condition: "Cannot fix — fundamental issues"
+        next: ABORT
+        requires_user_input: true
+        appendix: |
+          The fix agent could not resolve the issues even with the capable model.
+          Please review the fix report and provide guidance.
 
   # 6. Finalize (Claude — commit → push → PR)
   - name: finalize
@@ -196,6 +218,8 @@ loop_monitors:
           next: fix-complex
         - condition: "Fundamentally unfixable — abort"
           next: ABORT
+        - condition: "Code-quality approved, only non-actionable findings remain — skip to finalize"
+          next: finalize
 
   - cycle: [review, replan, fix-complex]
     threshold: 2
@@ -219,3 +243,5 @@ loop_monitors:
           next: fix-complex
         - condition: "Stalled or too complex to converge"
           next: ABORT
+        - condition: "Code-quality approved, only non-actionable findings remain — skip to finalize"
+          next: finalize

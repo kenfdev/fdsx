@@ -64,6 +64,7 @@ class TestParallelBranchExtraction:
         """Regression test: parallel branch extraction failure should be marked as error with exit_code 1."""
         flow = Flow(
             name="Parallel Extraction Failure Test",
+            description="Test flow for parallel branch extraction failure testing",
             start_at="parallel_state",
             states={
                 "parallel_state": ParallelState(

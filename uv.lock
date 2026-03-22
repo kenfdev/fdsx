@@ -210,6 +210,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "structlog" },
     { name = "typer" },
+    { name = "uuid-utils" },
 ]
 
 [package.optional-dependencies]
@@ -232,6 +233,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "structlog", specifier = ">=24" },
     { name = "typer", specifier = ">=0.9" },
+    { name = "uuid-utils", specifier = ">=0.9" },
 ]
 provides-extras = ["dev"]
 

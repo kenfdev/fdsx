@@ -1,7 +1,9 @@
 import sys
-import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
+
+import uuid_utils
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
@@ -11,12 +13,25 @@ from fdsx.checkpoint.manager import CheckpointManager, _extract_meta_from_checkp
 from fdsx.core.batch import (
     display_batch_summary,
     display_task_list,
+    display_tasks_dir_summary,
+    move_task_to_completed,
     split_tasks,
 )
 from fdsx.core.compiler import compile_flow
+from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
-from fdsx.display.terminal import _sanitize_output, display_wait_prompt
+from fdsx.core.selector import (
+    resolve_workflow_for_task,
+)
+from fdsx.display.terminal import (
+    Spinner,
+    _sanitize_output,
+    display_completion_summary,
+    display_wait_prompt,
+)
 from fdsx.logging import RunRecorder
+from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
+from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
 
 class FlowValidationError(Exception):
@@ -30,6 +45,7 @@ def run_flow(
     inputs: dict[str, str] | None = None,
     thread_id: str | None = None,
     base_dir: Path | None = None,
+    quiet: bool = False,
 ) -> dict[str, Any]:
     """Run a flow from a YAML file.
 
@@ -39,6 +55,8 @@ def run_flow(
         thread_id: Optional thread ID (generated if not provided)
         base_dir: Optional base directory for checkpoints (.fdsx/).
                   If None, uses MemorySaver (no persistence).
+        quiet: When True, suppresses stderr streaming output from StreamLogger.
+               Log files are still written and completion summary is still shown.
 
     Returns:
         Final state variables as result dict. When max_loop is reached,
@@ -49,7 +67,7 @@ def run_flow(
         RuntimeError: If flow validation fails or execution fails
     """
     if thread_id is None:
-        thread_id = str(uuid.uuid4())
+        thread_id = str(uuid_utils.uuid7())
 
     print(f"Thread ID: {_sanitize_output(thread_id)}", file=sys.stderr)
 
@@ -82,11 +100,20 @@ def run_flow(
         flow_version=flow.version,
     )
 
+    fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
+
+    _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME
+    run_dir = _runs_base / RUNS_DIR_NAME / thread_id
+    log_dir = run_dir / LOGS_DIR_NAME
+
     compiled = compile_flow(
         flow,
         input_keys=set(inputs.keys()) if inputs else None,
         checkpointer=checkpointer,
         recorder=recorder,
+        config=fdsx_config,
+        log_dir=log_dir,
+        quiet=quiet,
     )
 
     initial_state: dict[str, Any] = {
@@ -94,6 +121,7 @@ def run_flow(
             "thread_id": thread_id,
             "flow_path": str(flow_path),
             "flow_name": flow.name,
+            "run_dir": str(run_dir),
         }
     }
 
@@ -161,13 +189,15 @@ def run_flow(
 
         results = _extract_results(last_state, compiled.result_paths)
         recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-        recorder.save()
+        recorder.save(base_dir=base_dir)
+        display_completion_summary(flow.name, _calc_elapsed(recorder))
         return results
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
         recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-        recorder.save()
+        recorder.save(base_dir=base_dir)
+        display_completion_summary(flow.name, _calc_elapsed(recorder))
         return results
     except Exception as e:
         if checkpoint_manager is not None:
@@ -176,7 +206,13 @@ def run_flow(
                 file=sys.stderr,
             )
         recorder.finalize(_sanitize_state_for_log(last_state), "error")
-        recorder.save()
+        recorder.save(base_dir=base_dir)
+        failed = _find_failed_state(recorder)
+        failed_state_name = failed[0] if failed else "unknown"
+        error_message = failed[1] if (failed and failed[1]) else str(e)
+        display_completion_summary(
+            flow.name, _calc_elapsed(recorder), failed_state_name, error_message
+        )
         raise RuntimeError(f"Flow execution failed: {e}")
     finally:
         if checkpoint_manager is not None:
@@ -208,10 +244,53 @@ def _sanitize_state_for_log(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _calc_elapsed(recorder: RunRecorder) -> float:
+    """Calculate elapsed seconds between recorder.started_at and completed_at.
+
+    Falls back to current time if completed_at is not set.
+
+    Args:
+        recorder: The RunRecorder instance
+
+    Returns:
+        Elapsed time in seconds as a float
+    """
+    try:
+        start = datetime.fromisoformat(recorder.started_at.replace("Z", "+00:00"))
+        end_str = recorder.completed_at
+        end = (
+            datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            if end_str is not None
+            else datetime.now(timezone.utc)
+        )
+        return (end - start).total_seconds()
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _find_failed_state(recorder: RunRecorder) -> tuple[str, str] | None:
+    """Return (state_name, error_message) for the most recent error state.
+
+    Searches recorder.states in reverse order for the first state with
+    status=="error".
+
+    Args:
+        recorder: The RunRecorder instance
+
+    Returns:
+        Tuple of (state_name, error_message) or None if no error state found
+    """
+    for state in reversed(recorder.states):
+        if state.get("status") == "error":
+            return (str(state.get("name", "unknown")), str(state.get("error", "")))
+    return None
+
+
 def run_batch(
     workflow_path: Path,
     tasks_file: Path,
     base_dir: Path | None = None,
+    quiet: bool = False,
 ) -> list[dict[str, Any]]:
     """Orchestrate batch execution of tasks.
 
@@ -219,6 +298,7 @@ def run_batch(
         workflow_path: Path to the YAML workflow file
         tasks_file: Path to the task file
         base_dir: Optional base directory for checkpoints (.fdsx/).
+        quiet: If True, suppress streaming output during execution.
 
     Returns:
         List of result dicts with task_index, task_description, thread_id, status, error
@@ -227,18 +307,20 @@ def run_batch(
         FlowValidationError: If flow validation fails
         RuntimeError: If task_splitter is missing or execution fails
     """
-    import uuid
-
     flow, errors = load_flow(workflow_path)
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
 
-    if flow.task_splitter is None:
+    config = load_config()
+    if config.task_splitter is None:
         raise FlowValidationError(
-            "Flow must define 'task_splitter' configuration for batch execution"
+            "Batch execution requires task_splitter configuration. "
+            "Add task_splitter settings to your .fdsx/config.yaml:\n"
+            "  task_splitter:\n"
+            "    provider: claude\n"
+            "    model: claude-sonnet-4-6"
         )
-
-    task_splitter = flow.task_splitter
+    task_splitter = config.task_splitter
 
     tasks_file_content = tasks_file.read_text()
 
@@ -256,7 +338,7 @@ def run_batch(
     results: list[dict[str, Any]] = []
 
     for i, task_description in enumerate(tasks):
-        thread_id = str(uuid.uuid4())
+        thread_id = str(uuid_utils.uuid7())
 
         print(
             f"\nExecuting task {i + 1}/{len(tasks)}: {_sanitize_output(task_description[:50])}...",
@@ -270,6 +352,7 @@ def run_batch(
                 inputs=task_inputs,
                 thread_id=thread_id,
                 base_dir=base_dir,
+                quiet=quiet,
             )
             results.append(
                 {
@@ -372,9 +455,10 @@ def resume_flow(
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
         from fdsx.models.flow import WaitState, ParallelState
+        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
 
-        runs_dir = Path.cwd() / "runs"
-        existing_log_path = runs_dir / f"{thread_id}.json"
+        runs_dir = base_dir / RUNS_DIR_NAME
+        existing_log_path = runs_dir / thread_id / RUN_FILENAME
 
         if existing_log_path.exists():
             import json
@@ -393,10 +477,17 @@ def resume_flow(
             flow_version=flow_version,
         )
 
+        fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
+
+        resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id
+        resume_log_dir = resume_run_dir / LOGS_DIR_NAME
+
         compiled = compile_flow(
             flow,
             checkpointer=checkpointer,
             recorder=recorder,
+            config=fdsx_config,
+            log_dir=resume_log_dir,
         )
 
         parallel_extra = sum(
@@ -412,6 +503,14 @@ def resume_flow(
             "recursion_limit": recursion_limit,
             "configurable": {"thread_id": thread_id},
         }
+
+        state_info = compiled.graph.get_state(resume_config)
+        existing_meta = (
+            state_info.values.get("_meta", {}) if state_info.values else {}
+        )
+        if "run_dir" not in existing_meta:
+            updated_meta = {**existing_meta, "run_dir": str(resume_run_dir)}
+            compiled.graph.update_state(resume_config, {"_meta": updated_meta})
 
         state_info = compiled.graph.get_state(resume_config)
         if state_info.tasks:
@@ -485,19 +584,30 @@ def resume_flow(
         results = _extract_results(last_state, compiled.result_paths)
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-            recorder.save()
+            recorder.save(base_dir=base_dir)
+            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
         return results
     except GraphRecursionError:
         if flow is not None:
             print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "completed")
-            recorder.save()
+            recorder.save(base_dir=base_dir)
+            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
         return {}
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
-            recorder.save()
+            recorder.save(base_dir=base_dir)
+            failed = _find_failed_state(recorder)
+            failed_state_name = failed[0] if failed else "unknown"
+            error_message = failed[1] if (failed and failed[1]) else str(e)
+            display_completion_summary(
+                recorder.flow_name,
+                _calc_elapsed(recorder),
+                failed_state_name,
+                error_message,
+            )
         raise RuntimeError(f"Flow resume failed: {e}")
     finally:
         checkpoint_manager.release_lock(thread_id)
@@ -514,3 +624,352 @@ def validate_flow(flow_path: Path) -> tuple[bool, list[str]]:
     """
     flow, errors = load_flow(flow_path)
     return flow is not None, errors
+
+
+def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
+    """Load and sort all task YAML files from a directory.
+
+    Args:
+        tasks_dir: Directory containing task YAML files.
+
+    Returns:
+        List of (file_path, task_file) tuples sorted alphabetically by filename.
+
+    Raises:
+        FileNotFoundError: If the tasks directory does not exist.
+        ValueError: If no .yaml files are found.
+    """
+    if not tasks_dir.exists():
+        raise FileNotFoundError(f"Tasks directory not found: {tasks_dir}")
+    if tasks_dir.is_symlink():
+        raise ValueError(f"Tasks directory must not be a symlink: {tasks_dir}")
+
+    yaml_files = sorted(tasks_dir.glob("*.yaml"))
+    if not yaml_files:
+        raise ValueError(f"No .yaml files found in {tasks_dir}")
+
+    result: list[tuple[Path, TaskFile]] = []
+    for fp in yaml_files:
+        if fp.is_symlink() or not fp.is_file():
+            raise ValueError(
+                f"Task file must be a regular file (not a symlink or special file): {fp}"
+            )
+        task_file = load_task_file(fp)
+        result.append((fp, task_file))
+
+    return result
+
+
+def _filter_actionable_entries(
+    task_file: TaskFile,
+) -> list[tuple[int, TaskEntry]]:
+    """Return entries that need execution.
+
+    Skips entries with status "completed". Treats "failed" and "running"
+    as retriable (returns them for execution).
+
+    Args:
+        task_file: The TaskFile to filter.
+
+    Returns:
+        List of (entry_index, entry) tuples for entries that should run.
+    """
+    actionable: list[tuple[int, TaskEntry]] = []
+    for i, entry in enumerate(task_file.entries):
+        if entry.status == "completed":
+            continue
+        actionable.append((i, entry))
+    return actionable
+
+
+def _update_task_status(
+    file_path: Path,
+    task_file: TaskFile,
+    entry_index: int,
+    status: str,
+    thread_id: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Update and persist a single entry's status in the task file.
+
+    Args:
+        file_path: Path to the task YAML file.
+        task_file: The TaskFile containing the entry.
+        entry_index: Index of the entry within task_file.entries.
+        status: New status value.
+        thread_id: Optional thread ID to store.
+        error: Optional error message to store.
+    """
+    entry = task_file.entries[entry_index]
+    entry.status = cast(Literal["pending", "running", "completed", "failed"], status)
+    entry.thread_id = thread_id
+    entry.error = error
+    save_task_file(file_path, task_file)
+
+
+def run_tasks_dir(
+    workflow_path: Path | None,
+    tasks_dir: Path,
+    base_dir: Path | None = None,
+    auto_workflow: bool = False,
+    quiet: bool = False,
+) -> list[dict[str, Any]]:
+    """Execute tasks from a directory of YAML task files with crash-resilient persistence.
+
+    Args:
+        workflow_path: Path to the YAML workflow file. If None, workflows are auto-selected
+            per task entry using the selector.
+        tasks_dir: Directory containing task YAML files.
+        base_dir: Optional base directory for checkpoints (.fdsx/).
+        auto_workflow: If True, skip workflow confirmation prompts and auto-select.
+        quiet: If True, suppress streaming output during execution.
+
+    Returns:
+        List of result dicts with file_index, file_name, entry_index,
+        entry_description, thread_id, status, error, category.
+
+    Raises:
+        FlowValidationError: If flow validation fails.
+    """
+    try:
+        task_files = load_tasks_dir(tasks_dir)
+    except ValueError as e:
+        raise FlowValidationError(str(e)) from e
+    except FileNotFoundError as e:
+        raise FlowValidationError(str(e))
+    results: list[dict[str, Any]] = []
+    workflow_assignments: dict[tuple[int, int], Path] = {}
+
+    if base_dir is None:
+        base_dir = Path.cwd() / ".fdsx"
+    config = load_config(project_dir=base_dir.parent)
+    project_root = base_dir.parent
+    workflows_dir = project_root / config.workflows_dir
+
+    auto_selection_entries: list[tuple[int, int, Path, str]] = []
+
+    for file_idx, (file_path, task_file) in enumerate(task_files):
+        actionable = _filter_actionable_entries(task_file)
+        for entry_idx, entry in actionable:
+            if entry.workflow is not None:
+                wf_path = workflows_dir / entry.workflow
+                workflow_assignments[(file_idx, entry_idx)] = wf_path
+            elif workflow_path is not None:
+                workflow_assignments[(file_idx, entry_idx)] = workflow_path
+            else:
+                auto_selection_entries.append(
+                    (file_idx, entry_idx, file_path, entry.description)
+                )
+
+    auto_selection_keys: list[tuple[int, int]] = []
+    if auto_selection_entries:
+        total = len(auto_selection_entries)
+        with Spinner(
+            f"Auto-selecting workflows for {total} task{'s' if total != 1 else ''}..."
+        ) as spinner:
+            for count, (file_idx, entry_idx, file_path, description) in enumerate(
+                auto_selection_entries, start=1
+            ):
+                spinner.update(
+                    f"Auto-selecting workflows for {total} task{'s' if total != 1 else ''}... ({count}/{total})"
+                )
+                auto_selection_keys.append((file_idx, entry_idx))
+                try:
+                    resolved = resolve_workflow_for_task(
+                        task_description=description,
+                        workflows_dir=workflows_dir,
+                        selector_config=config.workflow_selector,
+                        auto_workflow=True,
+                    )
+                    if resolved is not None:
+                        workflow_assignments[(file_idx, entry_idx)] = resolved
+                except (ValueError, RuntimeError) as e:
+                    print(
+                        f"  Warning: auto-selection failed for entry {entry_idx} "
+                        f"in {file_path.name}: {_sanitize_output(str(e))}",
+                        file=sys.stderr,
+                    )
+
+    if (workflow_assignments or auto_selection_keys) and not auto_workflow:
+        from fdsx.core.selector import discover_workflows
+        from fdsx.display.terminal import confirm_workflow_assignments_interactive
+
+        discovered = discover_workflows(workflows_dir)
+        display_keys = sorted(workflow_assignments.keys()) + [
+            k for k in auto_selection_keys if k not in workflow_assignments
+        ]
+        result = confirm_workflow_assignments_interactive(
+            display_keys=display_keys,
+            workflow_assignments=workflow_assignments,
+            task_files=task_files,
+            available_workflows=discovered,
+        )
+        if result is None:
+            print("Workflow assignments cancelled.", file=sys.stderr)
+            return results
+        workflow_assignments = result
+        for (file_idx, entry_idx), wf_path in workflow_assignments.items():
+            file_path, task_file = task_files[file_idx]
+            entry = task_file.entries[entry_idx]
+            entry.workflow = wf_path.name
+            save_task_file(file_path, task_file)
+    elif auto_workflow and auto_selection_keys:
+        for (file_idx, entry_idx), wf_path in workflow_assignments.items():
+            file_path, task_file = task_files[file_idx]
+            entry = task_file.entries[entry_idx]
+            if entry.workflow is None:
+                entry.workflow = wf_path.name
+                save_task_file(file_path, task_file)
+
+    for file_idx, (file_path, task_file) in enumerate(task_files):
+        actionable = _filter_actionable_entries(task_file)
+
+        if not actionable:
+            for entry_idx, entry in enumerate(task_file.entries):
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": entry.description,
+                        "thread_id": entry.thread_id or "",
+                        "status": "completed",
+                        "error": None,
+                        "category": "skipped",
+                    }
+                )
+            # All entries were already completed — move to completed/
+            try:
+                move_task_to_completed(file_path)
+            except Exception as e:
+                print(
+                    f"  Warning: could not move {_sanitize_output(file_path.name)} "
+                    f"to completed/: {_sanitize_output(str(e))}",
+                    file=sys.stderr,
+                )
+            continue
+
+        print(
+            f"\nProcessing file {file_idx + 1}/{len(task_files)}: {_sanitize_output(file_path.name)}",
+            file=sys.stderr,
+        )
+        print(
+            f"  {len(actionable)} actionable entries out of {len(task_file.entries)}",
+            file=sys.stderr,
+        )
+
+        for entry_idx, entry in enumerate(task_file.entries):
+            if entry.status == "completed":
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": entry.description,
+                        "thread_id": entry.thread_id or "",
+                        "status": "completed",
+                        "error": None,
+                        "category": "skipped",
+                    }
+                )
+
+        for entry_idx, entry in actionable:
+            thread_id = str(uuid_utils.uuid7())
+            description = entry.description
+            original_status = entry.status
+            category = "retried" if original_status in ("failed", "running") else "new"
+
+            effective_workflow = workflow_assignments.get(
+                (file_idx, entry_idx), workflow_path
+            )
+            if effective_workflow is None:
+                raise ValueError(
+                    f"No workflow available for entry {entry_idx} in {file_path}. "
+                    "Ensure the task has a workflow set or that workflows exist in the workflows directory."
+                )
+
+            print(
+                f"  Executing entry {entry_idx + 1}/{len(task_file.entries)}: {_sanitize_output(description[:50])}...",
+                file=sys.stderr,
+            )
+
+            _update_task_status(
+                file_path, task_file, entry_idx, "running", thread_id=thread_id
+            )
+
+            try:
+                task_inputs = {"task": description}
+                run_flow(
+                    flow_path=effective_workflow,
+                    inputs=task_inputs,
+                    thread_id=thread_id,
+                    base_dir=base_dir,
+                    quiet=quiet,
+                )
+                _update_task_status(
+                    file_path, task_file, entry_idx, "completed", thread_id=thread_id
+                )
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": description,
+                        "thread_id": thread_id,
+                        "status": "completed",
+                        "error": None,
+                        "category": category,
+                    }
+                )
+            except Exception as e:
+                _update_task_status(
+                    file_path,
+                    task_file,
+                    entry_idx,
+                    "failed",
+                    thread_id=thread_id,
+                    error=str(e),
+                )
+                results.append(
+                    {
+                        "file_index": file_idx,
+                        "file_name": file_path.name,
+                        "entry_index": entry_idx,
+                        "entry_description": description,
+                        "thread_id": thread_id,
+                        "status": "failed",
+                        "error": str(e),
+                        "category": category,
+                    }
+                )
+
+                print(
+                    f"  Entry {entry_idx + 1} failed: {_sanitize_output(str(e))}",
+                    file=sys.stderr,
+                )
+                while True:
+                    response = (
+                        input("Continue with remaining entries? (y/n): ")
+                        .strip()
+                        .lower()
+                    )
+                    if response == "y":
+                        break
+                    elif response == "n":
+                        print("Stopping tasks-dir execution.", file=sys.stderr)
+                        display_tasks_dir_summary(results)
+                        return results
+
+        # Move the file to completed/ if all entries finished successfully
+        if all(entry.status == "completed" for entry in task_file.entries):
+            try:
+                move_task_to_completed(file_path)
+            except Exception as e:
+                print(
+                    f"  Warning: could not move {_sanitize_output(file_path.name)} "
+                    f"to completed/: {_sanitize_output(str(e))}",
+                    file=sys.stderr,
+                )
+
+    display_tasks_dir_summary(results)
+    return results

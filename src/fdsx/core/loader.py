@@ -32,6 +32,9 @@ def load_flow(
     if data is None:
         return None, ["Empty YAML file"]
 
+    if not isinstance(data, dict):
+        return None, ["Workflow file must be a YAML mapping, not a list or scalar"]
+
     flow, flow_errors = _parse_and_validate_flow(data, path)
     if flow_errors:
         return None, flow_errors
@@ -56,6 +59,13 @@ def _parse_and_validate_flow(
     """Parse raw YAML data into Flow model and validate."""
     errors: list[str] = []
 
+    if "description" not in data or not data.get("description"):
+        return None, [
+            "Missing required field 'description'. "
+            "Please add a description to your workflow file, e.g.:\n"
+            "  description: 'My workflow that does X and Y'"
+        ]
+
     try:
         flow = Flow(**data)
     except Exception as e:
@@ -76,7 +86,9 @@ def _validate_prompt_file_path(
     Returns an error string, or None if the path is safe.
     """
     if Path(raw_path).is_absolute():
-        return f"{context}: prompt_file must be a relative path, got absolute: {raw_path}"
+        return (
+            f"{context}: prompt_file must be a relative path, got absolute: {raw_path}"
+        )
     resolved_dir = yaml_dir.resolve()
     try:
         prompt_path.relative_to(resolved_dir)
@@ -103,7 +115,10 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
             if "prompt_file" in state_data and state_data["prompt_file"]:
                 prompt_path = (yaml_dir / state_data["prompt_file"]).resolve()
                 path_error = _validate_prompt_file_path(
-                    state_data["prompt_file"], prompt_path, yaml_dir, f"State '{state_name}'"
+                    state_data["prompt_file"],
+                    prompt_path,
+                    yaml_dir,
+                    f"State '{state_name}'",
                 )
                 if path_error:
                     errors.append(path_error)
@@ -126,7 +141,10 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
                 if "prompt_file" in branch and branch["prompt_file"]:
                     prompt_path = (yaml_dir / branch["prompt_file"]).resolve()
                     path_error = _validate_prompt_file_path(
-                        branch["prompt_file"], prompt_path, yaml_dir, f"Parallel branch {branch_idx}"
+                        branch["prompt_file"],
+                        prompt_path,
+                        yaml_dir,
+                        f"Parallel branch {branch_idx}",
                     )
                     if path_error:
                         errors.append(path_error)

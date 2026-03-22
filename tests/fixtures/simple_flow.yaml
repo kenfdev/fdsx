@@ -1,4 +1,5 @@
 name: Simple Plan-Implement-Review Flow
+description: A simple 3-step workflow for testing
 start_at: plan
 version: '1.0'
 

@@ -7,6 +7,8 @@ from fdsx.models.flow import (
     ChoiceRule,
     ExtractRule,
     Flow,
+    HookConfig,
+    HookEntry,
     LLMClassifyFallback,
     ParallelState,
     PassState,
@@ -84,6 +86,7 @@ class TestPydanticModels:
     def test_valid_flow(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for unit testing",
             start_at="start",
             states={
                 "start": TaskState(
@@ -102,6 +105,7 @@ class TestPydanticModels:
         with pytest.raises(ValueError, match="start_at"):
             Flow(
                 name="Test Flow",
+                description="Test flow with missing start_at",
                 start_at="nonexistent",
                 states={
                     "start": TaskState(
@@ -118,6 +122,7 @@ class TestPydanticModels:
         with pytest.raises(ValueError, match="does not exist"):
             Flow(
                 name="Test Flow",
+                description="Test flow with invalid next reference",
                 start_at="start",
                 states={
                     "start": TaskState(
@@ -198,6 +203,7 @@ class TestPydanticModels:
         with pytest.raises(ValueError, match="termination"):
             Flow(
                 name="Test Flow",
+                description="Test flow with no termination",
                 start_at="start",
                 states={
                     "start": TaskState(
@@ -270,6 +276,7 @@ class TestPydanticModels:
         through Flow's discriminated union using raw dicts (not pre-typed instances)."""
         flow = Flow(
             name="All State Types",
+            description="Test flow with all state types",
             start_at="task_step",
             states={
                 "task_step": {
@@ -549,3 +556,431 @@ class TestWebhookConfigValidation:
             template="Test",
         )
         assert config.url == "http://127.0.0.1:9000/webhook"
+
+
+class TestFlowDescriptionField:
+    """T8: Tests for the new required description field in Flow model."""
+
+    def test_flow_requires_description(self):
+        """T8: Flow model requires description field."""
+        with pytest.raises(ValidationError, match="description"):
+            Flow(
+                name="Test Flow",
+                start_at="start",
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+    def test_flow_accepts_valid_description(self):
+        """T8: Flow model accepts valid description."""
+        flow = Flow(
+            name="Test Flow",
+            description="A test flow with description",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+        )
+        assert flow.description == "A test flow with description"
+
+    def test_flow_description_can_be_multiline(self):
+        """T8: Flow description can be a multiline string."""
+        flow = Flow(
+            name="Test Flow",
+            description="Line 1\nLine 2\nLine 3",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+        )
+        assert "Line 1" in flow.description
+
+    def test_flow_rejects_empty_description(self):
+        """T8: Flow model must reject empty string description (min_length=1)."""
+        with pytest.raises(ValidationError, match="description"):
+            Flow(
+                name="Test Flow",
+                description="",
+                start_at="start",
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+
+class TestTaskSplitterRemoval:
+    """T9: Tests for task_splitter removal from Flow model."""
+
+    def test_task_splitter_rejected_in_constructor(self):
+        """T9: task_splitter field must be rejected with migration error."""
+        with pytest.raises(ValidationError, match="task_splitter"):
+            Flow(
+                name="Test Flow",
+                description="Test flow",
+                start_at="start",
+                task_splitter={
+                    "provider": "claude",
+                    "model": "claude-3-5-sonnet-20241022",
+                },
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+    def test_task_splitter_null_also_rejected(self):
+        """T9: task_splitter: null must also be rejected with migration error."""
+        with pytest.raises(ValidationError, match="task_splitter"):
+            Flow(
+                name="Test Flow",
+                description="Test flow",
+                start_at="start",
+                task_splitter=None,
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+    def test_task_splitter_migration_error_message(self):
+        """T9: Error message should guide users to config file."""
+        with pytest.raises(ValidationError, match="config"):
+            Flow(
+                name="Test Flow",
+                description="Test flow",
+                start_at="start",
+                task_splitter={"provider": "claude", "model": "opus"},
+                states={
+                    "start": TaskState(
+                        type="task",
+                        provider="system",
+                        command="echo test",
+                        result_path="$.result",
+                        end=True,
+                    )
+                },
+            )
+
+
+class TestHookEntryAndHookConfig:
+    """T016: Tests for HookEntry and HookConfig models."""
+
+    def test_hook_entry_defaults_on_failure_to_warn(self):
+        """T016: HookEntry.on_failure defaults to 'warn'."""
+        entry = HookEntry(command="echo hello")
+        assert entry.command == "echo hello"
+        assert entry.on_failure == "warn"
+
+    def test_hook_entry_accepts_abort(self):
+        """T016: HookEntry.on_failure accepts 'abort'."""
+        entry = HookEntry(command="./check.sh", on_failure="abort")
+        assert entry.on_failure == "abort"
+
+    def test_hook_entry_rejects_empty_command(self):
+        """T016: HookEntry.command must not be empty."""
+        with pytest.raises(ValidationError):
+            HookEntry(command="")
+
+    def test_hook_entry_rejects_invalid_on_failure(self):
+        """T016: HookEntry.on_failure must be 'abort' or 'warn'."""
+        with pytest.raises(ValidationError):
+            HookEntry(command="echo hello", on_failure="ignore")
+
+    def test_hook_config_defaults_to_empty_lists(self):
+        """T016: HookConfig.on_start and on_complete default to empty lists."""
+        config = HookConfig()
+        assert config.on_start == []
+        assert config.on_complete == []
+
+    def test_hook_config_accepts_entries(self):
+        """T016: HookConfig accepts HookEntry objects in both lists."""
+        config = HookConfig(
+            on_start=[HookEntry(command="echo start")],
+            on_complete=[HookEntry(command="echo done", on_failure="abort")],
+        )
+        assert len(config.on_start) == 1
+        assert config.on_start[0].command == "echo start"
+        assert len(config.on_complete) == 1
+        assert config.on_complete[0].on_failure == "abort"
+
+
+class TestHooksFieldOnStates:
+    """T017: Tests for hooks field on state types and Flow."""
+
+    def _base_task_state(self, **kwargs) -> TaskState:
+        return TaskState(
+            type="task",
+            provider="system",
+            command="echo test",
+            result_path="$.result",
+            end=True,
+            **kwargs,
+        )
+
+    def test_task_state_hooks_defaults_to_none(self):
+        """T017: TaskState.hooks is None when not specified."""
+        assert self._base_task_state().hooks is None
+
+    def test_task_state_accepts_hooks(self):
+        """T017: TaskState accepts a HookConfig."""
+        state = self._base_task_state(
+            hooks=HookConfig(on_start=[HookEntry(command="echo pre")])
+        )
+        assert state.hooks is not None
+        assert state.hooks.on_start[0].command == "echo pre"
+
+    def test_choice_state_hooks_defaults_to_none(self):
+        """T017: ChoiceState.hooks is None when not specified."""
+        state = ChoiceState(
+            type="choice",
+            choices=[ChoiceRule(variable="$.x", operator="equals", value="a", next="b")],
+        )
+        assert state.hooks is None
+
+    def test_choice_state_accepts_hooks(self):
+        """T017: ChoiceState accepts a HookConfig."""
+        state = ChoiceState(
+            type="choice",
+            choices=[ChoiceRule(variable="$.x", operator="equals", value="a", next="b")],
+            hooks=HookConfig(on_complete=[HookEntry(command="echo done")]),
+        )
+        assert state.hooks is not None
+
+    def test_parallel_state_hooks_defaults_to_none(self):
+        """T017: ParallelState.hooks is None when not specified."""
+        state = ParallelState(type="parallel", branches=[], result_path="$.r", end=True)
+        assert state.hooks is None
+
+    def test_parallel_state_accepts_hooks(self):
+        """T017: ParallelState accepts a HookConfig."""
+        state = ParallelState(
+            type="parallel",
+            branches=[],
+            result_path="$.r",
+            end=True,
+            hooks=HookConfig(on_start=[HookEntry(command="init.sh", on_failure="abort")]),
+        )
+        assert state.hooks is not None
+
+    def test_pass_state_hooks_defaults_to_none(self):
+        """T017: PassState.hooks is None when not specified."""
+        state = PassState(type="pass", end=True)
+        assert state.hooks is None
+
+    def test_pass_state_accepts_hooks(self):
+        """T017: PassState accepts a HookConfig."""
+        state = PassState(
+            type="pass",
+            end=True,
+            hooks=HookConfig(on_complete=[HookEntry(command="cleanup.sh")]),
+        )
+        assert state.hooks is not None
+
+    def test_wait_state_hooks_defaults_to_none(self):
+        """T017: WaitState.hooks is None when not specified."""
+        state = WaitState(
+            type="wait",
+            mode="prompt",
+            message="Go?",
+            choices=["yes"],
+            result_path="$.c",
+            end=True,
+        )
+        assert state.hooks is None
+
+    def test_wait_state_accepts_hooks(self):
+        """T017: WaitState accepts a HookConfig."""
+        state = WaitState(
+            type="wait",
+            mode="prompt",
+            message="Go?",
+            choices=["yes"],
+            result_path="$.c",
+            end=True,
+            hooks=HookConfig(on_start=[HookEntry(command="notify.sh")]),
+        )
+        assert state.hooks is not None
+
+    def test_flow_hooks_defaults_to_none(self):
+        """T017: Flow.hooks is None when not specified."""
+        flow = Flow(
+            name="Test",
+            description="Test flow",
+            start_at="s",
+            states={"s": self._base_task_state()},
+        )
+        assert flow.hooks is None
+
+    def test_flow_accepts_hooks(self):
+        """T017: Flow accepts a HookConfig at flow level."""
+        flow = Flow(
+            name="Test",
+            description="Test flow",
+            start_at="s",
+            states={"s": self._base_task_state()},
+            hooks=HookConfig(
+                on_start=[HookEntry(command="setup.sh")],
+                on_complete=[HookEntry(command="teardown.sh")],
+            ),
+        )
+        assert flow.hooks is not None
+        assert flow.hooks.on_start[0].command == "setup.sh"
+        assert flow.hooks.on_complete[0].command == "teardown.sh"
+
+
+class TestFlowModelExtension:
+    """T012-T013: Tests for Flow.providers, TaskState.provider_options, Branch.provider_options."""
+
+    def _make_base_flow(self, **kwargs) -> Flow:
+        return Flow(
+            name="Test Flow",
+            description="Flow model extension test",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo test",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+            **kwargs,
+        )
+
+    # T013: Flow.providers field
+
+    def test_flow_providers_defaults_to_none(self):
+        """T013: Flow.providers is None when not specified."""
+        flow = self._make_base_flow()
+        assert flow.providers is None
+
+    def test_flow_providers_accepts_dict(self):
+        """T013: Flow.providers accepts a dict of provider name -> options."""
+        flow = self._make_base_flow(
+            providers={
+                "claude": {"model": "claude-opus-4-5", "temperature": 0.7},
+                "opencode": {"model": "gpt-4o"},
+            }
+        )
+        assert flow.providers is not None
+        assert flow.providers["claude"]["model"] == "claude-opus-4-5"
+        assert flow.providers["opencode"]["model"] == "gpt-4o"
+
+    def test_flow_providers_accepts_unknown_provider_names(self):
+        """T013: Unknown provider names must be accepted at parse time."""
+        flow = self._make_base_flow(
+            providers={"future-provider": {"endpoint": "https://api.example.com"}}
+        )
+        assert flow.providers is not None
+        assert "future-provider" in flow.providers
+
+    def test_flow_providers_accepts_empty_dict(self):
+        """T013: Flow.providers accepts an empty dict."""
+        flow = self._make_base_flow(providers={})
+        assert flow.providers == {}
+
+    # T012: TaskState.provider_options field
+
+    def test_task_state_provider_options_defaults_to_none(self):
+        """T012: TaskState.provider_options is None when not specified."""
+        state = TaskState(
+            type="task",
+            provider="system",
+            command="echo test",
+            result_path="$.result",
+        )
+        assert state.provider_options is None
+
+    def test_task_state_provider_options_accepts_dict(self):
+        """T012: TaskState.provider_options accepts arbitrary key-value pairs."""
+        state = TaskState(
+            type="task",
+            provider="claude",
+            model="opus",
+            prompt_template="Hello",
+            result_path="$.result",
+            provider_options={"temperature": 0.5, "max_tokens": 1000},
+        )
+        assert state.provider_options is not None
+        assert state.provider_options["temperature"] == 0.5
+        assert state.provider_options["max_tokens"] == 1000
+
+    # T012: Branch.provider_options field
+
+    def test_branch_provider_options_defaults_to_none(self):
+        """T012: Branch.provider_options is None when not specified."""
+        branch = Branch(
+            provider="system",
+            command="echo test",
+        )
+        assert branch.provider_options is None
+
+    def test_branch_provider_options_accepts_dict(self):
+        """T012: Branch.provider_options accepts arbitrary key-value pairs."""
+        branch = Branch(
+            provider="system",
+            command="echo test",
+            provider_options={"timeout_override": 30, "retry_delay": 1.5},
+        )
+        assert branch.provider_options is not None
+        assert branch.provider_options["timeout_override"] == 30
+
+    def test_flow_with_all_extension_fields(self):
+        """T012-T013: Flow with providers + TaskState with provider_options round-trips correctly."""
+        flow = Flow(
+            name="Extended Flow",
+            description="Flow with all extension fields",
+            start_at="start",
+            providers={"claude": {"model": "claude-opus-4-5"}},
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="claude",
+                    model="opus",
+                    prompt_template="Hello",
+                    result_path="$.result",
+                    provider_options={"temperature": 0.0},
+                    end=True,
+                )
+            },
+        )
+        assert flow.providers == {"claude": {"model": "claude-opus-4-5"}}
+        task = flow.states["start"]
+        assert isinstance(task, TaskState)
+        assert task.provider_options == {"temperature": 0.0}

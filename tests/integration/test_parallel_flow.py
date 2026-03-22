@@ -4,6 +4,7 @@ import pytest
 
 from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
+from fdsx.logging.recorder import LOGS_DIR_NAME, RUNS_DIR_NAME
 
 
 class TestParallelFlow:
@@ -63,6 +64,7 @@ class TestParallelMinSuccess:
 
         flow = Flow(
             name="Parallel All Fail",
+            description="Test flow for min_success failure",
             start_at="parallel_state",
             states={
                 "parallel_state": ParallelState(
@@ -97,3 +99,117 @@ class TestParallelMinSuccess:
 
         with pytest.raises(RuntimeError, match="only .* branches succeeded"):
             compiled.graph.invoke({})
+
+
+class TestParallelBranchLabeling:
+    """T012: Verify parallel branch StreamLogger labeling (FR-2.2, FR-2.3, FR-2.4)."""
+
+    def test_parallel_branches_use_state_name_label(self, tmp_path, capsys):
+        """Each branch's terminal output is labeled with the parallel state name.
+
+        FR-2.2: prefix is '[state_name]', no branch index suffix.
+        FR-2.3: output from all branches is labeled with the same state name.
+        """
+        base_dir = tmp_path / ".fdsx"
+        run_flow(
+            flow_path=Path("tests/fixtures/parallel_review.yaml"),
+            base_dir=base_dir,
+        )
+
+        captured = capsys.readouterr()
+        # verify no branch-index suffixed labels appear
+        for line in captured.err.splitlines():
+            if line.startswith("["):
+                label_end = line.find("]")
+                label = line[1:label_end]
+                # Labels must not contain numeric suffixes like "review_parallel-0"
+                assert not label.endswith(("-0", "-1", "-2")), (
+                    f"Branch index suffix found in label: {label!r}"
+                )
+
+    def test_parallel_log_files_created_per_state(self, tmp_path):
+        """Each parallel state produces a log file named after the state (FR-2.4).
+
+        Verifies that .fdsx/runs/<thread_id>/logs/<state_name>.log is created.
+        No branch index suffix in the filename.
+        """
+        from fdsx.models.flow import Branch, Flow, ParallelState
+
+        flow = Flow(
+            name="Log File Test",
+            description="Parallel log file test",
+            start_at="review_parallel",
+            states={
+                "review_parallel": ParallelState(
+                    type="parallel",
+                    branches=[
+                        Branch(provider="system", command="echo alpha", retry=0),
+                        Branch(provider="system", command="echo beta", retry=0),
+                    ],
+                    result_path="$.results",
+                    end=True,
+                ),
+            },
+        )
+
+        from fdsx.core.compiler import compile_flow
+
+        base_dir = tmp_path / ".fdsx"
+        thread_id = "test-parallel-log"
+        log_dir = base_dir / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
+
+        from fdsx.logging.recorder import RunRecorder
+
+        recorder = RunRecorder(thread_id=thread_id, flow_name="Log File Test")
+        compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+        compiled.graph.invoke({})
+
+        # Log file for the parallel state should exist
+        log_file = log_dir / "review_parallel.log"
+        assert log_file.exists(), f"Expected log file at {log_file}"
+
+        content = log_file.read_text(encoding="utf-8")
+        # Both branches' output should be in the same log file
+        assert "alpha" in content
+        assert "beta" in content
+
+        # No branch-index-suffixed log files should exist
+        assert not (log_dir / "review_parallel-0.log").exists()
+        assert not (log_dir / "review_parallel-1.log").exists()
+
+    def test_no_log_file_for_empty_output_branch(self, tmp_path):
+        """No log file is created when a branch produces no output (FR-2.6)."""
+        from fdsx.models.flow import Branch, Flow, ParallelState
+
+        flow = Flow(
+            name="Empty Log Test",
+            description="Branch with no output",
+            start_at="parallel_state",
+            states={
+                "parallel_state": ParallelState(
+                    type="parallel",
+                    branches=[
+                        Branch(provider="system", command="true", retry=0),
+                    ],
+                    result_path="$.results",
+                    end=True,
+                ),
+            },
+        )
+
+        from fdsx.core.compiler import compile_flow
+
+        base_dir = tmp_path / ".fdsx"
+        thread_id = "test-empty-log"
+        log_dir = base_dir / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
+
+        from fdsx.logging.recorder import RunRecorder
+
+        recorder = RunRecorder(thread_id=thread_id, flow_name="Empty Log Test")
+        compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+        compiled.graph.invoke({})
+
+        log_file = log_dir / "parallel_state.log"
+        assert not log_file.exists(), (
+            f"Log file should not exist for state with no output: {log_file}"
+        )

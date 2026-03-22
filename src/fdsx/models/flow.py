@@ -2,6 +2,8 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from fdsx.models.validators import validate_llm_provider
+
 
 def _parse_path_segments(path: str) -> list[str | int]:
     """Parse a JSONPath-like string into typed segments.
@@ -49,29 +51,7 @@ class LLMClassifyFallback(BaseModel):
 
     @model_validator(mode="after")
     def validate_provider(self) -> "LLMClassifyFallback":
-        valid_llm_providers = {"claude", "opencode", "codex"}
-        if self.provider not in valid_llm_providers:
-            raise ValueError(
-                f"LLM classify fallback provider must be one of "
-                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
-            )
-        return self
-
-
-class TaskSplitter(BaseModel):
-    """Configuration for batch task splitting."""
-
-    provider: str = Field(..., description="Provider name (claude/opencode/codex)")
-    model: str = Field(..., description="Model name")
-
-    @model_validator(mode="after")
-    def validate_provider(self) -> "TaskSplitter":
-        valid_llm_providers = {"claude", "opencode", "codex"}
-        if self.provider not in valid_llm_providers:
-            raise ValueError(
-                f"task_splitter provider must be one of "
-                f"{', '.join(sorted(valid_llm_providers))}, got '{self.provider}'"
-            )
+        validate_llm_provider(self.provider, "LLM classify fallback")
         return self
 
 
@@ -120,6 +100,26 @@ class NotifyConfig(BaseModel):
     """Notification configuration."""
 
     webhook: WebhookConfig = Field(..., description="Webhook configuration")
+
+
+class HookEntry(BaseModel):
+    """Single hook entry with a command and failure handling policy."""
+
+    command: str = Field(..., min_length=1, description="Shell command to execute")
+    on_failure: Literal["abort", "warn"] = Field(
+        default="warn", description="Action on hook failure: abort or warn"
+    )
+
+
+class HookConfig(BaseModel):
+    """Hook configuration for a state or flow."""
+
+    on_start: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run before execution"
+    )
+    on_complete: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run after execution"
+    )
 
 
 class ChoiceRule(BaseModel):
@@ -187,6 +187,9 @@ class Branch(BaseModel):
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
+    provider_options: dict[str, Any] | None = Field(
+        default=None, description="Per-branch provider option overrides"
+    )
 
     @model_validator(mode="after")
     def validate_provider(self) -> "Branch":
@@ -230,6 +233,34 @@ class AggregateRule(BaseModel):
     result_path: str = Field(..., description="JSONPath for result")
 
 
+def _validate_result_file(v: str | None) -> str | None:
+    """Validate that result_file uses a top-level '$.varname' path.
+
+    Requirements:
+    - Must start with '$.'
+    - Must be a single top-level key (no dots or brackets after '$.')
+    """
+    if v is None:
+        return v
+    if not v.startswith("$."):
+        raise ValueError(
+            f"result_file must start with '$.' (got '{v}'). "
+            "Example: '$.plan_ref'"
+        )
+    remainder = v[2:]
+    if not remainder or not remainder.strip():
+        raise ValueError(
+            f"result_file must specify a variable name after '$.' (got '{v}'). "
+            "Example: '$.plan_ref'"
+        )
+    if "." in remainder or "[" in remainder:
+        raise ValueError(
+            f"result_file must be a top-level variable path — nested paths are not allowed (got '{v}'). "
+            "Example: '$.plan_ref'"
+        )
+    return v
+
+
 class TaskState(BaseModel):
     """Task state - executes a provider to generate output."""
 
@@ -244,13 +275,26 @@ class TaskState(BaseModel):
     )
     command: str | None = Field(default=None, description="Command for system provider")
     result_path: str = Field(..., description="JSONPath for result")
+    result_file: str | None = Field(
+        default=None,
+        description="Top-level JSONPath variable to store the absolute path of a result file",
+    )
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
+    provider_options: dict[str, Any] | None = Field(
+        default=None, description="Per-task provider option overrides"
+    )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
     end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @field_validator("result_file")
+    @classmethod
+    def validate_result_file(cls, v: str | None) -> str | None:
+        return _validate_result_file(v)
 
     @model_validator(mode="after")
     def validate_provider_fields(self) -> "TaskState":
@@ -302,6 +346,7 @@ class ChoiceState(BaseModel):
     type: Literal["choice"] = "choice"
     choices: list[ChoiceRule] = Field(..., description="Condition-transition pairs")
     default: str | None = Field(default=None, description="Fallback transition")
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
 
 
 class ParallelState(BaseModel):
@@ -310,11 +355,21 @@ class ParallelState(BaseModel):
     type: Literal["parallel"] = "parallel"
     branches: list[Branch] = Field(..., description="Parallel branch definitions")
     result_path: str = Field(..., description="JSONPath for results array")
+    result_file: str | None = Field(
+        default=None,
+        description="Top-level JSONPath variable to store the absolute path of a result file",
+    )
     min_success: int | None = Field(default=None, description="Min successful branches")
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
     end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @field_validator("result_file")
+    @classmethod
+    def validate_result_file(cls, v: str | None) -> str | None:
+        return _validate_result_file(v)
 
     @model_validator(mode="after")
     def validate_next_end_exclusive(self) -> "ParallelState":
@@ -333,6 +388,7 @@ class PassState(BaseModel):
     aggregate: AggregateRule | None = Field(
         default=None, description="Parallel result aggregation"
     )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -356,6 +412,7 @@ class WaitState(BaseModel):
     notify: NotifyConfig | None = Field(
         default=None, description="Webhook notification"
     )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -378,14 +435,29 @@ class Flow(BaseModel):
     """Top-level workflow definition."""
 
     name: str = Field(..., description="Flow name")
+    description: str = Field(..., min_length=1, description="Flow description")
     start_at: str = Field(..., description="Initial state name")
     states: dict[str, State] = Field(..., description="State definitions keyed by name")
-    comment: str | None = Field(default=None, description="Flow description")
     version: str | None = Field(default=None, description="Flow version")
-    task_splitter: TaskSplitter | None = Field(
-        default=None, description="Batch task splitting config"
-    )
     max_loop: int = Field(default=10, description="Max loop iterations")
+    providers: dict[str, dict[str, Any]] | None = Field(
+        default=None, description="Workflow-level provider configurations keyed by name"
+    )
+    hooks: HookConfig | None = Field(
+        default=None, description="Flow-level hook configuration"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_task_splitter(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """Reject task_splitter field and provide migration guidance."""
+        if "task_splitter" in values:
+            raise ValueError(
+                "task_splitter has been removed from Flow model. "
+                "Configure task splitting in your fdsx config file instead. "
+                "See: https://fdsx.dev/docs/config#task-splitter"
+            )
+        return values
 
     @model_validator(mode="after")
     def validate_start_at_exists(self) -> "Flow":

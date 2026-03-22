@@ -1,4 +1,5 @@
 name: Choice Flow
+description: Choice flow for testing branching logic
 start_at: check_status
 version: '1.0'
 

@@ -2,12 +2,121 @@ from io import StringIO
 from unittest.mock import patch
 
 from fdsx.display.terminal import (
+    _format_elapsed,
     display_branch_complete,
     display_branch_failed,
     display_branch_start,
+    display_completion_summary,
     display_parallel_results,
     display_wait_prompt,
 )
+
+
+class TestFormatElapsed:
+    """Tests for _format_elapsed time formatting helper."""
+
+    def test_seconds_only(self):
+        """Values under 60 seconds show only seconds."""
+        assert _format_elapsed(34.0) == "34s"
+
+    def test_zero_seconds(self):
+        """Zero seconds is formatted as '0s'."""
+        assert _format_elapsed(0.0) == "0s"
+
+    def test_exactly_one_minute(self):
+        """60 seconds is shown as '1m 0s'."""
+        assert _format_elapsed(60.0) == "1m 0s"
+
+    def test_minutes_and_seconds(self):
+        """Values under an hour show minutes and seconds."""
+        assert _format_elapsed(154.0) == "2m 34s"
+
+    def test_exactly_one_hour(self):
+        """3600 seconds is shown as '1h 0m 0s'."""
+        assert _format_elapsed(3600.0) == "1h 0m 0s"
+
+    def test_hours_minutes_seconds(self):
+        """Values over an hour show hours, minutes, and seconds."""
+        assert _format_elapsed(3754.0) == "1h 2m 34s"
+
+    def test_fractional_seconds_truncated(self):
+        """Fractional seconds are truncated (not rounded)."""
+        assert _format_elapsed(34.9) == "34s"
+
+
+class TestDisplayCompletionSummary:
+    """Tests for display_completion_summary output format."""
+
+    def test_success_message_contains_flow_name(self):
+        """Success message includes the flow name."""
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            display_completion_summary("MyFlow", 10.0)
+        assert "MyFlow" in captured.getvalue()
+
+    def test_success_message_format(self):
+        """Success message matches expected format with checkmark."""
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            display_completion_summary("MyFlow", 34.0)
+        output = captured.getvalue()
+        assert "✓" in output
+        assert "completed successfully" in output
+        assert "34s" in output
+
+    def test_success_writes_to_stderr_not_stdout(self):
+        """Completion summary is written to stderr, not stdout."""
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+            display_completion_summary("MyFlow", 5.0)
+        assert stdout.getvalue() == ""
+        assert stderr.getvalue() != ""
+
+    def test_failure_message_format(self):
+        """Failure message includes flow name, failed state, and error."""
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            display_completion_summary(
+                "MyFlow", 5.0, failed_state="ReviewState", error="exit code 1"
+            )
+        output = captured.getvalue()
+        assert "✗" in output
+        assert "MyFlow" in output
+        assert "ReviewState" in output
+        assert "exit code 1" in output
+
+    def test_failure_message_writes_to_stderr(self):
+        """Failure summary is written to stderr, not stdout."""
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+            display_completion_summary("Flow", 2.0, failed_state="step1", error="err")
+        assert stdout.getvalue() == ""
+        assert stderr.getvalue() != ""
+
+    def test_success_elapsed_time_in_output(self):
+        """Success message includes the formatted elapsed time."""
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            display_completion_summary("Flow", 154.0)
+        assert "2m 34s" in captured.getvalue()
+
+    def test_flow_name_sanitized(self):
+        """Flow name with control characters is sanitized."""
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            display_completion_summary("My\x1b[31mFlow", 1.0)
+        output = captured.getvalue()
+        assert "\x1b" not in output
+        assert "MyFlow" in output
+
+    def test_failure_with_none_error_uses_fallback(self):
+        """When error is None, 'unknown error' is shown."""
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            display_completion_summary("Flow", 1.0, failed_state="step1", error=None)
+        assert "unknown error" in captured.getvalue()
 
 
 class TestDisplayWaitPrompt:

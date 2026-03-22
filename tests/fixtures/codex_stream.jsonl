@@ -1,0 +1,12 @@
+{"type":"item.started","item":{"id":"item_001","type":"reasoning","text":""}}
+{"type":"item.completed","item":{"id":"item_001","type":"reasoning","text":"I need to say hello in a friendly way."}}
+{"type":"item.started","item":{"id":"item_002","type":"command_execution","command":"echo hello","output":""}}
+{"type":"item.completed","item":{"id":"item_002","type":"command_execution","command":"echo hello","output":"hello"}}
+{"type":"item.started","item":{"id":"item_003","type":"file_change","path":"output.txt"}}
+{"type":"item.completed","item":{"id":"item_003","type":"file_change","path":"output.txt"}}
+{"type":"item.started","item":{"id":"item_004","type":"mcp_tool_call","name":"web_search","arguments":{}}}
+{"type":"item.completed","item":{"id":"item_004","type":"mcp_tool_call","name":"web_search","result":""}}
+{"type":"item.started","item":{"id":"item_005","type":"agent_message","text":""}}
+{"type":"item.completed","item":{"id":"item_005","type":"agent_message","text":"Hello! "}}
+{"type":"item.started","item":{"id":"item_006","type":"agent_message","text":""}}
+{"type":"item.completed","item":{"id":"item_006","type":"agent_message","text":"Here are 3 items:\n\n1. Apple\n2. Banana\n3. Cherry"}}

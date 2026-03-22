@@ -1,4 +1,5 @@
 name: JSON Extraction Flow
+description: JSON extraction test flow
 start_at: echo_state
 version: '1.0'
 

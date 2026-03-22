@@ -1,4 +1,5 @@
 name: Parallel Min Success Flow
+description: Parallel flow testing min_success parameter
 start_at: parallel_with_failure
 version: '1.0'
 

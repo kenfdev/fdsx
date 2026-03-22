@@ -1,4 +1,5 @@
 name: Input Test Flow
+description: Input test flow for testing variable substitution
 start_at: greet
 version: '1.0'
 

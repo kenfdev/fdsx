@@ -1,6 +1,5 @@
 """End-to-end CLI tests for Phase 4 batch task scenarios."""
 
-import json
 import subprocess
 import sys
 import tempfile
@@ -23,7 +22,7 @@ class TestBatchCLIE2E:
     """End-to-end CLI tests for batch task execution (T070)."""
 
     def test_batch_full_execution_with_approval(self):
-        """Test fdsx run --tasks via CLI: approve → all tasks execute → exit 0 + JSON."""
+        """Test fdsx run --tasks via CLI: approve → all tasks execute → exit 0, no JSON."""
         runner = CliRunner()
         flow_path = str(Path("tests/fixtures/batch_flow.yaml").resolve())
         tasks_path = str(Path("tests/fixtures/sample_tasks.md").resolve())
@@ -51,14 +50,8 @@ class TestBatchCLIE2E:
         assert result.exit_code == 0, (
             f"output: {result.output}\nexception: {result.exception}"
         )
-        json_text = result.output.split("\n\n")[0]
-        output = json.loads(json_text)
-        assert isinstance(output, list)
-        assert len(output) == 3
-        for item in output:
-            assert item["status"] == "completed"
-            assert "thread_id" in item
-            assert item["error"] is None
+        # FR-1.3: No JSON on stdout
+        assert result.output == "" or not result.output.startswith("[")
 
     def test_input_tasks_mutual_exclusion(self):
         """Test --input and --tasks together → exit code 2, mutual exclusion error."""
@@ -85,12 +78,12 @@ class TestBatchCLIE2E:
         )
         assert "mutually exclusive" in result.stderr.lower()
 
-    def test_batch_missing_task_splitter(self):
-        """Test --tasks with flow missing task_splitter → exit code 2."""
+    def test_batch_missing_description(self):
+        """Test --tasks with flow missing description → exit code 2 with actionable error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            flow_path = Path(tmpdir) / "no_splitter_flow.yaml"
+            flow_path = Path(tmpdir) / "no_description_flow.yaml"
             flow_path.write_text(
-                "name: No Splitter Flow\n"
+                "name: No Description Flow\n"
                 "start_at: task1\n"
                 "version: '1.0'\n"
                 "\n"
@@ -124,4 +117,4 @@ class TestBatchCLIE2E:
             assert result.returncode == 2, (
                 f"Expected exit code 2, got {result.returncode}. stderr: {result.stderr}"
             )
-            assert "task_splitter" in result.stderr.lower()
+            assert "description" in result.stderr.lower()

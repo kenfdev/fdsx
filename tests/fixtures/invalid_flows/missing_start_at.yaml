@@ -1,4 +1,5 @@
 name: Invalid Flow - Missing Start At
+description: Invalid flow for testing start_at validation
 start_at: nonexistent_state
 version: '1.0'
 

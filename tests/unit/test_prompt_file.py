@@ -14,6 +14,7 @@ class TestPromptFileWithVariables:
             prompt_file.write_text("Hello {name}, you are {age} years old.")
             flow_yaml.write_text(
                 "name: test\n"
+                "description: Test flow for prompt file\n"
                 "start_at: task1\n"
                 "max_loop: 1\n"
                 "states:\n"
@@ -39,6 +40,7 @@ class TestPromptFileWithVariables:
             flow_yaml = Path(tmpdir) / "flow.yaml"
             flow_yaml.write_text(
                 "name: test\n"
+                "description: Test flow for prompt file not found\n"
                 "start_at: task1\n"
                 "max_loop: 1\n"
                 "states:\n"
@@ -66,6 +68,7 @@ class TestPromptFileParallelBranch:
             branch_prompt.write_text("Branch prompt content")
             flow_yaml.write_text(
                 "name: test\n"
+                "description: Test flow for parallel branch\n"
                 "start_at: parallel1\n"
                 "max_loop: 1\n"
                 "states:\n"
@@ -101,6 +104,7 @@ class TestPromptFileEdgeCases:
             empty_prompt.write_text("")
             flow_yaml.write_text(
                 "name: test\n"
+                "description: Test flow for empty content\n"
                 "start_at: task1\n"
                 "max_loop: 1\n"
                 "states:\n"
@@ -128,6 +132,7 @@ class TestPromptFileEdgeCases:
             special_prompt.write_text("Line 1\nLine 2\nLine 3\nSpecial: ${{var}}")
             flow_yaml.write_text(
                 "name: test\n"
+                "description: Test flow for special characters\n"
                 "start_at: task1\n"
                 "max_loop: 1\n"
                 "states:\n"

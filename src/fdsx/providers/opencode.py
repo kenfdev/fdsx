@@ -1,10 +1,25 @@
 from typing import Callable
 
-from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
+from pydantic import BaseModel, ConfigDict
+
+from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderBase, ProviderResult, _run_subprocess
+
+
+class OpenCodeOptions(BaseModel):
+    """Options for the OpenCode CLI provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    def to_cli_flags(self) -> list[str]:
+        """Translate options to OpenCode CLI flags (none currently defined)."""
+        return []
 
 
 class OpenCodeProvider(ProviderBase):
     """OpenCode provider - executes OpenCode CLI."""
+
+    def __init__(self, options: OpenCodeOptions | None = None) -> None:
+        self.options: OpenCodeOptions = options if options is not None else OpenCodeOptions()
 
     def execute(
         self,
@@ -13,6 +28,7 @@ class OpenCodeProvider(ProviderBase):
         timeout: int | None = None,
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
+        stderr_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute OpenCode CLI with a prompt.
 
@@ -21,18 +37,27 @@ class OpenCodeProvider(ProviderBase):
             model: Model name
             timeout: Timeout in seconds
             command: Ignored for opencode provider
-            output_callback: Optional callback for streaming output
+            output_callback: Optional callback for streaming stdout lines
+            stderr_callback: Optional callback for streaming stderr lines
 
         Returns:
             ProviderResult with exit code and output
         """
+        use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         args = ["opencode", "run"]
         if model:
             args.extend(["-m", model])
-        args.append(prompt)
+        args.extend(self.options.to_cli_flags())
+        if use_stdin:
+            stdin_data: str | None = prompt
+        else:
+            args.append(prompt)
+            stdin_data = None
 
         return _run_subprocess(
             args=args,
             timeout=timeout,
             output_callback=output_callback,
+            stderr_callback=stderr_callback,
+            stdin_data=stdin_data,
         )

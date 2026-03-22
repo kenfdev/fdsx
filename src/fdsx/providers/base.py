@@ -1,7 +1,13 @@
+import logging
 import subprocess
 import threading
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
+
+logger = logging.getLogger(__name__)
+
+# Commands at or above this byte length are piped via stdin to avoid ARG_MAX limits.
+ARG_MAX_STDIN_THRESHOLD = 131072  # 128 KB
 
 
 @dataclass
@@ -23,6 +29,7 @@ class ProviderBase(Protocol):
         timeout: int | None = None,
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
+        stderr_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute a provider.
 
@@ -31,7 +38,8 @@ class ProviderBase(Protocol):
             model: Model name (provider-specific)
             timeout: Timeout in seconds
             command: Command for system provider
-            output_callback: Optional callback for streaming output
+            output_callback: Optional callback for streaming stdout lines
+            stderr_callback: Optional callback for streaming stderr lines
 
         Returns:
             ProviderResult with exit code and output
@@ -50,23 +58,37 @@ def _run_subprocess(
     args: list[str],
     timeout: int | None = None,
     output_callback: Callable[[str], None] | None = None,
+    stderr_callback: Callable[[str], None] | None = None,
     stdin_data: str | None = None,
     shell: bool = False,
 ) -> ProviderResult:
     """Shared subprocess execution helper for all providers.
 
     Args:
-        args: Command arguments list. If shell=True, args[0] is passed to sh -c.
+        args: Command arguments list. If shell=True, args[0] is the shell command
+            (passed to sh -c, or piped via stdin for large commands).
         timeout: Timeout in seconds.
         output_callback: Optional callback for streaming stdout lines.
+        stderr_callback: Optional callback for streaming stderr lines.
         stdin_data: Optional data to pass via stdin.
-        shell: If True, execute via sh -c (for system provider).
+        shell: If True, execute as shell command (via sh -c, or stdin fallback
+            if command exceeds ARG_MAX_STDIN_THRESHOLD).
 
     Returns:
         ProviderResult with exit code and output.
     """
     if shell:
-        cmd: list[str] = ["sh", "-c", args[0]]
+        command_size = len(args[0].encode("utf-8"))
+        if command_size >= ARG_MAX_STDIN_THRESHOLD:
+            logger.debug(
+                "Command size %d bytes exceeds ARG_MAX_STDIN_THRESHOLD (%d bytes); piping via stdin",
+                command_size,
+                ARG_MAX_STDIN_THRESHOLD,
+            )
+            cmd: list[str] = ["sh"]
+            stdin_data = args[0]
+        else:
+            cmd = ["sh", "-c", args[0]]
     else:
         cmd = args
 
@@ -104,11 +126,21 @@ def _run_subprocess(
             except BrokenPipeError:
                 pass
 
-        stderr_output: list[str] = []
+        stderr_lines: list[str] = []
 
         def _read_stderr() -> None:
             if process.stderr:
-                stderr_output.append(process.stderr.read())
+                try:
+                    while True:
+                        raw_line = process.stderr.readline()
+                        if not raw_line:
+                            break
+                        line = raw_line.rstrip("\n")
+                        stderr_lines.append(line)
+                        if stderr_callback:
+                            stderr_callback(line)
+                except BrokenPipeError:
+                    pass
 
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
@@ -116,7 +148,10 @@ def _run_subprocess(
         stdout_lines: list[str] = []
         try:
             if process.stdout:
-                for line in process.stdout:
+                while True:
+                    line = process.stdout.readline()
+                    if not line:
+                        break
                     line = line.rstrip("\n")
                     stdout_lines.append(line)
                     if output_callback:
@@ -137,7 +172,7 @@ def _run_subprocess(
             )
 
         stdout = "\n".join(stdout_lines)
-        stderr = stderr_output[0] if stderr_output else ""
+        stderr = "\n".join(stderr_lines)
 
         return ProviderResult(
             exit_code=process.returncode,
@@ -153,23 +188,38 @@ def _run_subprocess(
         )
 
 
-def get_provider(name: str) -> ProviderBase:
-    """Factory function to get a provider by name."""
+def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBase:
+    """Factory function to get a provider by name.
+
+    Args:
+        name: Provider name (claude, codex, opencode, system).
+        options: Optional dict of provider-specific options. Converted to the
+                 appropriate typed options model internally. Ignored for system provider.
+
+    Returns:
+        A ProviderBase instance configured with the given options.
+
+    Raises:
+        ValueError: If the provider name is unknown.
+    """
     if name == "system":
         from fdsx.providers.system import SystemProvider
 
         return SystemProvider()
     elif name == "claude":
-        from fdsx.providers.claude import ClaudeProvider
+        from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
 
-        return ClaudeProvider()
+        claude_opts = ClaudeOptions.model_validate(options) if options else None
+        return ClaudeProvider(claude_opts)
     elif name == "opencode":
-        from fdsx.providers.opencode import OpenCodeProvider
+        from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
 
-        return OpenCodeProvider()
+        opencode_opts = OpenCodeOptions.model_validate(options) if options else None
+        return OpenCodeProvider(opencode_opts)
     elif name == "codex":
-        from fdsx.providers.codex import CodexProvider
+        from fdsx.providers.codex import CodexOptions, CodexProvider
 
-        return CodexProvider()
+        codex_opts = CodexOptions.model_validate(options) if options else None
+        return CodexProvider(codex_opts)
     else:
         raise ValueError(f"Unknown provider: {name}")

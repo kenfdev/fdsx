@@ -10,6 +10,12 @@ OUTPUT_PREVIEW_MAX_LENGTH = 500
 
 THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
+# Directory layout constants
+FDSX_DIR_NAME = ".fdsx"
+RUNS_DIR_NAME = "runs"
+LOGS_DIR_NAME = "logs"
+RUN_FILENAME = "run.json"
+
 
 class RunRecorder:
     """Records per-state input/output/duration to a JSON run log."""
@@ -126,21 +132,28 @@ class RunRecorder:
         self.final_variables = final_variables
 
     def save(self, base_dir: Path | None = None) -> Path:
-        """Write JSON to runs/<thread_id>.json relative to CWD (or base_dir)."""
+        """Write JSON to <base_dir>/runs/<thread_id>/run.json.
+
+        When base_dir is None, defaults to <CWD>/.fdsx/runs/<thread_id>/run.json.
+        When base_dir is provided, writes to <base_dir>/runs/<thread_id>/run.json.
+        """
         if base_dir is not None:
-            runs_dir = (base_dir / "runs").resolve()
+            runs_dir = (base_dir / RUNS_DIR_NAME).resolve()
         else:
-            runs_dir = (Path.cwd() / "runs").resolve()
+            runs_dir = (Path.cwd() / FDSX_DIR_NAME / RUNS_DIR_NAME).resolve()
 
         os.makedirs(runs_dir, mode=0o700, exist_ok=True)
         os.chmod(str(runs_dir), 0o700)
 
-        file_path = (runs_dir / f"{self.thread_id}").resolve()
+        thread_dir = (runs_dir / self.thread_id).resolve()
 
-        if not str(file_path).startswith(str(runs_dir)):
+        if not str(thread_dir).startswith(str(runs_dir)):
             raise ValueError("Invalid thread_id: path resolved outside runs directory")
 
-        file_path = file_path.with_suffix(".json")
+        os.makedirs(thread_dir, mode=0o700, exist_ok=True)
+        os.chmod(str(thread_dir), 0o700)
+
+        file_path = thread_dir / RUN_FILENAME
 
         if file_path.exists():
             with open(file_path, "r") as f:

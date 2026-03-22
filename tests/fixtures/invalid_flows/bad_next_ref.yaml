@@ -1,4 +1,5 @@
 name: Invalid Flow - Bad Next Reference
+description: Invalid flow for testing next reference validation
 start_at: start
 version: '1.0'
 

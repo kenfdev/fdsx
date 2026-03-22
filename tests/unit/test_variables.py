@@ -42,6 +42,31 @@ class TestResolveTemplate:
         result = resolve_template("Hello World!", {})
         assert result == "Hello World!"
 
+    def test_int_value(self):
+        result = resolve_template("Count: {count}", {"count": 42})
+        assert result == "Count: 42"
+
+    def test_bool_value(self):
+        result = resolve_template("Active: {active}", {"active": True})
+        assert result == "Active: True"
+
+    def test_list_value_rendered_as_json(self):
+        variables = {"items": ["apple", "banana"]}
+        result = resolve_template("Fruits: {items}", variables)
+        assert result == 'Fruits: [\n  "apple",\n  "banana"\n]'
+
+    def test_dict_value_rendered_as_json(self):
+        variables = {"config": {"timeout": 30, "debug": True}}
+        result = resolve_template("Config: {config}", variables)
+        assert result == 'Config: {\n  "timeout": 30,\n  "debug": true\n}'
+
+    def test_nested_dict_list_rendered_as_json(self):
+        variables = {"data": {"users": [{"name": "Alice"}, {"name": "Bob"}]}}
+        result = resolve_template("Data: {data}", variables)
+        assert '"name"' in result
+        assert "Alice" in result
+        assert "Bob" in result
+
 
 class TestResolveJsonPath:
     def test_simple_field(self):
@@ -156,11 +181,206 @@ class TestResolveTemplateShellSafe:
         assert "it" in result
         assert "test" in result
 
+    def test_list_value_shell_safe(self):
+        """List values should be JSON-encoded and shell-quoted."""
+        variables = {"items": ["apple", "banana"]}
+        result = resolve_template_shell_safe("echo {items}", variables)
+        assert result == 'echo \'[\n  "apple",\n  "banana"\n]\'', (
+            f"Expected exact JSON+quote output, got: {result!r}"
+        )
+
+    def test_dict_value_shell_safe(self):
+        """Dict values should be JSON-encoded and shell-quoted."""
+        variables = {"config": {"timeout": 30}}
+        result = resolve_template_shell_safe("echo {config}", variables)
+        assert result == "echo '{\n  \"timeout\": 30\n}'", (
+            f"Expected exact JSON+quote output, got: {result!r}"
+        )
+
+
+class TestPassStateVariableRecognition:
+    """T003/T005: PassState parameters and aggregate must be recognized by analyze_variable_references."""
+
+    def test_pass_state_parameters_satisfy_downstream(self):
+        """T005: PassState.parameters keys should satisfy downstream variable references."""
+        from fdsx.models.flow import PassState
+
+        flow = Flow(
+            name="PassState Flow",
+            description="Test flow for PassState parameters",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="transform",
+                ),
+                "transform": PassState(
+                    type="pass",
+                    parameters={"doc_feedback": "{result}", "summary": "summary text"},
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {doc_feedback}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_pass_state_parameters_dollar_prefix(self):
+        """PassState parameter keys with $. prefix should be stripped."""
+        from fdsx.models.flow import PassState
+
+        flow = Flow(
+            name="PassState Dollar Prefix",
+            description="Test flow for $. prefix in parameters",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.raw",
+                    next="transform",
+                ),
+                "transform": PassState(
+                    type="pass",
+                    parameters={"$.review": "{raw}"},
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {review}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_pass_state_aggregate_satisfies_downstream(self):
+        """PassState.aggregate.result_path should satisfy downstream references."""
+        from fdsx.models.flow import AggregateRule, PassState
+
+        flow = Flow(
+            name="PassState Aggregate Flow",
+            description="Test flow for PassState aggregate",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.raw",
+                    next="aggregate",
+                ),
+                "aggregate": PassState(
+                    type="pass",
+                    aggregate=AggregateRule(
+                        source="$.results",
+                        field="decision",
+                        strategy="majority",
+                        match="APPROVED",
+                        no_match="REJECTED",
+                        result_path="$.decision",
+                    ),
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {decision}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_pass_state_undefined_variable_still_flagged(self):
+        """PassState without the right parameters should still flag undefined refs."""
+        from fdsx.models.flow import PassState
+
+        flow = Flow(
+            name="PassState Undefined",
+            description="PassState without the variable should still flag error",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="transform",
+                ),
+                "transform": PassState(
+                    type="pass",
+                    parameters={"other_key": "static"},
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {undefined_var}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "undefined_var" in errors[0]
+
+    def test_pass_state_parameters_undefined_ref_in_value_flagged(self):
+        """PassState.parameters values with {var} refs to undefined variables must be flagged."""
+        from fdsx.models.flow import PassState
+
+        flow = Flow(
+            name="PassState Undefined Input",
+            description="PassState references undefined var in parameters value",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="transform",
+                ),
+                "transform": PassState(
+                    type="pass",
+                    parameters={"doc_feedback": "{nonexistent_var}"},
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {doc_feedback}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "nonexistent_var" in errors[0]
+
 
 class TestAnalyzeVariableReferences:
     def test_valid_flow_no_errors(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for variable analysis",
             start_at="start",
             states={
                 "start": TaskState(
@@ -185,6 +405,7 @@ class TestAnalyzeVariableReferences:
     def test_unreachable_variable_reference(self):
         flow = Flow(
             name="Test Flow",
+            description="Test flow for unreachable variable",
             start_at="start",
             states={
                 "start": TaskState(
@@ -215,6 +436,7 @@ class TestAnalyzeVariableReferences:
         # so we need a second state to demonstrate the fix.
         flow2 = Flow(
             name="Test Flow 2",
+            description="Test flow for input keys",
             start_at="start",
             states={
                 "start": TaskState(
@@ -245,6 +467,7 @@ class TestAnalyzeVariableReferences:
         """F3: different nested sub-paths on producer vs consumer should be flagged."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for nested paths",
             start_at="produce",
             states={
                 "produce": TaskState(
@@ -271,6 +494,7 @@ class TestAnalyzeVariableReferences:
         """F3: producing $.review satisfies reference to {review.decision} (ancestor)."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for ancestor path",
             start_at="produce",
             states={
                 "produce": TaskState(
@@ -296,6 +520,7 @@ class TestAnalyzeVariableReferences:
         """F3: producing $.review.summary satisfies reference to {review} (descendant proves parent exists)."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for descendant path",
             start_at="produce",
             states={
                 "produce": TaskState(
@@ -321,6 +546,7 @@ class TestAnalyzeVariableReferences:
         """Regression: analyze_variable_references must check parallel branch prompts."""
         flow = Flow(
             name="Test Flow",
+            description="Test flow for parallel branch",
             start_at="start",
             states={
                 "start": TaskState(
@@ -392,6 +618,7 @@ class TestAnalyzeVariableReferencesExtract:
 
         flow = Flow(
             name="Extraction Flow",
+            description="Test flow for extract result path",
             start_at="echo_state",
             states={
                 "echo_state": TaskState(
@@ -422,6 +649,7 @@ class TestAnalyzeVariableReferencesExtract:
         """F1: A reference to an extract.result_path that doesn't exist should be flagged."""
         flow = Flow(
             name="Extraction Flow",
+            description="Test flow for missing extract result path",
             start_at="echo_state",
             states={
                 "echo_state": TaskState(
@@ -452,6 +680,7 @@ class TestAnalyzeVariableReferencesExtract:
 
         flow = Flow(
             name="Parallel Extract Flow",
+            description="Test flow for parallel extract path",
             start_at="par",
             states={
                 "par": ParallelState(
@@ -488,6 +717,7 @@ class TestAnalyzeVariableReferencesExtract:
         """F1: Only the parallel state's own result_path is registered as top-level."""
         flow = Flow(
             name="Parallel Result Flow",
+            description="Test flow for parallel result path",
             start_at="par",
             states={
                 "par": ParallelState(

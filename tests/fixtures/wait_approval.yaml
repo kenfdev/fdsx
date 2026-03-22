@@ -1,4 +1,5 @@
 name: Wait Approval Flow
+description: Wait state flow for testing human approval
 start_at: plan
 version: '1.0'
 

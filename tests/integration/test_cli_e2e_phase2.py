@@ -1,4 +1,3 @@
-import json
 import subprocess
 
 
@@ -35,10 +34,10 @@ class TestCLIE2EPhase2:
             text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
-        output = json.loads(result.stdout)
-        assert "reviews" in output
-        assert output["decision"] == "APPROVED"
-        assert "approved_result" in output
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr
 
     def test_extraction_flow_yaml_validates(self):
         """Test extraction_flow.yaml validates successfully."""
@@ -65,10 +64,10 @@ class TestCLIE2EPhase2:
             text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
-        output = json.loads(result.stdout)
-        assert "decision" in output
-        assert output["decision"] == "APPROVED"
-        assert "raw_output" in output
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr
 
     def test_loop_flow_yaml_validates(self):
         """Test loop_flow.yaml validates successfully."""
@@ -95,12 +94,9 @@ class TestCLIE2EPhase2:
             text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
-        output = json.loads(result.stdout)
-        # Partial results from loop iterations must be present
-        assert "plan_output" in output
-        assert "impl_output" in output
-        assert "review_output" in output
-        # The flow should NOT reach the "done" state since review always rejects
-        assert "final_result" not in output
+        # FR-1.3: No JSON on stdout
+        assert result.stdout == ""
         # Verify loop completion message on stderr
         assert "Loop completed" in result.stderr
+        # FR-1.1: Completion message on stderr
+        assert "completed successfully" in result.stderr

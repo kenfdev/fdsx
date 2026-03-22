@@ -29,3 +29,8 @@ Use reports in the Report Directory and fix the issues raised by the reviewer.
 | persists (carried over, not addressed this iteration) | {N} |
 ## Evidence
 - {List key points from files checked/searches/diffs/logs}
+
+**Routing tag (required — output exactly one):**
+- All fixes applied, build and tests pass → `[STEP:1]`
+- Fixes attempted but build or tests fail → `[STEP:2]`
+- Cannot fix — issues beyond this agent's capability → `[STEP:3]`
