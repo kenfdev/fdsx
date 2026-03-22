@@ -7,10 +7,15 @@ Phase 1:
 Phase 2:
   T006: Tests for _meta.run_dir propagation in run_flow()
   T008: Tests for static analysis recognizing result_file variables
+
+Phase 3:
+  T011: Tests for task node result_file wiring in compiler
+  T013: Tests for parallel collector node result_file wiring in compiler
 """
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -425,3 +430,214 @@ class TestStaticAnalysisResultFile:
         )
         errors = analyze_variable_references(flow)
         assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# T011: Task node result_file wiring in compiler
+# ---------------------------------------------------------------------------
+
+
+class TestTaskNodeResultFileWiring:
+    """T011: Tests for result_file wiring in _create_task_node()."""
+
+    def _make_state_dict(self, run_dir: str) -> dict:
+        return {"_meta": {"run_dir": run_dir}}
+
+    def _run_task_node(
+        self,
+        state: TaskState,
+        state_dict: dict,
+        mock_write: MagicMock,
+    ) -> dict:
+        """Run _create_task_node with a mocked system provider and write_result_to_file."""
+        import fdsx.core.compiler as compiler
+        from fdsx.models.flow import Flow
+
+        flow = MagicMock(spec=Flow)
+        flow.providers = None
+
+        with (
+            patch.object(compiler, "get_provider") as mock_get_provider,
+            patch("fdsx.core.compiler.write_result_to_file", mock_write),
+        ):
+            mock_provider = MagicMock()
+            mock_provider.execute.return_value = MagicMock(
+                exit_code=0, stdout="task output", stderr=""
+            )
+            mock_get_provider.return_value = mock_provider
+
+            node_fn = compiler._create_task_node("test_state", state, flow, None)
+            return node_fn(state_dict)
+
+    def test_file_only_mode_writes_file_and_stores_path(self, tmp_path: Path) -> None:
+        """Task with result_file only → file written, path stored in variable."""
+        state = TaskState(
+            type="task",
+            provider="system",
+            command="echo hello",
+            result_path="$.raw_output",
+            result_file="$.plan_ref",
+            end=True,
+        )
+        run_dir = str(tmp_path)
+        state_dict = self._make_state_dict(run_dir)
+
+        mock_write = MagicMock(return_value="/abs/path/to/plan_ref.md")
+        result = self._run_task_node(state, state_dict, mock_write)
+
+        mock_write.assert_called_once()
+        call_args = mock_write.call_args
+        assert call_args[0][0] == "plan_ref"  # varname
+        assert call_args[0][1] == "task output"  # value (stdout)
+        assert isinstance(call_args[0][2], Path)  # run_dir as Path
+
+        assert result.get("plan_ref") == "/abs/path/to/plan_ref.md"
+
+    def test_both_result_path_and_result_file_set(self, tmp_path: Path) -> None:
+        """Task with both result_path and result_file → both set correctly."""
+        state = TaskState(
+            type="task",
+            provider="system",
+            command="echo hello",
+            result_path="$.raw_output",
+            result_file="$.plan_ref",
+            end=True,
+        )
+        run_dir = str(tmp_path)
+        state_dict = self._make_state_dict(run_dir)
+
+        mock_write = MagicMock(return_value="/abs/path/to/plan_ref.md")
+        result = self._run_task_node(state, state_dict, mock_write)
+
+        assert result.get("raw_output") == "task output"
+        assert result.get("plan_ref") == "/abs/path/to/plan_ref.md"
+
+    def test_no_result_file_no_file_io(self, tmp_path: Path) -> None:
+        """Task without result_file → write_result_to_file not called."""
+        state = TaskState(
+            type="task",
+            provider="system",
+            command="echo hello",
+            result_path="$.raw_output",
+            end=True,
+        )
+        run_dir = str(tmp_path)
+        state_dict = self._make_state_dict(run_dir)
+
+        mock_write = MagicMock()
+        result = self._run_task_node(state, state_dict, mock_write)
+
+        mock_write.assert_not_called()
+        assert result.get("raw_output") == "task output"
+
+
+# ---------------------------------------------------------------------------
+# T013: Parallel collector node result_file wiring in compiler
+# ---------------------------------------------------------------------------
+
+
+class TestCollectorNodeResultFileWiring:
+    """T013: Tests for result_file wiring in _create_collector_node()."""
+
+    def _make_branch_results(self, state_name: str, results: list[dict]) -> dict:
+        """Build a state_dict with branch results and _meta."""
+        return {
+            f"_br_{state_name}": results,
+            "_meta": {"run_dir": "/tmp/test_run"},
+        }
+
+    def _run_collector_node(
+        self,
+        state_name: str,
+        state: ParallelState,
+        state_dict: dict,
+        mock_write: MagicMock,
+    ) -> dict:
+        """Run _create_collector_node with mocked write_result_to_file."""
+        import fdsx.core.compiler as compiler
+        from fdsx.models.flow import Flow
+
+        flow = MagicMock(spec=Flow)
+
+        with patch("fdsx.core.compiler.write_result_to_file", mock_write):
+            node_fn = compiler._create_collector_node(state_name, state, flow, None)
+            return node_fn(state_dict)
+
+    def test_parallel_with_result_file_writes_file_and_stores_path(self) -> None:
+        """Parallel with result_file → clean_results written to file, path stored."""
+        from fdsx.models.flow import Branch
+
+        state = ParallelState(
+            type="parallel",
+            branches=[
+                Branch(provider="system", command="echo b1"),
+                Branch(provider="system", command="echo b2"),
+            ],
+            result_path="$.par_output",
+            result_file="$.reviews_ref",
+            end=True,
+        )
+        branch_results = [
+            {"index": 0, "exit_code": 0, "stdout": "b1"},
+            {"index": 1, "exit_code": 0, "stdout": "b2"},
+        ]
+        state_dict = self._make_branch_results("par_state", branch_results)
+
+        mock_write = MagicMock(return_value="/abs/path/to/reviews_ref.json")
+        result = self._run_collector_node("par_state", state, state_dict, mock_write)
+
+        mock_write.assert_called_once()
+        call_args = mock_write.call_args
+        assert call_args[0][0] == "reviews_ref"  # varname
+        assert isinstance(call_args[0][1], list)  # clean_results list
+        assert isinstance(call_args[0][2], Path)  # run_dir as Path
+
+        assert result.get("reviews_ref") == "/abs/path/to/reviews_ref.json"
+
+    def test_parallel_with_both_result_path_and_result_file(self) -> None:
+        """Parallel with both result_path and result_file → both set."""
+        from fdsx.models.flow import Branch
+
+        state = ParallelState(
+            type="parallel",
+            branches=[
+                Branch(provider="system", command="echo b1"),
+            ],
+            result_path="$.par_output",
+            result_file="$.reviews_ref",
+            end=True,
+        )
+        branch_results = [
+            {"index": 0, "exit_code": 0, "stdout": "b1"},
+        ]
+        state_dict = self._make_branch_results("par_state", branch_results)
+
+        mock_write = MagicMock(return_value="/abs/reviews_ref.json")
+        result = self._run_collector_node("par_state", state, state_dict, mock_write)
+
+        par_output = result.get("par_output")
+        assert isinstance(par_output, list)
+        assert result.get("reviews_ref") == "/abs/reviews_ref.json"
+
+    def test_parallel_without_result_file_unchanged_behavior(self) -> None:
+        """Parallel without result_file → write_result_to_file not called."""
+        from fdsx.models.flow import Branch
+
+        state = ParallelState(
+            type="parallel",
+            branches=[
+                Branch(provider="system", command="echo b1"),
+            ],
+            result_path="$.par_output",
+            end=True,
+        )
+        branch_results = [
+            {"index": 0, "exit_code": 0, "stdout": "b1"},
+        ]
+        state_dict = self._make_branch_results("par_state", branch_results)
+
+        mock_write = MagicMock()
+        result = self._run_collector_node("par_state", state, state_dict, mock_write)
+
+        mock_write.assert_not_called()
+        assert isinstance(result.get("par_output"), list)

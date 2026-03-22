@@ -20,6 +20,7 @@ from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
     set_jsonpath,
+    write_result_to_file,
 )
 from fdsx.display import terminal
 from fdsx.display.terminal import _sanitize_output
@@ -103,10 +104,18 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
                 k = _top_level_key(state.extract.result_path)
                 if k:
                     annotations.setdefault(k, Any)
+            if state.result_file:
+                k = _top_level_key(state.result_file)
+                if k:
+                    annotations.setdefault(k, Any)
         elif isinstance(state, ParallelState) and state.result_path:
             k = _top_level_key(state.result_path)
             if k:
                 annotations.setdefault(k, Any)
+            if state.result_file:
+                k = _top_level_key(state.result_file)
+                if k:
+                    annotations.setdefault(k, Any)
         elif isinstance(state, PassState):
             if state.aggregate:
                 k = _top_level_key(state.aggregate.result_path)
@@ -359,8 +368,12 @@ def _extract_result_paths(flow: Flow) -> list[str]:
             paths.append(state.result_path)
             if state.extract:
                 paths.append(state.extract.result_path)
+            if state.result_file:
+                paths.append(state.result_file)
         elif isinstance(state, ParallelState) and state.result_path:
             paths.append(state.result_path)
+            if state.result_file:
+                paths.append(state.result_file)
         elif isinstance(state, PassState) and state.aggregate:
             paths.append(state.aggregate.result_path)
         elif isinstance(state, WaitState) and state.result_path:
@@ -599,6 +612,14 @@ def _create_task_node(
                 state.result_path, state_dict, result.stdout.strip()
             )
             variables_set = [state.result_path]
+
+        if state.result_file:
+            run_dir = state_dict.get("_meta", {}).get("run_dir", "")
+            if run_dir:
+                varname = state.result_file[2:]  # strip "$."
+                file_path = write_result_to_file(varname, result.stdout.strip(), Path(run_dir))
+                new_state = set_jsonpath(state.result_file, new_state, file_path)
+                variables_set = [*variables_set, state.result_file]
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
@@ -881,6 +902,13 @@ def _create_collector_node(
 
         new_state = set_jsonpath(state.result_path, state_dict, clean_results)
 
+        if state.result_file:
+            run_dir = state_dict.get("_meta", {}).get("run_dir", "")
+            if run_dir:
+                varname = state.result_file[2:]  # strip "$."
+                file_path = write_result_to_file(varname, clean_results, Path(run_dir))
+                new_state = set_jsonpath(state.result_file, new_state, file_path)
+
         display_results = []
         for r in sorted_results:
             idx = r.get("index", 0)
@@ -901,12 +929,16 @@ def _create_collector_node(
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)
 
+        recorded_paths = [state.result_path]
+        if state.result_file:
+            recorded_paths.append(state.result_file)
+
         if recorder is not None:
             recorder.record_state_complete(
                 state_name,
                 "success",
                 "",
-                [state.result_path],
+                recorded_paths,
                 branch_info_list,
             )
 

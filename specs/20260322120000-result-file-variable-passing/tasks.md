@@ -67,31 +67,31 @@
 
 > FR-2 (file writing on completion), FR-3 (usage modes). Tests first, then implement.
 
-- [ ] T011 Write TDD tests for task node `result_file` wiring in `tests/unit/test_result_file.py`
+- [x] T011 Write TDD tests for task node `result_file` wiring in `tests/unit/test_result_file.py`
   - Task with `result_file` only → file written, path stored in variable, no raw data in state
   - Task with both `result_path` and `result_file` → both set correctly
   - Task without `result_file` → no file I/O (existing behavior preserved)
   - Verify `write_result_to_file` called with correct arguments
 
-- [ ] T012 Wire `result_file` in task node function in `src/fdsx/core/compiler.py`
+- [x] T012 Wire `result_file` in task node function in `src/fdsx/core/compiler.py`
   - In `_create_task_node()`, after `result_path` handling: call `write_result_to_file()` and store path via `set_jsonpath`
   - Handle file-only mode (result_file set, result_path not used for file)
 
-- [ ] T013 Write TDD tests for parallel collector node `result_file` wiring in `tests/unit/test_result_file.py`
+- [x] T013 Write TDD tests for parallel collector node `result_file` wiring in `tests/unit/test_result_file.py`
   - Parallel with `result_file` → clean_results written to file, path stored
   - Parallel with both `result_path` and `result_file` → both set
   - Parallel without `result_file` → unchanged behavior
 
-- [ ] T014 Wire `result_file` in parallel collector node in `src/fdsx/core/compiler.py`
+- [x] T014 Wire `result_file` in parallel collector node in `src/fdsx/core/compiler.py`
   - In `_create_parallel_collector_node()`, after `set_jsonpath(state.result_path, ...)`: call `write_result_to_file()` and store path
 
-- [ ] T015 Register `result_file` keys in `_build_state_schema()` in `src/fdsx/core/compiler.py`
+- [x] T015 Register `result_file` keys in `_build_state_schema()` in `src/fdsx/core/compiler.py`
   - After result_path registration for TaskState and ParallelState: register `result_file` top-level key via `_top_level_key()`
 
-- [ ] T016 Register `result_file` in `_extract_result_paths()` in `src/fdsx/core/compiler.py`
+- [x] T016 Register `result_file` in `_extract_result_paths()` in `src/fdsx/core/compiler.py`
   - Add `result_file` to paths list for TaskState and ParallelState
 
-- [ ] T017 Run `pytest tests/unit/` — verify T011 + T013 tests pass, no regressions
+- [x] T017 Run `pytest tests/unit/` — verify T011 + T013 tests pass, no regressions
 
 ## Phase 4: Integration Test
 
