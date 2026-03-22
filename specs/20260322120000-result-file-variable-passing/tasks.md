@@ -97,14 +97,14 @@
 
 > FR-6 (test coverage), end-to-end validation with system provider.
 
-- [ ] T018 Write integration test with system provider in `tests/integration/test_result_file.py`
+- [x] T018 Write integration test with system provider in `tests/integration/test_result_file.py`
   - Two-state workflow: echo → read file. Assert file exists at `<run_dir>/data/output_ref.md`, content correct, variable contains absolute path
   - Parallel state with `result_file`: two echo branches, assert `.json` file created, variable contains path
 
-- [ ] T019 Write regression test for existing workflows in `tests/integration/test_result_file.py`
+- [x] T019 Write regression test for existing workflows in `tests/integration/test_result_file.py`
   - Run workflow without `result_file`, verify no `data/` directory is created
 
-- [ ] T020 Run full test suite `pytest tests/` — verify no regressions
+- [x] T020 Run full test suite `pytest tests/` — verify no regressions
 
 ---
 
