@@ -44,9 +44,9 @@
 
 **Independent test criteria**: After this phase, `sys.stderr.flush()` is called after every `print()` in StreamLogger's `on_stdout()` and `on_stderr()`, ensuring no Python-level stderr buffering delays terminal output.
 
-- [ ] T006 [P] Add `sys.stderr.flush()` after `print()` in `on_stdout()` in `src/fdsx/logging/stream_logger.py` (line 59)
+- [x] T006 [P] Add `sys.stderr.flush()` after `print()` in `on_stdout()` in `src/fdsx/logging/stream_logger.py` (line 59)
 
-- [ ] T007 [P] Add `sys.stderr.flush()` after `print()` in `on_stderr()` in `src/fdsx/logging/stream_logger.py` (line 70)
+- [x] T007 [P] Add `sys.stderr.flush()` after `print()` in `on_stderr()` in `src/fdsx/logging/stream_logger.py` (line 70)
 
 ---
 
@@ -56,7 +56,7 @@
 
 **Independent test criteria**: Full test suite passes, including the new streaming regression test and all existing subprocess/streaming tests.
 
-- [ ] T008 Run full test suite including streaming-specific tests via `uv run pytest tests/ -v`
+- [x] T008 Run full test suite including streaming-specific tests via `uv run pytest tests/ -v`
   - Expected: All tests pass unchanged (existing + new streaming regression test)
 
 ---

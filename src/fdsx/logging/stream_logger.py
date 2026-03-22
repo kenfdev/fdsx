@@ -57,6 +57,7 @@ class StreamLogger:
         """
         if not self.quiet:
             print(f"[{self.state_name}] {line}", file=sys.stderr)
+            sys.stderr.flush()
         self._write_to_file(line)
 
     def on_stderr(self, line: str) -> None:
@@ -68,6 +69,7 @@ class StreamLogger:
         """
         if not self.quiet:
             print(f"[{self.state_name}] {line}", file=sys.stderr)
+            sys.stderr.flush()
         self._write_to_file(line)
 
     def _write_to_file(self, line: str) -> None:

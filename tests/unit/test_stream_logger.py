@@ -11,6 +11,7 @@ Tests verify:
 - Thread-safe writes (multiple threads can call on_stdout/on_stderr)
 """
 
+import sys
 import threading
 from io import StringIO
 from pathlib import Path
@@ -79,6 +80,34 @@ class TestStreamLoggerTerminalOutput:
         captured = capsys.readouterr()
         assert "[State] line" in captured.err
         assert "[State] err line" in captured.err
+
+    def test_on_stdout_flushes_stderr(self):
+        """on_stdout calls sys.stderr.flush() after print (T006)."""
+        logger = StreamLogger("FlushState")
+        with patch.object(sys.stderr, "flush") as mock_flush:
+            logger.on_stdout("hello")
+        mock_flush.assert_called_once()
+
+    def test_on_stderr_flushes_stderr(self):
+        """on_stderr calls sys.stderr.flush() after print (T007)."""
+        logger = StreamLogger("FlushState")
+        with patch.object(sys.stderr, "flush") as mock_flush:
+            logger.on_stderr("error")
+        mock_flush.assert_called_once()
+
+    def test_on_stdout_no_flush_when_quiet(self):
+        """on_stdout does NOT flush when quiet=True (no print, no flush)."""
+        logger = StreamLogger("FlushState", quiet=True)
+        with patch.object(sys.stderr, "flush") as mock_flush:
+            logger.on_stdout("hello")
+        mock_flush.assert_not_called()
+
+    def test_on_stderr_no_flush_when_quiet(self):
+        """on_stderr does NOT flush when quiet=True (no print, no flush)."""
+        logger = StreamLogger("FlushState", quiet=True)
+        with patch.object(sys.stderr, "flush") as mock_flush:
+            logger.on_stderr("error")
+        mock_flush.assert_not_called()
 
 
 class TestStreamLoggerFileWriting:
