@@ -131,7 +131,10 @@ def _run_subprocess(
         def _read_stderr() -> None:
             if process.stderr:
                 try:
-                    for raw_line in process.stderr:
+                    while True:
+                        raw_line = process.stderr.readline()
+                        if not raw_line:
+                            break
                         line = raw_line.rstrip("\n")
                         stderr_lines.append(line)
                         if stderr_callback:
@@ -145,7 +148,10 @@ def _run_subprocess(
         stdout_lines: list[str] = []
         try:
             if process.stdout:
-                for line in process.stdout:
+                while True:
+                    line = process.stdout.readline()
+                    if not line:
+                        break
                     line = line.rstrip("\n")
                     stdout_lines.append(line)
                     if output_callback:
