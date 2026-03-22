@@ -233,6 +233,34 @@ class AggregateRule(BaseModel):
     result_path: str = Field(..., description="JSONPath for result")
 
 
+def _validate_result_file(v: str | None) -> str | None:
+    """Validate that result_file uses a top-level '$.varname' path.
+
+    Requirements:
+    - Must start with '$.'
+    - Must be a single top-level key (no dots or brackets after '$.')
+    """
+    if v is None:
+        return v
+    if not v.startswith("$."):
+        raise ValueError(
+            f"result_file must start with '$.' (got '{v}'). "
+            "Example: '$.plan_ref'"
+        )
+    remainder = v[2:]
+    if not remainder or not remainder.strip():
+        raise ValueError(
+            f"result_file must specify a variable name after '$.' (got '{v}'). "
+            "Example: '$.plan_ref'"
+        )
+    if "." in remainder or "[" in remainder:
+        raise ValueError(
+            f"result_file must be a top-level variable path — nested paths are not allowed (got '{v}'). "
+            "Example: '$.plan_ref'"
+        )
+    return v
+
+
 class TaskState(BaseModel):
     """Task state - executes a provider to generate output."""
 
@@ -247,6 +275,10 @@ class TaskState(BaseModel):
     )
     command: str | None = Field(default=None, description="Command for system provider")
     result_path: str = Field(..., description="JSONPath for result")
+    result_file: str | None = Field(
+        default=None,
+        description="Top-level JSONPath variable to store the absolute path of a result file",
+    )
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
@@ -258,6 +290,11 @@ class TaskState(BaseModel):
         default=None, description="Next state (exclusive with end)"
     )
     end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @field_validator("result_file")
+    @classmethod
+    def validate_result_file(cls, v: str | None) -> str | None:
+        return _validate_result_file(v)
 
     @model_validator(mode="after")
     def validate_provider_fields(self) -> "TaskState":
@@ -318,12 +355,21 @@ class ParallelState(BaseModel):
     type: Literal["parallel"] = "parallel"
     branches: list[Branch] = Field(..., description="Parallel branch definitions")
     result_path: str = Field(..., description="JSONPath for results array")
+    result_file: str | None = Field(
+        default=None,
+        description="Top-level JSONPath variable to store the absolute path of a result file",
+    )
     min_success: int | None = Field(default=None, description="Min successful branches")
     hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
     end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @field_validator("result_file")
+    @classmethod
+    def validate_result_file(cls, v: str | None) -> str | None:
+        return _validate_result_file(v)
 
     @model_validator(mode="after")
     def validate_next_end_exclusive(self) -> "ParallelState":

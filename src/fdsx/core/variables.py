@@ -1,9 +1,37 @@
 import json
 import re
 import shlex
+from pathlib import Path
 from typing import Any
 
 from fdsx.models.flow import Branch, Flow, ParallelState, State
+
+# Sub-directory inside run_dir where result files are written
+RESULT_FILE_DATA_DIR = "data"
+
+
+def write_result_to_file(varname: str, value: Any, run_dir: Path) -> str:
+    """Write a result value to a file inside <run_dir>/data/.
+
+    - str values are written as ``<varname>.md``
+    - All other values (dict, list, etc.) are JSON-serialized as ``<varname>.json``
+
+    The ``data/`` directory is created automatically if it does not exist.
+    Returns the absolute file path as a string.
+    """
+    data_dir = run_dir / RESULT_FILE_DATA_DIR
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(value, str):
+        file_path = data_dir / f"{varname}.md"
+        file_path.write_text(value, encoding="utf-8")
+    else:
+        file_path = data_dir / f"{varname}.json"
+        file_path.write_text(
+            json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    return str(file_path.resolve())
 
 
 def resolve_template(template: str, variables: dict[str, Any]) -> str:
