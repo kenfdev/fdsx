@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
+from fdsx.core.batch import COMPLETED_SUBDIR, TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 from fdsx.models.task import TaskEntry
 
@@ -330,3 +330,176 @@ class TestSplitCliIntegration:
         assert isinstance(paths, list)
         assert len(paths) == 1
         assert "Created 1 task file" in result.stderr
+
+    # T001: Split succeeds when only completed/ dir exists (no pending tasks)
+    def test_split_command_succeeds_with_only_completed_dir(
+        self, tmp_path, monkeypatch
+    ):
+        """Split without --force succeeds when tasks dir contains only completed/ subdir."""
+        from typer.testing import CliRunner
+        from fdsx.cli.main import app
+
+        tasks_dir = tmp_path / TASKS_DIR
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir(parents=True, exist_ok=True)
+        (completed_dir / "001-old-task.yaml").write_text("description: Old task\nstatus: done")
+
+        task_file = tmp_path / "tasks.md"
+        task_file.write_text("New feature")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout='[[{"description": "New feature"}]]',
+            stderr="",
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+                runner = CliRunner()
+                result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+
+        assert result.exit_code == 0
+        import json as _json
+        paths = _json.loads(result.stdout)
+        assert len(paths) == 1
+
+    # T001: Completed/ dir and its contents are preserved after a normal split
+    def test_split_command_preserves_completed_dir_on_normal_split(
+        self, tmp_path, monkeypatch
+    ):
+        """Split preserves completed/ directory and its contents when no pending tasks exist."""
+        from typer.testing import CliRunner
+        from fdsx.cli.main import app
+
+        tasks_dir = tmp_path / TASKS_DIR
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir(parents=True, exist_ok=True)
+        completed_file = completed_dir / "001-old-task.yaml"
+        completed_file.write_text("description: Old task\nstatus: done")
+
+        task_file = tmp_path / "tasks.md"
+        task_file.write_text("New feature")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout='[[{"description": "New feature"}]]',
+            stderr="",
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+                runner = CliRunner()
+                result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+
+        assert result.exit_code == 0
+        assert completed_dir.exists()
+        assert completed_file.exists()
+        assert completed_file.read_text() == "description: Old task\nstatus: done"
+
+    # T001: Task numbering continues from the highest index in completed/
+    def test_split_command_numbering_continues_from_completed(
+        self, tmp_path, monkeypatch
+    ):
+        """New task files are numbered starting after the highest index in completed/."""
+        from typer.testing import CliRunner
+        from fdsx.cli.main import app
+
+        tasks_dir = tmp_path / TASKS_DIR
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir(parents=True, exist_ok=True)
+        (completed_dir / "001-first.yaml").write_text("description: First\nstatus: done")
+        (completed_dir / "002-second.yaml").write_text("description: Second\nstatus: done")
+
+        task_file = tmp_path / "tasks.md"
+        task_file.write_text("Third task")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout='[[{"description": "Third task"}]]',
+            stderr="",
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+                runner = CliRunner()
+                result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+
+        assert result.exit_code == 0
+        assert (tasks_dir / "003-third-task.yaml").exists()
+
+    # T001: Split without --force still fails when a pending .yaml exists outside completed/
+    def test_split_command_still_blocks_with_pending_yaml(
+        self, tmp_path, monkeypatch
+    ):
+        """Split without --force fails when a pending .yaml file exists directly in tasks dir."""
+        from typer.testing import CliRunner
+        from fdsx.cli.main import app
+
+        tasks_dir = tmp_path / TASKS_DIR
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir(parents=True, exist_ok=True)
+        (completed_dir / "001-done.yaml").write_text("description: Done\nstatus: done")
+        # Pending task directly in tasks dir — should block split
+        (tasks_dir / "002-pending.yaml").write_text("description: Pending\nstatus: pending")
+
+        task_file = tmp_path / "tasks.md"
+        task_file.write_text("New feature")
+
+        monkeypatch.chdir(tmp_path)
+
+        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+            runner = CliRunner()
+            result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+
+        assert result.exit_code == 2
+        assert "not empty" in result.stderr
+
+    # T003: --force removes pending .yaml files but preserves completed/ dir
+    def test_split_command_force_preserves_completed_dir(
+        self, tmp_path, monkeypatch
+    ):
+        """--force clears pending .yaml files but preserves completed/ and its contents."""
+        from typer.testing import CliRunner
+        from fdsx.cli.main import app
+
+        tasks_dir = tmp_path / TASKS_DIR
+        completed_dir = tasks_dir / COMPLETED_SUBDIR
+        completed_dir.mkdir(parents=True, exist_ok=True)
+        completed_file = completed_dir / "001-done.yaml"
+        completed_file.write_text("description: Done\nstatus: done")
+        pending_file = tasks_dir / "002-pending.yaml"
+        pending_file.write_text("description: Pending\nstatus: pending")
+
+        task_file = tmp_path / "tasks.md"
+        task_file.write_text("New feature")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout='[[{"description": "New feature"}]]',
+            stderr="",
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+                runner = CliRunner()
+                result = runner.invoke(
+                    app, ["split", str(task_file), "--force"], catch_exceptions=False
+                )
+
+        assert result.exit_code == 0
+        assert not pending_file.exists()
+        assert completed_dir.exists()
+        assert completed_file.exists()
+        assert completed_file.read_text() == "description: Done\nstatus: done"

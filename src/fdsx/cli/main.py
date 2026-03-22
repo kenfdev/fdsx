@@ -6,7 +6,7 @@ import uuid_utils
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
-from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
+from fdsx.core.batch import COMPLETED_SUBDIR, TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
@@ -289,7 +289,9 @@ def split(
 
     tasks_dir = Path(TASKS_DIR)
 
-    if tasks_dir.exists() and any(tasks_dir.iterdir()):
+    if tasks_dir.exists() and any(
+        entry for entry in tasks_dir.iterdir() if entry.name != COMPLETED_SUBDIR
+    ):
         if not force:
             typer.echo(
                 f"Error: Tasks directory '{TASKS_DIR}' is not empty. "
