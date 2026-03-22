@@ -35,13 +35,13 @@
 
 **Independent test criteria**: After this phase, the split prompt instructs feature-level grouping, includes sub-steps instruction, anti-examples, and a few-shot example. Integration test verifies the output structure.
 
-- [ ] T004 Write unit tests for prompt content verification in `tests/unit/test_batch.py`
+- [x] T004 Write unit tests for prompt content verification in `tests/unit/test_batch.py`
   - `test_build_task_split_prompt_contains_feature_level_instruction`: Verify prompt contains instruction to group related steps into feature-level tasks.
   - `test_build_task_split_prompt_contains_substeps_instruction`: Verify prompt instructs numbered sub-steps within descriptions.
   - `test_build_task_split_prompt_contains_anti_examples`: Verify prompt includes anti-examples of micro-tasks.
   - `test_build_task_split_prompt_contains_few_shot_example`: Verify prompt includes a few-shot example.
 
-- [ ] T005 Rewrite `_build_task_split_prompt()` in `src/fdsx/core/batch.py`
+- [x] T005 Rewrite `_build_task_split_prompt()` in `src/fdsx/core/batch.py`
   - Rewrite the prompt (~lines 106-154):
     - Change core instruction from "split into individual, self-contained task descriptions" to "group related work into feature-level tasks"
     - Add instruction: each task description should include numbered sub-steps
@@ -50,7 +50,7 @@
     - Keep the JSON output format specification unchanged
   - Run T004 tests to verify
 
-- [ ] T006 Write integration test for feature-level output in `tests/integration/test_split.py`
+- [x] T006 Write integration test for feature-level output in `tests/integration/test_split.py`
   - `test_split_produces_feature_level_tasks`: Use mock provider returning a feature-level response (single task with sub-steps in description). Verify the output contains fewer files than micro-split. Verify task description contains numbered steps.
 
 ---

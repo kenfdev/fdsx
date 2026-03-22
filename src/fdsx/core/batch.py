@@ -116,7 +116,7 @@ def _build_task_split_prompt(
     states_desc = ", ".join(state_names) if state_names else "any workflow"
     input_vars_desc = ", ".join(input_vars) if input_vars else "task"
 
-    prompt = f"""You are a task splitter. Given a batch of work, split it into individual executable tasks and organize them into file groups.
+    prompt = f"""You are a task splitter. Given a batch of work, group related work into feature-level tasks and organize them into file groups.
 
 The workflow has these states: {states_desc}
 The workflow accepts these input variables: {input_vars_desc}
@@ -126,25 +126,50 @@ TASK CONTENT:
 
 INSTRUCTIONS:
 1. Analyze the task content above
-2. Split it into individual, self-contained task descriptions
-3. Group tasks that DEPEND on each other sequentially into the same group (they will be executed in order within one file)
-4. Place independent tasks (no dependencies between them) in SEPARATE groups (each becomes its own file)
-5. Within each group, order tasks by their sequential dependency (first task executed first)
-6. Output ONLY valid JSON in the format described below
+2. Group related work into feature-level tasks — do NOT create tasks for single file operations, single commands, or trivially small changes
+3. Each task description should include numbered sub-steps (e.g., "Implement X\\n1. Do A\\n2. Do B\\n3. Do C")
+4. Group tasks that DEPEND on each other sequentially into the same group (they will be executed in order within one file)
+5. Place independent tasks (no dependencies between them) in SEPARATE groups (each becomes its own file)
+6. Within each group, order tasks by their sequential dependency (first task executed first)
+7. Output ONLY valid JSON in the format described below
+
+EXAMPLE:
+BAD (micro-tasks — too granular):
+[
+  [{{"description": "Create models/user.py"}}],
+  [{{"description": "Add User class to models/user.py"}}],
+  [{{"description": "Create routes/user.py"}}],
+  [{{"description": "Add /users endpoint to routes/user.py"}}],
+  [{{"description": "Write tests for User model"}}]
+]
+
+GOOD (feature-level tasks with numbered sub-steps):
+[
+  [
+    {{
+      "description": "Implement User model\\n1. Create models/user.py\\n2. Define User class with id, name, email fields\\n3. Add validation methods"
+    }}
+  ],
+  [
+    {{
+      "description": "Implement user API endpoints\\n1. Create routes/user.py\\n2. Add GET /users endpoint\\n3. Add POST /users endpoint\\n4. Write tests for all endpoints"
+    }}
+  ]
+]
 
 OUTPUT FORMAT:
 Return a JSON array of file groups. Each group is an array of task objects that belong in the same file.
 ```json
 [
   [
-    {{"description": "Independent task A"}}
+    {{"description": "Independent feature A\\n1. Step one\\n2. Step two"}}
   ],
   [
     {{"description": "Step 1 of related work"}},
     {{"description": "Step 2 that depends on step 1"}}
   ],
   [
-    {{"description": "Independent task B"}}
+    {{"description": "Independent feature B\\n1. Step one\\n2. Step two"}}
   ]
 ]
 ```

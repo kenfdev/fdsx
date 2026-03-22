@@ -463,6 +463,49 @@ class TestSplitCliIntegration:
         assert result.exit_code == 2
         assert "not empty" in result.stderr
 
+    # T006: Prompt produces feature-level tasks with numbered sub-steps
+    def test_split_produces_feature_level_tasks(self):
+        """Verify split accepts feature-level task descriptions with numbered sub-steps."""
+        import json as _json
+
+        mock_provider = MagicMock()
+        feature_level_description = (
+            "Implement authentication feature\n"
+            "1. Create auth/models.py with User model\n"
+            "2. Add login and logout endpoints in auth/routes.py\n"
+            "3. Write unit tests for auth module"
+        )
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout=_json.dumps([[{"description": feature_level_description}]]),
+            stderr="",
+        )
+
+        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
+
+        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+            groups = split_tasks_to_groups(
+                "Add user authentication with login/logout endpoints",
+                task_splitter,
+            )
+
+        # Feature-level split produces fewer groups than micro-task split would
+        assert len(groups) == 1
+        # Single feature-level task covers multiple steps
+        assert len(groups[0]) == 1
+        # Task description contains numbered sub-steps
+        description = groups[0][0].description
+        assert "1." in description
+        assert "2." in description
+        assert "3." in description
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir) / TASKS_DIR
+            created_files = write_task_files(groups, tasks_dir)
+
+            # Produces fewer files than micro-task split (1 vs many)
+            assert len(created_files) == 1
+
     # T003: --force removes pending .yaml files but preserves completed/ dir
     def test_split_command_force_preserves_completed_dir(
         self, tmp_path, monkeypatch
