@@ -103,7 +103,8 @@ def run_flow(
     fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
 
     _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME
-    log_dir = _runs_base / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
+    run_dir = _runs_base / RUNS_DIR_NAME / thread_id
+    log_dir = run_dir / LOGS_DIR_NAME
 
     compiled = compile_flow(
         flow,
@@ -120,6 +121,7 @@ def run_flow(
             "thread_id": thread_id,
             "flow_path": str(flow_path),
             "flow_name": flow.name,
+            "run_dir": str(run_dir),
         }
     }
 
@@ -477,7 +479,8 @@ def resume_flow(
 
         fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
 
-        resume_log_dir = base_dir / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
+        resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id
+        resume_log_dir = resume_run_dir / LOGS_DIR_NAME
 
         compiled = compile_flow(
             flow,
@@ -500,6 +503,14 @@ def resume_flow(
             "recursion_limit": recursion_limit,
             "configurable": {"thread_id": thread_id},
         }
+
+        state_info = compiled.graph.get_state(resume_config)
+        existing_meta = (
+            state_info.values.get("_meta", {}) if state_info.values else {}
+        )
+        if "run_dir" not in existing_meta:
+            updated_meta = {**existing_meta, "run_dir": str(resume_run_dir)}
+            compiled.graph.update_state(resume_config, {"_meta": updated_meta})
 
         state_info = compiled.graph.get_state(resume_config)
         if state_info.tasks:

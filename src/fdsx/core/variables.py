@@ -355,12 +355,22 @@ def analyze_variable_references(
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)
+            if state.result_file:
+                path = state.result_file
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
         elif isinstance(state, ParallelState):
             if state.result_path:
                 path = state.result_path
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)  # full path, not just root key
+            if state.result_file:
+                path = state.result_file
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
             # Do NOT register branch extract paths — they live inside
             # result array elements, not as top-level state variables.
         elif isinstance(state, PassState):
