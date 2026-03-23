@@ -467,7 +467,7 @@ def confirm_workflow_assignments_interactive(
     display_keys: list[tuple[int, int]],
     workflow_assignments: dict[tuple[int, int], Path],
     task_files: list[tuple[Path, Any]],
-    available_workflows: list[tuple[Path, str]],
+    available_workflows: list[tuple[Path, str, str]],
     stream: TextIO | None = None,
 ) -> dict[tuple[int, int], Path] | None:
     """Present an interactive numbered-list CUI for workflow assignment confirmation.
@@ -480,7 +480,7 @@ def confirm_workflow_assignments_interactive(
         display_keys: Ordered list of (file_idx, entry_idx) keys to display.
         workflow_assignments: Map of (file_idx, entry_idx) -> workflow path.
         task_files: List of (file_path, task_file) tuples.
-        available_workflows: List of (workflow_path, description) tuples.
+        available_workflows: List of (workflow_path, description, display_name) tuples.
         stream: Output stream for prompts (defaults to sys.stderr).
 
     Returns:
@@ -496,6 +496,11 @@ def confirm_workflow_assignments_interactive(
     unassigned = [k for k in display_keys if k not in workflow_assignments]
     if len(display_keys) == 1 and not unassigned:
         return dict(workflow_assignments)
+
+    wf_display_map = {
+        wf_path: display_name
+        for wf_path, _, display_name in (available_workflows or [])
+    }
 
     assignments = dict(workflow_assignments)
 
@@ -514,7 +519,11 @@ def confirm_workflow_assignments_interactive(
             file_path, task_file = task_files[file_idx]
             entry = task_file.entries[entry_idx]
             wf_path = assignments.get(key)
-            wf_name = wf_path.name if wf_path else "(unassigned)"
+            wf_name = (
+                wf_display_map.get(wf_path, wf_path.name)
+                if wf_path
+                else "(unassigned)"
+            )
 
             file_name = file_path.name[:29]
             entry_num = str(entry_idx + 1)
@@ -583,11 +592,13 @@ def confirm_workflow_assignments_interactive(
 
         stream.write("\nAvailable workflows:\n")
         stream.write("-" * 60 + "\n")
-        for i, (wf_path, description) in enumerate(available_workflows, 1):
+        for i, (wf_path, description, display_name) in enumerate(
+            available_workflows, 1
+        ):
             desc_preview = (
                 description[:50] + "..." if len(description) > 50 else description
             )
-            stream.write(f"  {i}. {_sanitize_output(wf_path.name)}\n")
+            stream.write(f"  {i}. {_sanitize_output(display_name)}\n")
             stream.write(f"      {_sanitize_output(desc_preview)}\n")
         stream.write("-" * 60 + "\n")
         stream.write("Enter number (or 'c' to cancel): ")

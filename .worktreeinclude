@@ -11,6 +11,8 @@
 
 # Per-worktree local compose overrides (personal volume mounts, build overrides, etc.)
 .worktree/docker-compose.local.yml
+.fdsx/workflows
+.fdsx/config.yaml
 
 # If you use a personal Dockerfile, uncomment the next line or add it to .worktreeinclude.local:
 # .worktree/personal/*/Dockerfile

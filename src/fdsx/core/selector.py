@@ -17,19 +17,21 @@ from fdsx.core.loader import load_flow
 from fdsx.providers.base import get_provider
 
 
-def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str]]:
-    """Discover all workflow YAML files in the given directory.
+def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
+    """Discover all workflow files in the given directory.
 
-    Loads each discovered YAML file, extracts the description field, and returns
-    a list of (path, description) tuples. Files with invalid YAML are skipped
-    with a warning.
+    Scans for:
+    - Flat workflow files: ``*.yaml`` and ``*.yml`` (yaml takes precedence over yml)
+    - Directory workflows: subdirectories containing ``workflow.yaml`` or ``workflow.yml``
+
+    Directory names shadow flat files with the same stem.
 
     Args:
-        workflows_dir: Directory containing workflow YAML files.
+        workflows_dir: Directory containing workflow files and subdirectories.
 
     Returns:
-        List of (workflow_path, description) tuples sorted by filename.
-        Returns an empty list if the directory does not exist.
+        List of ``(workflow_path, description, display_name)`` tuples sorted by
+        *display_name*.  Returns an empty list if the directory does not exist.
 
     Raises:
         ValueError: If the workflows directory is a symlink.
@@ -39,54 +41,109 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str]]:
     if workflows_dir.is_symlink():
         raise ValueError(f"Workflows directory must not be a symlink: {workflows_dir}")
 
-    yaml_files = sorted(workflows_dir.glob("*.yaml"))
-    results: list[tuple[Path, str]] = []
+    results: list[tuple[Path, str, str]] = []
+    dir_names: set[str] = set()
 
-    for fp in yaml_files:
-        if fp.is_symlink():
-            warnings.warn(
-                f"Skipping symlinked workflow file: {fp}",
-                RuntimeWarning,
-            )
+    # --- Phase 1: directory workflows ---
+    for entry in sorted(workflows_dir.iterdir()):
+        if not entry.is_dir() or entry.is_symlink():
+            if entry.is_dir() and entry.is_symlink():
+                warnings.warn(
+                    f"Skipping symlinked workflow directory: {entry}",
+                    RuntimeWarning,
+                )
             continue
-        if not fp.is_file():
-            warnings.warn(
-                f"Skipping non-regular workflow file: {fp}",
-                RuntimeWarning,
-            )
+
+        wf_yaml = entry / "workflow.yaml"
+        wf_yml = entry / "workflow.yml"
+
+        wf_file: Path | None = None
+        if wf_yaml.exists() and not wf_yaml.is_symlink():
+            wf_file = wf_yaml
+        elif wf_yml.exists() and not wf_yml.is_symlink():
+            wf_file = wf_yml
+        else:
+            if (wf_yaml.exists() and wf_yaml.is_symlink()) or (
+                wf_yml.exists() and wf_yml.is_symlink()
+            ):
+                warnings.warn(
+                    f"Skipping symlinked workflow file in directory: {entry}",
+                    RuntimeWarning,
+                )
             continue
+
+        display_name = entry.name
         try:
-            flow, errors = load_flow(fp)
+            flow, errors = load_flow(wf_file)
             if flow is None:
                 warnings.warn(
-                    f"Skipping invalid workflow file {fp}: {', '.join(errors)}",
+                    f"Skipping invalid workflow file {wf_file}: {', '.join(errors)}",
                     RuntimeWarning,
                 )
                 continue
-            results.append((fp, flow.description))
+            results.append((wf_file, flow.description, display_name))
+            dir_names.add(display_name)
         except Exception as e:
             warnings.warn(
-                f"Skipping unparseable workflow file {fp}: {e}",
+                f"Skipping unparseable workflow file {wf_file}: {e}",
                 RuntimeWarning,
             )
 
+    # --- Phase 2: flat files (*.yaml then *.yml, yaml takes precedence) ---
+    seen_stems: set[str] = set()
+    for ext in ("*.yaml", "*.yml"):
+        for fp in sorted(workflows_dir.glob(ext)):
+            if fp.stem in dir_names:
+                continue  # directory shadows flat file
+            if fp.stem in seen_stems:
+                continue  # .yaml already found, skip .yml
+            if fp.is_symlink():
+                warnings.warn(
+                    f"Skipping symlinked workflow file: {fp}",
+                    RuntimeWarning,
+                )
+                continue
+            if not fp.is_file():
+                warnings.warn(
+                    f"Skipping non-regular workflow file: {fp}",
+                    RuntimeWarning,
+                )
+                continue
+            try:
+                flow, errors = load_flow(fp)
+                if flow is None:
+                    warnings.warn(
+                        f"Skipping invalid workflow file {fp}: {', '.join(errors)}",
+                        RuntimeWarning,
+                    )
+                    continue
+                results.append((fp, flow.description, fp.stem))
+                seen_stems.add(fp.stem)
+            except Exception as e:
+                warnings.warn(
+                    f"Skipping unparseable workflow file {fp}: {e}",
+                    RuntimeWarning,
+                )
+
+    results.sort(key=lambda t: t[2])
     return results
 
 
 def _build_workflow_selection_prompt(
-    task_description: str, workflows: list[tuple[Path, str]]
+    task_description: str, workflows: list[tuple[Path, str, str]]
 ) -> str:
     """Build the LLM prompt for workflow selection.
 
     Args:
         task_description: The task/goal description to match against workflows.
-        workflows: List of (path, description) tuples for discovered workflows.
+        workflows: List of (path, description, display_name) tuples.
 
     Returns:
         The formatted prompt string.
     """
     workflow_list = "\n".join(
-        f"- **{fp.name}**: {description}" for fp, description in workflows
+        f"- **{display_name}**: {description}"
+        for _, description, display_name in workflows
     )
 
     return f"""You are a workflow selector. Given a task description, select the most appropriate workflow from the available options.
@@ -100,11 +157,11 @@ AVAILABLE WORKFLOWS:
 INSTRUCTIONS:
 1. Analyze the task description above
 2. Consider which workflow best matches the task's goal and requirements
-3. Return ONLY the filename of the selected workflow (e.g., "plan-implement-review.yaml")
-4. Do not include any explanations, markdown, or additional text — just the filename
+3. Return ONLY the name of the selected workflow (e.g., "plan-implement-review")
+4. Do not include any explanations, markdown, or additional text — just the workflow name
 
 OUTPUT FORMAT:
-Return the exact filename string only."""
+Return the exact workflow name string only."""
 
 
 def _parse_workflow_selection(response: str) -> str:
@@ -145,7 +202,7 @@ def _parse_workflow_selection(response: str) -> str:
 
 def select_workflow(
     task_description: str,
-    workflows: list[tuple[Path, str]],
+    workflows: list[tuple[Path, str, str]],
     selector_config: WorkflowSelectorConfig,
 ) -> Path:
     """Select the most appropriate workflow for the given task description.
@@ -157,7 +214,7 @@ def select_workflow(
 
     Args:
         task_description: The task/goal description to match against workflows.
-        workflows: List of (workflow_path, description) tuples.
+        workflows: List of (workflow_path, description, display_name) tuples.
         selector_config: Configuration for the workflow selector LLM.
 
     Returns:
@@ -189,29 +246,44 @@ def select_workflow(
 
     selected_name = _parse_workflow_selection(result.stdout)
 
-    # Strategy 1: exact filename match
-    for wf_path, _ in workflows:
+    # Strategy 1: exact display_name match
+    for wf_path, _, display_name in workflows:
+        if display_name == selected_name:
+            return wf_path
+
+    # Strategy 2: exact filename match (backward compat)
+    for wf_path, _, _ in workflows:
         if wf_path.name == selected_name:
             return wf_path
 
-    # Strategy 2: append .yaml if missing
-    if not selected_name.endswith(".yaml"):
-        candidate = selected_name + ".yaml"
-        for wf_path, _ in workflows:
-            if wf_path.name == candidate:
-                return wf_path
+    # Strategy 3: append .yaml if missing
+    if not selected_name.endswith((".yaml", ".yml")):
+        for ext in (".yaml", ".yml"):
+            candidate = selected_name + ext
+            for wf_path, _, _ in workflows:
+                if wf_path.name == candidate:
+                    return wf_path
 
-    # Strategy 3: check if exactly one known filename or stem appears in the response
+    # Strategy 4: whitespace-boundary matching to avoid substring collisions
+    # (e.g. "plan" should not match inside "planning"; "review" should not
+    # match inside "review-code").
     matches: list[Path] = []
-    for wf_path, _ in workflows:
-        if wf_path.name in selected_name:
+    for wf_path, _, display_name in workflows:
+        pattern = r'(?:^|\s)' + re.escape(display_name) + r'(?:$|\s)'
+        if re.search(pattern, selected_name):
             if wf_path not in matches:
                 matches.append(wf_path)
-    # Only try stem matching if filename matching found nothing
     if not matches:
+        for wf_path, _, display_name in workflows:
+            pattern = r'(?:^|\s)' + re.escape(wf_path.name) + r'(?:$|\s)'
+            if re.search(pattern, selected_name):
+                if wf_path not in matches:
+                    matches.append(wf_path)
+    if not matches:
+        # Fall back to word-split matching
         response_words = selected_name.split()
-        for wf_path, _ in workflows:
-            if wf_path.stem in response_words:
+        for wf_path, _, display_name in workflows:
+            if display_name in response_words:
                 if wf_path not in matches:
                     matches.append(wf_path)
     if len(matches) == 1:
@@ -219,24 +291,28 @@ def select_workflow(
 
     raise ValueError(
         f"LLM selected workflow '{selected_name}' which does not match any available workflow. "
-        f"Available: {[wf_path.name for wf_path, _ in workflows]}"
+        f"Available: {[dn for _, _, dn in workflows]}"
     )
 
 
 def confirm_workflow_selection(
     workflow_path: Path,
     task_description: str,
+    display_name: str | None = None,
 ) -> bool:
     """Prompt the user to confirm a workflow selection.
 
     Args:
         workflow_path: Path to the selected workflow.
         task_description: The task description that was used for selection.
+        display_name: Human-readable name for the workflow. Falls back to
+            ``workflow_path.name`` when not provided.
 
     Returns:
         True if the user approves, False if they reject.
     """
-    print(f"\nSelected workflow: {workflow_path.name}", file=sys.stderr)
+    name = display_name or workflow_path.name
+    print(f"\nSelected workflow: {name}", file=sys.stderr)
     print(
         f"  Task: {task_description[:60]}{'...' if len(task_description) > 60 else ''}",
         file=sys.stderr,
@@ -259,23 +335,23 @@ def confirm_workflow_selection(
 
 
 def pick_workflow_manually(
-    workflows: list[tuple[Path, str]],
+    workflows: list[tuple[Path, str, str]],
 ) -> Path | None:
     """Present a numbered list of workflows and let the user pick one.
 
     Args:
-        workflows: List of (workflow_path, description) tuples.
+        workflows: List of (workflow_path, description, display_name) tuples.
 
     Returns:
         The selected workflow path, or None if the user cancels.
     """
     print("\nAvailable workflows:", file=sys.stderr)
     print("-" * 60, file=sys.stderr)
-    for i, (wf_path, description) in enumerate(workflows, 1):
+    for i, (wf_path, description, display_name) in enumerate(workflows, 1):
         desc_preview = (
             description[:50] + "..." if len(description) > 50 else description
         )
-        print(f"  {i}. {wf_path.name}", file=sys.stderr)
+        print(f"  {i}. {display_name}", file=sys.stderr)
         print(f"     {desc_preview}", file=sys.stderr)
     print("-" * 60, file=sys.stderr)
 
@@ -323,7 +399,14 @@ def resolve_workflow_for_task(
     if auto_workflow:
         return selected
 
-    approved = confirm_workflow_selection(selected, task_description)
+    # Look up display_name for the selected workflow
+    selected_display_name: str | None = None
+    for wf_path, _, dn in discovered:
+        if wf_path == selected:
+            selected_display_name = dn
+            break
+
+    approved = confirm_workflow_selection(selected, task_description, display_name=selected_display_name)
     if approved:
         return selected
 

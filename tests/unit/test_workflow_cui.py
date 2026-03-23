@@ -21,9 +21,12 @@ class TestConfirmWorkflowAssignmentsInteractive:
             for i, desc in enumerate(descriptions, start=1)
         ]
 
-    def _make_workflows(self, *names: str) -> list[tuple[Path, str]]:
+    def _make_workflows(self, *names: str) -> list[tuple[Path, str, str]]:
         """Helper to create available_workflows list from names."""
-        return [(Path(name), f"Description for {name}") for name in names]
+        return [
+            (Path(name), f"Description for {name}", Path(name).stem)
+            for name in names
+        ]
 
     def test_confirm_returns_assignments_dict(self):
         """'c' input returns the assignments dict."""
@@ -161,7 +164,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         task_files = self._make_task_files("Fix the bug", "Write tests")
         assignments = {(0, 0): Path("review.yaml"), (1, 0): Path("review.yaml")}
         display_keys = [(0, 0), (1, 0)]
-        workflows: list[tuple[Path, str]] = []
+        workflows: list[tuple[Path, str, str]] = []
         stream = StringIO()
 
         input_seq = ["1", "c"]
@@ -223,7 +226,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         assert "ENTRY" in stderr_text
         assert "WORKFLOW" in stderr_text
         assert "TASK" in stderr_text
-        assert "review.yaml" in stderr_text
+        assert "review" in stderr_text
         assert "Fix the login" in stderr_text
         assert "task.yaml" in stderr_text
 

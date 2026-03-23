@@ -62,8 +62,8 @@ class TestDiscoverWorkflowsIntegration:
             results = discover_workflows(workflows_dir)
 
             assert len(results) == 2
-            assert all(isinstance(p, Path) for p, _ in results)
-            assert all(isinstance(d, str) for _, d in results)
+            assert all(isinstance(p, Path) for p, _, _ in results)
+            assert all(isinstance(d, str) for _, d, _ in results)
 
 
 class TestSelectWorkflowIntegration:

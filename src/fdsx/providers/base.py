@@ -61,6 +61,7 @@ def _run_subprocess(
     stderr_callback: Callable[[str], None] | None = None,
     stdin_data: str | None = None,
     shell: bool = False,
+    completion_event: threading.Event | None = None,
 ) -> ProviderResult:
     """Shared subprocess execution helper for all providers.
 
@@ -73,6 +74,10 @@ def _run_subprocess(
         stdin_data: Optional data to pass via stdin.
         shell: If True, execute as shell command (via sh -c, or stdin fallback
             if command exceeds ARG_MAX_STDIN_THRESHOLD).
+        completion_event: Optional event that signals logical completion of the
+            subprocess stream protocol. When set, initiates an escalating
+            termination cascade: wait 5s for voluntary exit → SIGTERM →
+            wait 5s → SIGKILL. Collected data is preserved in the result.
 
     Returns:
         ProviderResult with exit code and output.
@@ -113,6 +118,7 @@ def _run_subprocess(
             except subprocess.TimeoutExpired:
                 killed_by_timeout = True
                 process.kill()
+                process.wait()  # Reap zombie so pipes close and readers unblock
 
         if timeout:
             watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
@@ -126,7 +132,22 @@ def _run_subprocess(
             except BrokenPipeError:
                 pass
 
+        stdout_lines: list[str] = []
         stderr_lines: list[str] = []
+
+        def _read_stdout() -> None:
+            if process.stdout:
+                try:
+                    while True:
+                        raw_line = process.stdout.readline()
+                        if not raw_line:
+                            break
+                        line = raw_line.rstrip("\n")
+                        stdout_lines.append(line)
+                        if output_callback:
+                            output_callback(line)
+                except BrokenPipeError:
+                    pass
 
         def _read_stderr() -> None:
             if process.stderr:
@@ -142,27 +163,66 @@ def _run_subprocess(
                 except BrokenPipeError:
                     pass
 
+        stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+        stdout_thread.start()
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
 
-        stdout_lines: list[str] = []
-        try:
-            if process.stdout:
-                while True:
-                    line = process.stdout.readline()
-                    if not line:
-                        break
-                    line = line.rstrip("\n")
-                    stdout_lines.append(line)
-                    if output_callback:
-                        output_callback(line)
-        except BrokenPipeError:
-            pass
+        if completion_event is not None:
+            # Poll: wait for stdout EOF or completion_event firing, whichever
+            # comes first.  A 100ms granularity check avoids a tight spin loop.
+            while stdout_thread.is_alive():
+                if completion_event.wait(timeout=0.1):
+                    break
 
-        stderr_thread.join(timeout=5)
-        process.wait()
-        if timeout:
-            watchdog_thread.join(timeout=1)
+            if completion_event.is_set():
+                # Termination cascade: wait for voluntary exit → SIGTERM → SIGKILL
+                try:
+                    process.wait(timeout=5)  # 1) Wait for voluntary exit
+                except subprocess.TimeoutExpired:
+                    logger.debug(
+                        "Process pid=%d did not exit voluntarily after completion event;"
+                        " sending SIGTERM",
+                        process.pid,
+                    )
+                    try:
+                        process.terminate()  # 2) SIGTERM
+                    except OSError:
+                        pass  # Already dead
+                    try:
+                        process.wait(timeout=5)  # 3) Wait after SIGTERM
+                    except subprocess.TimeoutExpired:
+                        logger.debug(
+                            "Process pid=%d did not respond to SIGTERM;"
+                            " sending SIGKILL",
+                            process.pid,
+                        )
+                        try:
+                            process.kill()  # 4) SIGKILL
+                        except OSError:
+                            pass  # Already dead
+                        process.wait()  # 5) Reap zombie
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
+            else:
+                # stdout EOF reached naturally (process likely exited already)
+                stderr_thread.join(timeout=5)
+                process.wait()
+        elif timeout:
+            # When a timeout is configured, wait for the watchdog to finish
+            # first (it either returns immediately if the process finished
+            # on its own, or kills the process after the timeout).  Then use
+            # bounded joins so the main thread is not blocked forever if the
+            # reader threads are stuck on readline() after the kill.
+            watchdog_thread.join()
+            stdout_thread.join(timeout=1)
+            stderr_thread.join(timeout=1)
+            if not killed_by_timeout:
+                process.wait()
+        else:
+            stdout_thread.join()
+            stderr_thread.join(timeout=5)
+            process.wait()
 
         if killed_by_timeout:
             return ProviderResult(
