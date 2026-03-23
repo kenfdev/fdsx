@@ -113,6 +113,7 @@ def _run_subprocess(
             except subprocess.TimeoutExpired:
                 killed_by_timeout = True
                 process.kill()
+                process.wait()  # Reap zombie so pipes close and readers unblock
 
         if timeout:
             watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
@@ -126,7 +127,22 @@ def _run_subprocess(
             except BrokenPipeError:
                 pass
 
+        stdout_lines: list[str] = []
         stderr_lines: list[str] = []
+
+        def _read_stdout() -> None:
+            if process.stdout:
+                try:
+                    while True:
+                        raw_line = process.stdout.readline()
+                        if not raw_line:
+                            break
+                        line = raw_line.rstrip("\n")
+                        stdout_lines.append(line)
+                        if output_callback:
+                            output_callback(line)
+                except BrokenPipeError:
+                    pass
 
         def _read_stderr() -> None:
             if process.stderr:
@@ -142,27 +158,26 @@ def _run_subprocess(
                 except BrokenPipeError:
                     pass
 
+        stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+        stdout_thread.start()
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
 
-        stdout_lines: list[str] = []
-        try:
-            if process.stdout:
-                while True:
-                    line = process.stdout.readline()
-                    if not line:
-                        break
-                    line = line.rstrip("\n")
-                    stdout_lines.append(line)
-                    if output_callback:
-                        output_callback(line)
-        except BrokenPipeError:
-            pass
-
-        stderr_thread.join(timeout=5)
-        process.wait()
         if timeout:
-            watchdog_thread.join(timeout=1)
+            # When a timeout is configured, wait for the watchdog to finish
+            # first (it either returns immediately if the process finished
+            # on its own, or kills the process after the timeout).  Then use
+            # bounded joins so the main thread is not blocked forever if the
+            # reader threads are stuck on readline() after the kill.
+            watchdog_thread.join()
+            stdout_thread.join(timeout=1)
+            stderr_thread.join(timeout=1)
+            if not killed_by_timeout:
+                process.wait()
+        else:
+            stdout_thread.join()
+            stderr_thread.join(timeout=5)
+            process.wait()
 
         if killed_by_timeout:
             return ProviderResult(
