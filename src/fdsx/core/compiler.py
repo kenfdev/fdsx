@@ -1,5 +1,4 @@
 import logging
-import operator
 import subprocess
 import time
 from pathlib import Path
@@ -66,6 +65,19 @@ def _top_level_key(path: str) -> str | None:
     return path.split(".")[0].split("[")[0] or None
 
 
+def _parallel_branch_reducer(current: list, update: list) -> list:
+    """Reducer for parallel branch results that supports reset.
+
+    Branch nodes return ``[result]`` which appends via concatenation.
+    The collector node returns ``[]`` after reading the accumulated
+    results, which resets the list so that a subsequent loop iteration
+    starts with a clean accumulator.
+    """
+    if not update:
+        return []  # reset signal from collector
+    return current + update
+
+
 def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     """Build a TypedDict state schema that covers ALL state keys used by the flow.
 
@@ -74,7 +86,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     all workflow variables like $.reviews, $.decision, $.plan_output would be silently
     dropped by _get_updates. This function declares ALL needed keys:
 
-    1. _br_{state_name} reducer channels (Annotated[list, operator.add]) for each
+    1. _br_{state_name} reducer channels (Annotated[list, _parallel_branch_reducer]) for each
        ParallelState — required for Send API fan-in accumulation.
     2. All result_path / extract / aggregate top-level keys as LastValue channels.
     3. Input keys from --input CLI flags.
@@ -92,7 +104,9 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     # 1. Reducer channels for parallel branch result accumulation
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
-            annotations[f"_br_{state_name}"] = Annotated[list, operator.add]
+            annotations[f"_br_{state_name}"] = Annotated[
+                list, _parallel_branch_reducer
+            ]
 
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
     for state_name, state in flow.states.items():
@@ -136,8 +150,9 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
         for key in input_keys:
             annotations.setdefault(key, Any)
 
-    # 4. Internal tracking key
+    # 4. Internal tracking keys
     annotations.setdefault("_meta", Any)
+    annotations.setdefault("_state_iterations", Any)
 
     return TypedDict("FlowState", annotations, total=False)  # type: ignore[no-any-return,operator]
 
@@ -458,6 +473,18 @@ def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, An
     return state_dict
 
 
+def _check_max_iterations(state_name: str, state_def: Any, iteration: int) -> None:
+    """Raise RuntimeError if the state has exceeded its max_iterations limit.
+
+    Called BEFORE execution logic so the flow fails on entry when the limit is hit.
+    """
+    max_iter = getattr(state_def, "max_iterations", None)
+    if max_iter is not None and iteration > max_iter:
+        raise RuntimeError(
+            f"State '{state_name}' reached max_iterations limit ({max_iter})"
+        )
+
+
 def _wrap_with_hooks(
     node_fn: Callable[[dict[str, Any]], dict[str, Any]],
     state_name: str,
@@ -596,7 +623,12 @@ def _create_task_node(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet)
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+
+        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet, iteration=iteration)
         try:
             for attempt in range(max_retries + 1):
                 if attempt > 0:
@@ -694,6 +726,7 @@ def _create_task_node(
             )
 
         new_state = _set_next_state_meta(new_state, state)
+        new_state["_state_iterations"] = iters
         return new_state
 
     return node
@@ -705,10 +738,14 @@ def _create_choice_node(
     """Create a LangGraph node function for a Choice state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
         if recorder is not None:
             recorder.record_state_start(state_name, "choice")
             recorder.record_state_complete(state_name, "success", "", [])
-        return state_dict
+        return {**state_dict, "_state_iterations": iters}
 
     return node
 
@@ -719,7 +756,7 @@ def _create_dispatch_node(
     """Create the dispatch node for a Parallel state.
 
     Displays the parallel state start line and triggers fan-out via Send.
-    Returns {} (no state update) — the fan-out is triggered by the conditional edges.
+    Returns updated _state_iterations counter. Fan-out is triggered by conditional edges.
     Only emits display_parallel_start (not display_state_start) to match CLI contract.
     """
 
@@ -727,7 +764,11 @@ def _create_dispatch_node(
         terminal.display_parallel_start(state_name, len(state.branches))
         if recorder is not None:
             recorder.record_state_start(state_name, "parallel")
-        return {}
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+        return {"_state_iterations": iters}
 
     return node
 
@@ -744,7 +785,7 @@ def _create_branch_executor(
     """Create a shared branch executor node invoked once per branch via Send.
 
     Reads `_branch_index` from the state dict to identify which branch to run.
-    Returns `{f"_br_{state_name}": [result]}` — accumulated by operator.add reducer.
+    Returns `{f"_br_{state_name}": [result]}` — accumulated by _parallel_branch_reducer reducer.
     Never raises: all errors are captured in the result dict (exit_code != 0).
     """
 
@@ -777,7 +818,11 @@ def _create_branch_executor(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet)
+        iters = state_dict.get("_state_iterations", {})
+        iteration = iters.get(state_name, 1)
+        branch_log_name = f"{state_name}_branch{branch_index + 1}"
+
+        stream_logger = StreamLogger(branch_log_name, log_dir, quiet=quiet, iteration=iteration)
         try:
             for attempt in range(max_retries + 1):
                 if attempt > 0:
@@ -909,7 +954,7 @@ def _create_collector_node(
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the fan-in collector node for a Parallel state.
 
-    Reads branch results accumulated by the operator.add reducer, sorts by index,
+    Reads branch results accumulated by the _parallel_branch_reducer reducer, sorts by index,
     enforces min_success (defaulting to all branches), and stores at result_path.
     """
 
@@ -1005,6 +1050,10 @@ def _create_collector_node(
                 branch_info_list,
             )
 
+        # Reset the branch accumulator so the next loop iteration starts clean.
+        # The custom _parallel_branch_reducer treats [] as a reset signal.
+        new_state[f"_br_{state_name}"] = []
+
         new_state = _set_next_state_meta(new_state, state)
         return new_state
 
@@ -1057,6 +1106,12 @@ def _create_pass_node(
     """Create a LangGraph node function for a Pass state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+        state_dict["_state_iterations"] = iters
+
         if recorder is not None:
             recorder.record_state_start(state_name, "pass")
 
@@ -1103,6 +1158,11 @@ def _create_wait_notify_node(
     """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+
         if recorder is not None:
             recorder.record_state_start(state_name, "wait")
 
@@ -1110,7 +1170,7 @@ def _create_wait_notify_node(
             from fdsx.notify.webhook import send_notification
 
             send_notification(state.notify, state_dict)
-        return state_dict
+        return {**state_dict, "_state_iterations": iters}
 
     return node
 

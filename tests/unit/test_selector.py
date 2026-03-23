@@ -85,9 +85,9 @@ class TestDiscoverWorkflows:
             results = discover_workflows(workflows_dir)
 
             assert len(results) == 2
-            # Sorted by display_name (stem)
-            assert results[0][2] == "a-workflow"
-            assert results[1][2] == "b-workflow"
+            # Sorted by display_name (flow.name)
+            assert results[0][2] == "A"
+            assert results[1][2] == "B"
             assert results[0][1] == "A workflow"
             assert results[1][1] == "B workflow"
 
@@ -181,7 +181,7 @@ class TestDiscoverWorkflows:
         assert len(results) == 1
         assert results[0][0] == wf_dir / "workflow.yaml"
         assert results[0][1] == "Review workflow"
-        assert results[0][2] == "review"
+        assert results[0][2] == "R"
 
     def test_discovers_mixed_flat_and_directory(self, tmp_path):
         """Both flat files and directory workflows are discovered."""
@@ -196,7 +196,7 @@ class TestDiscoverWorkflows:
 
         assert len(results) == 2
         display_names = [r[2] for r in results]
-        assert display_names == ["plan", "review"]  # sorted by display_name
+        assert display_names == ["P", "R"]  # sorted by display_name (flow.name)
 
     def test_directory_shadows_flat_file(self, tmp_path):
         """A directory 'review' shadows a flat file 'review.yaml'."""
@@ -209,7 +209,7 @@ class TestDiscoverWorkflows:
 
         assert len(results) == 1
         assert results[0][1] == "Review dir"
-        assert results[0][2] == "review"
+        assert results[0][2] == "RD"
 
     def test_yml_extension_flat_files(self, tmp_path):
         """Flat *.yml files are discovered."""
@@ -218,7 +218,7 @@ class TestDiscoverWorkflows:
         results = discover_workflows(tmp_path)
 
         assert len(results) == 1
-        assert results[0][2] == "plan"
+        assert results[0][2] == "P"
         assert results[0][1] == "Plan yml"
 
     def test_yml_extension_directory(self, tmp_path):
@@ -230,7 +230,7 @@ class TestDiscoverWorkflows:
         results = discover_workflows(tmp_path)
 
         assert len(results) == 1
-        assert results[0][2] == "review"
+        assert results[0][2] == "R"
 
     def test_yaml_takes_precedence_over_yml_flat(self, tmp_path):
         """When both plan.yaml and plan.yml exist, .yaml takes precedence."""
@@ -271,7 +271,7 @@ class TestDiscoverWorkflows:
 
         # real_dir is also a subdirectory, so it should be discovered
         assert len(results) == 1
-        assert results[0][2] == "real"
+        assert results[0][2] == "R"
 
     def test_skips_directory_without_workflow_yaml(self, tmp_path):
         """Subdirectories without workflow.yaml/yml are ignored."""
@@ -284,27 +284,27 @@ class TestDiscoverWorkflows:
         assert len(results) == 0
 
     def test_display_name_flat_is_stem(self, tmp_path):
-        """Display name for flat files is the stem (no extension)."""
+        """Display name for flat files is the flow.name."""
         (tmp_path / "plan-implement.yaml").write_text(
             _minimal_workflow("PI", "Plan-implement")
         )
 
         results = discover_workflows(tmp_path)
 
-        assert results[0][2] == "plan-implement"
+        assert results[0][2] == "PI"
 
     def test_display_name_directory_is_dirname(self, tmp_path):
-        """Display name for directory workflows is the directory name."""
+        """Display name for directory workflows is the flow.name."""
         wf_dir = tmp_path / "my-review"
         wf_dir.mkdir()
         (wf_dir / "workflow.yaml").write_text(_minimal_workflow("MR", "My review"))
 
         results = discover_workflows(tmp_path)
 
-        assert results[0][2] == "my-review"
+        assert results[0][2] == "MR"
 
     def test_sorted_by_display_name(self, tmp_path):
-        """Results are sorted by display_name, not filename or path."""
+        """Results are sorted by display_name (flow.name), not filename or path."""
         (tmp_path / "z-workflow.yaml").write_text(_minimal_workflow("Z", "Zeta"))
         a_dir = tmp_path / "a-workflow"
         a_dir.mkdir()
@@ -314,7 +314,7 @@ class TestDiscoverWorkflows:
         results = discover_workflows(tmp_path)
 
         display_names = [r[2] for r in results]
-        assert display_names == ["a-workflow", "m-workflow", "z-workflow"]
+        assert display_names == ["A", "M", "Z"]
 
     def test_skips_symlinked_workflow_file_inside_directory(self, tmp_path):
         """Regression (F5): symlinked workflow.yaml inside a directory is rejected."""

@@ -1,16 +1,15 @@
-from pathlib import Path
-
 import pytest
 
 from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
 from fdsx.logging.recorder import LOGS_DIR_NAME, RUNS_DIR_NAME
+from tests import FIXTURES_DIR
 
 
 class TestParallelFlow:
     def test_parallel_review_majority_aggregation(self, tmp_path):
         """Test parallel review with majority aggregation and choice routing."""
-        path = Path("tests/fixtures/parallel_review.yaml")
+        path = FIXTURES_DIR / "parallel_review.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -29,7 +28,7 @@ class TestParallelFlow:
 
     def test_parallel_branch_results_have_output_field(self, tmp_path):
         """Verify branch results array contains output field."""
-        path = Path("tests/fixtures/parallel_review.yaml")
+        path = FIXTURES_DIR / "parallel_review.yaml"
 
         result = run_flow(path, base_dir=tmp_path)
 
@@ -42,7 +41,7 @@ class TestParallelFlow:
 class TestParallelMinSuccess:
     def test_min_success_tolerates_partial_failure(self, tmp_path):
         """Test that min_success allows flow to continue with partial branch failures."""
-        path = Path("tests/fixtures/parallel_min_success.yaml")
+        path = FIXTURES_DIR / "parallel_min_success.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -112,7 +111,7 @@ class TestParallelBranchLabeling:
         """
         base_dir = tmp_path / ".fdsx"
         run_flow(
-            flow_path=Path("tests/fixtures/parallel_review.yaml"),
+            flow_path=FIXTURES_DIR / "parallel_review.yaml",
             base_dir=base_dir,
         )
 
@@ -128,10 +127,10 @@ class TestParallelBranchLabeling:
                 )
 
     def test_parallel_log_files_created_per_state(self, tmp_path):
-        """Each parallel state produces a log file named after the state (FR-2.4).
+        """Each parallel branch produces a log file named with branch label (FR-2.4).
 
-        Verifies that .fdsx/runs/<thread_id>/logs/<state_name>.log is created.
-        No branch index suffix in the filename.
+        Verifies that .fdsx/runs/<thread_id>/logs/<state_name>_branch<N>_<iteration>.log
+        is created per branch. No old-style dash-index suffix in the filename.
         """
         from fdsx.models.flow import Branch, Flow, ParallelState
 
@@ -164,18 +163,20 @@ class TestParallelBranchLabeling:
         compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
         compiled.graph.invoke({})
 
-        # Log file for the parallel state should exist
-        log_file = log_dir / "review_parallel.log"
-        assert log_file.exists(), f"Expected log file at {log_file}"
+        # Log files for each branch should exist
+        branch1_log = log_dir / "review_parallel_branch1_1.log"
+        branch2_log = log_dir / "review_parallel_branch2_1.log"
+        assert branch1_log.exists(), f"Expected log file at {branch1_log}"
+        assert branch2_log.exists(), f"Expected log file at {branch2_log}"
 
-        content = log_file.read_text(encoding="utf-8")
-        # Both branches' output should be in the same log file
-        assert "alpha" in content
-        assert "beta" in content
+        content1 = branch1_log.read_text(encoding="utf-8")
+        content2 = branch2_log.read_text(encoding="utf-8")
+        assert "alpha" in content1
+        assert "beta" in content2
 
-        # No branch-index-suffixed log files should exist
-        assert not (log_dir / "review_parallel-0.log").exists()
-        assert not (log_dir / "review_parallel-1.log").exists()
+        # No old-style dash-index-suffixed log files should exist
+        assert not (log_dir / "review_parallel-0_1.log").exists()
+        assert not (log_dir / "review_parallel-1_1.log").exists()
 
     def test_no_log_file_for_empty_output_branch(self, tmp_path):
         """No log file is created when a branch produces no output (FR-2.6)."""
@@ -209,7 +210,7 @@ class TestParallelBranchLabeling:
         compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
         compiled.graph.invoke({})
 
-        log_file = log_dir / "parallel_state.log"
+        log_file = log_dir / "parallel_state_branch1_1.log"
         assert not log_file.exists(), (
-            f"Log file should not exist for state with no output: {log_file}"
+            f"Log file should not exist for branch with no output: {log_file}"
         )

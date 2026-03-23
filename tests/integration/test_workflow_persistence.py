@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from fdsx.core import engine
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
+from tests import FIXTURES_DIR
 
 
 class TestWorkflowPersistence:
@@ -16,7 +17,7 @@ class TestWorkflowPersistence:
         """Confirming in CUI persists workflow field to task YAML."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
@@ -39,7 +40,7 @@ class TestWorkflowPersistence:
         """Cancelling in CUI does not modify the workflow field in YAML."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
@@ -64,7 +65,7 @@ class TestWorkflowPersistence:
         """Tasks with workflow already set skip auto-selection."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[TaskEntry(description="Fix the bug", workflow="review.yaml")]
@@ -101,7 +102,7 @@ class TestWorkflowPersistence:
         """Re-running after workflow is persisted skips the selector."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[TaskEntry(description="Fix the bug", workflow="review.yaml")]
@@ -135,7 +136,7 @@ class TestWorkflowPersistence:
         """Non-TTY mode auto-confirms and persists workflow to YAML."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
@@ -162,7 +163,7 @@ class TestWorkflowPersistence:
         """Persisted workflow is stored as filename only (not full path)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
@@ -186,7 +187,7 @@ class TestWorkflowPersistence:
         """All workflow assignments are persisted for multi-entry files."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[

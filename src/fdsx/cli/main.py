@@ -2,11 +2,10 @@ import json
 from pathlib import Path
 
 import typer
-import uuid_utils
-
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
+from fdsx.core.thread_id import generate_thread_id
 from fdsx.core.batch import (
     COMPLETED_SUBDIR,
     TASKS_DIR,
@@ -181,7 +180,7 @@ def run(
         else:
             assert workflow is not None
             if current_thread_id is None:
-                current_thread_id = str(uuid_utils.uuid7())
+                current_thread_id = generate_thread_id()
             engine.run_flow(workflow, inputs, current_thread_id, base_dir, quiet=quiet)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
@@ -219,10 +218,10 @@ def validate(
     workflow: Path = typer.Argument(..., help="Path to the YAML workflow file"),
 ) -> None:
     """Validate a YAML workflow file without executing it."""
-    is_valid, errors = engine.validate_flow(workflow)
+    is_valid, errors, flow_name = engine.validate_flow(workflow)
 
     if is_valid:
-        typer.echo(f"Flow '{workflow}' is valid.")
+        typer.echo(f"Flow '{_sanitize_output(flow_name or str(workflow))}' is valid.")
         raise typer.Exit(code=0)
     else:
         for error in errors:

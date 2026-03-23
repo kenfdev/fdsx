@@ -1,0 +1,38 @@
+name: Max Iterations Wait Flow
+description: Tests max_iterations preservation through WaitState checkpoints
+start_at: plan
+max_loop: 20
+
+states:
+  plan:
+    type: task
+    provider: system
+    command: echo "Planning"
+    result_path: $.plan_output
+    max_iterations: 2
+    next: wait
+
+  wait:
+    type: wait
+    message: "Continue with another iteration?"
+    choices:
+      - retry
+      - approve
+    result_path: $.approval
+    next: decide
+
+  decide:
+    type: choice
+    choices:
+      - variable: $.approval
+        operator: equals
+        value: approve
+        next: done
+    default: plan
+
+  done:
+    type: task
+    provider: system
+    command: echo "Done"
+    result_path: $.final_result
+    end: true

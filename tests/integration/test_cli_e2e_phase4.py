@@ -8,7 +8,9 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from fdsx.cli.main import app
+from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 from fdsx.providers.base import ProviderResult
+from tests import FIXTURES_DIR
 from tests.integration.cli_test_utils import fixture_path, run_fdsx
 
 
@@ -18,8 +20,8 @@ class TestBatchCLIE2E:
     def test_batch_full_execution_with_approval(self):
         """Test fdsx run --tasks via CLI: approve → all tasks execute → exit 0, no JSON."""
         runner = CliRunner()
-        flow_path = str(Path("tests/fixtures/batch_flow.yaml").resolve())
-        tasks_path = str(Path("tests/fixtures/sample_tasks.md").resolve())
+        flow_path = str(FIXTURES_DIR / "batch_flow.yaml")
+        tasks_path = str(FIXTURES_DIR / "sample_tasks.md")
 
         mock_task_result = ProviderResult(
             exit_code=0,
@@ -31,15 +33,18 @@ class TestBatchCLIE2E:
             def execute(self, prompt, model=None, **kwargs):
                 return mock_task_result
 
+        mock_config = FdsxConfig(task_splitter=TaskSplitterConfig())
         with patch(
             "fdsx.core.batch.get_provider",
             return_value=MockTaskSplitterProvider(),
         ):
-            with patch("fdsx.core.engine.display_task_list", return_value=True):
-                result = runner.invoke(
-                    app,
-                    ["run", flow_path, "--tasks", tasks_path],
-                )
+            with patch("fdsx.cli.main.load_config", return_value=mock_config):
+                with patch("fdsx.core.engine.load_config", return_value=mock_config):
+                    with patch("fdsx.core.engine.display_task_list", return_value=True):
+                        result = runner.invoke(
+                            app,
+                            ["run", flow_path, "--tasks", tasks_path],
+                        )
 
         assert result.exit_code == 0, (
             f"output: {result.output}\nexception: {result.exception}"

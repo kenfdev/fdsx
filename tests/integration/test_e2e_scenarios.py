@@ -11,6 +11,7 @@ from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
 from fdsx.core.loader import load_flow
 from fdsx.providers.base import ProviderResult
+from tests import FIXTURES_DIR
 
 
 class TestScenario1LinearFlow:
@@ -18,9 +19,7 @@ class TestScenario1LinearFlow:
 
     def test_linear_flow_state_transitions(self, tmp_path, monkeypatch):
         """Verify state transitions and final JSON output."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "simple_flow.yaml"
+        path = FIXTURES_DIR / "simple_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -37,9 +36,7 @@ class TestScenario1LinearFlow:
 
     def test_linear_flow_run_log_schema(self, tmp_path, monkeypatch):
         """Verify runs/<thread_id>.json conforms to Run Log Format schema."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "simple_flow.yaml"
+        path = FIXTURES_DIR / "simple_flow.yaml"
         thread_id = "test-scenario1-log"
 
         engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)
@@ -76,9 +73,7 @@ class TestScenario1LinearFlow:
 
     def test_linear_flow_run_log_final_variables(self, tmp_path, monkeypatch):
         """Verify final_variables contains expected keys."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "simple_flow.yaml"
+        path = FIXTURES_DIR / "simple_flow.yaml"
         thread_id = "test-scenario1-vars"
 
         engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)
@@ -105,9 +100,7 @@ class TestScenario2ParallelVote:
 
     def test_parallel_review_aggregation_and_routing(self, tmp_path, monkeypatch):
         """Verify parallel execution, aggregation result, choice routing."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "parallel_review.yaml"
+        path = FIXTURES_DIR / "parallel_review.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -125,9 +118,7 @@ class TestScenario2ParallelVote:
 
     def test_parallel_run_log_has_branch_details(self, tmp_path, monkeypatch):
         """Verify parallel state entries include branch-level details."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "parallel_review.yaml"
+        path = FIXTURES_DIR / "parallel_review.yaml"
         thread_id = "test-scenario2-log"
 
         engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)
@@ -148,9 +139,7 @@ class TestScenario2ParallelVote:
 
     def test_parallel_final_variables(self, tmp_path, monkeypatch):
         """Verify final_variables contains parallel and aggregation results."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "parallel_review.yaml"
+        path = FIXTURES_DIR / "parallel_review.yaml"
         thread_id = "test-scenario2-vars"
 
         engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)
@@ -169,9 +158,7 @@ class TestScenario3WaitWebhook:
 
     def test_wait_webhook_routing(self, tmp_path, monkeypatch):
         """Verify wait state + webhook → choice routing."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "wait_webhook.yaml"
+        path = FIXTURES_DIR / "wait_webhook.yaml"
 
         with patch("fdsx.notify.webhook.send_webhook") as mock_webhook:
             mock_webhook.return_value = True
@@ -189,9 +176,7 @@ class TestScenario3WaitWebhook:
 
     def test_wait_webhook_run_log(self, tmp_path, monkeypatch):
         """Verify run log for wait state scenario."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "wait_webhook.yaml"
+        path = FIXTURES_DIR / "wait_webhook.yaml"
         thread_id = "test-scenario3-log"
 
         with patch("fdsx.notify.webhook.send_webhook") as mock_webhook:
@@ -220,12 +205,10 @@ class TestScenario4CheckpointResume:
 
     def test_checkpoint_resume_completes_flow(self, monkeypatch):
         """Run flow → interrupt at implement → resume → verify completion."""
-        repo_root = Path.cwd()
         with tempfile.TemporaryDirectory() as tmpdir:
-            monkeypatch.chdir(tmpdir)
             base_dir = Path(tmpdir) / ".fdsx"
             thread_id = "test-scenario4"
-            flow_path = repo_root / "tests" / "fixtures" / "checkpoint_flow.yaml"
+            flow_path = FIXTURES_DIR / "checkpoint_flow.yaml"
 
             with patch(
                 "fdsx.providers.system.SystemProvider.execute",
@@ -256,12 +239,10 @@ class TestScenario4CheckpointResume:
 
     def test_resume_appends_to_existing_run_log(self, monkeypatch):
         """Verify resume appends new state entries to existing run log."""
-        repo_root = Path.cwd()
         with tempfile.TemporaryDirectory() as tmpdir:
-            monkeypatch.chdir(tmpdir)
             base_dir = Path(tmpdir) / ".fdsx"
             thread_id = "test-scenario4-append"
-            flow_path = repo_root / "tests" / "fixtures" / "checkpoint_flow.yaml"
+            flow_path = FIXTURES_DIR / "checkpoint_flow.yaml"
 
             with patch(
                 "fdsx.providers.system.SystemProvider.execute",
@@ -306,12 +287,10 @@ class TestScenario4CheckpointResume:
 
     def test_checkpoint_resume_run_log_schema(self, monkeypatch):
         """Verify run log schema after checkpoint/resume."""
-        repo_root = Path.cwd()
         with tempfile.TemporaryDirectory() as tmpdir:
-            monkeypatch.chdir(tmpdir)
             base_dir = Path(tmpdir) / ".fdsx"
             thread_id = "test-scenario4-schema"
-            flow_path = repo_root / "tests" / "fixtures" / "checkpoint_flow.yaml"
+            flow_path = FIXTURES_DIR / "checkpoint_flow.yaml"
 
             engine.run_flow(
                 flow_path,
@@ -340,9 +319,7 @@ class TestScenario5ExtractionChoice:
 
     def test_extraction_drives_choice_routing(self, tmp_path, monkeypatch):
         """Verify keyword extraction drives correct branch."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "extraction_flow.yaml"
+        path = FIXTURES_DIR / "extraction_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -356,9 +333,7 @@ class TestScenario5ExtractionChoice:
 
     def test_extraction_run_log(self, tmp_path, monkeypatch):
         """Verify run log for extraction + choice scenario."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "extraction_flow.yaml"
+        path = FIXTURES_DIR / "extraction_flow.yaml"
         thread_id = "test-scenario5-log"
 
         engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)

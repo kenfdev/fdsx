@@ -2,18 +2,19 @@ import tempfile
 from pathlib import Path
 
 from fdsx.core.loader import load_flow, validate_flow
+from tests import FIXTURES_DIR
 
 
 class TestLoadFlow:
     def test_load_valid_simple_flow(self):
-        path = Path("tests/fixtures/simple_flow.yaml")
+        path = FIXTURES_DIR / "simple_flow.yaml"
         flow, errors = load_flow(path)
         assert flow is not None
         assert len(errors) == 0
         assert flow.name == "Simple Plan-Implement-Review Flow"
 
     def test_load_nonexistent_file(self):
-        path = Path("tests/fixtures/nonexistent.yaml")
+        path = FIXTURES_DIR / "nonexistent.yaml"
         flow, errors = load_flow(path)
         assert flow is None
         assert len(errors) > 0
@@ -34,17 +35,17 @@ class TestLoadFlow:
         path.unlink()
 
     def test_load_missing_start_at(self):
-        path = Path("tests/fixtures/invalid_flows/missing_start_at.yaml")
+        path = FIXTURES_DIR / "invalid_flows" / "missing_start_at.yaml"
         flow, errors = load_flow(path)
         assert flow is None
 
     def test_load_bad_next_reference(self):
-        path = Path("tests/fixtures/invalid_flows/bad_next_ref.yaml")
+        path = FIXTURES_DIR / "invalid_flows" / "bad_next_ref.yaml"
         flow, errors = load_flow(path)
         assert flow is None
 
     def test_load_mutual_exclusive(self):
-        path = Path("tests/fixtures/invalid_flows/mutual_exclusive.yaml")
+        path = FIXTURES_DIR / "invalid_flows" / "mutual_exclusive.yaml"
         flow, errors = load_flow(path)
         assert flow is None
 
@@ -79,26 +80,26 @@ class TestLoadFlow:
 
 class TestValidateFlow:
     def test_validate_valid_flow(self):
-        path = Path("tests/fixtures/simple_flow.yaml")
+        path = FIXTURES_DIR / "simple_flow.yaml"
         is_valid, errors = validate_flow(path)
         assert is_valid
         assert len(errors) == 0
 
     def test_validate_invalid_flow(self):
-        path = Path("tests/fixtures/invalid_flows/missing_start_at.yaml")
+        path = FIXTURES_DIR / "invalid_flows" / "missing_start_at.yaml"
         is_valid, errors = validate_flow(path)
         assert not is_valid
         assert len(errors) > 0
 
     def test_validate_nonexistent(self):
-        path = Path("tests/fixtures/nonexistent.yaml")
+        path = FIXTURES_DIR / "nonexistent.yaml"
         is_valid, errors = validate_flow(path)
         assert not is_valid
 
 
 class TestPromptFileResolution:
     def test_prompt_file_resolved_relative_to_yaml(self):
-        path = Path("tests/fixtures/prompt_file_test/flow.yaml")
+        path = FIXTURES_DIR / "prompt_file_test" / "flow.yaml"
         flow, errors = load_flow(path)
         assert flow is not None, f"Flow loading failed: {errors}"
         assert len(errors) == 0

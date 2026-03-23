@@ -1,0 +1,12 @@
+name: Code Review
+description: A workflow for code review tasks
+start_at: review
+version: '1.0'
+
+states:
+  review:
+    type: task
+    provider: system
+    command: "echo 'Reviewing code'"
+    result_path: $.review
+    end: true

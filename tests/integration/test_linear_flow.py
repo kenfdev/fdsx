@@ -1,13 +1,12 @@
-from pathlib import Path
-
 from fdsx.core.compiler import compile_flow
 from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
+from tests import FIXTURES_DIR
 
 
 class TestLinearFlow:
     def test_end_to_end_linear_flow(self, tmp_path):
-        path = Path("tests/fixtures/simple_flow.yaml")
+        path = FIXTURES_DIR / "simple_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -26,7 +25,7 @@ class TestLinearFlow:
         assert "Review:" in result["review"]
 
     def test_linear_flow_with_inputs(self, tmp_path):
-        path = Path("tests/fixtures/simple_flow.yaml")
+        path = FIXTURES_DIR / "simple_flow.yaml"
 
         result = run_flow(path, inputs={"task": "test task"}, base_dir=tmp_path)
 
@@ -34,7 +33,7 @@ class TestLinearFlow:
         assert "implementation" in result
 
     def test_linear_flow_thread_id(self, tmp_path):
-        path = Path("tests/fixtures/simple_flow.yaml")
+        path = FIXTURES_DIR / "simple_flow.yaml"
 
         thread_id = "test-thread-123"
         result = run_flow(path, thread_id=thread_id, base_dir=tmp_path)

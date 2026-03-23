@@ -279,6 +279,9 @@ class TaskState(BaseModel):
         description="Top-level JSONPath variable to store the absolute path of a result file",
     )
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
+    max_iterations: int | None = Field(
+        default=None, ge=1, description="Max times this state can be entered"
+    )
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
     provider_options: dict[str, Any] | None = Field(
@@ -345,6 +348,9 @@ class ChoiceState(BaseModel):
     type: Literal["choice"] = "choice"
     choices: list[ChoiceRule] = Field(..., description="Condition-transition pairs")
     default: str | None = Field(default=None, description="Fallback transition")
+    max_iterations: int | None = Field(
+        default=None, ge=1, description="Max times this state can be entered"
+    )
     hooks: HookConfig | None = Field(default=None, description="Hook configuration")
 
 
@@ -359,6 +365,9 @@ class ParallelState(BaseModel):
         description="Top-level JSONPath variable to store the absolute path of a result file",
     )
     min_success: int | None = Field(default=None, description="Min successful branches")
+    max_iterations: int | None = Field(
+        default=None, ge=1, description="Max times this state can be entered"
+    )
     hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
@@ -387,6 +396,9 @@ class PassState(BaseModel):
     aggregate: AggregateRule | None = Field(
         default=None, description="Parallel result aggregation"
     )
+    max_iterations: int | None = Field(
+        default=None, ge=1, description="Max times this state can be entered"
+    )
     hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
@@ -410,6 +422,9 @@ class WaitState(BaseModel):
     result_path: str = Field(..., description="JSONPath for selection result")
     notify: NotifyConfig | None = Field(
         default=None, description="Webhook notification"
+    )
+    max_iterations: int | None = Field(
+        default=None, ge=1, description="Max times this state can be entered"
     )
     hooks: HookConfig | None = Field(default=None, description="Hook configuration")
     next: str | None = Field(

@@ -115,7 +115,7 @@ class TestStreamLoggerFileWriting:
         logger = StreamLogger("TestState", log_dir)
 
         # File should not exist before first write
-        log_path = log_dir / f"TestState{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"TestState_1{LOG_FILE_SUFFIX}"
         assert not log_path.exists()
 
         logger.on_stdout("first line")
@@ -128,7 +128,7 @@ class TestStreamLoggerFileWriting:
         log_dir = tmp_path / "logs"
         logger = StreamLogger("TestState", log_dir)
 
-        log_path = log_dir / f"TestState{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"TestState_1{LOG_FILE_SUFFIX}"
         assert not log_path.exists()
 
         logger.on_stderr("error line")
@@ -142,7 +142,7 @@ class TestStreamLoggerFileWriting:
         logger = StreamLogger("EmptyState", log_dir)
         logger.close()
 
-        log_path = log_dir / f"EmptyState{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"EmptyState_1{LOG_FILE_SUFFIX}"
         assert not log_path.exists()
 
     def test_log_file_contains_stdout_lines(self, tmp_path):
@@ -153,7 +153,7 @@ class TestStreamLoggerFileWriting:
         logger.on_stdout("line two")
         logger.close()
 
-        log_path = log_dir / f"Writer{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"Writer_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         assert "line one\n" in content
         assert "line two\n" in content
@@ -165,7 +165,7 @@ class TestStreamLoggerFileWriting:
         logger.on_stderr("stderr line")
         logger.close()
 
-        log_path = log_dir / f"Writer{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"Writer_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         assert "stderr line\n" in content
 
@@ -176,7 +176,7 @@ class TestStreamLoggerFileWriting:
         logger.on_stdout("raw line")
         logger.close()
 
-        log_path = log_dir / f"PrefixCheck{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"PrefixCheck_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         assert "[PrefixCheck]" not in content
         assert "raw line\n" in content
@@ -189,7 +189,7 @@ class TestStreamLoggerFileWriting:
         logger.on_stdout(ansi_line)
         logger.close()
 
-        log_path = log_dir / f"AnsiState{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"AnsiState_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         assert ansi_line in content
 
@@ -203,7 +203,7 @@ class TestStreamLoggerFileWriting:
         logger.close()
 
         assert log_dir.exists()
-        assert (log_dir / f"AutoDir{LOG_FILE_SUFFIX}").exists()
+        assert (log_dir / f"AutoDir_1{LOG_FILE_SUFFIX}").exists()
 
     def test_log_file_stem_matches_state_name(self, tmp_path):
         """Log file stem matches exactly the state_name."""
@@ -212,7 +212,7 @@ class TestStreamLoggerFileWriting:
         logger.on_stdout("x")
         logger.close()
 
-        assert (log_dir / f"my_state{LOG_FILE_SUFFIX}").exists()
+        assert (log_dir / f"my_state_1{LOG_FILE_SUFFIX}").exists()
 
     def test_close_idempotent(self, tmp_path):
         """Calling close() multiple times does not raise."""
@@ -263,10 +263,10 @@ class TestStreamLoggerQuietMode:
         logger_quiet.on_stderr("line two")
         logger_quiet.close()
 
-        normal_content = (log_dir_normal / f"State{LOG_FILE_SUFFIX}").read_text(
+        normal_content = (log_dir_normal / f"State_1{LOG_FILE_SUFFIX}").read_text(
             encoding="utf-8"
         )
-        quiet_content = (log_dir_quiet / f"State{LOG_FILE_SUFFIX}").read_text(
+        quiet_content = (log_dir_quiet / f"State_1{LOG_FILE_SUFFIX}").read_text(
             encoding="utf-8"
         )
         assert normal_content == quiet_content
@@ -278,7 +278,7 @@ class TestStreamLoggerQuietMode:
         logger.on_stdout("trigger")
         logger.close()
 
-        assert (log_dir / f"State{LOG_FILE_SUFFIX}").exists()
+        assert (log_dir / f"State_1{LOG_FILE_SUFFIX}").exists()
 
 
 class TestStreamLoggerThreadSafety:
@@ -307,7 +307,7 @@ class TestStreamLoggerThreadSafety:
         logger.close()
 
         assert not errors, f"Errors in threads: {errors}"
-        log_path = log_dir / f"ThreadedState{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"ThreadedState_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         lines = content.splitlines()
         # 5 threads × 20 lines = 100 total lines
@@ -325,7 +325,7 @@ class TestStreamLoggerThreadSafety:
         logger_a.close()
         logger_b.close()
 
-        log_path = log_dir / f"parallel_state{LOG_FILE_SUFFIX}"
+        log_path = log_dir / f"parallel_state_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         assert "branch_a line" in content
         assert "branch_b line" in content

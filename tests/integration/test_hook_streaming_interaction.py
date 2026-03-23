@@ -101,7 +101,7 @@ class TestHookFiringOrderWithStreaming:
     ) -> None:
         """StreamLogger log files and hook data JSON files exist in the correct directories.
 
-        - Log files: .fdsx/runs/<thread-id>/logs/<state-name>.log
+        - Log files: .fdsx/runs/<thread-id>/logs/<state-name>_<iteration>.log
         - Hook files: .fdsx/runs/<thread-id>/hooks/<state-name>/input.json, output.json
         """
         thread_id = "coexist-tid"
@@ -118,7 +118,7 @@ class TestHookFiringOrderWithStreaming:
         stream_logger.close()
 
         # Verify log file was created
-        log_file = log_dir / f"CoexistState{LOG_FILE_SUFFIX}"
+        log_file = log_dir / f"CoexistState_1{LOG_FILE_SUFFIX}"
         assert log_file.exists(), f"Log file not created at {log_file}"
         content = log_file.read_text()
         assert "streaming line one" in content
@@ -338,7 +338,7 @@ states:
                 )
 
         # Per-state log file should exist
-        log_file = log_dir / f"logstep{LOG_FILE_SUFFIX}"
+        log_file = log_dir / f"logstep_1{LOG_FILE_SUFFIX}"
         assert log_file.exists(), f"Log file should exist at {log_file}"
 
         content = log_file.read_text()
@@ -644,8 +644,8 @@ states:
                 )
 
         # Both state log files should exist
-        log_A = log_dir / f"stateA{LOG_FILE_SUFFIX}"
-        log_B = log_dir / f"stateB{LOG_FILE_SUFFIX}"
+        log_A = log_dir / f"stateA_1{LOG_FILE_SUFFIX}"
+        log_B = log_dir / f"stateB_1{LOG_FILE_SUFFIX}"
         assert log_A.exists(), f"Log file for stateA should exist at {log_A}"
         assert log_B.exists(), f"Log file for stateB should exist at {log_B}"
 

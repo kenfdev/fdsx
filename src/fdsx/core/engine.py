@@ -3,8 +3,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
-import uuid_utils
-
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
@@ -19,6 +17,7 @@ from fdsx.core.batch import (
 )
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
+from fdsx.core.thread_id import generate_thread_id
 from fdsx.core.loader import load_flow
 from fdsx.core.selector import (
     resolve_workflow_for_task,
@@ -67,7 +66,7 @@ def run_flow(
         RuntimeError: If flow validation fails or execution fails
     """
     if thread_id is None:
-        thread_id = str(uuid_utils.uuid7())
+        thread_id = generate_thread_id()
 
     print(f"Thread ID: {_sanitize_output(thread_id)}", file=sys.stderr)
 
@@ -124,7 +123,8 @@ def run_flow(
             "flow_path": str(flow_path),
             "flow_name": flow.name,
             "run_dir": str(run_dir),
-        }
+        },
+        "_state_iterations": {},
     }
 
     if inputs:
@@ -243,6 +243,7 @@ def _sanitize_state_for_log(state: dict[str, Any]) -> dict[str, Any]:
         if not k.startswith("_meta")
         and not k.startswith("__")
         and not k.startswith("_br_")
+        and not k.startswith("_state_")
     }
 
 
@@ -340,7 +341,7 @@ def run_batch(
     results: list[dict[str, Any]] = []
 
     for i, task_description in enumerate(tasks):
-        thread_id = str(uuid_utils.uuid7())
+        thread_id = generate_thread_id()
 
         print(
             f"\nExecuting task {i + 1}/{len(tasks)}: {_sanitize_output(task_description[:50])}...",
@@ -615,17 +616,17 @@ def resume_flow(
         checkpoint_manager.release_lock(thread_id)
 
 
-def validate_flow(flow_path: Path) -> tuple[bool, list[str]]:
+def validate_flow(flow_path: Path) -> tuple[bool, list[str], str | None]:
     """Validate a flow without executing it.
 
     Args:
         flow_path: Path to the YAML workflow file
 
     Returns:
-        tuple of (is_valid, list of error messages)
+        tuple of (is_valid, list of error messages, flow_name or None)
     """
     flow, errors = load_flow(flow_path)
-    return flow is not None, errors
+    return flow is not None, errors, flow.name if flow else None
 
 
 def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
@@ -920,7 +921,7 @@ def run_tasks_dir(
                 )
 
         for entry_idx, entry in actionable:
-            thread_id = str(uuid_utils.uuid7())
+            thread_id = generate_thread_id()
             description = entry.description
             original_status = entry.status
             category = "retried" if original_status in ("failed", "running") else "new"
