@@ -1,14 +1,13 @@
-from pathlib import Path
-
 from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import Branch, ExtractRule, Flow, ParallelState
+from tests import FIXTURES_DIR
 
 
 class TestExtractionFlow:
     def test_keyword_extraction_choice_routing(self, tmp_path):
         """Test keyword extraction and correct Choice routing."""
-        path = Path("tests/fixtures/extraction_flow.yaml")
+        path = FIXTURES_DIR / "extraction_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -21,7 +20,7 @@ class TestExtractionFlow:
 
     def test_regex_extraction_choice_routing(self, tmp_path):
         """Test regex extraction from structured output."""
-        path = Path("tests/fixtures/regex_extraction_flow.yaml")
+        path = FIXTURES_DIR / "regex_extraction_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -34,7 +33,7 @@ class TestExtractionFlow:
 
     def test_json_extraction_choice_routing(self, tmp_path):
         """Test JSON extraction from raw JSON output."""
-        path = Path("tests/fixtures/json_extraction_flow.yaml")
+        path = FIXTURES_DIR / "json_extraction_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -47,7 +46,7 @@ class TestExtractionFlow:
 
     def test_json_codeblock_extraction_choice_routing(self, tmp_path):
         """Test JSON extraction from ```json code block output (T024)."""
-        path = Path("tests/fixtures/json_codeblock_extraction_flow.yaml")
+        path = FIXTURES_DIR / "json_codeblock_extraction_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"

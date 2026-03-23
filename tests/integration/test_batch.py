@@ -6,13 +6,14 @@ import pytest
 
 from fdsx.core import engine
 from fdsx.core.config import FdsxConfig, TaskSplitterConfig
+from tests import FIXTURES_DIR
 from tests.integration.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestBatchExecution:
     def test_full_batch_flow(self):
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -45,8 +46,8 @@ class TestBatchExecution:
             assert result["thread_id"] is not None
 
     def test_batch_rejection(self):
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -69,8 +70,8 @@ class TestBatchExecution:
 
     def test_batch_fails_when_task_splitter_not_configured(self):
         """Regression: run_batch must raise FlowValidationError when task_splitter is None in config."""
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         with patch(
             "fdsx.core.engine.load_config", return_value=FdsxConfig(task_splitter=None)
@@ -98,8 +99,8 @@ class TestBatchExecution:
 
 class TestBatchIntegrationWithMockedInput:
     def test_batch_with_failing_task_continue(self):
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         call_count = [0]
 
@@ -135,8 +136,8 @@ class TestBatchIntegrationWithMockedInput:
         assert len(results) == 3
 
     def test_batch_with_failing_task_stop(self):
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         call_count = [0]
 
@@ -172,8 +173,8 @@ class TestBatchIntegrationWithMockedInput:
 
 class TestBatchQuietFlagPropagation:
     def test_run_batch_passes_quiet_true_to_run_flow(self):
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -200,8 +201,8 @@ class TestBatchQuietFlagPropagation:
             assert call_args.kwargs.get("quiet") is True
 
     def test_run_batch_passes_quiet_false_by_default(self):
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
-        tasks_file = Path("tests/fixtures/sample_tasks.md")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(

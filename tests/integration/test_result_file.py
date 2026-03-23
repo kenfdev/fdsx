@@ -13,6 +13,7 @@ import pytest
 
 from fdsx.core import engine
 from fdsx.core.variables import RESULT_FILE_DATA_DIR
+from tests import FIXTURES_DIR
 from fdsx.logging.recorder import RUNS_DIR_NAME
 
 
@@ -154,9 +155,7 @@ class TestResultFileRegression:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Run simple_flow.yaml (no result_file) and verify data/ dir is not created."""
-        repo_root = Path.cwd()
-        monkeypatch.chdir(tmp_path)
-        path = repo_root / "tests" / "fixtures" / "simple_flow.yaml"
+        path = FIXTURES_DIR / "simple_flow.yaml"
 
         thread_id = "test-no-result-file"
         result = engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)

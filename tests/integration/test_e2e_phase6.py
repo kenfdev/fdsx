@@ -20,6 +20,7 @@ from fdsx.core import engine
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
+from tests import FIXTURES_DIR
 
 
 class TestBackwardCompat:
@@ -91,7 +92,7 @@ class TestErrorMessages:
         tasks_dir.mkdir()
         (tasks_dir / "001-bad.yaml").write_text(": [broken yaml\n")
 
-        workflow_path = Path("tests/fixtures/simple_flow.yaml")
+        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
 
         runner = CliRunner()
         result = runner.invoke(
@@ -116,7 +117,7 @@ class TestErrorMessages:
         tasks_dir.mkdir()
         (tasks_dir / "001-bad.yaml").write_text(": [broken yaml\n")
 
-        workflow_path = Path("tests/fixtures/simple_flow.yaml")
+        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
 
         with pytest.raises(engine.FlowValidationError) as exc_info:
             engine.run_tasks_dir(workflow_path, tasks_dir, auto_workflow=True)
@@ -135,7 +136,7 @@ class TestEdgeCases:
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
 
-        workflow_path = Path("tests/fixtures/simple_flow.yaml")
+        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
 
         runner = CliRunner()
         result = runner.invoke(
@@ -158,7 +159,7 @@ class TestEdgeCases:
         """Multiple files with all entries completed should result in no run_flow calls."""
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
         tf1 = TaskFile(
             entries=[
@@ -192,7 +193,7 @@ class TestEdgeCases:
         """One file with one entry should execute correctly."""
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
         tf = TaskFile(entries=[TaskEntry(description="single task")])
         save_task_file(tasks_dir / "001-single.yaml", tf)
@@ -218,7 +219,7 @@ class TestEdgeCases:
         (tasks_dir / "002-invalid.yaml").write_text(": [broken yaml\n")
         (tasks_dir / "003-also-valid.yaml").write_text("description: another valid\n")
 
-        workflow_path = Path("tests/fixtures/simple_flow.yaml")
+        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
 
         runner = CliRunner()
         result = runner.invoke(
@@ -252,7 +253,7 @@ class TestFullPipelineE2E:
         """Full lifecycle: split → edit → run (crash) → resume → complete."""
         tasks_dir = tmp_path / TASKS_DIR
         tasks_dir.mkdir(parents=True)
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -356,7 +357,7 @@ class TestFullPipelineE2E:
         """End-to-end: split helpers create files, then run command executes them via CLI."""
         tasks_dir = tmp_path / TASKS_DIR
         tasks_dir.mkdir(parents=True)
-        flow_path = Path("tests/fixtures/batch_flow.yaml")
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -649,7 +650,7 @@ class TestSecuritySanitization:
         # Create a YAML file with broken content so load_tasks_dir raises FlowValidationError
         (tasks_dir / "001-bad.yaml").write_text(": [broken yaml\n")
 
-        workflow_path = Path("tests/fixtures/simple_flow.yaml")
+        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
 
         runner = CliRunner()
 

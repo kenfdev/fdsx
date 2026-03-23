@@ -1,5 +1,4 @@
 import logging
-import operator
 import subprocess
 import time
 from pathlib import Path
@@ -66,6 +65,19 @@ def _top_level_key(path: str) -> str | None:
     return path.split(".")[0].split("[")[0] or None
 
 
+def _parallel_branch_reducer(current: list, update: list) -> list:
+    """Reducer for parallel branch results that supports reset.
+
+    Branch nodes return ``[result]`` which appends via concatenation.
+    The collector node returns ``[]`` after reading the accumulated
+    results, which resets the list so that a subsequent loop iteration
+    starts with a clean accumulator.
+    """
+    if not update:
+        return []  # reset signal from collector
+    return current + update
+
+
 def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     """Build a TypedDict state schema that covers ALL state keys used by the flow.
 
@@ -74,7 +86,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     all workflow variables like $.reviews, $.decision, $.plan_output would be silently
     dropped by _get_updates. This function declares ALL needed keys:
 
-    1. _br_{state_name} reducer channels (Annotated[list, operator.add]) for each
+    1. _br_{state_name} reducer channels (Annotated[list, _parallel_branch_reducer]) for each
        ParallelState — required for Send API fan-in accumulation.
     2. All result_path / extract / aggregate top-level keys as LastValue channels.
     3. Input keys from --input CLI flags.
@@ -92,7 +104,9 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     # 1. Reducer channels for parallel branch result accumulation
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
-            annotations[f"_br_{state_name}"] = Annotated[list, operator.add]
+            annotations[f"_br_{state_name}"] = Annotated[
+                list, _parallel_branch_reducer
+            ]
 
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
     for state_name, state in flow.states.items():
@@ -744,7 +758,7 @@ def _create_branch_executor(
     """Create a shared branch executor node invoked once per branch via Send.
 
     Reads `_branch_index` from the state dict to identify which branch to run.
-    Returns `{f"_br_{state_name}": [result]}` — accumulated by operator.add reducer.
+    Returns `{f"_br_{state_name}": [result]}` — accumulated by _parallel_branch_reducer reducer.
     Never raises: all errors are captured in the result dict (exit_code != 0).
     """
 
@@ -909,7 +923,7 @@ def _create_collector_node(
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the fan-in collector node for a Parallel state.
 
-    Reads branch results accumulated by the operator.add reducer, sorts by index,
+    Reads branch results accumulated by the _parallel_branch_reducer reducer, sorts by index,
     enforces min_success (defaulting to all branches), and stores at result_path.
     """
 
@@ -1004,6 +1018,10 @@ def _create_collector_node(
                 recorded_paths,
                 branch_info_list,
             )
+
+        # Reset the branch accumulator so the next loop iteration starts clean.
+        # The custom _parallel_branch_reducer treats [] as a reset signal.
+        new_state[f"_br_{state_name}"] = []
 
         new_state = _set_next_state_meta(new_state, state)
         return new_state

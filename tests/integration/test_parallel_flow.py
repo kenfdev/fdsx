@@ -1,16 +1,15 @@
-from pathlib import Path
-
 import pytest
 
 from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
 from fdsx.logging.recorder import LOGS_DIR_NAME, RUNS_DIR_NAME
+from tests import FIXTURES_DIR
 
 
 class TestParallelFlow:
     def test_parallel_review_majority_aggregation(self, tmp_path):
         """Test parallel review with majority aggregation and choice routing."""
-        path = Path("tests/fixtures/parallel_review.yaml")
+        path = FIXTURES_DIR / "parallel_review.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -29,7 +28,7 @@ class TestParallelFlow:
 
     def test_parallel_branch_results_have_output_field(self, tmp_path):
         """Verify branch results array contains output field."""
-        path = Path("tests/fixtures/parallel_review.yaml")
+        path = FIXTURES_DIR / "parallel_review.yaml"
 
         result = run_flow(path, base_dir=tmp_path)
 
@@ -42,7 +41,7 @@ class TestParallelFlow:
 class TestParallelMinSuccess:
     def test_min_success_tolerates_partial_failure(self, tmp_path):
         """Test that min_success allows flow to continue with partial branch failures."""
-        path = Path("tests/fixtures/parallel_min_success.yaml")
+        path = FIXTURES_DIR / "parallel_min_success.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -112,7 +111,7 @@ class TestParallelBranchLabeling:
         """
         base_dir = tmp_path / ".fdsx"
         run_flow(
-            flow_path=Path("tests/fixtures/parallel_review.yaml"),
+            flow_path=FIXTURES_DIR / "parallel_review.yaml",
             base_dir=base_dir,
         )
 

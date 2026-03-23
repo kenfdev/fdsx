@@ -10,10 +10,12 @@ from __future__ import annotations
 import re
 import sys
 import warnings
+from collections import Counter
 from pathlib import Path
 
 from fdsx.core.config import WorkflowSelectorConfig
 from fdsx.core.loader import load_flow
+from fdsx.display.terminal import _sanitize_output
 from fdsx.providers.base import get_provider
 
 
@@ -72,7 +74,6 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
                 )
             continue
 
-        display_name = entry.name
         try:
             flow, errors = load_flow(wf_file)
             if flow is None:
@@ -81,8 +82,9 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
                     RuntimeWarning,
                 )
                 continue
+            display_name = flow.name
             results.append((wf_file, flow.description, display_name))
-            dir_names.add(display_name)
+            dir_names.add(entry.name)
         except Exception as e:
             warnings.warn(
                 f"Skipping unparseable workflow file {wf_file}: {e}",
@@ -117,7 +119,7 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
                         RuntimeWarning,
                     )
                     continue
-                results.append((fp, flow.description, fp.stem))
+                results.append((fp, flow.description, flow.name))
                 seen_stems.add(fp.stem)
             except Exception as e:
                 warnings.warn(
@@ -126,6 +128,18 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
                 )
 
     results.sort(key=lambda t: t[2])
+
+    name_counts = Counter(r[2] for r in results)
+    if max(name_counts.values(), default=0) > 1:
+        disambiguated: list[tuple[Path, str, str]] = []
+        for wf_path, desc, name in results:
+            if name_counts[name] > 1:
+                rel_path = wf_path.relative_to(workflows_dir)
+                disambiguated.append((wf_path, desc, f"{name} ({rel_path})"))
+            else:
+                disambiguated.append((wf_path, desc, name))
+        return disambiguated
+
     return results
 
 
@@ -157,11 +171,11 @@ AVAILABLE WORKFLOWS:
 INSTRUCTIONS:
 1. Analyze the task description above
 2. Consider which workflow best matches the task's goal and requirements
-3. Return ONLY the name of the selected workflow (e.g., "plan-implement-review")
+3. Return ONLY the exact workflow name as shown in the list above (e.g., "Code Review" or "Code Review (ci/workflow.yaml)" if a path is shown)
 4. Do not include any explanations, markdown, or additional text — just the workflow name
 
 OUTPUT FORMAT:
-Return the exact workflow name string only."""
+Return the exact workflow name string as displayed above, including any parenthetical path if present."""
 
 
 def _parse_workflow_selection(response: str) -> str:
@@ -311,7 +325,7 @@ def confirm_workflow_selection(
     Returns:
         True if the user approves, False if they reject.
     """
-    name = display_name or workflow_path.name
+    name = _sanitize_output(display_name or workflow_path.name)
     print(f"\nSelected workflow: {name}", file=sys.stderr)
     print(
         f"  Task: {task_description[:60]}{'...' if len(task_description) > 60 else ''}",
@@ -351,8 +365,8 @@ def pick_workflow_manually(
         desc_preview = (
             description[:50] + "..." if len(description) > 50 else description
         )
-        print(f"  {i}. {display_name}", file=sys.stderr)
-        print(f"     {desc_preview}", file=sys.stderr)
+        print(f"  {i}. {_sanitize_output(display_name)}", file=sys.stderr)
+        print(f"     {_sanitize_output(desc_preview)}", file=sys.stderr)
     print("-" * 60, file=sys.stderr)
 
     while True:

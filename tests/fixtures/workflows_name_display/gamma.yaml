@@ -1,0 +1,12 @@
+name: Deploy Pipeline
+description: A workflow for deployment tasks
+start_at: deploy
+version: '1.0'
+
+states:
+  deploy:
+    type: task
+    provider: system
+    command: "echo 'Deploying'"
+    result_path: $.deploy
+    end: true

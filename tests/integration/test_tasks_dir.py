@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from fdsx.cli.main import app
 from fdsx.core import engine
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
+from tests import FIXTURES_DIR
 
 
 class TestTasksDirLoader:
@@ -167,7 +168,7 @@ class TestRunTasksDir:
     def test_full_run_all_pending(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf1 = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf1)
@@ -196,7 +197,7 @@ class TestRunTasksDir:
     def test_skips_completed_entries(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -233,7 +234,7 @@ class TestRunTasksDir:
     def test_retries_failed_entries(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -264,7 +265,7 @@ class TestRunTasksDir:
     def test_retries_running_entries(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -290,7 +291,7 @@ class TestRunTasksDir:
     def test_multi_task_file_per_entry_tracking(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -324,7 +325,7 @@ class TestRunTasksDir:
     def test_continues_after_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -360,7 +361,7 @@ class TestRunTasksDir:
     def test_stops_on_user_n(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -391,7 +392,7 @@ class TestRunTasksDir:
     def test_skips_file_when_all_completed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -417,7 +418,7 @@ class TestRunTasksDir:
     def test_all_completed_multi_entry_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -446,7 +447,7 @@ class TestRunTasksDir:
     def test_retried_task_that_fails_again(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -476,7 +477,7 @@ class TestRunTasksDir:
     def test_thread_id_preserved_after_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -650,7 +651,7 @@ class TestMoveToCompletedOnRunTasksDir:
     def test_completed_file_moved_to_completed_subdir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
@@ -665,7 +666,7 @@ class TestMoveToCompletedOnRunTasksDir:
     def test_failed_file_stays_in_tasks_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
@@ -683,7 +684,7 @@ class TestMoveToCompletedOnRunTasksDir:
         """File with mixed completed/failed entries must not be moved."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[
@@ -713,7 +714,7 @@ class TestMoveToCompletedOnRunTasksDir:
         """Files that were already fully completed (skipped) should also be moved."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(
                 entries=[TaskEntry(description="already done", status="completed")]
@@ -731,7 +732,7 @@ class TestMoveToCompletedOnRunTasksDir:
     def test_move_failure_logs_warning_and_does_not_abort(self, capsys):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
@@ -756,7 +757,7 @@ class TestMoveToCompletedOnRunTasksDir:
     def test_collision_logs_warning(self, capsys):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             # Put a file in completed/ to trigger a collision
             completed_dir = tasks_dir / "completed"
@@ -903,7 +904,7 @@ class TestRunTasksDirQuietFlagPropagation:
     def test_run_tasks_dir_passes_quiet_true_to_run_flow(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
@@ -921,7 +922,7 @@ class TestRunTasksDirQuietFlagPropagation:
     def test_run_tasks_dir_passes_quiet_false_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            flow_path = Path("tests/fixtures/batch_flow.yaml")
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)

@@ -6,6 +6,7 @@ import pytest
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
+from tests import FIXTURES_DIR
 
 
 @pytest.fixture
@@ -16,12 +17,12 @@ def temp_dir():
 
 @pytest.fixture
 def checkpoint_flow_path():
-    return Path("tests/fixtures/checkpoint_flow.yaml")
+    return FIXTURES_DIR / "checkpoint_flow.yaml"
 
 
 @pytest.fixture
 def wait_resume_flow_path():
-    return Path("tests/fixtures/wait_resume_flow.yaml")
+    return FIXTURES_DIR / "wait_resume_flow.yaml"
 
 
 class TestPIDLock:

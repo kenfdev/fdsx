@@ -1,13 +1,12 @@
-from pathlib import Path
-
 from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
+from tests import FIXTURES_DIR
 
 
 class TestLoopFlow:
     def test_loop_stops_at_max_iterations(self, tmp_path):
         """Test that loop stops gracefully after max_loop iterations."""
-        path = Path("tests/fixtures/loop_flow.yaml")
+        path = FIXTURES_DIR / "loop_flow.yaml"
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
@@ -22,7 +21,7 @@ class TestLoopFlow:
 
     def test_loop_returns_partial_results(self, tmp_path):
         """Test that loop returns results from the last iteration when max_loop is reached."""
-        path = Path("tests/fixtures/loop_flow.yaml")
+        path = FIXTURES_DIR / "loop_flow.yaml"
 
         result = run_flow(path, base_dir=tmp_path)
 
@@ -38,7 +37,7 @@ class TestLoopFlow:
 
     def test_state_variables_retained_across_iterations(self, tmp_path):
         """Test that state variables from earlier loop iterations are available in later ones."""
-        path = Path("tests/fixtures/loop_flow.yaml")
+        path = FIXTURES_DIR / "loop_flow.yaml"
 
         result = run_flow(path, base_dir=tmp_path)
 
