@@ -6,53 +6,53 @@ from fdsx.models.flow import Branch, ExtractRule, Flow, ParallelState
 
 
 class TestExtractionFlow:
-    def test_keyword_extraction_choice_routing(self):
+    def test_keyword_extraction_choice_routing(self, tmp_path):
         """Test keyword extraction and correct Choice routing."""
         path = Path("tests/fixtures/extraction_flow.yaml")
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "decision" in result
         assert result["decision"] == "APPROVED"
         assert "approved_result" in result
 
-    def test_regex_extraction_choice_routing(self):
+    def test_regex_extraction_choice_routing(self, tmp_path):
         """Test regex extraction from structured output."""
         path = Path("tests/fixtures/regex_extraction_flow.yaml")
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "extracted_status" in result
         assert result["extracted_status"] == "success"
         assert "success_result" in result
 
-    def test_json_extraction_choice_routing(self):
+    def test_json_extraction_choice_routing(self, tmp_path):
         """Test JSON extraction from raw JSON output."""
         path = Path("tests/fixtures/json_extraction_flow.yaml")
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "extracted_status" in result
         assert result["extracted_status"] == "approved"
         assert "approved_result" in result
 
-    def test_json_codeblock_extraction_choice_routing(self):
+    def test_json_codeblock_extraction_choice_routing(self, tmp_path):
         """Test JSON extraction from ```json code block output (T024)."""
         path = Path("tests/fixtures/json_codeblock_extraction_flow.yaml")
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "extracted_status" in result
         assert result["extracted_status"] == "approved"

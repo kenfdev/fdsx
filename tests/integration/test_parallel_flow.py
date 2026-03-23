@@ -8,14 +8,14 @@ from fdsx.logging.recorder import LOGS_DIR_NAME, RUNS_DIR_NAME
 
 
 class TestParallelFlow:
-    def test_parallel_review_majority_aggregation(self):
+    def test_parallel_review_majority_aggregation(self, tmp_path):
         """Test parallel review with majority aggregation and choice routing."""
         path = Path("tests/fixtures/parallel_review.yaml")
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "reviews" in result
         assert len(result["reviews"]) == 3
@@ -27,11 +27,11 @@ class TestParallelFlow:
         assert "decision" in result
         assert result["decision"] == "APPROVED"
 
-    def test_parallel_branch_results_have_output_field(self):
+    def test_parallel_branch_results_have_output_field(self, tmp_path):
         """Verify branch results array contains output field."""
         path = Path("tests/fixtures/parallel_review.yaml")
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "reviews" in result
         assert len(result["reviews"]) == 3
@@ -40,14 +40,14 @@ class TestParallelFlow:
 
 
 class TestParallelMinSuccess:
-    def test_min_success_tolerates_partial_failure(self):
+    def test_min_success_tolerates_partial_failure(self, tmp_path):
         """Test that min_success allows flow to continue with partial branch failures."""
         path = Path("tests/fixtures/parallel_min_success.yaml")
 
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = run_flow(path)
+        result = run_flow(path, base_dir=tmp_path)
 
         assert "results" in result
         assert len(result["results"]) == 3
