@@ -59,9 +59,14 @@ class TaskEntry(BaseModel):
     def validate_workflow_filename(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        if v in (".", "..") or "/" in v or "\\" in v or v != Path(v).name:
+        parts = Path(v).parts
+        if ".." in parts or v.startswith("/") or v.startswith("\\"):
             raise ValueError(
-                f"workflow must be a filename (no path separators), got '{v}'"
+                f"workflow must be a relative path without .., got '{v}'"
+            )
+        if len(parts) > 2:
+            raise ValueError(
+                f"workflow nesting too deep (max 1 level), got '{v}'"
             )
         return v
 

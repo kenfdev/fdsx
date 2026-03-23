@@ -21,6 +21,26 @@ from fdsx.core.selector import (
 )
 
 
+def _minimal_workflow(name: str, description: str) -> str:
+    """Return minimal valid workflow YAML content."""
+    return yaml.dump(
+        {
+            "name": name,
+            "description": description,
+            "start_at": "s",
+            "states": {
+                "s": {
+                    "type": "task",
+                    "provider": "system",
+                    "command": f"echo {name}",
+                    "result_path": "$.x",
+                    "end": True,
+                }
+            },
+        }
+    )
+
+
 class TestDiscoverWorkflows:
     def test_discovers_yaml_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -65,8 +85,9 @@ class TestDiscoverWorkflows:
             results = discover_workflows(workflows_dir)
 
             assert len(results) == 2
-            names = [p.name for p, _ in results]
-            assert names == ["a-workflow.yaml", "b-workflow.yaml"]
+            # Sorted by display_name (stem)
+            assert results[0][2] == "a-workflow"
+            assert results[1][2] == "b-workflow"
             assert results[0][1] == "A workflow"
             assert results[1][1] == "B workflow"
 
@@ -149,28 +170,193 @@ class TestDiscoverWorkflows:
             results = discover_workflows(workflows_dir)
             assert results == []
 
+    def test_discovers_directory_workflows(self, tmp_path):
+        """Subdirectories with workflow.yaml are discovered as directory workflows."""
+        wf_dir = tmp_path / "review"
+        wf_dir.mkdir()
+        (wf_dir / "workflow.yaml").write_text(_minimal_workflow("R", "Review workflow"))
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][0] == wf_dir / "workflow.yaml"
+        assert results[0][1] == "Review workflow"
+        assert results[0][2] == "review"
+
+    def test_discovers_mixed_flat_and_directory(self, tmp_path):
+        """Both flat files and directory workflows are discovered."""
+        (tmp_path / "plan.yaml").write_text(_minimal_workflow("P", "Plan workflow"))
+        review_dir = tmp_path / "review"
+        review_dir.mkdir()
+        (review_dir / "workflow.yaml").write_text(
+            _minimal_workflow("R", "Review workflow")
+        )
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 2
+        display_names = [r[2] for r in results]
+        assert display_names == ["plan", "review"]  # sorted by display_name
+
+    def test_directory_shadows_flat_file(self, tmp_path):
+        """A directory 'review' shadows a flat file 'review.yaml'."""
+        (tmp_path / "review.yaml").write_text(
+            _minimal_workflow("RF", "Review flat")
+        )
+        review_dir = tmp_path / "review"
+        review_dir.mkdir()
+        (review_dir / "workflow.yaml").write_text(
+            _minimal_workflow("RD", "Review dir")
+        )
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][1] == "Review dir"
+        assert results[0][2] == "review"
+
+    def test_yml_extension_flat_files(self, tmp_path):
+        """Flat *.yml files are discovered."""
+        (tmp_path / "plan.yml").write_text(_minimal_workflow("P", "Plan yml"))
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][2] == "plan"
+        assert results[0][1] == "Plan yml"
+
+    def test_yml_extension_directory(self, tmp_path):
+        """Directory workflows with workflow.yml are discovered."""
+        wf_dir = tmp_path / "review"
+        wf_dir.mkdir()
+        (wf_dir / "workflow.yml").write_text(_minimal_workflow("R", "Review yml"))
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][2] == "review"
+
+    def test_yaml_takes_precedence_over_yml_flat(self, tmp_path):
+        """When both plan.yaml and plan.yml exist, .yaml takes precedence."""
+        (tmp_path / "plan.yaml").write_text(_minimal_workflow("PY", "Plan yaml"))
+        (tmp_path / "plan.yml").write_text(_minimal_workflow("PL", "Plan yml"))
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][0].name == "plan.yaml"
+        assert results[0][1] == "Plan yaml"
+
+    def test_yaml_takes_precedence_over_yml_directory(self, tmp_path):
+        """In a directory, workflow.yaml takes precedence over workflow.yml."""
+        wf_dir = tmp_path / "review"
+        wf_dir.mkdir()
+        (wf_dir / "workflow.yaml").write_text(_minimal_workflow("RY", "Review yaml"))
+        (wf_dir / "workflow.yml").write_text(_minimal_workflow("RL", "Review yml"))
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][0].name == "workflow.yaml"
+        assert results[0][1] == "Review yaml"
+
+    def test_skips_symlinked_directory(self, tmp_path):
+        """Symlinked subdirectories are skipped."""
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        (real_dir / "workflow.yaml").write_text(_minimal_workflow("R", "Real"))
+        link_dir = tmp_path / "linked"
+        link_dir.symlink_to(real_dir)
+
+        with pytest.warns(RuntimeWarning, match="Skipping symlinked workflow directory"):
+            results = discover_workflows(tmp_path)
+
+        # real_dir is also a subdirectory, so it should be discovered
+        assert len(results) == 1
+        assert results[0][2] == "real"
+
+    def test_skips_directory_without_workflow_yaml(self, tmp_path):
+        """Subdirectories without workflow.yaml/yml are ignored."""
+        no_wf_dir = tmp_path / "empty"
+        no_wf_dir.mkdir()
+        (no_wf_dir / "other.yaml").write_text("key: value")
+
+        results = discover_workflows(tmp_path)
+
+        assert len(results) == 0
+
+    def test_display_name_flat_is_stem(self, tmp_path):
+        """Display name for flat files is the stem (no extension)."""
+        (tmp_path / "plan-implement.yaml").write_text(
+            _minimal_workflow("PI", "Plan-implement")
+        )
+
+        results = discover_workflows(tmp_path)
+
+        assert results[0][2] == "plan-implement"
+
+    def test_display_name_directory_is_dirname(self, tmp_path):
+        """Display name for directory workflows is the directory name."""
+        wf_dir = tmp_path / "my-review"
+        wf_dir.mkdir()
+        (wf_dir / "workflow.yaml").write_text(_minimal_workflow("MR", "My review"))
+
+        results = discover_workflows(tmp_path)
+
+        assert results[0][2] == "my-review"
+
+    def test_sorted_by_display_name(self, tmp_path):
+        """Results are sorted by display_name, not filename or path."""
+        (tmp_path / "z-workflow.yaml").write_text(_minimal_workflow("Z", "Zeta"))
+        a_dir = tmp_path / "a-workflow"
+        a_dir.mkdir()
+        (a_dir / "workflow.yaml").write_text(_minimal_workflow("A", "Alpha"))
+        (tmp_path / "m-workflow.yaml").write_text(_minimal_workflow("M", "Mike"))
+
+        results = discover_workflows(tmp_path)
+
+        display_names = [r[2] for r in results]
+        assert display_names == ["a-workflow", "m-workflow", "z-workflow"]
+
+    def test_skips_symlinked_workflow_file_inside_directory(self, tmp_path):
+        """Regression (F5): symlinked workflow.yaml inside a directory is rejected."""
+        wf_dir = tmp_path / "review"
+        wf_dir.mkdir()
+        real_file = tmp_path / "real-workflow.yaml"
+        real_file.write_text(_minimal_workflow("R", "Real"))
+        (wf_dir / "workflow.yaml").symlink_to(real_file)
+
+        with pytest.warns(
+            RuntimeWarning, match="Skipping symlinked workflow file in directory"
+        ):
+            results = discover_workflows(tmp_path)
+
+        # The flat file real-workflow.yaml should still be discovered
+        flat_names = [r[2] for r in results]
+        assert "review" not in flat_names
+
 
 class TestBuildWorkflowSelectionPrompt:
     def test_includes_task_description(self):
-        workflows = [(Path("plan.yaml"), "Plan workflow")]
+        workflows = [(Path("plan.yaml"), "Plan workflow", "plan")]
         prompt = _build_workflow_selection_prompt("Implement a feature", workflows)
         assert "Implement a feature" in prompt
 
     def test_includes_workflow_descriptions(self):
         workflows = [
-            (Path("plan.yaml"), "Planning phase"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning phase", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
         prompt = _build_workflow_selection_prompt("Build something", workflows)
-        assert "plan.yaml" in prompt
+        assert "plan" in prompt
         assert "Planning phase" in prompt
-        assert "implement.yaml" in prompt
+        assert "implement" in prompt
         assert "Implementation" in prompt
 
-    def test_requests_filename_only(self):
-        workflows = [(Path("test.yaml"), "Test workflow")]
+    def test_requests_workflow_name_only(self):
+        workflows = [(Path("test.yaml"), "Test workflow", "test")]
         prompt = _build_workflow_selection_prompt("Test task", workflows)
-        assert "filename" in prompt.lower()
+        assert "workflow name" in prompt.lower()
         assert "Return ONLY" in prompt or "only" in prompt.lower()
 
 
@@ -210,7 +396,7 @@ class TestParseWorkflowSelection:
 
 class TestSelectWorkflow:
     def test_single_workflow_shortcut(self):
-        workflows = [(Path("only.yaml"), "Only workflow")]
+        workflows = [(Path("only.yaml"), "Only workflow", "only")]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
         result = select_workflow("Do something", workflows, config)
@@ -218,7 +404,7 @@ class TestSelectWorkflow:
         assert result == Path("only.yaml")
 
     def test_no_workflows_raises(self):
-        workflows: list[tuple[Path, str]] = []
+        workflows: list[tuple[Path, str, str]] = []
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
         with pytest.raises(ValueError, match="No workflows found"):
@@ -226,15 +412,15 @@ class TestSelectWorkflow:
 
     def test_multiple_workflows_calls_llm(self):
         workflows = [
-            (Path("plan.yaml"), "Planning workflow"),
-            (Path("implement.yaml"), "Implementation workflow"),
+            (Path("plan.yaml"), "Planning workflow", "plan"),
+            (Path("implement.yaml"), "Implementation workflow", "implement"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
             exit_code=0,
-            stdout="plan.yaml",
+            stdout="plan",
             stderr="",
         )
 
@@ -246,7 +432,7 @@ class TestSelectWorkflow:
         assert call_kwargs["model"] == "claude-sonnet-4-6"
 
     def test_llm_response_with_code_block(self):
-        workflows = [(Path("implement.yaml"), "Implementation")]
+        workflows = [(Path("implement.yaml"), "Implementation", "implement")]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
         mock_provider = MagicMock()
@@ -263,8 +449,8 @@ class TestSelectWorkflow:
 
     def test_llm_selects_nonexistent_workflow_raises(self):
         workflows = [
-            (Path("plan.yaml"), "Planning"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
@@ -281,8 +467,8 @@ class TestSelectWorkflow:
 
     def test_llm_response_without_yaml_extension_matches(self):
         workflows = [
-            (Path("plan.yaml"), "Planning"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
@@ -300,8 +486,8 @@ class TestSelectWorkflow:
 
     def test_llm_response_with_prefix_matches(self):
         workflows = [
-            (Path("plan.yaml"), "Planning"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
@@ -318,12 +504,10 @@ class TestSelectWorkflow:
         assert result == Path("implement.yaml")
 
     def test_stem_overlap_does_not_match_wrong_workflow(self):
-        """Regression: Strategy 3 must not match 'code.yaml' when LLM says 'review-code'.
-        Previously, `wf_path.stem in selected_name` would match 'code' in 'review-code'.
-        """
+        """Regression: Strategy 4 must not match 'code' when LLM says 'review-code'."""
         workflows = [
-            (Path("code.yaml"), "Code workflow"),
-            (Path("review.yaml"), "Review workflow"),
+            (Path("code.yaml"), "Code workflow", "code"),
+            (Path("review.yaml"), "Review workflow", "review"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
@@ -339,10 +523,10 @@ class TestSelectWorkflow:
                 select_workflow("Review code", workflows, config)
 
     def test_ambiguous_filename_match_raises(self):
-        """Regression: Strategy 3 must raise if multiple filenames appear in the response."""
+        """Regression: Strategy 4 must raise if multiple names appear in the response."""
         workflows = [
-            (Path("plan.yaml"), "Planning"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
@@ -358,12 +542,12 @@ class TestSelectWorkflow:
                 select_workflow("Ambiguous task", workflows, config)
 
     def test_stem_in_surrounding_text_matches(self):
-        """Regression (Finding 2): stem matching should still work when LLM wraps the
-        stem in surrounding text like 'I recommend implement' (no .yaml extension).
+        """Regression: display_name matching should still work when LLM wraps the
+        name in surrounding text like 'I recommend implement'.
         """
         workflows = [
-            (Path("plan.yaml"), "Planning"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
@@ -380,7 +564,7 @@ class TestSelectWorkflow:
         assert result == Path("implement.yaml")
 
     def test_provider_failure_raises(self):
-        workflows = [(Path("a.yaml"), "A"), (Path("b.yaml"), "B")]
+        workflows = [(Path("a.yaml"), "A", "a"), (Path("b.yaml"), "B", "b")]
         config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
 
         mock_provider = MagicMock()
@@ -429,8 +613,8 @@ class TestConfirmWorkflowSelection:
 class TestPickWorkflowManually:
     def test_pick_valid_number(self):
         workflows = [
-            (Path("plan.yaml"), "Planning"),
-            (Path("implement.yaml"), "Implementation"),
+            (Path("plan.yaml"), "Planning", "plan"),
+            (Path("implement.yaml"), "Implementation", "implement"),
         ]
 
         with patch("builtins.input", return_value="1"):
@@ -439,7 +623,7 @@ class TestPickWorkflowManually:
         assert result == Path("plan.yaml")
 
     def test_cancel_returns_none(self):
-        workflows = [(Path("plan.yaml"), "Planning")]
+        workflows = [(Path("plan.yaml"), "Planning", "plan")]
 
         with patch("builtins.input", return_value="c"):
             result = pick_workflow_manually(workflows)
@@ -447,7 +631,7 @@ class TestPickWorkflowManually:
         assert result is None
 
     def test_invalid_number_prompts_again(self):
-        workflows = [(Path("plan.yaml"), "Planning")]
+        workflows = [(Path("plan.yaml"), "Planning", "plan")]
 
         inputs = iter(["0", "1"])
         with patch("builtins.input", lambda x: next(inputs)):
@@ -640,3 +824,75 @@ class TestResolveWorkflowForTask:
                 )
 
             assert result == Path(tmpdir) / "only.yaml"
+
+
+class TestFuzzyMatchSubstringCollision:
+    """Regression tests for F3: fuzzy match substring collision (plan vs planning)."""
+
+    def test_planning_matches_over_plan(self):
+        """'planning' in response should match 'planning', not 'plan'."""
+        workflows = [
+            (Path("plan.yaml"), "Plan workflow", "plan"),
+            (Path("planning.yaml"), "Planning workflow", "planning"),
+        ]
+        config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout="I recommend planning",
+            stderr="",
+        )
+
+        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+            result = select_workflow("Schedule tasks", workflows, config)
+
+        assert result == Path("planning.yaml")
+
+    def test_plan_matches_when_standalone(self):
+        """'plan' as standalone word should match 'plan'."""
+        workflows = [
+            (Path("plan.yaml"), "Plan workflow", "plan"),
+            (Path("planning.yaml"), "Planning workflow", "planning"),
+        ]
+        config = WorkflowSelectorConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout="use the plan workflow",
+            stderr="",
+        )
+
+        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
+            result = select_workflow("Make a plan", workflows, config)
+
+        assert result == Path("plan.yaml")
+
+
+class TestConfirmWorkflowSelectionDisplayName:
+    """Regression tests for F2: confirm shows display_name instead of workflow.yaml."""
+
+    def test_directory_workflow_shows_display_name(self, capsys):
+        """confirm_workflow_selection should show display_name, not 'workflow.yaml'."""
+        with patch("builtins.input", return_value="y"):
+            confirm_workflow_selection(
+                Path("review/workflow.yaml"),
+                "Review the code",
+                display_name="review",
+            )
+
+        captured = capsys.readouterr()
+        assert "review" in captured.err
+        assert "workflow.yaml" not in captured.err
+
+    def test_flat_workflow_falls_back_to_filename(self, capsys):
+        """Without display_name, confirm_workflow_selection shows filename."""
+        with patch("builtins.input", return_value="y"):
+            confirm_workflow_selection(
+                Path("plan.yaml"),
+                "Plan the work",
+            )
+
+        captured = capsys.readouterr()
+        assert "plan.yaml" in captured.err

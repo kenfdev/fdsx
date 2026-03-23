@@ -1,8 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
-from fdsx.core.engine import _calc_elapsed, _extract_results, _find_failed_state
+from fdsx.core.engine import (
+    _calc_elapsed,
+    _extract_results,
+    _find_failed_state,
+    _workflow_persist_id,
+)
 from fdsx.logging import RunRecorder
 
 
@@ -177,3 +183,90 @@ class TestErrorPathFallback:
         failed_state_name = failed[0] if failed else "unknown"
         assert failed_state_name == "unknown"
         assert failed_state_name is not None
+
+
+class TestWorkflowPersistId:
+    """Regression tests for F1: workflow persist ID round-trips correctly."""
+
+    def test_flat_file_returns_filename(self, tmp_path):
+        """Flat workflow file persists as just the filename."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        wf = workflows_dir / "batch_flow.yaml"
+        wf.touch()
+
+        result = _workflow_persist_id(wf, workflows_dir)
+        assert result == "batch_flow.yaml"
+
+    def test_directory_workflow_returns_relative_path(self, tmp_path):
+        """Directory workflow persists as 'dirname/workflow.yaml'."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        review_dir = workflows_dir / "review"
+        review_dir.mkdir()
+        wf = review_dir / "workflow.yaml"
+        wf.touch()
+
+        result = _workflow_persist_id(wf, workflows_dir)
+        assert result == "review/workflow.yaml"
+
+    def test_round_trip_flat(self, tmp_path):
+        """Flat workflow ID resolves back to the original file."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        wf = workflows_dir / "batch_flow.yaml"
+        wf.touch()
+
+        persist_id = _workflow_persist_id(wf, workflows_dir)
+        resolved = workflows_dir / persist_id
+        assert resolved.resolve() == wf.resolve()
+
+    def test_round_trip_directory(self, tmp_path):
+        """Directory workflow ID resolves back to the original file."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        review_dir = workflows_dir / "review"
+        review_dir.mkdir()
+        wf = review_dir / "workflow.yaml"
+        wf.touch()
+
+        persist_id = _workflow_persist_id(wf, workflows_dir)
+        resolved = workflows_dir / persist_id
+        assert resolved.resolve() == wf.resolve()
+
+
+class TestWorkflowValidatorNesting:
+    """Regression tests for F1: TaskEntry.workflow validator allows one-level nesting."""
+
+    def test_flat_filename_accepted(self):
+        from fdsx.models.task import TaskEntry
+
+        entry = TaskEntry(description="test", workflow="batch_flow.yaml")
+        assert entry.workflow == "batch_flow.yaml"
+
+    def test_one_level_nesting_accepted(self):
+        from fdsx.models.task import TaskEntry
+
+        entry = TaskEntry(description="test", workflow="review/workflow.yaml")
+        assert entry.workflow == "review/workflow.yaml"
+
+    def test_deep_nesting_rejected(self):
+        import pytest
+        from fdsx.models.task import TaskEntry
+
+        with pytest.raises(Exception, match="nesting too deep"):
+            TaskEntry(description="test", workflow="a/b/c.yaml")
+
+    def test_parent_traversal_rejected(self):
+        import pytest
+        from fdsx.models.task import TaskEntry
+
+        with pytest.raises(Exception, match="without \\.\\."):
+            TaskEntry(description="test", workflow="../escape.yaml")
+
+    def test_absolute_path_rejected(self):
+        import pytest
+        from fdsx.models.task import TaskEntry
+
+        with pytest.raises(Exception, match="relative path"):
+            TaskEntry(description="test", workflow="/etc/passwd")

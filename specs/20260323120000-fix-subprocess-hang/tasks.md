@@ -93,13 +93,13 @@ No setup tasks required. No new dependencies — uses Python stdlib only (`threa
 
 **Independent test criteria:** Simulated hanging provider completes within ~15s. Clean-exit provider has no extra latency. No-signal provider uses current behavior. All existing provider tests pass unchanged.
 
-- [ ] T007 Write integration tests for completion signal with real subprocesses in `tests/integration/test_subprocess_completion.py`
+- [x] T007 Write integration tests for completion signal with real subprocesses in `tests/integration/test_subprocess_completion.py`
   - Simulated hanging provider: subprocess emits NDJSON with `result` event then hangs → step completes within ~15s
   - Clean exit provider: subprocess emits `result` and exits immediately → no extra latency
   - No completion signal: subprocess without stream protocol → current behavior (waits for exit)
   - Uses `_run_subprocess` directly with crafted Python scripts
 
-- [ ] T008 Verify full test suite passes with no regressions by running `pytest tests/ -v`
+- [x] T008 Verify full test suite passes with no regressions by running `pytest tests/ -v`
   - All existing provider tests (system, opencode, codex) pass unchanged
   - No modifications to existing test files
 

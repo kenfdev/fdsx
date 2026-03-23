@@ -707,6 +707,15 @@ def _update_task_status(
     save_task_file(file_path, task_file)
 
 
+def _workflow_persist_id(wf_path: Path, workflows_dir: Path) -> str:
+    """Return a persistable workflow identifier that round-trips via workflows_dir / id."""
+    try:
+        rel = wf_path.resolve().relative_to(workflows_dir.resolve())
+        return str(rel)
+    except ValueError:
+        return wf_path.name
+
+
 def run_tasks_dir(
     workflow_path: Path | None,
     tasks_dir: Path,
@@ -745,6 +754,10 @@ def run_tasks_dir(
     config = load_config(project_dir=base_dir.parent)
     project_root = base_dir.parent
     workflows_dir = project_root / config.workflows_dir
+    if workflows_dir.is_symlink():
+        raise FlowValidationError(
+            f"Workflows directory must not be a symlink: {workflows_dir}"
+        )
 
     auto_selection_entries: list[tuple[int, int, Path, str]] = []
 
@@ -753,6 +766,40 @@ def run_tasks_dir(
         for entry_idx, entry in actionable:
             if entry.workflow is not None:
                 wf_path = workflows_dir / entry.workflow
+                # Containment check
+                try:
+                    resolved_wf = wf_path.resolve()
+                    wf_dir_resolved = workflows_dir.resolve()
+                    if not str(resolved_wf).startswith(
+                        str(wf_dir_resolved) + "/"
+                    ) and resolved_wf != wf_dir_resolved:
+                        raise ValueError(
+                            f"Workflow path escapes workflows directory: {entry.workflow}"
+                        )
+                except OSError:
+                    raise ValueError(
+                        f"Cannot resolve workflow path: {entry.workflow}"
+                    )
+                if wf_path.is_symlink():
+                    raise ValueError(
+                        f"Workflow path must not be a symlink: {wf_path}"
+                    )
+                if wf_path.is_dir():
+                    wf_file = wf_path / "workflow.yaml"
+                    if not wf_file.exists():
+                        wf_file = wf_path / "workflow.yml"
+                    if wf_file.is_symlink():
+                        raise ValueError(
+                            f"Workflow file must not be a symlink: {wf_file}"
+                        )
+                    wf_path = wf_file
+                elif not wf_path.exists():
+                    # Try adding extensions for display_name-based persistence
+                    for ext in (".yaml", ".yml"):
+                        candidate = wf_path.with_suffix(ext)
+                        if candidate.exists() and not candidate.is_symlink():
+                            wf_path = candidate
+                            break
                 workflow_assignments[(file_idx, entry_idx)] = wf_path
             elif workflow_path is not None:
                 workflow_assignments[(file_idx, entry_idx)] = workflow_path
@@ -811,14 +858,14 @@ def run_tasks_dir(
         for (file_idx, entry_idx), wf_path in workflow_assignments.items():
             file_path, task_file = task_files[file_idx]
             entry = task_file.entries[entry_idx]
-            entry.workflow = wf_path.name
+            entry.workflow = _workflow_persist_id(wf_path, workflows_dir)
             save_task_file(file_path, task_file)
     elif auto_workflow and auto_selection_keys:
         for (file_idx, entry_idx), wf_path in workflow_assignments.items():
             file_path, task_file = task_files[file_idx]
             entry = task_file.entries[entry_idx]
             if entry.workflow is None:
-                entry.workflow = wf_path.name
+                entry.workflow = _workflow_persist_id(wf_path, workflows_dir)
                 save_task_file(file_path, task_file)
 
     for file_idx, (file_path, task_file) in enumerate(task_files):
