@@ -44,7 +44,7 @@ No setup tasks required. No new dependencies — uses Python stdlib only (`threa
 
 **Independent test criteria:** Completion event triggers termination cascade. Process that exits voluntarily is not force-killed. SIGTERM-resistant process is force-killed. Without completion event, behavior is identical to current. Timeout interaction is correct.
 
-- [ ] T003 Write TDD tests for completion event and termination cascade in `tests/unit/test_subprocess_completion.py`
+- [x] T003 Write TDD tests for completion event and termination cascade in `tests/unit/test_subprocess_completion.py`
   - Completion event set during execution → process terminated, result returned
   - Process exits voluntarily within 5s after completion event → no forced termination
   - Process ignores SIGTERM → force-killed after second 5s wait
@@ -55,7 +55,7 @@ No setup tasks required. No new dependencies — uses Python stdlib only (`threa
   - Debug log emitted when process is terminated (not when it exits voluntarily)
   - Uses real subprocesses (hanging, SIGTERM-resistant, clean-exit scripts)
 
-- [ ] T004 Implement completion event support and termination cascade in `src/fdsx/providers/base.py`
+- [x] T004 Implement completion event support and termination cascade in `src/fdsx/providers/base.py`
   - Add `completion_event: threading.Event | None = None` parameter to `_run_subprocess`
   - Main thread enters wait loop: check `completion_event` and `stdout_thread.is_alive()`
   - On completion event: run termination cascade (wait 5s → SIGTERM → wait 5s → SIGKILL)

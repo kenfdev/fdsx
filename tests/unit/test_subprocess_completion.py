@@ -1,4 +1,5 @@
-"""TDD tests for stdout-in-daemon-thread refactor (T001, T002).
+"""TDD tests for stdout-in-daemon-thread refactor (T001, T002) and
+completion_event termination cascade (T003, T004).
 
 These tests verify that _run_subprocess correctly collects stdout and stderr via
 daemon threads, preserving all existing behavioral contracts:
@@ -9,11 +10,21 @@ daemon threads, preserving all existing behavioral contracts:
 
 T001: Write these tests first (TDD — they describe the expected behavior).
 T002: Refactor _run_subprocess to run stdout reading in a daemon thread.
+
+T003: Write tests for completion_event parameter and termination cascade.
+T004: Implement completion_event support and termination cascade in _run_subprocess.
 """
 
+import logging
+import sys
+import threading
 import time
 
 from fdsx.providers.base import _run_subprocess
+
+# Use sys.executable so tests run with the same Python interpreter as the test
+# runner, regardless of PATH or virtualenv configuration.
+_PYTHON = sys.executable
 
 
 class TestStdoutCollection:
@@ -260,3 +271,190 @@ class TestTimeout:
         assert result.exit_code == 124
         # timeout(1s) + reader thread join timeouts (2x1s) + overhead
         assert elapsed < 6, f"Took {elapsed:.1f}s — too slow"
+
+
+class TestCompletionEvent:
+    """completion_event triggers termination cascade and preserves collected data."""
+
+    def test_completion_event_terminates_hanging_process(self):
+        """Firing completion_event terminates a hanging process and returns collected data."""
+        event = threading.Event()
+        timer = threading.Timer(0.5, event.set)
+        timer.start()
+        try:
+            start = time.time()
+            result = _run_subprocess(
+                args=[_PYTHON, "-c", "import sys,time; print('output',flush=True); time.sleep(999)"],
+                completion_event=event,
+            )
+            elapsed = time.time() - start
+        finally:
+            timer.cancel()
+
+        assert result.exit_code != 124, "Should not be a timeout result"
+        assert "output" in result.stdout
+        # Should terminate well within the cascade max time (5s wait + 5s after SIGTERM)
+        assert elapsed < 20, f"Took {elapsed:.1f}s — too slow"
+
+    def test_process_exits_voluntarily_after_completion_event(self):
+        """Process that exits within 5s of completion_event is not force-killed."""
+        event = threading.Event()
+        # Fire event at 0.3s; process sleeps only 1s so it exits voluntarily
+        timer = threading.Timer(0.3, event.set)
+        timer.start()
+        try:
+            start = time.time()
+            result = _run_subprocess(
+                args=[_PYTHON, "-c", "import time; print('voluntary',flush=True); time.sleep(1)"],
+                completion_event=event,
+            )
+            elapsed = time.time() - start
+        finally:
+            timer.cancel()
+
+        assert result.exit_code != 124
+        assert "voluntary" in result.stdout
+        # Should complete well under the 5s voluntary-exit window
+        assert elapsed < 8, f"Took {elapsed:.1f}s — too slow"
+
+    def test_sigterm_resistant_process_force_killed(self):
+        """Process that ignores SIGTERM is force-killed via SIGKILL after cascade."""
+        event = threading.Event()
+        # Fire immediately; process ignores SIGTERM and hangs
+        timer = threading.Timer(0.2, event.set)
+        timer.start()
+        try:
+            start = time.time()
+            result = _run_subprocess(
+                args=[
+                    _PYTHON, "-c",
+                    "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                    " print('output',flush=True); time.sleep(999)",
+                ],
+                completion_event=event,
+            )
+            elapsed = time.time() - start
+        finally:
+            timer.cancel()
+
+        assert result.exit_code != 124
+        assert "output" in result.stdout
+        # Cascade: 5s voluntary wait + SIGTERM + 5s SIGTERM wait + SIGKILL
+        assert elapsed < 20, f"Took {elapsed:.1f}s — too slow"
+
+    def test_completion_event_not_set_waits_for_eof(self):
+        """An unset completion_event behaves identically to no event (waits for EOF)."""
+        event = threading.Event()  # never set
+
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "print('fast_exit',flush=True)"],
+            completion_event=event,
+        )
+
+        assert result.exit_code == 0
+        assert result.stdout == "fast_exit"
+
+    def test_response_data_preserved_after_completion(self):
+        """All lines emitted before the hang are present in result.stdout."""
+        event = threading.Event()
+        timer = threading.Timer(0.5, event.set)
+        timer.start()
+        try:
+            result = _run_subprocess(
+                args=[
+                    _PYTHON, "-c",
+                    "import time;"
+                    " print('line1',flush=True);"
+                    " print('line2',flush=True);"
+                    " print('line3',flush=True);"
+                    " time.sleep(999)",
+                ],
+                completion_event=event,
+            )
+        finally:
+            timer.cancel()
+
+        assert "line1" in result.stdout
+        assert "line2" in result.stdout
+        assert "line3" in result.stdout
+
+    def test_debug_log_on_forced_termination(self, caplog):
+        """Debug log is emitted when process does not exit voluntarily."""
+        event = threading.Event()
+        # Process ignores SIGTERM → SIGKILL path; should produce debug log
+        timer = threading.Timer(0.2, event.set)
+        timer.start()
+        try:
+            with caplog.at_level(logging.DEBUG, logger="fdsx.providers.base"):
+                _run_subprocess(
+                    args=[
+                        _PYTHON, "-c",
+                        "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                        " print('x',flush=True); time.sleep(999)",
+                    ],
+                    completion_event=event,
+                )
+        finally:
+            timer.cancel()
+
+        assert "did not exit voluntarily" in caplog.text
+
+    def test_no_debug_log_when_process_exits_voluntarily(self, caplog):
+        """No forced-termination log when process exits cleanly within 5s window."""
+        event = threading.Event()
+        timer = threading.Timer(0.2, event.set)
+        timer.start()
+        try:
+            with caplog.at_level(logging.DEBUG, logger="fdsx.providers.base"):
+                _run_subprocess(
+                    args=[_PYTHON, "-c", "print('ok',flush=True); import time; time.sleep(1)"],
+                    completion_event=event,
+                )
+        finally:
+            timer.cancel()
+
+        assert "did not exit voluntarily" not in caplog.text
+        assert "SIGTERM" not in caplog.text
+
+
+class TestCompletionEventTimeoutInteraction:
+    """Correct behavior when both completion_event and timeout are provided."""
+
+    def test_timeout_fires_before_completion_event(self):
+        """When timeout fires first, exit_code=124 (timeout behavior wins)."""
+        event = threading.Event()
+        # Timeout=1s, event fires at 5s → timeout wins
+        timer = threading.Timer(5.0, event.set)
+        timer.start()
+        try:
+            result = _run_subprocess(
+                args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+                timeout=1,
+                completion_event=event,
+            )
+        finally:
+            timer.cancel()
+
+        assert result.exit_code == 124
+        assert "timed out" in result.stderr.lower()
+
+    def test_completion_fires_before_timeout(self):
+        """When completion fires first, result has collected data (not timeout)."""
+        event = threading.Event()
+        # Timeout=30s, event fires at 0.5s → completion wins
+        timer = threading.Timer(0.5, event.set)
+        timer.start()
+        try:
+            result = _run_subprocess(
+                args=[
+                    _PYTHON, "-c",
+                    "import time; print('data',flush=True); time.sleep(999)",
+                ],
+                timeout=30,
+                completion_event=event,
+            )
+        finally:
+            timer.cancel()
+
+        assert result.exit_code != 124
+        assert "data" in result.stdout
