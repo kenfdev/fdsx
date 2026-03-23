@@ -131,3 +131,37 @@ class TestStreamLoggerIterationNaming:
         assert (log_dir / f"plan_2{LOG_FILE_SUFFIX}").exists()
         content = (log_dir / f"plan_2{LOG_FILE_SUFFIX}").read_text(encoding="utf-8")
         assert "quiet output" in content
+
+    def test_underscore_in_state_name_no_ambiguity(self, tmp_path):
+        """State 'my_state' (iter=1) and state 'my_state_1' (iter=1) produce distinct files.
+
+        Ensures no filename collision between a state named 'my_state_1' (iteration 1)
+        and a state named 'my_state' (iteration 1). Both should coexist unambiguously
+        in the same log_dir.
+        """
+        log_dir = tmp_path / "logs"
+
+        # State "my_state" at iteration 1 → my_state_1.log
+        logger_a = StreamLogger("my_state", log_dir, iteration=1)
+        logger_a.on_stdout("alpha payload")
+        logger_a.close()
+
+        # State "my_state_1" at iteration 1 → my_state_1_1.log
+        logger_b = StreamLogger("my_state_1", log_dir, iteration=1)
+        logger_b.on_stdout("beta payload")
+        logger_b.close()
+
+        path_a = log_dir / f"my_state_1{LOG_FILE_SUFFIX}"
+        path_b = log_dir / f"my_state_1_1{LOG_FILE_SUFFIX}"
+
+        # Both files must exist and be distinct
+        assert path_a.exists(), f"Expected my_state_1.log at {path_a}"
+        assert path_b.exists(), f"Expected my_state_1_1.log at {path_b}"
+
+        content_a = path_a.read_text(encoding="utf-8")
+        content_b = path_b.read_text(encoding="utf-8")
+
+        assert "alpha payload" in content_a
+        assert "beta payload" not in content_a
+        assert "beta payload" in content_b
+        assert "alpha payload" not in content_b

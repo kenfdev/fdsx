@@ -49,9 +49,9 @@
 
 **Goal**: Fix all broken existing tests and add edge case coverage.
 
-- [ ] T009 Run full test suite (`pytest tests/`) and identify all failures caused by the changes in Phases 1-4. Document each failing test and the reason (UUID format assertion, log filename assertion, display_name assertion, etc.).
+- [x] T009 Run full test suite (`pytest tests/`) and identify all failures caused by the changes in Phases 1-4. Document each failing test and the reason (UUID format assertion, log filename assertion, display_name assertion, etc.).
 
-- [ ] T010 Fix all identified test failures: (a) update tests asserting UUID thread_id format to accept the new `YYYY-MM-DD-HHmmss-abc123` format, (b) update tests asserting `display_name` equals directory name or file stem to assert `flow.name` instead, (c) update tests asserting log filenames like `state.log` to assert `state_1.log`, (d) verify resume integration tests work with new thread_id format, (e) verify batch mode tests work correctly (each task still gets its own directory with new format), (f) add edge case tests: state names containing underscores (e.g., `my_state_1.log` vs `my_state_1_1.log` — ensure no ambiguity in parsing), max_iterations interaction with resume (iteration count restored from checkpoint). Run full test suite to confirm all tests pass.
+- [x] T010 Fix all identified test failures: (a) update tests asserting UUID thread_id format to accept the new `YYYY-MM-DD-HHmmss-abc123` format, (b) update tests asserting `display_name` equals directory name or file stem to assert `flow.name` instead, (c) update tests asserting log filenames like `state.log` to assert `state_1.log`, (d) verify resume integration tests work with new thread_id format, (e) verify batch mode tests work correctly (each task still gets its own directory with new format), (f) add edge case tests: state names containing underscores (e.g., `my_state_1.log` vs `my_state_1_1.log` — ensure no ambiguity in parsing), max_iterations interaction with resume (iteration count restored from checkpoint). Run full test suite to confirm all tests pass.
 
 ---
 

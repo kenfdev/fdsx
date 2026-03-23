@@ -20,6 +20,7 @@ class TestExponentialBackoff:
         state.retry = 3
         state.extract = None
         state.result_path = "result"
+        state.max_iterations = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
@@ -66,6 +67,7 @@ class TestExponentialBackoff:
         state.retry = 1
         state.extract = None
         state.result_path = "result"
+        state.max_iterations = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
@@ -111,6 +113,7 @@ class TestExponentialBackoff:
         state.retry = 2
         state.extract = None
         state.result_path = "result"
+        state.max_iterations = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
@@ -157,6 +160,7 @@ class TestExponentialBackoff:
         state.retry = 10
         state.extract = None
         state.result_path = "result"
+        state.max_iterations = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
