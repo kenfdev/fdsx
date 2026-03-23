@@ -520,9 +520,7 @@ def confirm_workflow_assignments_interactive(
             entry = task_file.entries[entry_idx]
             wf_path = assignments.get(key)
             wf_name = (
-                wf_display_map.get(wf_path, wf_path.name)
-                if wf_path
-                else "(unassigned)"
+                wf_display_map.get(wf_path, wf_path.name) if wf_path else "(unassigned)"
             )
 
             file_name = file_path.name[:29]
@@ -663,12 +661,12 @@ def display_resume_command(
     stream.write(border + "\n")
     if mode == "single-flow":
         stream.write(f"|{padding}|\n")
-        stream.write(f"|  To resume this flow, run:\n")
+        stream.write("|  To resume this flow, run:\n")
         stream.write(f"|  $ {command}\n")
         stream.write(f"|{padding}|\n")
     else:
         stream.write(f"|{padding}|\n")
-        stream.write(f"|  To continue processing, run:\n")
+        stream.write("|  To continue processing, run:\n")
         stream.write(f"|  $ {command}\n")
         stream.write(f"|{padding}|\n")
     stream.write(border + "\n")

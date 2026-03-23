@@ -1,12 +1,8 @@
 import yaml
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from fdsx.cli.main import app
-from fdsx.core import engine
-from fdsx.core.config import FdsxConfig
 from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 
 

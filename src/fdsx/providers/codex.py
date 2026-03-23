@@ -4,7 +4,12 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderBase, ProviderResult, _run_subprocess
+from fdsx.providers.base import (
+    ARG_MAX_STDIN_THRESHOLD,
+    ProviderBase,
+    ProviderResult,
+    _run_subprocess,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +132,9 @@ class CodexProvider(ProviderBase):
                 logger.warning("turn.failed event received: %s", event.get("error", ""))
 
             elif event_type == _EVENT_ERROR:
-                logger.warning("Codex error event: %s", event.get("message", str(event)))
+                logger.warning(
+                    "Codex error event: %s", event.get("message", str(event))
+                )
 
         def get_result() -> str | None:
             if agent_message_parts:

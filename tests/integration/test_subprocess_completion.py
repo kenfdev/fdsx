@@ -40,10 +40,12 @@ def _make_result_ndjson(result_value: str = "ok") -> str:
 
 def _make_content_block_delta_ndjson(text: str) -> str:
     """Return a stream-json NDJSON line for a content_block_delta event."""
-    return json.dumps({
-        "type": "content_block_delta",
-        "delta": {"type": "text_delta", "text": text},
-    })
+    return json.dumps(
+        {
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": text},
+        }
+    )
 
 
 def _make_ndjson_callback(
@@ -120,7 +122,9 @@ class TestHangingProvider:
     def test_hanging_provider_result_data_preserved(self):
         """All NDJSON lines emitted before the hang are delivered to the callback."""
         completion_event = threading.Event()
-        output_callback, all_lines, result_values = _make_ndjson_callback(completion_event)
+        output_callback, all_lines, result_values = _make_ndjson_callback(
+            completion_event
+        )
 
         delta1 = _make_content_block_delta_ndjson("hello ")
         delta2 = _make_content_block_delta_ndjson("world")
@@ -164,8 +168,7 @@ class TestCleanExitProvider:
 
         result_line = _make_result_ndjson("clean exit result")
         script = (
-            "import sys\n"
-            f"print({result_line!r}, flush=True)\n"
+            f"import sys\nprint({result_line!r}, flush=True)\n"
             # Process exits immediately after printing
         )
 
@@ -192,11 +195,7 @@ class TestCleanExitProvider:
         output_callback, _, _ = _make_ndjson_callback(completion_event)
 
         result_line = _make_result_ndjson("done")
-        script = (
-            "import sys\n"
-            f"print({result_line!r}, flush=True)\n"
-            "sys.exit(42)\n"
-        )
+        script = f"import sys\nprint({result_line!r}, flush=True)\nsys.exit(42)\n"
 
         result = _run_subprocess(
             args=[_PYTHON, "-c", script],

@@ -2,8 +2,6 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from fdsx.display.terminal import confirm_workflow_assignments_interactive
 from fdsx.models.task import TaskEntry, TaskFile
 
@@ -24,8 +22,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
     def _make_workflows(self, *names: str) -> list[tuple[Path, str, str]]:
         """Helper to create available_workflows list from names."""
         return [
-            (Path(name), f"Description for {name}", Path(name).stem)
-            for name in names
+            (Path(name), f"Description for {name}", Path(name).stem) for name in names
         ]
 
     def test_confirm_returns_assignments_dict(self):
@@ -299,7 +296,6 @@ class TestConfirmWorkflowAssignmentsInteractive:
         """Changing the same assignment twice keeps the last value (uses 2 tasks)."""
         task_files = self._make_task_files("Fix the bug", "Write tests")
         wf1 = Path("review.yaml")
-        wf2 = Path("implement.yaml")
         wf3 = Path("test.yaml")
         assignments = {(0, 0): wf1, (1, 0): wf1}
         display_keys = [(0, 0), (1, 0)]
@@ -339,14 +335,16 @@ class TestConfirmWorkflowAssignmentsInteractive:
         display_keys = [(0, 0)]
         assignments: dict[tuple[int, int], Path] = {}
         workflows = self._make_workflows("review.yaml")
+        stream = StringIO()
 
         with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="c") as mock_input:
+            with patch("builtins.input", side_effect=["c", "q"]) as mock_input:
                 result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
+                    display_keys, assignments, task_files, workflows, stream=stream
                 )
 
         mock_input.assert_called()
+        assert "Cannot confirm" in stream.getvalue()
         assert result is None, (
             "Unassigned single task should block on 'c' until assigned"
         )

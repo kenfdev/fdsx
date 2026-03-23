@@ -205,7 +205,8 @@ class TestEdgeCases:
         assert results[0]["status"] == "completed"
         assert results[0]["category"] == "new"
 
-        loaded = load_task_file(tasks_dir / "001-single.yaml")
+        # After all entries complete, the file is moved to completed/
+        loaded = load_task_file(tasks_dir / "completed" / "001-single.yaml")
         assert loaded.entries[0].status == "completed"
 
     def test_mix_valid_and_invalid_yaml_files(self, tmp_path):
@@ -343,7 +344,9 @@ class TestFullPipelineE2E:
                 assert r["category"] == "retried"
                 assert r["status"] == "completed"
 
-        task_file_final = load_task_file(task_file_path)
+        # After all entries complete on resume, the file is moved to completed/
+        completed_path = task_file_path.parent / "completed" / task_file_path.name
+        task_file_final = load_task_file(completed_path)
         assert task_file_final.entries[0].status == "completed"
         assert task_file_final.entries[0].description == "Implement feature A"
         assert task_file_final.entries[1].status == "completed"
@@ -390,7 +393,9 @@ class TestFullPipelineE2E:
         )
 
         for f in created_files:
-            loaded = load_task_file(f)
+            # After all entries complete, files are moved to completed/
+            completed_f = f.parent / "completed" / f.name
+            loaded = load_task_file(completed_f)
             for entry in loaded.entries:
                 assert entry.status == "completed", (
                     f"Entry '{entry.description}' should be completed"
@@ -495,7 +500,7 @@ class TestFullPipelineE2E:
                 with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
                     with patch("fdsx.core.engine.display_tasks_dir_summary"):
                         with patch("fdsx.core.engine.input", side_effect=["n"]):
-                            results = engine.run_tasks_dir(
+                            engine.run_tasks_dir(
                                 None,
                                 tasks_dir,
                                 base_dir=project_root / ".fdsx",
@@ -558,7 +563,9 @@ class TestFullPipelineE2E:
                 assert r["category"] == "retried"
                 assert r["status"] == "completed"
 
-        final_task_file = load_task_file(created_files[0])
+        # After all entries complete on resume, the file is moved to completed/
+        completed_path = created_files[0].parent / "completed" / created_files[0].name
+        final_task_file = load_task_file(completed_path)
         assert final_task_file.entries[0].status == "completed"
         assert final_task_file.entries[1].status == "completed"
 

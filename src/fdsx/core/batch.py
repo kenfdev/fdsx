@@ -8,7 +8,12 @@ from typing import Any
 from fdsx.core.config import TaskSplitterConfig
 from fdsx.display.terminal import _sanitize_output
 from fdsx.models.flow import Flow
-from fdsx.models.task import TaskEntry, TaskFile, save_task_file
+from fdsx.models.task import (
+    TaskEntry,
+    TaskFile,
+    _ensure_no_symlink_ancestors,
+    save_task_file,
+)
 from fdsx.providers.base import get_provider
 
 
@@ -335,11 +340,9 @@ def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Pat
     Raises:
         ValueError: If tasks_dir is a symlink or other security checks fail
     """
-    current = tasks_dir
-    while current != current.parent:
-        if current.exists() and current.is_symlink():
-            raise ValueError(f"Refusing to write: ancestor is a symlink: {current}")
-        current = current.parent
+    # Reject user-controlled symlink ancestors before creating the tasks dir,
+    # while allowing known platform temp aliases like /var and /tmp on macOS.
+    _ensure_no_symlink_ancestors(tasks_dir, include_self=True)
 
     tasks_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
@@ -376,20 +379,15 @@ def move_task_to_completed(file_path: Path) -> None:
     """
     completed_dir = file_path.parent / COMPLETED_SUBDIR
 
-    # Security check: no symlinks in the ancestor path
-    current = completed_dir
-    while current != current.parent:
-        if current.exists() and current.is_symlink():
-            raise ValueError(f"Refusing to write: ancestor is a symlink: {current}")
-        current = current.parent
+    # Reject user-controlled symlink ancestors in the destination path while
+    # allowing known platform temp aliases like /var and /tmp on macOS.
+    _ensure_no_symlink_ancestors(completed_dir, include_self=True)
 
     completed_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     dest = completed_dir / file_path.name
     if dest.exists():
-        raise FileExistsError(
-            f"Destination already exists in completed/: {dest}"
-        )
+        raise FileExistsError(f"Destination already exists in completed/: {dest}")
 
     shutil.move(str(file_path), str(dest))
 

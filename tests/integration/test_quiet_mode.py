@@ -17,10 +17,13 @@ from fdsx.cli.main import app
 class TestQuietModeE2E:
     """End-to-end integration tests for --quiet flag (FR-5.1, FR-5.4)."""
 
-    def test_quiet_suppresses_state_streaming_output(self):
+    def test_quiet_suppresses_state_streaming_output(self, tmp_path, monkeypatch):
         """--quiet suppresses [state_name] prefixed lines on stderr."""
+        flow_path = str(
+            Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
+        )
+        monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        flow_path = str(Path("tests/fixtures/simple_flow.yaml").resolve())
 
         result = runner.invoke(app, ["run", flow_path, "--quiet"])
 
@@ -32,10 +35,13 @@ class TestQuietModeE2E:
         assert "[implement]" not in result.output
         assert "[review]" not in result.output
 
-    def test_quiet_completion_summary_still_printed(self):
+    def test_quiet_completion_summary_still_printed(self, tmp_path, monkeypatch):
         """--quiet does not suppress the completion summary."""
+        flow_path = str(
+            Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
+        )
+        monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        flow_path = str(Path("tests/fixtures/simple_flow.yaml").resolve())
 
         result = runner.invoke(app, ["run", flow_path, "--quiet"])
 
@@ -45,10 +51,13 @@ class TestQuietModeE2E:
         # Completion summary should still appear (from display_completion_summary)
         assert "completed successfully" in result.output
 
-    def test_non_quiet_produces_streaming_output(self):
+    def test_non_quiet_produces_streaming_output(self, tmp_path, monkeypatch):
         """Without --quiet, streaming output is produced (baseline)."""
+        flow_path = str(
+            Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
+        )
+        monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        flow_path = str(Path("tests/fixtures/simple_flow.yaml").resolve())
 
         result = runner.invoke(app, ["run", flow_path])
 
@@ -66,7 +75,9 @@ class TestQuietModeE2E:
         """--quiet still writes per-state log files (FR-5.3)."""
         monkeypatch.chdir(tmp_path)
 
-        src_fixture = Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
+        src_fixture = (
+            Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
+        )
         flow_file = tmp_path / "simple_flow.yaml"
         shutil.copy(src_fixture, flow_file)
 

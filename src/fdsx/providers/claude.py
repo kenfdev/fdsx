@@ -5,7 +5,12 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderBase, ProviderResult, _run_subprocess
+from fdsx.providers.base import (
+    ARG_MAX_STDIN_THRESHOLD,
+    ProviderBase,
+    ProviderResult,
+    _run_subprocess,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +19,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # CLI flags added to enable stream-json output when output_callback is provided
-_STREAM_FORMAT_FLAGS = ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
+_STREAM_FORMAT_FLAGS = [
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+]
 
 # NDJSON event type strings
 _EVENT_CONTENT_BLOCK_START = "content_block_start"
@@ -35,7 +45,12 @@ class ClaudeOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    permission_mode: Literal["default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"] | None = None
+    permission_mode: (
+        Literal[
+            "default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"
+        ]
+        | None
+    ) = None
     dangerously_skip_permissions: bool = False
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
@@ -58,7 +73,9 @@ class ClaudeProvider(ProviderBase):
     """Claude provider - executes Claude CLI."""
 
     def __init__(self, options: ClaudeOptions | None = None) -> None:
-        self.options: ClaudeOptions = options if options is not None else ClaudeOptions()
+        self.options: ClaudeOptions = (
+            options if options is not None else ClaudeOptions()
+        )
 
     def _make_stream_callback(
         self,
@@ -232,7 +249,9 @@ class ClaudeProvider(ProviderBase):
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
             completion_event = threading.Event()
-            stream_callback, get_result, flush = self._make_stream_callback(output_callback, completion_event)
+            stream_callback, get_result, flush = self._make_stream_callback(
+                output_callback, completion_event
+            )
             result = _run_subprocess(
                 args=args,
                 timeout=timeout,

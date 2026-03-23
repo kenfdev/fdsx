@@ -13,11 +13,7 @@ Tests verify:
 
 import sys
 import threading
-from io import StringIO
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from fdsx.logging.stream_logger import LOG_FILE_SUFFIX, StreamLogger
 
@@ -267,8 +263,12 @@ class TestStreamLoggerQuietMode:
         logger_quiet.on_stderr("line two")
         logger_quiet.close()
 
-        normal_content = (log_dir_normal / f"State{LOG_FILE_SUFFIX}").read_text(encoding="utf-8")
-        quiet_content = (log_dir_quiet / f"State{LOG_FILE_SUFFIX}").read_text(encoding="utf-8")
+        normal_content = (log_dir_normal / f"State{LOG_FILE_SUFFIX}").read_text(
+            encoding="utf-8"
+        )
+        quiet_content = (log_dir_quiet / f"State{LOG_FILE_SUFFIX}").read_text(
+            encoding="utf-8"
+        )
         assert normal_content == quiet_content
 
     def test_quiet_true_log_file_still_created(self, tmp_path):

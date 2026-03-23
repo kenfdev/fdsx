@@ -30,7 +30,9 @@ from fdsx.models.flow import HookEntry
 # ---------------------------------------------------------------------------
 
 
-def _make_recorder(thread_id: str = "test-thread", flow_name: str = "TestFlow") -> MagicMock:
+def _make_recorder(
+    thread_id: str = "test-thread", flow_name: str = "TestFlow"
+) -> MagicMock:
     recorder = MagicMock()
     recorder.thread_id = thread_id
     recorder.flow_name = flow_name
@@ -86,15 +88,17 @@ class TestHookFiringOrderWithStreaming:
                 wrapped({"input": "value"})
 
         # on_start fires before node executes
-        assert execution_order.index("hook_starting") < execution_order.index("node_started"), (
-            "on_start hook must fire before node execution starts"
-        )
+        assert execution_order.index("hook_starting") < execution_order.index(
+            "node_started"
+        ), "on_start hook must fire before node execution starts"
         # node executes before on_complete fires
-        assert execution_order.index("node_completed") < execution_order.index("hook_completed"), (
-            "on_complete hook must fire after node execution completes"
-        )
+        assert execution_order.index("node_completed") < execution_order.index(
+            "hook_completed"
+        ), "on_complete hook must fire after node execution completes"
 
-    def test_streaming_log_file_and_hook_data_files_coexist(self, tmp_path: Path) -> None:
+    def test_streaming_log_file_and_hook_data_files_coexist(
+        self, tmp_path: Path
+    ) -> None:
         """StreamLogger log files and hook data JSON files exist in the correct directories.
 
         - Log files: .fdsx/runs/<thread-id>/logs/<state-name>.log
@@ -152,7 +156,9 @@ class TestHookFiringOrderWithStreaming:
         assert input_path.parent.parent.name == HOOKS_DIR_NAME
         assert input_path.parent.parent.parent.name == thread_id
 
-    def test_hook_fires_correctly_with_streaming_task_state(self, tmp_path: Path) -> None:
+    def test_hook_fires_correctly_with_streaming_task_state(
+        self, tmp_path: Path
+    ) -> None:
         """Full integration: hooks fire around a system provider task that produces output.
 
         Uses compile_flow with a real system provider task so that:
@@ -187,19 +193,25 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "hook-stream-full-tid"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="Hook Streaming Integration")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="Hook Streaming Integration"
+        )
         log_dir = tmp_path / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
 
         hook_calls: list[dict] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
             hook_calls.append({"state_name": state_name, "status": status})
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
                 list(
@@ -248,14 +260,18 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "stream-terminal-tid"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="Hook + Streaming Terminal")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="Hook + Streaming Terminal"
+        )
         log_dir = tmp_path / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks"):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
                 list(
@@ -301,14 +317,18 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "log-hook-tid"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="Log + Hook Coexistence")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="Log + Hook Coexistence"
+        )
         log_dir = tmp_path / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks"):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
                 list(
@@ -512,19 +532,25 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "multi-state-hook-tid"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="Multi State Hook Stream")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="Multi State Hook Stream"
+        )
         log_dir = tmp_path / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
 
         hook_calls: list[dict] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
             hook_calls.append({"state_name": state_name, "status": status})
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
                 list(
@@ -539,10 +565,26 @@ states:
         assert "step2" in state_names_that_fired, "step2 hooks should have fired"
 
         # Both starting and completed for each state
-        step1_starting = [c for c in hook_calls if c["state_name"] == "step1" and c["status"] == "starting"]
-        step1_completed = [c for c in hook_calls if c["state_name"] == "step1" and c["status"] == "completed"]
-        step2_starting = [c for c in hook_calls if c["state_name"] == "step2" and c["status"] == "starting"]
-        step2_completed = [c for c in hook_calls if c["state_name"] == "step2" and c["status"] == "completed"]
+        step1_starting = [
+            c
+            for c in hook_calls
+            if c["state_name"] == "step1" and c["status"] == "starting"
+        ]
+        step1_completed = [
+            c
+            for c in hook_calls
+            if c["state_name"] == "step1" and c["status"] == "completed"
+        ]
+        step2_starting = [
+            c
+            for c in hook_calls
+            if c["state_name"] == "step2" and c["status"] == "starting"
+        ]
+        step2_completed = [
+            c
+            for c in hook_calls
+            if c["state_name"] == "step2" and c["status"] == "completed"
+        ]
 
         assert len(step1_starting) == 1, "step1 on_start should fire once"
         assert len(step1_completed) == 1, "step1 on_complete should fire once"
@@ -581,14 +623,18 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "per-state-log-tid"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="Per State Logs With Hooks")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="Per State Logs With Hooks"
+        )
         log_dir = tmp_path / RUNS_DIR_NAME / thread_id / LOGS_DIR_NAME
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks"):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
                 list(

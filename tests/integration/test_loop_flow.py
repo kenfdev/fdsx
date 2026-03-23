@@ -45,6 +45,12 @@ class TestLoopFlow:
         # plan_output, impl_output, and review_output were all set in the loop body.
         # They must all survive to the final captured state (the last iteration overwrites them,
         # so all three should be present in partial results).
-        assert "plan_output" in result, "plan_output must be retained in partial results"
-        assert "impl_output" in result, "impl_output must be retained in partial results"
-        assert "review_output" in result, "review_output must be retained in partial results"
+        assert "plan_output" in result, (
+            "plan_output must be retained in partial results"
+        )
+        assert "impl_output" in result, (
+            "impl_output must be retained in partial results"
+        )
+        assert "review_output" in result, (
+            "review_output must be retained in partial results"
+        )

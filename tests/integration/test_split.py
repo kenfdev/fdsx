@@ -1,16 +1,19 @@
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import yaml
 
-from fdsx.core.batch import COMPLETED_SUBDIR, TASKS_DIR, split_tasks_to_groups, write_task_files
+from fdsx.core.batch import (
+    COMPLETED_SUBDIR,
+    TASKS_DIR,
+    split_tasks_to_groups,
+    write_task_files,
+)
 from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 from fdsx.models.task import TaskEntry
 
 
 class TestSplitIntegration:
-    def test_split_end_to_end_with_mock_provider(self):
+    def test_split_end_to_end_with_mock_provider(self, tmp_path):
         """End-to-end test: split task content via mock provider and write files."""
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -32,23 +35,22 @@ class TestSplitIntegration:
         assert len(result_groups[1]) == 1
         assert len(result_groups[2]) == 1
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tasks_dir = Path(tmpdir) / TASKS_DIR
-            created_files = write_task_files(result_groups, tasks_dir)
+        tasks_dir = tmp_path / TASKS_DIR
+        created_files = write_task_files(result_groups, tasks_dir)
 
-            assert len(created_files) == 3
-            assert (tasks_dir / "001-implement-feature-a.yaml").exists()
-            assert (tasks_dir / "002-write-tests-for-feature-a.yaml").exists()
-            assert (tasks_dir / "003-write-tests-for-feature-b.yaml").exists()
+        assert len(created_files) == 3
+        assert (tasks_dir / "001-implement-feature-a.yaml").exists()
+        assert (tasks_dir / "002-write-tests-for-feature-a.yaml").exists()
+        assert (tasks_dir / "003-write-tests-for-feature-b.yaml").exists()
 
-            for f in created_files:
-                assert f.exists()
-                assert f.stat().st_mode & 0o777 == 0o600
+        for f in created_files:
+            assert f.exists()
+            assert f.stat().st_mode & 0o777 == 0o600
 
-            content = (tasks_dir / "001-implement-feature-a.yaml").read_text()
-            data = yaml.safe_load(content)
-            assert len(data["tasks"]) == 2
-            assert data["tasks"][0]["description"] == "Implement feature A"
+        content = (tasks_dir / "001-implement-feature-a.yaml").read_text()
+        data = yaml.safe_load(content)
+        assert len(data["tasks"]) == 2
+        assert data["tasks"][0]["description"] == "Implement feature A"
 
     def test_split_with_empty_result(self):
         """Test handling of empty result from provider."""
@@ -66,7 +68,7 @@ class TestSplitIntegration:
 
         assert groups == []
 
-    def test_split_with_single_task(self):
+    def test_split_with_single_task(self, tmp_path):
         """Test handling of single task result."""
         mock_provider = MagicMock()
         mock_provider.execute.return_value = MagicMock(
@@ -84,31 +86,29 @@ class TestSplitIntegration:
         assert len(groups[0]) == 1
         assert groups[0][0].description == "Single task"
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tasks_dir = Path(tmpdir) / TASKS_DIR
-            created_files = write_task_files(groups, tasks_dir)
+        tasks_dir = tmp_path / TASKS_DIR
+        created_files = write_task_files(groups, tasks_dir)
 
-            assert len(created_files) == 1
-            content = (tasks_dir / "001-single-task.yaml").read_text()
-            data = yaml.safe_load(content)
-            assert "description" in data
-            assert data["description"] == "Single task"
+        assert len(created_files) == 1
+        content = (tasks_dir / "001-single-task.yaml").read_text()
+        data = yaml.safe_load(content)
+        assert "description" in data
+        assert data["description"] == "Single task"
 
-    def test_split_writes_yaml_with_task_status(self):
+    def test_split_writes_yaml_with_task_status(self, tmp_path):
         """Verify that written YAML files contain correct status field."""
         groups = [
             [TaskEntry(description="Task with default status")],
         ]
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tasks_dir = Path(tmpdir) / TASKS_DIR
-            write_task_files(groups, tasks_dir)
+        tasks_dir = tmp_path / TASKS_DIR
+        write_task_files(groups, tasks_dir)
 
-            content = (tasks_dir / "001-task-with-default-status.yaml").read_text()
-            data = yaml.safe_load(content)
+        content = (tasks_dir / "001-task-with-default-status.yaml").read_text()
+        data = yaml.safe_load(content)
 
-            assert "status" in data
-            assert data["status"] == "pending"
+        assert "status" in data
+        assert data["status"] == "pending"
 
 
 class TestSplitCliIntegration:
@@ -342,7 +342,9 @@ class TestSplitCliIntegration:
         tasks_dir = tmp_path / TASKS_DIR
         completed_dir = tasks_dir / COMPLETED_SUBDIR
         completed_dir.mkdir(parents=True, exist_ok=True)
-        (completed_dir / "001-old-task.yaml").write_text("description: Old task\nstatus: done")
+        (completed_dir / "001-old-task.yaml").write_text(
+            "description: Old task\nstatus: done"
+        )
 
         task_file = tmp_path / "tasks.md"
         task_file.write_text("New feature")
@@ -356,13 +358,19 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+        with patch(
+            "fdsx.cli.main.load_config",
+            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        ):
             with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
                 runner = CliRunner()
-                result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+                result = runner.invoke(
+                    app, ["split", str(task_file)], catch_exceptions=False
+                )
 
         assert result.exit_code == 0
         import json as _json
+
         paths = _json.loads(result.stdout)
         assert len(paths) == 1
 
@@ -392,10 +400,15 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+        with patch(
+            "fdsx.cli.main.load_config",
+            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        ):
             with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
                 runner = CliRunner()
-                result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+                result = runner.invoke(
+                    app, ["split", str(task_file)], catch_exceptions=False
+                )
 
         assert result.exit_code == 0
         assert completed_dir.exists()
@@ -413,8 +426,12 @@ class TestSplitCliIntegration:
         tasks_dir = tmp_path / TASKS_DIR
         completed_dir = tasks_dir / COMPLETED_SUBDIR
         completed_dir.mkdir(parents=True, exist_ok=True)
-        (completed_dir / "001-first.yaml").write_text("description: First\nstatus: done")
-        (completed_dir / "002-second.yaml").write_text("description: Second\nstatus: done")
+        (completed_dir / "001-first.yaml").write_text(
+            "description: First\nstatus: done"
+        )
+        (completed_dir / "002-second.yaml").write_text(
+            "description: Second\nstatus: done"
+        )
 
         task_file = tmp_path / "tasks.md"
         task_file.write_text("Third task")
@@ -428,18 +445,21 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+        with patch(
+            "fdsx.cli.main.load_config",
+            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        ):
             with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
                 runner = CliRunner()
-                result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+                result = runner.invoke(
+                    app, ["split", str(task_file)], catch_exceptions=False
+                )
 
         assert result.exit_code == 0
         assert (tasks_dir / "003-third-task.yaml").exists()
 
     # T001: Split without --force still fails when a pending .yaml exists outside completed/
-    def test_split_command_still_blocks_with_pending_yaml(
-        self, tmp_path, monkeypatch
-    ):
+    def test_split_command_still_blocks_with_pending_yaml(self, tmp_path, monkeypatch):
         """Split without --force fails when a pending .yaml file exists directly in tasks dir."""
         from typer.testing import CliRunner
         from fdsx.cli.main import app
@@ -449,22 +469,29 @@ class TestSplitCliIntegration:
         completed_dir.mkdir(parents=True, exist_ok=True)
         (completed_dir / "001-done.yaml").write_text("description: Done\nstatus: done")
         # Pending task directly in tasks dir — should block split
-        (tasks_dir / "002-pending.yaml").write_text("description: Pending\nstatus: pending")
+        (tasks_dir / "002-pending.yaml").write_text(
+            "description: Pending\nstatus: pending"
+        )
 
         task_file = tmp_path / "tasks.md"
         task_file.write_text("New feature")
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+        with patch(
+            "fdsx.cli.main.load_config",
+            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        ):
             runner = CliRunner()
-            result = runner.invoke(app, ["split", str(task_file)], catch_exceptions=False)
+            result = runner.invoke(
+                app, ["split", str(task_file)], catch_exceptions=False
+            )
 
         assert result.exit_code == 2
         assert "not empty" in result.stderr
 
     # T006: Prompt produces feature-level tasks with numbered sub-steps
-    def test_split_produces_feature_level_tasks(self):
+    def test_split_produces_feature_level_tasks(self, tmp_path):
         """Verify split accepts feature-level task descriptions with numbered sub-steps."""
         import json as _json
 
@@ -499,17 +526,14 @@ class TestSplitCliIntegration:
         assert "2." in description
         assert "3." in description
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tasks_dir = Path(tmpdir) / TASKS_DIR
-            created_files = write_task_files(groups, tasks_dir)
+        tasks_dir = tmp_path / TASKS_DIR
+        created_files = write_task_files(groups, tasks_dir)
 
-            # Produces fewer files than micro-task split (1 vs many)
-            assert len(created_files) == 1
+        # Produces fewer files than micro-task split (1 vs many)
+        assert len(created_files) == 1
 
     # T003: --force removes pending .yaml files but preserves completed/ dir
-    def test_split_command_force_preserves_completed_dir(
-        self, tmp_path, monkeypatch
-    ):
+    def test_split_command_force_preserves_completed_dir(self, tmp_path, monkeypatch):
         """--force clears pending .yaml files but preserves completed/ and its contents."""
         from typer.testing import CliRunner
         from fdsx.cli.main import app
@@ -534,7 +558,10 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=TaskSplitterConfig())):
+        with patch(
+            "fdsx.cli.main.load_config",
+            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        ):
             with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
                 runner = CliRunner()
                 result = runner.invoke(

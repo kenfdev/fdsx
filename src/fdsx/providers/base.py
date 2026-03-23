@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -62,6 +63,7 @@ def _run_subprocess(
     stdin_data: str | None = None,
     shell: bool = False,
     completion_event: threading.Event | None = None,
+    env: dict[str, str] | None = None,
 ) -> ProviderResult:
     """Shared subprocess execution helper for all providers.
 
@@ -78,6 +80,8 @@ def _run_subprocess(
             subprocess stream protocol. When set, initiates an escalating
             termination cascade: wait 5s for voluntary exit → SIGTERM →
             wait 5s → SIGKILL. Collected data is preserved in the result.
+        env: Optional extra environment variables. Merged with os.environ
+            so the subprocess inherits the full environment.
 
     Returns:
         ProviderResult with exit code and output.
@@ -98,6 +102,7 @@ def _run_subprocess(
         cmd = args
 
     try:
+        proc_env = {**os.environ, **env} if env else None
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE if stdin_data is not None else None,
@@ -105,6 +110,7 @@ def _run_subprocess(
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env=proc_env,
         )
 
         killed_by_timeout = False

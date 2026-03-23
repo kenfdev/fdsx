@@ -20,17 +20,17 @@ from fdsx.providers.base import _run_subprocess
 # flush=True is critical: ensures the child process flushes to the pipe
 # immediately, isolating the Python-side iterator buffering as the sole cause.
 _STDOUT_CMD = (
-    "python3 -c \""
+    'python3 -c "'
     "import sys, time; "
     "[print(f'line{i}', flush=True) or time.sleep(0.3) for i in range(3)]"
-    "\""
+    '"'
 )
 
 _STDERR_CMD = (
-    "python3 -c \""
+    'python3 -c "'
     "import sys, time; "
     "[print(f'line{i}', file=sys.stderr, flush=True) or time.sleep(0.3) for i in range(3)]"
-    "\""
+    '"'
 )
 
 # A callback firing this many seconds before process completion is evidence of

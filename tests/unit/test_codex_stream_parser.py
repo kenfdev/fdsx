@@ -172,7 +172,12 @@ class TestCommandExecution:
         provider = _make_provider()
         cb, _ = provider._make_stream_callback(received.append)
 
-        line = json.dumps({"type": _EVENT_ITEM_STARTED, "item": {"id": "x", "type": _ITEM_TYPE_COMMAND_EXECUTION}})
+        line = json.dumps(
+            {
+                "type": _EVENT_ITEM_STARTED,
+                "item": {"id": "x", "type": _ITEM_TYPE_COMMAND_EXECUTION},
+            }
+        )
         cb(line)
 
         assert received == ["[tool: unknown]"]
@@ -183,7 +188,11 @@ class TestCommandExecution:
         provider = _make_provider()
         cb, _ = provider._make_stream_callback(received.append)
 
-        cb(_build_item_completed(_ITEM_TYPE_COMMAND_EXECUTION, command="echo hello", output="hello"))
+        cb(
+            _build_item_completed(
+                _ITEM_TYPE_COMMAND_EXECUTION, command="echo hello", output="hello"
+            )
+        )
 
         assert received == []
 
@@ -241,7 +250,12 @@ class TestMcpToolCall:
         provider = _make_provider()
         cb, _ = provider._make_stream_callback(received.append)
 
-        line = json.dumps({"type": _EVENT_ITEM_STARTED, "item": {"id": "x", "type": _ITEM_TYPE_MCP_TOOL_CALL}})
+        line = json.dumps(
+            {
+                "type": _EVENT_ITEM_STARTED,
+                "item": {"id": "x", "type": _ITEM_TYPE_MCP_TOOL_CALL},
+            }
+        )
         cb(line)
 
         assert received == ["[tool: unknown]"]
@@ -252,7 +266,11 @@ class TestMcpToolCall:
         provider = _make_provider()
         cb, _ = provider._make_stream_callback(received.append)
 
-        cb(_build_item_completed(_ITEM_TYPE_MCP_TOOL_CALL, name="web_search", result=""))
+        cb(
+            _build_item_completed(
+                _ITEM_TYPE_MCP_TOOL_CALL, name="web_search", result=""
+            )
+        )
 
         assert received == []
 
@@ -439,7 +457,9 @@ class TestUnknownEventsIgnored:
         provider = _make_provider()
         cb, _ = provider._make_stream_callback(received.append)
 
-        line = json.dumps({"type": _EVENT_ITEM_STARTED, "item": {"id": "x", "type": "future_item"}})
+        line = json.dumps(
+            {"type": _EVENT_ITEM_STARTED, "item": {"id": "x", "type": "future_item"}}
+        )
         cb(line)
 
         assert received == []
@@ -450,7 +470,9 @@ class TestUnknownEventsIgnored:
         provider = _make_provider()
         cb, get_result = provider._make_stream_callback(received.append)
 
-        line = json.dumps({"type": _EVENT_ITEM_COMPLETED, "item": {"id": "x", "type": "future_item"}})
+        line = json.dumps(
+            {"type": _EVENT_ITEM_COMPLETED, "item": {"id": "x", "type": "future_item"}}
+        )
         cb(line)
 
         assert received == []

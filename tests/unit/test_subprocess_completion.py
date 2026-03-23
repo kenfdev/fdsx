@@ -291,7 +291,11 @@ class TestCompletionEvent:
         try:
             start = time.time()
             result = _run_subprocess(
-                args=[_PYTHON, "-c", "import sys,time; print('output',flush=True); time.sleep(999)"],
+                args=[
+                    _PYTHON,
+                    "-c",
+                    "import sys,time; print('output',flush=True); time.sleep(999)",
+                ],
                 completion_event=event,
             )
             elapsed = time.time() - start
@@ -312,7 +316,11 @@ class TestCompletionEvent:
         try:
             start = time.time()
             result = _run_subprocess(
-                args=[_PYTHON, "-c", "import time; print('voluntary',flush=True); time.sleep(1)"],
+                args=[
+                    _PYTHON,
+                    "-c",
+                    "import time; print('voluntary',flush=True); time.sleep(1)",
+                ],
                 completion_event=event,
             )
             elapsed = time.time() - start
@@ -334,7 +342,8 @@ class TestCompletionEvent:
             start = time.time()
             result = _run_subprocess(
                 args=[
-                    _PYTHON, "-c",
+                    _PYTHON,
+                    "-c",
                     "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
                     " print('output',flush=True); time.sleep(999)",
                 ],
@@ -369,7 +378,8 @@ class TestCompletionEvent:
         try:
             result = _run_subprocess(
                 args=[
-                    _PYTHON, "-c",
+                    _PYTHON,
+                    "-c",
                     "import time;"
                     " print('line1',flush=True);"
                     " print('line2',flush=True);"
@@ -395,7 +405,8 @@ class TestCompletionEvent:
             with caplog.at_level(logging.DEBUG, logger="fdsx.providers.base"):
                 _run_subprocess(
                     args=[
-                        _PYTHON, "-c",
+                        _PYTHON,
+                        "-c",
                         "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
                         " print('x',flush=True); time.sleep(999)",
                     ],
@@ -414,7 +425,11 @@ class TestCompletionEvent:
         try:
             with caplog.at_level(logging.DEBUG, logger="fdsx.providers.base"):
                 _run_subprocess(
-                    args=[_PYTHON, "-c", "print('ok',flush=True); import time; time.sleep(1)"],
+                    args=[
+                        _PYTHON,
+                        "-c",
+                        "print('ok',flush=True); import time; time.sleep(1)",
+                    ],
                     completion_event=event,
                 )
         finally:
@@ -454,7 +469,8 @@ class TestCompletionEventTimeoutInteraction:
         try:
             result = _run_subprocess(
                 args=[
-                    _PYTHON, "-c",
+                    _PYTHON,
+                    "-c",
                     "import time; print('data',flush=True); time.sleep(999)",
                 ],
                 timeout=30,
@@ -483,10 +499,12 @@ def _make_result_ndjson(result_value: str = "ok") -> str:
 
 def _make_content_block_delta_ndjson(text: str = "hello") -> str:
     """Return a stream-json NDJSON line for a content_block_delta event."""
-    return json.dumps({
-        "type": "content_block_delta",
-        "delta": {"type": "text_delta", "text": text},
-    })
+    return json.dumps(
+        {
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": text},
+        }
+    )
 
 
 class TestMakeStreamCallbackCompletionEvent:
@@ -532,10 +550,19 @@ class TestMakeStreamCallbackCompletionEvent:
             output_lines.append, completion_event=event
         )
 
-        stream_callback(json.dumps({"type": "content_block_start", "content_block": {"type": "text", "text": ""}}))
+        stream_callback(
+            json.dumps(
+                {
+                    "type": "content_block_start",
+                    "content_block": {"type": "text", "text": ""},
+                }
+            )
+        )
         stream_callback(json.dumps({"type": "content_block_stop"}))
 
-        assert not event.is_set(), "Event should not be set for content_block_start/stop"
+        assert not event.is_set(), (
+            "Event should not be set for content_block_start/stop"
+        )
 
     def test_completion_event_set_exactly_once_on_multiple_result_events(self):
         """Event.set() is idempotent — multiple result events do not raise errors."""
@@ -582,7 +609,9 @@ class TestClaudeProviderExecuteCompletionEvent:
             captured_kwargs.update(kwargs)
             return ProviderResult(exit_code=0, stdout="", stderr="")
 
-        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="hello", output_callback=output_lines.append)
 
         assert "completion_event" in captured_kwargs, (
@@ -601,7 +630,9 @@ class TestClaudeProviderExecuteCompletionEvent:
             captured_kwargs.update(kwargs)
             return ProviderResult(exit_code=0, stdout="done", stderr="")
 
-        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="hello")
 
         # No completion_event key, or it is None

@@ -200,14 +200,10 @@ class TestDiscoverWorkflows:
 
     def test_directory_shadows_flat_file(self, tmp_path):
         """A directory 'review' shadows a flat file 'review.yaml'."""
-        (tmp_path / "review.yaml").write_text(
-            _minimal_workflow("RF", "Review flat")
-        )
+        (tmp_path / "review.yaml").write_text(_minimal_workflow("RF", "Review flat"))
         review_dir = tmp_path / "review"
         review_dir.mkdir()
-        (review_dir / "workflow.yaml").write_text(
-            _minimal_workflow("RD", "Review dir")
-        )
+        (review_dir / "workflow.yaml").write_text(_minimal_workflow("RD", "Review dir"))
 
         results = discover_workflows(tmp_path)
 
@@ -268,7 +264,9 @@ class TestDiscoverWorkflows:
         link_dir = tmp_path / "linked"
         link_dir.symlink_to(real_dir)
 
-        with pytest.warns(RuntimeWarning, match="Skipping symlinked workflow directory"):
+        with pytest.warns(
+            RuntimeWarning, match="Skipping symlinked workflow directory"
+        ):
             results = discover_workflows(tmp_path)
 
         # real_dir is also a subdirectory, so it should be discovered
@@ -815,7 +813,10 @@ class TestResolveWorkflowForTask:
             )
 
             # input() must NOT be called — if it is, the MagicMock raises on iteration
-            with patch("builtins.input", side_effect=AssertionError("input() must not be called in auto mode")):
+            with patch(
+                "builtins.input",
+                side_effect=AssertionError("input() must not be called in auto mode"),
+            ):
                 result = resolve_workflow_for_task(
                     task_description="Do something",
                     workflows_dir=workflows_dir,

@@ -23,12 +23,19 @@ FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "codex_stream.jsonl"
 
 # Expected values derived from the fixture file (two agent_message events joined with "\n")
 FIXTURE_RESULT_TEXT = "Hello! \nHere are 3 items:\n\n1. Apple\n2. Banana\n3. Cherry"
-FIXTURE_AGENT_MESSAGE_TEXTS = ["Hello! ", "Here are 3 items:\n\n1. Apple\n2. Banana\n3. Cherry"]
+FIXTURE_AGENT_MESSAGE_TEXTS = [
+    "Hello! ",
+    "Here are 3 items:\n\n1. Apple\n2. Banana\n3. Cherry",
+]
 
 
 def _load_fixture_lines() -> list[str]:
     """Return non-empty JSONL lines from the fixture file."""
-    return [line.rstrip("\n") for line in FIXTURE_PATH.read_text().splitlines() if line.strip()]
+    return [
+        line.rstrip("\n")
+        for line in FIXTURE_PATH.read_text().splitlines()
+        if line.strip()
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +43,9 @@ def _load_fixture_lines() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _fake_run_subprocess_factory(fixture_lines: list[str], exit_code: int = 0) -> MagicMock:
+def _fake_run_subprocess_factory(
+    fixture_lines: list[str], exit_code: int = 0
+) -> MagicMock:
     """Return a mock for _run_subprocess that replays fixture lines via output_callback."""
 
     def fake_run_subprocess(**kwargs: object) -> ProviderResult:
@@ -71,7 +80,9 @@ class TestCodexStreamingEndToEnd:
         """ProviderResult.stdout must match concatenated agent_message texts, not raw JSONL."""
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):
-            result = self.provider.execute("Say hello and list 3 items", output_callback=lambda _: None)
+            result = self.provider.execute(
+                "Say hello and list 3 items", output_callback=lambda _: None
+            )
 
         assert result.stdout == FIXTURE_RESULT_TEXT
 
@@ -80,17 +91,23 @@ class TestCodexStreamingEndToEnd:
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=received.append)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=received.append
+            )
 
         for text in FIXTURE_AGENT_MESSAGE_TEXTS:
-            assert text in received, f"Expected agent_message text not received: {text!r}"
+            assert text in received, (
+                f"Expected agent_message text not received: {text!r}"
+            )
 
     def test_output_callback_receives_tool_events(self) -> None:
         """output_callback must be called for command_execution, file_change, mcp_tool_call."""
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=received.append)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=received.append
+            )
 
         assert "[tool: echo hello]" in received
         assert "[tool: file_change]" in received
@@ -101,7 +118,9 @@ class TestCodexStreamingEndToEnd:
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=received.append)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=received.append
+            )
 
         assert "[thinking] I need to say hello in a friendly way." in received
 
@@ -110,7 +129,9 @@ class TestCodexStreamingEndToEnd:
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=received.append)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=received.append
+            )
 
         for item in received:
             assert not item.strip().startswith("{"), (
@@ -121,7 +142,9 @@ class TestCodexStreamingEndToEnd:
         """_run_subprocess must be called with all _STREAM_FORMAT_FLAGS when output_callback is provided."""
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=lambda _: None)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=lambda _: None
+            )
 
         mock_run.assert_called_once()
         called_args: list[str] = mock_run.call_args.kwargs["args"]
@@ -131,13 +154,17 @@ class TestCodexStreamingEndToEnd:
     def test_no_streaming_flag_without_callback(self) -> None:
         """Without output_callback, _run_subprocess must NOT receive any _STREAM_FORMAT_FLAGS."""
         fake_result = ProviderResult(exit_code=0, stdout="plain response", stderr="")
-        with patch("fdsx.providers.codex._run_subprocess", return_value=fake_result) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=fake_result
+        ) as mock_run:
             result = self.provider.execute("Say hello")
 
         mock_run.assert_called_once()
         called_args: list[str] = mock_run.call_args.kwargs["args"]
         for flag in _STREAM_FORMAT_FLAGS:
-            assert flag not in called_args, f"Unexpected {flag!r} found in args: {called_args}"
+            assert flag not in called_args, (
+                f"Unexpected {flag!r} found in args: {called_args}"
+            )
         assert result.stdout == "plain response"
 
     def test_exit_code_preserved(self) -> None:
@@ -165,8 +192,7 @@ class TestCodexStreamingEndToEnd:
         """When no agent_message completed events, stdout comes from raw _run_subprocess result."""
         # Feed only non-agent_message lines
         non_message_lines = [
-            line for line in self.fixture_lines
-            if '"agent_message"' not in line
+            line for line in self.fixture_lines if '"agent_message"' not in line
         ]
         mock_run = _fake_run_subprocess_factory(non_message_lines)
         with patch("fdsx.providers.codex._run_subprocess", mock_run):

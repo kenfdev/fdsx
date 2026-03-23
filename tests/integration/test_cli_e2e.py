@@ -1,48 +1,21 @@
-import subprocess
-
-
-def get_fdsx_command():
-    """Get the fdsx command using uv to exercise the entry point."""
-    return ["uv", "run", "fdsx"]
+from tests.integration.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestCLIE2E:
     def test_validate_valid_flow(self):
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "validate",
-                "tests/fixtures/simple_flow.yaml",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        result = run_fdsx(["validate", fixture_path("simple_flow.yaml")])
         assert result.returncode == 0
 
     def test_validate_invalid_flow(self):
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "validate",
-                "tests/fixtures/invalid_flows/missing_start_at.yaml",
-            ],
-            capture_output=True,
-            text=True,
+        result = run_fdsx(
+            ["validate", fixture_path("invalid_flows", "missing_start_at.yaml")]
         )
         assert result.returncode == 2
         assert result.stderr, "Expected error message on stderr"
         assert len(result.stderr.strip()) > 0
 
     def test_run_simple_flow(self):
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "run",
-                "tests/fixtures/simple_flow.yaml",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        result = run_fdsx(["run", fixture_path("simple_flow.yaml")])
         assert result.returncode == 0
         # FR-1.3: No JSON on stdout
         assert result.stdout == ""
@@ -50,16 +23,8 @@ class TestCLIE2E:
         assert "completed successfully" in result.stderr
 
     def test_run_with_input(self):
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "run",
-                "tests/fixtures/simple_flow.yaml",
-                "--input",
-                "task=hello",
-            ],
-            capture_output=True,
-            text=True,
+        result = run_fdsx(
+            ["run", fixture_path("simple_flow.yaml"), "--input", "task=hello"]
         )
         assert result.returncode == 0
         # FR-1.3: No JSON on stdout
@@ -69,16 +34,8 @@ class TestCLIE2E:
 
     def test_run_with_input_uses_value(self):
         """R2-F4: --input value must be consumed; workflow completes successfully."""
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "run",
-                "tests/fixtures/input_flow.yaml",
-                "--input",
-                "task=world",
-            ],
-            capture_output=True,
-            text=True,
+        result = run_fdsx(
+            ["run", fixture_path("input_flow.yaml"), "--input", "task=world"]
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         # FR-1.3: No JSON on stdout
@@ -87,13 +44,7 @@ class TestCLIE2E:
         assert "completed successfully" in result.stderr
 
     def test_run_with_invalid_flow_returns_exit_code_2(self):
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "run",
-                "tests/fixtures/invalid_flows/missing_start_at.yaml",
-            ],
-            capture_output=True,
-            text=True,
+        result = run_fdsx(
+            ["run", fixture_path("invalid_flows", "missing_start_at.yaml")]
         )
         assert result.returncode == 2

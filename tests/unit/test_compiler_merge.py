@@ -1,7 +1,5 @@
 """Unit tests for _merge_provider_options() in compiler (T016)."""
 
-import pytest
-
 from fdsx.core.compiler import _merge_provider_options
 from fdsx.core.config import FdsxConfig, ProviderConfigs
 from fdsx.models.flow import Flow, TaskState
@@ -94,7 +92,9 @@ class TestMergeProviderOptionsWorkflowOverrides:
     def test_workflow_overrides_config(self):
         """Workflow-level options override config-level options for same key."""
         config = _make_config({"permission_mode": "acceptEdits"})
-        flow = _make_simple_flow(providers={"claude": {"permission_mode": "bypassPermissions"}})
+        flow = _make_simple_flow(
+            providers={"claude": {"permission_mode": "bypassPermissions"}}
+        )
 
         result = _merge_provider_options(config, flow, "claude", None)
 
@@ -104,7 +104,9 @@ class TestMergeProviderOptionsWorkflowOverrides:
     def test_workflow_only_no_config(self):
         """Workflow-level options are used even when config has no providers."""
         config = FdsxConfig()
-        flow = _make_simple_flow(providers={"claude": {"dangerously_skip_permissions": True}})
+        flow = _make_simple_flow(
+            providers={"claude": {"dangerously_skip_permissions": True}}
+        )
 
         result = _merge_provider_options(config, flow, "claude", None)
 
@@ -114,7 +116,9 @@ class TestMergeProviderOptionsWorkflowOverrides:
     def test_workflow_adds_to_config(self):
         """Workflow can set different keys from config (both keys appear in result)."""
         config = _make_config({"permission_mode": "acceptEdits"})
-        flow = _make_simple_flow(providers={"claude": {"dangerously_skip_permissions": True}})
+        flow = _make_simple_flow(
+            providers={"claude": {"dangerously_skip_permissions": True}}
+        )
 
         result = _merge_provider_options(config, flow, "claude", None)
 
@@ -150,7 +154,9 @@ class TestMergeProviderOptionsTaskOverrides:
     def test_task_overrides_workflow(self):
         """Task-level options override workflow-level options for same key."""
         config = FdsxConfig()
-        flow = _make_simple_flow(providers={"claude": {"permission_mode": "acceptEdits"}})
+        flow = _make_simple_flow(
+            providers={"claude": {"permission_mode": "acceptEdits"}}
+        )
         task_opts = {"permission_mode": "bypassPermissions"}
 
         result = _merge_provider_options(config, flow, "claude", task_opts)

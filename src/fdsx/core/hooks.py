@@ -142,7 +142,10 @@ def write_hook_data(
     base_runs_dir = (fdsx_dir / RUNS_DIR_NAME).resolve()
     expected_hooks_base = (base_runs_dir / thread_id / HOOKS_DIR_NAME).resolve()
     hooks_dir = (expected_hooks_base / state_name).resolve()
-    if not str(hooks_dir).startswith(str(expected_hooks_base) + os.sep) and hooks_dir != expected_hooks_base:
+    if (
+        not str(hooks_dir).startswith(str(expected_hooks_base) + os.sep)
+        and hooks_dir != expected_hooks_base
+    ):
         raise ValueError(
             "Invalid thread_id or state_name: path resolved outside runs directory"
         )

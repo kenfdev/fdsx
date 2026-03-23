@@ -59,15 +59,13 @@ class TaskEntry(BaseModel):
     def validate_workflow_filename(cls, v: str | None) -> str | None:
         if v is None:
             return v
+        if "\\" in v or v in {".", ".."}:
+            raise ValueError(f"workflow must be a relative path without .., got '{v}'")
         parts = Path(v).parts
         if ".." in parts or v.startswith("/") or v.startswith("\\"):
-            raise ValueError(
-                f"workflow must be a relative path without .., got '{v}'"
-            )
+            raise ValueError(f"workflow must be a relative path without .., got '{v}'")
         if len(parts) > 2:
-            raise ValueError(
-                f"workflow nesting too deep (max 1 level), got '{v}'"
-            )
+            raise ValueError(f"workflow nesting too deep (max 1 level), got '{v}'")
         return v
 
 
@@ -83,6 +81,25 @@ class TaskFile(BaseModel):
         default_factory=list,
         description="List of task entries in this file",
     )
+
+
+_ALLOWED_SYSTEM_SYMLINK_ANCESTORS = {
+    Path("/var"),
+    Path("/tmp"),
+}
+
+
+def _ensure_no_symlink_ancestors(path: Path, *, include_self: bool) -> None:
+    """Reject user-controlled symlink ancestors while allowing known system aliases."""
+    current = path.absolute() if include_self else path.absolute().parent
+    while current != current.parent:
+        if (
+            current.exists()
+            and current.is_symlink()
+            and current not in _ALLOWED_SYSTEM_SYMLINK_ANCESTORS
+        ):
+            raise ValueError(f"Refusing to write: ancestor is a symlink: {current}")
+        current = current.parent
 
 
 def load_task_file(path: Path) -> TaskFile:
@@ -108,9 +125,7 @@ def load_task_file(path: Path) -> TaskFile:
         fd = os.open(str(path), open_flags)
     except OSError as e:
         if e.errno == errno.ELOOP:
-            raise ValueError(
-                f"Refusing to read task file: {path} is a symlink"
-            ) from e
+            raise ValueError(f"Refusing to read task file: {path} is a symlink") from e
         raise
     try:
         data = os.read(fd, os.fstat(fd).st_size)
@@ -169,13 +184,9 @@ def save_task_file(path: Path, task_file: TaskFile) -> None:
         path: Destination path.
         task_file: TaskFile to serialize.
     """
-    # Walk every existing ancestor to reject any symlinked directory before
-    # creating any directories. Non-existent ancestors cannot be symlinks.
-    current = path.parent
-    while current != current.parent:
-        if current.exists() and current.is_symlink():
-            raise ValueError(f"Refusing to write: ancestor is a symlink: {current}")
-        current = current.parent
+    # Reject user-controlled symlink ancestors before creating any directories.
+    # Allow the platform temp aliases used on macOS (/var, /tmp).
+    _ensure_no_symlink_ancestors(path, include_self=False)
 
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 

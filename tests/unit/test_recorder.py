@@ -178,7 +178,8 @@ class TestRunRecorder:
 
             file_path = recorder.save(base_dir=Path(tmpdir))
 
-            assert file_path == Path(tmpdir) / "runs" / "test-123" / RUN_FILENAME
+            expected = (Path(tmpdir) / "runs" / "test-123" / RUN_FILENAME).resolve()
+            assert file_path == expected
             assert file_path.exists()
 
             with open(file_path, "r") as f:
@@ -276,7 +277,9 @@ class TestRunRecorder:
                 recorder.finalize({"key": "value"}, "completed")
                 file_path = recorder.save()
 
-                expected = Path(tmpdir) / ".fdsx" / "runs" / "test-nobase" / RUN_FILENAME
+                expected = (
+                    Path(tmpdir) / ".fdsx" / "runs" / "test-nobase" / RUN_FILENAME
+                ).resolve()
                 assert file_path == expected
                 assert file_path.exists()
             finally:

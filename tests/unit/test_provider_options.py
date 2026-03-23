@@ -23,7 +23,14 @@ class TestClaudeOptions:
 
     def test_claude_options_permission_mode_valid(self):
         """Valid permission_mode literals must be accepted."""
-        for mode in ("default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"):
+        for mode in (
+            "default",
+            "acceptEdits",
+            "bypassPermissions",
+            "dontAsk",
+            "plan",
+            "auto",
+        ):
             opts = ClaudeOptions(permission_mode=mode)
             assert opts.permission_mode == mode
 
@@ -50,7 +57,12 @@ class TestClaudeOptions:
     def test_claude_options_to_cli_flags_allowed_tools(self):
         """allowed_tools maps to repeated --allowedTools <tool>."""
         opts = ClaudeOptions(allowed_tools=["Bash", "Read"])
-        assert opts.to_cli_flags() == ["--allowedTools", "Bash", "--allowedTools", "Read"]
+        assert opts.to_cli_flags() == [
+            "--allowedTools",
+            "Bash",
+            "--allowedTools",
+            "Read",
+        ]
 
     def test_claude_options_to_cli_flags_disallowed_tools(self):
         """disallowed_tools maps to repeated --disallowedTools <tool>."""
@@ -76,10 +88,13 @@ class TestClaudeOptions:
             disallowed_tools=["Write"],
         )
         assert opts.to_cli_flags() == [
-            "--permission-mode", "bypassPermissions",
+            "--permission-mode",
+            "bypassPermissions",
             "--dangerously-skip-permissions",
-            "--allowedTools", "Bash",
-            "--disallowedTools", "Write",
+            "--allowedTools",
+            "Bash",
+            "--disallowedTools",
+            "Write",
         ]
 
 
@@ -160,8 +175,10 @@ class TestCodexOptions:
             dangerously_bypass_approvals_and_sandbox=True,
         )
         assert opts.to_cli_flags() == [
-            "--sandbox", "workspace-write",
-            "--approval-policy", "on-request",
+            "--sandbox",
+            "workspace-write",
+            "--approval-policy",
+            "on-request",
             "--full-auto",
             "--dangerously-bypass-approvals-and-sandbox",
         ]

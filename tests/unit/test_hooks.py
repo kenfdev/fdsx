@@ -185,9 +185,7 @@ class TestExecuteHooks:
         return_codes = [1, 0]
 
         with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = [
-                MagicMock(returncode=rc) for rc in return_codes
-            ]
+            mock_run.side_effect = [MagicMock(returncode=rc) for rc in return_codes]
             execute_hooks(
                 hooks,
                 state_name="S",
@@ -218,7 +216,6 @@ class TestExecuteHooks:
 
     def test_multiple_hooks_run_in_order(self, tmp_path: Path) -> None:
         """Multiple hooks run in list order."""
-        calls: list[str] = []
         hooks = [
             self._make_hook("hook-a"),
             self._make_hook("hook-b"),
@@ -286,7 +283,12 @@ class TestWriteHookData:
         )
 
         expected = (
-            tmp_path / RUNS_DIR_NAME / "thread-001" / HOOKS_DIR_NAME / "Planner" / INPUT_FILENAME
+            tmp_path
+            / RUNS_DIR_NAME
+            / "thread-001"
+            / HOOKS_DIR_NAME
+            / "Planner"
+            / INPUT_FILENAME
         )
         assert file_path == expected
         assert file_path.exists()
@@ -303,7 +305,12 @@ class TestWriteHookData:
         )
 
         expected = (
-            tmp_path / RUNS_DIR_NAME / "thread-002" / HOOKS_DIR_NAME / "Executor" / OUTPUT_FILENAME
+            tmp_path
+            / RUNS_DIR_NAME
+            / "thread-002"
+            / HOOKS_DIR_NAME
+            / "Executor"
+            / OUTPUT_FILENAME
         )
         assert file_path == expected
 
@@ -386,7 +393,9 @@ class TestWriteHookData:
             loaded = json.load(f)
         assert loaded == second_data
 
-    def test_default_base_dir_uses_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_base_dir_uses_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When base_dir is None, path is rooted at CWD/.fdsx/."""
         monkeypatch.chdir(tmp_path)
         file_path = write_hook_data(
@@ -396,7 +405,15 @@ class TestWriteHookData:
             thread_id="t",
         )
 
-        expected_root = tmp_path / ".fdsx" / RUNS_DIR_NAME / "t" / HOOKS_DIR_NAME / "S" / INPUT_FILENAME
+        expected_root = (
+            tmp_path
+            / ".fdsx"
+            / RUNS_DIR_NAME
+            / "t"
+            / HOOKS_DIR_NAME
+            / "S"
+            / INPUT_FILENAME
+        )
         assert file_path == expected_root
 
     def test_returns_path_object(self, tmp_path: Path) -> None:
