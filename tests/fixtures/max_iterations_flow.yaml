@@ -1,0 +1,36 @@
+name: Max Iterations Test Flow
+description: Tests per-state max_iterations limit
+start_at: plan
+max_loop: 10
+
+states:
+  plan:
+    type: task
+    provider: system
+    command: echo "Planning"
+    result_path: $.plan_output
+    max_iterations: 2
+    next: review
+
+  review:
+    type: task
+    provider: system
+    command: echo "REJECTED"
+    result_path: $.review_output
+    next: decide
+
+  decide:
+    type: choice
+    choices:
+      - variable: $.review_output
+        operator: equals
+        value: "APPROVED"
+        next: done
+    default: plan
+
+  done:
+    type: task
+    provider: system
+    command: echo "Done"
+    result_path: $.final_result
+    end: true

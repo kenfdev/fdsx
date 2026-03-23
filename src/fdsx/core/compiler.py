@@ -473,6 +473,18 @@ def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, An
     return state_dict
 
 
+def _check_max_iterations(state_name: str, state_def: Any, iteration: int) -> None:
+    """Raise RuntimeError if the state has exceeded its max_iterations limit.
+
+    Called BEFORE execution logic so the flow fails on entry when the limit is hit.
+    """
+    max_iter = getattr(state_def, "max_iterations", None)
+    if max_iter is not None and iteration > max_iter:
+        raise RuntimeError(
+            f"State '{state_name}' reached max_iterations limit ({max_iter})"
+        )
+
+
 def _wrap_with_hooks(
     node_fn: Callable[[dict[str, Any]], dict[str, Any]],
     state_name: str,
@@ -614,6 +626,7 @@ def _create_task_node(
         iters = dict(state_dict.get("_state_iterations", {}))
         iteration = iters.get(state_name, 0) + 1
         iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
 
         stream_logger = StreamLogger(state_name, log_dir, quiet=quiet, iteration=iteration)
         try:
@@ -725,10 +738,14 @@ def _create_choice_node(
     """Create a LangGraph node function for a Choice state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
         if recorder is not None:
             recorder.record_state_start(state_name, "choice")
             recorder.record_state_complete(state_name, "success", "", [])
-        return state_dict
+        return {**state_dict, "_state_iterations": iters}
 
     return node
 
@@ -750,6 +767,7 @@ def _create_dispatch_node(
         iters = dict(state_dict.get("_state_iterations", {}))
         iteration = iters.get(state_name, 0) + 1
         iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
         return {"_state_iterations": iters}
 
     return node
@@ -1088,6 +1106,12 @@ def _create_pass_node(
     """Create a LangGraph node function for a Pass state."""
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+        state_dict["_state_iterations"] = iters
+
         if recorder is not None:
             recorder.record_state_start(state_name, "pass")
 
@@ -1134,6 +1158,11 @@ def _create_wait_notify_node(
     """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+
         if recorder is not None:
             recorder.record_state_start(state_name, "wait")
 
@@ -1141,7 +1170,7 @@ def _create_wait_notify_node(
             from fdsx.notify.webhook import send_notification
 
             send_notification(state.notify, state_dict)
-        return state_dict
+        return {**state_dict, "_state_iterations": iters}
 
     return node
 
