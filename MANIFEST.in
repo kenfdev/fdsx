@@ -1,0 +1,19 @@
+graft src
+include pyproject.toml
+include README.md
+include LICENSE
+
+prune .claude
+prune .takt
+prune .specify
+prune .worktree
+prune .fdsx
+prune specs
+
+exclude .gitignore
+exclude .worktreeinclude
+exclude docker-compose.yml
+exclude uv.lock
+
+global-exclude *.pyc
+global-exclude __pycache__

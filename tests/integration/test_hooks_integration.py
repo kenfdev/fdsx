@@ -30,7 +30,9 @@ from fdsx.models.flow import HookConfig, HookEntry
 # ---------------------------------------------------------------------------
 
 
-def _make_recorder(thread_id: str = "test-thread", flow_name: str = "TestFlow") -> MagicMock:
+def _make_recorder(
+    thread_id: str = "test-thread", flow_name: str = "TestFlow"
+) -> MagicMock:
     recorder = MagicMock()
     recorder.thread_id = thread_id
     recorder.flow_name = flow_name
@@ -353,7 +355,9 @@ class TestWrapWithHooksAbortBehavior:
 class TestWrapWithHooksNodeFailure:
     """on_complete hooks fire with status='failed' when the node raises, then the error re-raises."""
 
-    def test_on_complete_fires_with_failed_status_when_node_raises(self, tmp_path: Path) -> None:
+    def test_on_complete_fires_with_failed_status_when_node_raises(
+        self, tmp_path: Path
+    ) -> None:
         """on_complete hooks fire with status='failed' when node raises RuntimeError."""
 
         def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -380,7 +384,9 @@ class TestWrapWithHooksNodeFailure:
         exec_kwargs = mock_exec.call_args[1]
         assert exec_kwargs["status"] == "failed"
 
-    def test_node_error_is_reraised_after_on_complete_hooks(self, tmp_path: Path) -> None:
+    def test_node_error_is_reraised_after_on_complete_hooks(
+        self, tmp_path: Path
+    ) -> None:
         """The original exception is re-raised after on_complete hooks run."""
         original_error = ValueError("original error")
 
@@ -406,7 +412,9 @@ class TestWrapWithHooksNodeFailure:
 
         assert exc_info.value is original_error
 
-    def test_output_json_written_with_input_state_on_failure(self, tmp_path: Path) -> None:
+    def test_output_json_written_with_input_state_on_failure(
+        self, tmp_path: Path
+    ) -> None:
         """When node fails, output.json is written with the input state_dict (fallback)."""
 
         def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -434,7 +442,9 @@ class TestWrapWithHooksNodeFailure:
                 with pytest.raises(RuntimeError):
                     wrapped({"original": "state"})
 
-        output_write = next(c for c in write_data_calls if c["filename"] == OUTPUT_FILENAME)
+        output_write = next(
+            c for c in write_data_calls if c["filename"] == OUTPUT_FILENAME
+        )
         assert output_write["data"] == {"original": "state"}, (
             "output.json should contain the input state_dict as fallback on failure"
         )
@@ -537,18 +547,24 @@ states:
 
         hook_calls: list[dict] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
-            hook_calls.append({
-                "state_name": state_name,
-                "status": status,
-                "count": len(hooks),
-            })
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
+            hook_calls.append(
+                {
+                    "state_name": state_name,
+                    "status": status,
+                    "count": len(hooks),
+                }
+            )
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(
                     flow,
                     recorder=recorder,
@@ -556,7 +572,11 @@ states:
                 )
                 # Run the graph
                 config_dict = {"configurable": {"thread_id": "hooks-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
         starting_calls = [c for c in hook_calls if c["status"] == "starting"]
         completed_calls = [c for c in hook_calls if c["status"] == "completed"]
@@ -595,20 +615,32 @@ states:
 
         hook_calls: list[dict] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
             hook_calls.append({"status": status, "count": len(hooks)})
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "flow-hook-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
-        assert any(c["status"] == "starting" for c in hook_calls), "on_start should fire"
-        assert any(c["status"] == "completed" for c in hook_calls), "on_complete should fire"
+        assert any(c["status"] == "starting" for c in hook_calls), (
+            "on_start should fire"
+        )
+        assert any(c["status"] == "completed" for c in hook_calls), (
+            "on_complete should fire"
+        )
 
     def test_config_level_hooks_merge_with_flow_and_state(self, tmp_path: Path) -> None:
         """Config-level hooks are included via collect_hooks merge."""
@@ -635,22 +667,34 @@ states:
             hooks=HookConfig(on_start=[HookEntry(command="echo global_start")])
         )
 
-        recorder = _make_recorder(thread_id="config-hook-tid", flow_name="Config Hook Test")
+        recorder = _make_recorder(
+            thread_id="config-hook-tid", flow_name="Config Hook Test"
+        )
         log_dir = tmp_path / ".fdsx" / "runs" / "config-hook-tid" / "logs"
 
         hook_calls: list[list] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
             hook_calls.append([h.command for h in hooks])
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
-                compiled = compile_flow(flow, recorder=recorder, config=fdsx_config, log_dir=log_dir)
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
+                compiled = compile_flow(
+                    flow, recorder=recorder, config=fdsx_config, log_dir=log_dir
+                )
                 config_dict = {"configurable": {"thread_id": "config-hook-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
         # Config-level hook should appear in the on_start call
         all_commands = [cmd for call_cmds in hook_calls for cmd in call_cmds]
@@ -693,7 +737,9 @@ states:
 
         captured_hooks: list[list[str]] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
             if status == "starting":
                 captured_hooks.append([h.command for h in hooks])
 
@@ -701,10 +747,18 @@ states:
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
-                compiled = compile_flow(flow, recorder=recorder, config=fdsx_config, log_dir=log_dir)
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
+                compiled = compile_flow(
+                    flow, recorder=recorder, config=fdsx_config, log_dir=log_dir
+                )
                 config_dict = {"configurable": {"thread_id": "merge-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
         assert len(captured_hooks) == 1
         cmds = captured_hooks[0]
@@ -738,7 +792,11 @@ states:
         with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
             compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
             config_dict = {"configurable": {"thread_id": "no-hook-tid"}}
-            list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
 
         mock_exec.assert_not_called()
 
@@ -769,22 +827,38 @@ states:
 
         hook_calls: list[dict] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
             hook_calls.append({"state_name": state_name, "status": status})
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "pass-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
-        assert any(c["status"] == "starting" and c["state_name"] == "passme" for c in hook_calls)
-        assert any(c["status"] == "completed" and c["state_name"] == "passme" for c in hook_calls)
+        assert any(
+            c["status"] == "starting" and c["state_name"] == "passme"
+            for c in hook_calls
+        )
+        assert any(
+            c["status"] == "completed" and c["state_name"] == "passme"
+            for c in hook_calls
+        )
 
-    def test_parallel_state_hooks_wrap_dispatch_and_collector(self, tmp_path: Path) -> None:
+    def test_parallel_state_hooks_wrap_dispatch_and_collector(
+        self, tmp_path: Path
+    ) -> None:
         """ParallelState: on_start fires in dispatch, on_complete fires in collector."""
         flow_yaml = """
 name: Parallel Hook Flow
@@ -819,17 +893,27 @@ states:
 
         hook_calls: list[dict] = []
 
-        def fake_execute_hooks(hooks, *, state_name, status, data_path, thread_id, flow_name):
-            hook_calls.append({"state_name": state_name, "status": status, "count": len(hooks)})
+        def fake_execute_hooks(
+            hooks, *, state_name, status, data_path, thread_id, flow_name
+        ):
+            hook_calls.append(
+                {"state_name": state_name, "status": status, "count": len(hooks)}
+            )
 
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
         with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
-            with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+            with patch(
+                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "par-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
         starting_calls = [c for c in hook_calls if c["status"] == "starting"]
         completed_calls = [c for c in hook_calls if c["status"] == "completed"]
@@ -873,11 +957,17 @@ states:
             write_calls.append({"base_dir": base_dir})
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+        with patch(
+            "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+        ):
             with patch("fdsx.core.compiler.execute_hooks"):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "test-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
         assert len(write_calls) > 0
         assert write_calls[0]["base_dir"] == fdsx_root, (
@@ -914,11 +1004,17 @@ states:
             write_calls.append({"base_dir": base_dir})
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data):
+        with patch(
+            "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+        ):
             with patch("fdsx.core.compiler.execute_hooks"):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=None)
                 config_dict = {"configurable": {"thread_id": "none-logdir-tid"}}
-                list(compiled.graph.stream({"_meta": {}}, config=config_dict, stream_mode="values"))
+                list(
+                    compiled.graph.stream(
+                        {"_meta": {}}, config=config_dict, stream_mode="values"
+                    )
+                )
 
         assert len(write_calls) > 0
         assert write_calls[0]["base_dir"] is None

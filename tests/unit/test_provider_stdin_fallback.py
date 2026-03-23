@@ -40,7 +40,9 @@ class TestClaudeStdinFallback:
     def test_small_prompt_uses_args(self) -> None:
         """T01: prompt < threshold → prompt in args, stdin_data=None."""
         provider = ClaudeProvider()
-        with patch("fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(SMALL_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -50,7 +52,9 @@ class TestClaudeStdinFallback:
     def test_large_prompt_uses_stdin(self) -> None:
         """T02: prompt above threshold → prompt NOT in args, stdin_data=prompt."""
         provider = ClaudeProvider()
-        with patch("fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(ABOVE_THRESHOLD_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -61,7 +65,9 @@ class TestClaudeStdinFallback:
         """T03: prompt >= threshold + flags → flags in args, prompt NOT in args, stdin_data=prompt."""
         options = ClaudeOptions(dangerously_skip_permissions=True)
         provider = ClaudeProvider(options)
-        with patch("fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(ABOVE_THRESHOLD_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -72,7 +78,9 @@ class TestClaudeStdinFallback:
     def test_prompt_at_threshold_uses_stdin(self) -> None:
         """T10: prompt exactly at threshold → uses stdin (boundary case)."""
         provider = ClaudeProvider()
-        with patch("fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(LARGE_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -86,7 +94,9 @@ class TestCodexStdinFallback:
     def test_small_prompt_uses_args(self) -> None:
         """T04: prompt < threshold → prompt in args, stdin_data=None."""
         provider = CodexProvider()
-        with patch("fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(SMALL_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -96,7 +106,9 @@ class TestCodexStdinFallback:
     def test_large_prompt_uses_stdin(self) -> None:
         """T05: prompt >= threshold → prompt NOT in args, stdin_data=prompt."""
         provider = CodexProvider()
-        with patch("fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(ABOVE_THRESHOLD_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -107,7 +119,9 @@ class TestCodexStdinFallback:
         """T06: prompt >= threshold + flags → flags in args, prompt NOT in args, stdin_data=prompt."""
         options = CodexOptions(full_auto=True)
         provider = CodexProvider(options)
-        with patch("fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(ABOVE_THRESHOLD_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -122,7 +136,9 @@ class TestOpenCodeStdinFallback:
     def test_small_prompt_uses_args(self) -> None:
         """T07: prompt < threshold → prompt in args, stdin_data=None."""
         provider = OpenCodeProvider()
-        with patch("fdsx.providers.opencode._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(SMALL_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -132,7 +148,9 @@ class TestOpenCodeStdinFallback:
     def test_large_prompt_uses_stdin(self) -> None:
         """T08: prompt >= threshold → prompt NOT in args, stdin_data=prompt."""
         provider = OpenCodeProvider()
-        with patch("fdsx.providers.opencode._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(ABOVE_THRESHOLD_PROMPT)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
@@ -143,7 +161,9 @@ class TestOpenCodeStdinFallback:
         """T09: prompt >= threshold + model flag → `-m model` in args, prompt NOT in args, stdin_data=prompt."""
         model = "gpt-4o"
         provider = OpenCodeProvider()
-        with patch("fdsx.providers.opencode._run_subprocess", return_value=FAKE_SUCCESS) as mock_run:
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", return_value=FAKE_SUCCESS
+        ) as mock_run:
             provider.execute(ABOVE_THRESHOLD_PROMPT, model=model)
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs

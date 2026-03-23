@@ -244,8 +244,7 @@ def _validate_result_file(v: str | None) -> str | None:
         return v
     if not v.startswith("$."):
         raise ValueError(
-            f"result_file must start with '$.' (got '{v}'). "
-            "Example: '$.plan_ref'"
+            f"result_file must start with '$.' (got '{v}'). Example: '$.plan_ref'"
         )
     remainder = v[2:]
     if not remainder or not remainder.strip():

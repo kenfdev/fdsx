@@ -768,7 +768,9 @@ class TestHooksFieldOnStates:
         """T017: ChoiceState.hooks is None when not specified."""
         state = ChoiceState(
             type="choice",
-            choices=[ChoiceRule(variable="$.x", operator="equals", value="a", next="b")],
+            choices=[
+                ChoiceRule(variable="$.x", operator="equals", value="a", next="b")
+            ],
         )
         assert state.hooks is None
 
@@ -776,7 +778,9 @@ class TestHooksFieldOnStates:
         """T017: ChoiceState accepts a HookConfig."""
         state = ChoiceState(
             type="choice",
-            choices=[ChoiceRule(variable="$.x", operator="equals", value="a", next="b")],
+            choices=[
+                ChoiceRule(variable="$.x", operator="equals", value="a", next="b")
+            ],
             hooks=HookConfig(on_complete=[HookEntry(command="echo done")]),
         )
         assert state.hooks is not None
@@ -793,7 +797,9 @@ class TestHooksFieldOnStates:
             branches=[],
             result_path="$.r",
             end=True,
-            hooks=HookConfig(on_start=[HookEntry(command="init.sh", on_failure="abort")]),
+            hooks=HookConfig(
+                on_start=[HookEntry(command="init.sh", on_failure="abort")]
+            ),
         )
         assert state.hooks is not None
 

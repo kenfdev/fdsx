@@ -361,9 +361,7 @@ class TestFdsxConfigProviders:
     def test_extra_claude_field_rejected(self):
         """Unknown fields inside a provider's options are rejected."""
         with pytest.raises(ValidationError):
-            FdsxConfig.model_validate(
-                {"providers": {"claude": {"unknown_flag": True}}}
-            )
+            FdsxConfig.model_validate({"providers": {"claude": {"unknown_flag": True}}})
 
     def test_backward_compat_without_providers(self):
         """Existing configs without a providers section still parse correctly."""
@@ -398,7 +396,9 @@ class TestLoadConfigWithProviders:
             config_dir.mkdir()
             global_file = config_dir / "config.yaml"
             global_file.write_text(
-                yaml.dump({"providers": {"claude": {"permission_mode": "bypassPermissions"}}})
+                yaml.dump(
+                    {"providers": {"claude": {"permission_mode": "bypassPermissions"}}}
+                )
             )
 
             project_dir = Path(tmpdir)
@@ -406,7 +406,9 @@ class TestLoadConfigWithProviders:
             fdsx_dir.mkdir()
             project_file = fdsx_dir / "config.yaml"
             project_file.write_text(
-                yaml.dump({"providers": {"claude": {"dangerously_skip_permissions": True}}})
+                yaml.dump(
+                    {"providers": {"claude": {"dangerously_skip_permissions": True}}}
+                )
             )
 
             original_xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -441,7 +443,9 @@ class TestLoadConfigWithProviders:
             fdsx_dir.mkdir()
             project_file = fdsx_dir / "config.yaml"
             project_file.write_text(
-                yaml.dump({"providers": {"claude": {"permission_mode": "bypassPermissions"}}})
+                yaml.dump(
+                    {"providers": {"claude": {"permission_mode": "bypassPermissions"}}}
+                )
             )
 
             original_xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -525,9 +529,7 @@ class TestFdsxConfigHooks:
     def test_hooks_empty_command_rejected(self):
         """T018: Empty command in hook entry must be rejected."""
         with pytest.raises(ValidationError):
-            FdsxConfig.model_validate(
-                {"hooks": {"on_start": [{"command": ""}]}}
-            )
+            FdsxConfig.model_validate({"hooks": {"on_start": [{"command": ""}]}})
 
 
 class TestDeepMergeHookListConcatenation:
@@ -545,7 +547,9 @@ class TestDeepMergeHookListConcatenation:
     def test_on_complete_lists_are_concatenated(self):
         """T018: on_complete lists from base and override are concatenated."""
         base = {"hooks": {"on_start": [], "on_complete": [{"command": "cleanup.sh"}]}}
-        override = {"hooks": {"on_start": [], "on_complete": [{"command": "notify.sh"}]}}
+        override = {
+            "hooks": {"on_start": [], "on_complete": [{"command": "notify.sh"}]}
+        }
         result = _deep_merge(base, override)
         assert len(result["hooks"]["on_complete"]) == 2
         assert result["hooks"]["on_complete"][0]["command"] == "cleanup.sh"

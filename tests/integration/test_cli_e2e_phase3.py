@@ -1,11 +1,7 @@
-import subprocess
 import tempfile
 from pathlib import Path
 
-
-def get_fdsx_command():
-    """Get the fdsx command using uv to exercise the entry point."""
-    return ["uv", "run", "fdsx"]
+from tests.integration.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestCLIE2EPhase3:
@@ -13,15 +9,9 @@ class TestCLIE2EPhase3:
 
     def test_wait_state_flow_with_stdin_selection(self):
         """Test fdsx run with Wait state flow - provide input via stdin."""
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
-                "run",
-                "tests/fixtures/wait_approval.yaml",
-            ],
+        result = run_fdsx(
+            ["run", fixture_path("wait_approval.yaml")],
             input="1\n",
-            capture_output=True,
-            text=True,
             timeout=30,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
@@ -33,16 +23,14 @@ class TestCLIE2EPhase3:
     def test_resume_interrupted_flow(self):
         """Test fdsx resume --thread-id with previously interrupted flow."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            flow_path = str(Path("tests/fixtures/wait_approval.yaml").resolve())
+            flow_path = fixture_path("wait_approval.yaml")
             thread_id = "test-resume-interrupted"
             base_dir = str(Path(tmp_dir) / ".fdsx")
 
-            first_run = subprocess.run(
-                get_fdsx_command() + ["run", flow_path, "--thread-id", thread_id],
+            first_run = run_fdsx(
+                ["run", flow_path, "--thread-id", thread_id],
                 input="",
                 cwd=tmp_dir,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert first_run.returncode == 1, (
@@ -50,9 +38,8 @@ class TestCLIE2EPhase3:
             )
             assert "Checkpoint saved" in first_run.stderr
 
-            resume_result = subprocess.run(
-                get_fdsx_command()
-                + [
+            resume_result = run_fdsx(
+                [
                     "resume",
                     "--thread-id",
                     thread_id,
@@ -61,8 +48,6 @@ class TestCLIE2EPhase3:
                 ],
                 input="1\n",
                 cwd=tmp_dir,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert resume_result.returncode == 0, f"stderr: {resume_result.stderr}"
@@ -76,17 +61,14 @@ class TestCLIE2EPhase3:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir) / ".fdsx"
 
-            result = subprocess.run(
-                get_fdsx_command()
-                + [
+            result = run_fdsx(
+                [
                     "resume",
                     "--thread-id",
                     "nonexistent-thread-id-12345",
                     "--base-dir",
                     str(base_dir),
                 ],
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert result.returncode == 2, (
@@ -99,33 +81,27 @@ class TestCLIE2EPhase3:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir) / ".fdsx"
             thread_id = "test-list-thread"
-            flow_path = Path("tests/fixtures/simple_flow.yaml").resolve()
+            flow_path = fixture_path("simple_flow.yaml")
 
-            run_result = subprocess.run(
-                get_fdsx_command()
-                + [
+            run_result = run_fdsx(
+                [
                     "run",
-                    str(flow_path),
+                    flow_path,
                     "--thread-id",
                     thread_id,
                 ],
                 cwd=tmp_dir,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert run_result.returncode == 0, f"stderr: {run_result.stderr}"
 
-            list_result = subprocess.run(
-                get_fdsx_command()
-                + [
+            list_result = run_fdsx(
+                [
                     "list",
                     "--base-dir",
                     str(base_dir),
                 ],
                 cwd=tmp_dir,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert list_result.returncode == 0, f"stderr: {list_result.stderr}"
@@ -141,16 +117,13 @@ class TestCLIE2EPhase3:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir) / ".fdsx"
 
-            result = subprocess.run(
-                get_fdsx_command()
-                + [
+            result = run_fdsx(
+                [
                     "list",
                     "--base-dir",
                     str(base_dir),
                 ],
                 cwd=tmp_dir,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert result.returncode == 0, f"stderr: {result.stderr}"
@@ -179,12 +152,7 @@ class TestCLIE2EPhase3:
                 "    end: true\n"
             )
 
-            result = subprocess.run(
-                get_fdsx_command() + ["validate", str(flow_path)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            result = run_fdsx(["validate", str(flow_path)], timeout=30)
             assert result.returncode == 0, (
                 f"Expected exit 0 (prompt_file loaded from disk), got {result.returncode}. "
                 f"stderr: {result.stderr}"
@@ -211,11 +179,9 @@ class TestCLIE2EPhase3:
                 "    end: true\n"
             )
 
-            result = subprocess.run(
-                get_fdsx_command() + ["run", str(flow_path)],
+            result = run_fdsx(
+                ["run", str(flow_path)],
                 cwd=tmp_dir,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
             assert result.returncode == 2, (

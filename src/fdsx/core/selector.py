@@ -269,13 +269,13 @@ def select_workflow(
     # match inside "review-code").
     matches: list[Path] = []
     for wf_path, _, display_name in workflows:
-        pattern = r'(?:^|\s)' + re.escape(display_name) + r'(?:$|\s)'
+        pattern = r"(?:^|\s)" + re.escape(display_name) + r"(?:$|\s)"
         if re.search(pattern, selected_name):
             if wf_path not in matches:
                 matches.append(wf_path)
     if not matches:
         for wf_path, _, display_name in workflows:
-            pattern = r'(?:^|\s)' + re.escape(wf_path.name) + r'(?:$|\s)'
+            pattern = r"(?:^|\s)" + re.escape(wf_path.name) + r"(?:$|\s)"
             if re.search(pattern, selected_name):
                 if wf_path not in matches:
                     matches.append(wf_path)
@@ -406,7 +406,9 @@ def resolve_workflow_for_task(
             selected_display_name = dn
             break
 
-    approved = confirm_workflow_selection(selected, task_description, display_name=selected_display_name)
+    approved = confirm_workflow_selection(
+        selected, task_description, display_name=selected_display_name
+    )
     if approved:
         return selected
 

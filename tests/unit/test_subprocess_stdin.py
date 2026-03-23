@@ -75,7 +75,11 @@ class TestSubprocessStdinFallback:
         # Format: "_pad=<padding>; echo boundary_ok"
         prefix = "_pad="
         suffix = "; echo boundary_ok"
-        padding_len = ARG_MAX_STDIN_THRESHOLD - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
+        padding_len = (
+            ARG_MAX_STDIN_THRESHOLD
+            - len(prefix.encode("utf-8"))
+            - len(suffix.encode("utf-8"))
+        )
         cmd = prefix + ("x" * padding_len) + suffix
 
         assert len(cmd.encode("utf-8")) == ARG_MAX_STDIN_THRESHOLD
@@ -90,7 +94,12 @@ class TestSubprocessStdinFallback:
         # Construct a command that is exactly one byte below threshold.
         prefix = "_pad="
         suffix = "; echo below_ok"
-        padding_len = ARG_MAX_STDIN_THRESHOLD - 1 - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
+        padding_len = (
+            ARG_MAX_STDIN_THRESHOLD
+            - 1
+            - len(prefix.encode("utf-8"))
+            - len(suffix.encode("utf-8"))
+        )
         cmd = prefix + ("x" * padding_len) + suffix
 
         assert len(cmd.encode("utf-8")) == ARG_MAX_STDIN_THRESHOLD - 1
@@ -193,5 +202,5 @@ class TestStderrCallback:
         assert "stdout_line" in stdout_lines
         assert "stderr_line" in stderr_lines
         # Lines should not cross-contaminate
-        assert not any("stderr_line" in l for l in stdout_lines)
-        assert not any("stdout_line" in l for l in stderr_lines)
+        assert not any("stderr_line" in line for line in stdout_lines)
+        assert not any("stdout_line" in line for line in stderr_lines)

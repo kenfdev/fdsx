@@ -48,7 +48,7 @@ class TestTaskResultFileIntegration:
             "  consume_state:\n"
             "    type: task\n"
             "    provider: system\n"
-            "    command: \"cat {output_ref}\"\n"
+            '    command: "cat {output_ref}"\n'
             "    result_path: $.final\n"
             "    end: true\n",
             encoding="utf-8",
@@ -60,7 +60,9 @@ class TestTaskResultFileIntegration:
         run_dir = tmp_path / RUNS_DIR_NAME / thread_id
         expected_file = run_dir / RESULT_FILE_DATA_DIR / "output_ref.md"
 
-        assert "output_ref" in result, f"result_file variable missing from result: {result}"
+        assert "output_ref" in result, (
+            f"result_file variable missing from result: {result}"
+        )
         assert Path(result["output_ref"]).is_absolute(), (
             f"output_ref should be absolute path, got: {result['output_ref']}"
         )
@@ -134,12 +136,12 @@ class TestParallelResultFileIntegration:
         assert isinstance(parsed, list), (
             f"Expected JSON list in {expected_file}, got: {type(parsed)}"
         )
-        assert len(parsed) == 2, (
-            f"Expected 2 branch results, got: {len(parsed)}"
-        )
+        assert len(parsed) == 2, f"Expected 2 branch results, got: {len(parsed)}"
         for entry in parsed:
             assert "output" in entry, f"Missing 'output' key in branch result: {entry}"
-            assert "exit_code" in entry, f"Missing 'exit_code' key in branch result: {entry}"
+            assert "exit_code" in entry, (
+                f"Missing 'exit_code' key in branch result: {entry}"
+            )
         assert result["reviews_ref"] == str(expected_file.resolve()), (
             f"reviews_ref path mismatch: {result['reviews_ref']} != {expected_file.resolve()}"
         )
@@ -167,5 +169,7 @@ class TestResultFileRegression:
             f"but found: {data_dir}"
         )
         assert "plan" in result, f"Expected 'plan' in result: {result}"
-        assert "implementation" in result, f"Expected 'implementation' in result: {result}"
+        assert "implementation" in result, (
+            f"Expected 'implementation' in result: {result}"
+        )
         assert "review" in result, f"Expected 'review' in result: {result}"

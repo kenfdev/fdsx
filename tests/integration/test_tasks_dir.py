@@ -928,9 +928,7 @@ class TestRunTasksDirQuietFlagPropagation:
 
             with patch("fdsx.core.engine.run_flow") as mock_run_flow:
                 with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert mock_run_flow.called
             for call_args in mock_run_flow.call_args_list:

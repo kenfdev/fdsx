@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from fdsx.core import engine
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
@@ -31,7 +30,8 @@ class TestWorkflowPersistence:
                             flow_path, tasks_dir, auto_workflow=False
                         )
 
-            loaded = load_task_file(tasks_dir / "001-test.yaml")
+            # After all entries complete, the file is moved to completed/
+            loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
             assert loaded.entries[0].workflow is not None
             assert results[0]["status"] == "completed"
 
@@ -53,7 +53,7 @@ class TestWorkflowPersistence:
                             "fdsx.display.terminal.confirm_workflow_assignments_interactive",
                             return_value=None,
                         ):
-                            results = engine.run_tasks_dir(
+                            engine.run_tasks_dir(
                                 flow_path, tasks_dir, auto_workflow=False
                             )
 
@@ -126,7 +126,8 @@ class TestWorkflowPersistence:
                 "Selector should not be called when workflow is already persisted"
             )
 
-            loaded = load_task_file(tasks_dir / "001-test.yaml")
+            # After all entries complete, the file is moved to completed/
+            loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
             assert loaded.entries[0].workflow == "review.yaml"
             assert loaded.entries[0].status == "completed"
 
@@ -148,12 +149,13 @@ class TestWorkflowPersistence:
                             "fdsx.display.terminal.confirm_workflow_assignments_interactive"
                         ) as mock_cui:
                             mock_cui.return_value = {(0, 0): Path("review.yaml")}
-                            results = engine.run_tasks_dir(
+                            engine.run_tasks_dir(
                                 flow_path, tasks_dir, auto_workflow=False
                             )
 
             mock_cui.assert_called_once()
-            loaded = load_task_file(tasks_dir / "001-test.yaml")
+            # After all entries complete, the file is moved to completed/
+            loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
             assert loaded.entries[0].workflow == "review.yaml"
 
     def test_workflow_persists_with_correct_filename_format(self):
@@ -170,11 +172,10 @@ class TestWorkflowPersistence:
                     with patch(
                         "fdsx.display.terminal.is_interactive", return_value=False
                     ):
-                        results = engine.run_tasks_dir(
-                            flow_path, tasks_dir, auto_workflow=False
-                        )
+                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
-            loaded = load_task_file(tasks_dir / "001-test.yaml")
+            # After all entries complete, the file is moved to completed/
+            loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
             wf = loaded.entries[0].workflow
             assert wf is not None
             assert "/" not in wf
@@ -203,7 +204,7 @@ class TestWorkflowPersistence:
                     ):
                         engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
-            loaded = load_task_file(tasks_dir / "001-multi.yaml")
+            loaded = load_task_file(tasks_dir / "completed" / "001-multi.yaml")
             for entry in loaded.entries:
                 assert entry.workflow is not None
                 assert entry.status == "completed"

@@ -1,7 +1,5 @@
 """End-to-end CLI tests for Phase 4 batch task scenarios."""
 
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -11,11 +9,7 @@ from typer.testing import CliRunner
 
 from fdsx.cli.main import app
 from fdsx.providers.base import ProviderResult
-
-
-def get_fdsx_command():
-    """Get the fdsx command invoking the CLI module directly."""
-    return [sys.executable, "-m", "fdsx.cli.main"]
+from tests.integration.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestBatchCLIE2E:
@@ -55,21 +49,15 @@ class TestBatchCLIE2E:
 
     def test_input_tasks_mutual_exclusion(self):
         """Test --input and --tasks together → exit code 2, mutual exclusion error."""
-        flow_path = str(Path("tests/fixtures/batch_flow.yaml").resolve())
-        tasks_path = str(Path("tests/fixtures/sample_tasks.md").resolve())
-
-        result = subprocess.run(
-            get_fdsx_command()
-            + [
+        result = run_fdsx(
+            [
                 "run",
-                flow_path,
+                fixture_path("batch_flow.yaml"),
                 "--input",
                 "task=foo",
                 "--tasks",
-                tasks_path,
+                fixture_path("sample_tasks.md"),
             ],
-            capture_output=True,
-            text=True,
             timeout=30,
         )
 
@@ -99,17 +87,14 @@ class TestBatchCLIE2E:
             tasks_path = Path(tmpdir) / "tasks.md"
             tasks_path.write_text("Task 1\nTask 2\n")
 
-            result = subprocess.run(
-                get_fdsx_command()
-                + [
+            result = run_fdsx(
+                [
                     "run",
                     str(flow_path),
                     "--tasks",
                     str(tasks_path),
                 ],
                 input="y\n",
-                capture_output=True,
-                text=True,
                 timeout=30,
                 cwd=tmpdir,
             )

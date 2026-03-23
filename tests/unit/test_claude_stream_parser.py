@@ -36,15 +36,37 @@ def _make_provider() -> ClaudeProvider:
 
 
 def _build_text_delta_line(text: str, index: int = 0) -> str:
-    return json.dumps({"type": _EVENT_CONTENT_BLOCK_DELTA, "index": index, "delta": {"type": _DELTA_TYPE_TEXT, "text": text}})
+    return json.dumps(
+        {
+            "type": _EVENT_CONTENT_BLOCK_DELTA,
+            "index": index,
+            "delta": {"type": _DELTA_TYPE_TEXT, "text": text},
+        }
+    )
 
 
 def _build_thinking_delta_line(thinking: str, index: int = 0) -> str:
-    return json.dumps({"type": _EVENT_CONTENT_BLOCK_DELTA, "index": index, "delta": {"type": _DELTA_TYPE_THINKING, "thinking": thinking}})
+    return json.dumps(
+        {
+            "type": _EVENT_CONTENT_BLOCK_DELTA,
+            "index": index,
+            "delta": {"type": _DELTA_TYPE_THINKING, "thinking": thinking},
+        }
+    )
 
 
 def _build_tool_use_start_line(tool_name: str, index: int = 1) -> str:
-    return json.dumps({"type": _EVENT_CONTENT_BLOCK_START, "index": index, "content_block": {"type": _CONTENT_TYPE_TOOL_USE, "id": "tu_001", "name": tool_name}})
+    return json.dumps(
+        {
+            "type": _EVENT_CONTENT_BLOCK_START,
+            "index": index,
+            "content_block": {
+                "type": _CONTENT_TYPE_TOOL_USE,
+                "id": "tu_001",
+                "name": tool_name,
+            },
+        }
+    )
 
 
 def _build_content_block_stop_line(index: int = 0) -> str:
@@ -52,7 +74,14 @@ def _build_content_block_stop_line(index: int = 0) -> str:
 
 
 def _build_result_line(result_text: str) -> str:
-    return json.dumps({"type": _EVENT_RESULT, "subtype": "success", "is_error": False, "result": result_text})
+    return json.dumps(
+        {
+            "type": _EVENT_RESULT,
+            "subtype": "success",
+            "is_error": False,
+            "result": result_text,
+        }
+    )
 
 
 def _wrap_in_stream_event(inner_json: str) -> str:
@@ -166,7 +195,13 @@ class TestToolUseContentBlockStart:
         provider = _make_provider()
         cb, _, _ = provider._make_stream_callback(received.append)
 
-        line = json.dumps({"type": _EVENT_CONTENT_BLOCK_START, "index": 0, "content_block": {"type": _CONTENT_TYPE_TOOL_USE}})
+        line = json.dumps(
+            {
+                "type": _EVENT_CONTENT_BLOCK_START,
+                "index": 0,
+                "content_block": {"type": _CONTENT_TYPE_TOOL_USE},
+            }
+        )
         cb(line)
 
         assert received == ["[tool: unknown]"]
@@ -177,7 +212,13 @@ class TestToolUseContentBlockStart:
         provider = _make_provider()
         cb, _, _ = provider._make_stream_callback(received.append)
 
-        line = json.dumps({"type": _EVENT_CONTENT_BLOCK_START, "index": 0, "content_block": {"type": "text", "text": ""}})
+        line = json.dumps(
+            {
+                "type": _EVENT_CONTENT_BLOCK_START,
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            }
+        )
         cb(line)
 
         assert received == []
@@ -210,7 +251,9 @@ class TestResultEvent:
         provider = _make_provider()
         cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
-        line = json.dumps({"type": _EVENT_RESULT, "subtype": "error", "result": "error message text"})
+        line = json.dumps(
+            {"type": _EVENT_RESULT, "subtype": "error", "result": "error message text"}
+        )
         cb(line)
 
         assert get_result() == "error message text"

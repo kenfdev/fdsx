@@ -14,6 +14,7 @@ Phase 3:
 """
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -246,27 +247,30 @@ class TestMetaRunDir:
 
         captured: list[dict] = []
         mock_graph = MagicMock()
-        mock_graph.stream.side_effect = lambda state, **kw: (
-            captured.append(state) or []
-        )
+        mock_graph.stream.side_effect = lambda state, **kw: captured.append(state) or []
         mock_graph.get_state.return_value = MagicMock(tasks=[], values={})
         mock_compiled = MagicMock()
         mock_compiled.graph = mock_graph
         mock_compiled.result_paths = []
 
-        with (
-            patch("fdsx.core.engine.compile_flow", return_value=mock_compiled),
-            patch("fdsx.core.engine.RunRecorder") as mock_recorder_cls,
-            patch("fdsx.core.engine.display_completion_summary"),
-            patch("fdsx.core.engine.load_config"),
-        ):
-            mock_recorder_instance = MagicMock()
-            mock_recorder_instance.started_at = "2026-01-01T00:00:00+00:00"
-            mock_recorder_instance.completed_at = None
-            mock_recorder_instance.states = []
-            mock_recorder_instance.flow_name = "test"
-            mock_recorder_cls.return_value = mock_recorder_instance
-            run_flow(flow_path, thread_id=thread_id)
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(flow_path.parent)
+            with (
+                patch("fdsx.core.engine.compile_flow", return_value=mock_compiled),
+                patch("fdsx.core.engine.RunRecorder") as mock_recorder_cls,
+                patch("fdsx.core.engine.display_completion_summary"),
+                patch("fdsx.core.engine.load_config"),
+            ):
+                mock_recorder_instance = MagicMock()
+                mock_recorder_instance.started_at = "2026-01-01T00:00:00+00:00"
+                mock_recorder_instance.completed_at = None
+                mock_recorder_instance.states = []
+                mock_recorder_instance.flow_name = "test"
+                mock_recorder_cls.return_value = mock_recorder_instance
+                run_flow(flow_path, thread_id=thread_id)
+        finally:
+            os.chdir(original_cwd)
 
         assert len(captured) == 1, "compile_flow.graph.stream was not called"
         return captured[0]

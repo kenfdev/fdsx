@@ -13,44 +13,44 @@ class TestWaitFlow:
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-    def test_wait_state_prompt_with_approve_selection(self):
+    def test_wait_state_prompt_with_approve_selection(self, tmp_path):
         """Test Wait → Choice routing: select approve → verify flow takes approve branch."""
         path = Path("tests/fixtures/wait_approval.yaml")
 
         # Mock stdin to provide "1" (approve)
         with patch("builtins.input", return_value="1"):
-            result = run_flow(path)
+            result = run_flow(path, base_dir=tmp_path)
 
         assert "plan_output" in result
         assert "approval_decision" in result
         assert result["approval_decision"] == "approve"
         assert "implementation_output" in result
 
-    def test_wait_state_prompt_with_reject_selection(self):
+    def test_wait_state_prompt_with_reject_selection(self, tmp_path):
         """Test Wait → Choice routing: select reject → verify flow takes reject branch."""
         path = Path("tests/fixtures/wait_approval.yaml")
 
         # Mock stdin to provide "2" (reject)
         with patch("builtins.input", return_value="2"):
-            result = run_flow(path)
+            result = run_flow(path, base_dir=tmp_path)
 
         assert "plan_output" in result
         assert "approval_decision" in result
         assert result["approval_decision"] == "reject"
         assert "rejected_output" in result
 
-    def test_wait_state_prompt_with_invalid_input_then_valid(self):
+    def test_wait_state_prompt_with_invalid_input_then_valid(self, tmp_path):
         """Test Wait state re-prompt on invalid input."""
         path = Path("tests/fixtures/wait_approval.yaml")
 
         # Mock stdin to provide invalid input first, then "1" (approve)
         with patch("builtins.input", side_effect=["invalid", "5", "1"]):
-            result = run_flow(path)
+            result = run_flow(path, base_dir=tmp_path)
 
         assert "approval_decision" in result
         assert result["approval_decision"] == "approve"
 
-    def test_wait_webhook_notification_sent(self):
+    def test_wait_webhook_notification_sent(self, tmp_path):
         """Test webhook notification: verify POST is sent when notify is configured."""
         path = Path("tests/fixtures/wait_webhook.yaml")
 
@@ -58,7 +58,7 @@ class TestWaitFlow:
             mock_webhook.return_value = True
 
             with patch("builtins.input", return_value="1"):
-                result = run_flow(path)
+                result = run_flow(path, base_dir=tmp_path)
 
             # Verify webhook was called
             assert mock_webhook.called
@@ -68,7 +68,7 @@ class TestWaitFlow:
             assert "plan_output" in result
             assert result["approval_decision"] == "approve"
 
-    def test_wait_webhook_sent_exactly_once_on_approve(self):
+    def test_wait_webhook_sent_exactly_once_on_approve(self, tmp_path):
         """Regression: webhook must fire exactly once, not on every resume cycle.
 
         Before the fix, send_notification() was called before interrupt() in the same
@@ -82,14 +82,14 @@ class TestWaitFlow:
             mock_webhook.return_value = True
 
             with patch("builtins.input", return_value="1"):
-                result = run_flow(path)
+                result = run_flow(path, base_dir=tmp_path)
 
         assert result["approval_decision"] == "approve"
         assert mock_webhook.call_count == 1, (
             f"Expected webhook called exactly once, got {mock_webhook.call_count}"
         )
 
-    def test_wait_webhook_failure_does_not_block_flow(self):
+    def test_wait_webhook_failure_does_not_block_flow(self, tmp_path):
         """Test webhook failure: verify flow continues normally (warning logged, prompt still shown)."""
         path = Path("tests/fixtures/wait_webhook.yaml")
 
@@ -98,7 +98,7 @@ class TestWaitFlow:
             mock_webhook.return_value = False
 
             with patch("builtins.input", return_value="1"):
-                result = run_flow(path)
+                result = run_flow(path, base_dir=tmp_path)
 
             # Verify webhook was called
             assert mock_webhook.called

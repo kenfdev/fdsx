@@ -231,7 +231,11 @@ class CheckpointManager:
                 started_at = ""
                 config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
                 try:
-                    checkpoint_tuple = checkpointer.get_tuple(config) if checkpointer is not None else None
+                    checkpoint_tuple = (
+                        checkpointer.get_tuple(config)
+                        if checkpointer is not None
+                        else None
+                    )
                     if checkpoint_tuple is not None:
                         checkpoint_data = checkpoint_tuple.checkpoint
                         meta = _extract_meta_from_checkpoint(checkpoint_data)
@@ -274,6 +278,7 @@ class CheckpointManager:
                 if flow_name == thread_id or not started_at:
                     try:
                         import json
+
                         run_log_path = runs_dir / thread_id / RUN_FILENAME
                         if run_log_path.is_file():
                             with open(run_log_path, "r") as f:

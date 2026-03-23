@@ -226,7 +226,9 @@ def compile_flow(
 
     # Derive the .fdsx base directory for hook data files from log_dir.
     # log_dir = .fdsx/runs/<thread-id>/logs/ → parent×3 = .fdsx/
-    fdsx_base_dir: Path | None = log_dir.parent.parent.parent if log_dir is not None else None
+    fdsx_base_dir: Path | None = (
+        log_dir.parent.parent.parent if log_dir is not None else None
+    )
 
     # Resolve config-level hooks (merged global+project hooks are in fdsx_config.hooks)
     config_hooks = config.hooks if config is not None else None
@@ -252,17 +254,33 @@ def compile_flow(
     for state_name, state in flow.states.items():
         if isinstance(state, TaskState):
             on_start, on_complete = _collect_state_hooks(state)
-            node = _create_task_node(state_name, state, flow, recorder, config, log_dir, quiet)
+            node = _create_task_node(
+                state_name, state, flow, recorder, config, log_dir, quiet
+            )
             graph.add_node(
                 state_name,
-                _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    node,
+                    state_name,
+                    on_start,
+                    on_complete,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):
             on_start, on_complete = _collect_state_hooks(state)
             node = _create_choice_node(state_name, state, flow, recorder)
             graph.add_node(
                 state_name,
-                _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    node,
+                    state_name,
+                    on_start,
+                    on_complete,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
         elif isinstance(state, ParallelState):
             on_start, on_complete = _collect_state_hooks(state)
@@ -270,23 +288,46 @@ def compile_flow(
             dispatch_node = _create_dispatch_node(state_name, state, recorder)
             graph.add_node(
                 state_name,
-                _wrap_with_hooks(dispatch_node, state_name, on_start, [], recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    dispatch_node,
+                    state_name,
+                    on_start,
+                    [],
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
             graph.add_node(
                 f"_branch_{state_name}",
-                _create_branch_executor(state_name, state, flow, recorder, config, log_dir, quiet),
+                _create_branch_executor(
+                    state_name, state, flow, recorder, config, log_dir, quiet
+                ),
             )  # type: ignore[call-overload]
             collector_node = _create_collector_node(state_name, state, flow, recorder)
             graph.add_node(
                 f"_collect_{state_name}",
-                _wrap_with_hooks(collector_node, state_name, [], on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    collector_node,
+                    state_name,
+                    [],
+                    on_complete,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
         elif state.type == "pass":
             on_start, on_complete = _collect_state_hooks(state)
             node = _create_pass_node(state_name, state, flow, recorder)
             graph.add_node(
                 state_name,
-                _wrap_with_hooks(node, state_name, on_start, on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    node,
+                    state_name,
+                    on_start,
+                    on_complete,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
         elif state.type == "wait":
             on_start, on_complete = _collect_state_hooks(state)
@@ -295,12 +336,26 @@ def compile_flow(
             notify_node = _create_wait_notify_node(state_name, state, recorder)
             graph.add_node(
                 state_name,
-                _wrap_with_hooks(notify_node, state_name, on_start, [], recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    notify_node,
+                    state_name,
+                    on_start,
+                    [],
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
             interrupt_node = _create_wait_interrupt_node(state_name, state, recorder)
             graph.add_node(
                 f"_{state_name}_int",
-                _wrap_with_hooks(interrupt_node, state_name, [], on_complete, recorder=recorder, fdsx_base_dir=fdsx_base_dir),
+                _wrap_with_hooks(
+                    interrupt_node,
+                    state_name,
+                    [],
+                    on_complete,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
             )  # type: ignore[call-overload]
             graph.add_edge(state_name, f"_{state_name}_int")
 
@@ -459,7 +514,9 @@ def _wrap_with_hooks(
             )
 
         node_error: BaseException | None = None
-        result: dict[str, Any] = state_dict  # fallback data written to output.json on failure
+        result: dict[str, Any] = (
+            state_dict  # fallback data written to output.json on failure
+        )
         try:
             result = node_fn(state_dict)
         except BaseException as exc:
@@ -509,7 +566,9 @@ def _create_task_node(
     quiet: bool = False,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
-    merged_options = _merge_provider_options(config, flow, state.provider, state.provider_options)
+    merged_options = _merge_provider_options(
+        config, flow, state.provider, state.provider_options
+    )
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.extraction import extract_value
@@ -617,7 +676,9 @@ def _create_task_node(
             run_dir = state_dict.get("_meta", {}).get("run_dir", "")
             if run_dir:
                 varname = state.result_file[2:]  # strip "$."
-                file_path = write_result_to_file(varname, result.stdout.strip(), Path(run_dir))
+                file_path = write_result_to_file(
+                    varname, result.stdout.strip(), Path(run_dir)
+                )
                 new_state = set_jsonpath(state.result_file, new_state, file_path)
                 variables_set = [*variables_set, state.result_file]
 
@@ -706,7 +767,9 @@ def _create_branch_executor(
         prompt = branch.prompt_template or ""
         resolved_prompt = resolve_template(prompt, state_dict)
 
-        merged_options = _merge_provider_options(config, flow, branch.provider, branch.provider_options)
+        merged_options = _merge_provider_options(
+            config, flow, branch.provider, branch.provider_options
+        )
         provider = get_provider(branch.provider, merged_options)
 
         max_retries = branch.retry if branch.retry is not None else 3

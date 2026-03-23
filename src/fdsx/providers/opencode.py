@@ -1,8 +1,14 @@
-from typing import Callable
+import json
+from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict
 
-from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderBase, ProviderResult, _run_subprocess
+from fdsx.providers.base import (
+    ARG_MAX_STDIN_THRESHOLD,
+    ProviderBase,
+    ProviderResult,
+    _run_subprocess,
+)
 
 
 class OpenCodeOptions(BaseModel):
@@ -10,16 +16,27 @@ class OpenCodeOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    permission: str | dict[str, Any] | None = None
+
     def to_cli_flags(self) -> list[str]:
         """Translate options to OpenCode CLI flags (none currently defined)."""
         return []
+
+    def to_env(self) -> dict[str, str]:
+        """Build extra environment variables for the OpenCode subprocess."""
+        if self.permission is None:
+            return {}
+        config = {"permission": self.permission}
+        return {"OPENCODE_CONFIG_CONTENT": json.dumps(config)}
 
 
 class OpenCodeProvider(ProviderBase):
     """OpenCode provider - executes OpenCode CLI."""
 
     def __init__(self, options: OpenCodeOptions | None = None) -> None:
-        self.options: OpenCodeOptions = options if options is not None else OpenCodeOptions()
+        self.options: OpenCodeOptions = (
+            options if options is not None else OpenCodeOptions()
+        )
 
     def execute(
         self,
@@ -54,10 +71,13 @@ class OpenCodeProvider(ProviderBase):
             args.append(prompt)
             stdin_data = None
 
+        env = self.options.to_env() or None
+
         return _run_subprocess(
             args=args,
             timeout=timeout,
             output_callback=output_callback,
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
+            env=env,
         )

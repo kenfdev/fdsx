@@ -89,7 +89,9 @@ class TestClaudeWithPermissionMode:
             captured_args.append(list(args))
             return FAKE_SUCCESS
 
-        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="hello", model="claude-sonnet")
 
         assert len(captured_args) == 1
@@ -108,7 +110,9 @@ class TestClaudeWithPermissionMode:
             captured_args.append(list(args))
             return FAKE_SUCCESS
 
-        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="hello", model="claude-sonnet")
 
         args = captured_args[0]
@@ -126,7 +130,9 @@ class TestClaudeWithPermissionMode:
             captured_args.append(list(args))
             return FAKE_SUCCESS
 
-        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="hello")
 
         assert "--dangerously-skip-permissions" in captured_args[0]
@@ -210,7 +216,9 @@ class TestTaskLevelOverride:
             flow_providers={"claude": {"permission_mode": "plan"}},
             task_provider_options={"permission_mode": "bypassPermissions"},
         )
-        merged = _merge_provider_options(config, flow, "claude", flow.states["step1"].provider_options)  # type: ignore[union-attr]
+        merged = _merge_provider_options(
+            config, flow, "claude", flow.states["step1"].provider_options
+        )  # type: ignore[union-attr]
 
         assert merged is not None
         assert merged["permission_mode"] == "bypassPermissions"
@@ -293,7 +301,9 @@ class TestParallelBranchesWithMixedProviders:
             captured_args.append(list(args))
             return FAKE_SUCCESS
 
-        with patch("fdsx.providers.codex._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.codex._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="do work", model="codex-mini")
 
         args = captured_args[0]
@@ -311,7 +321,9 @@ class TestParallelBranchesWithMixedProviders:
             captured_args.append(list(args))
             return FAKE_SUCCESS
 
-        with patch("fdsx.providers.opencode._run_subprocess", side_effect=fake_run_subprocess):
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", side_effect=fake_run_subprocess
+        ):
             provider.execute(prompt="do work", model="opencode-model")
 
         # Prompt must still be the last arg

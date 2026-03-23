@@ -93,6 +93,7 @@ class TestScenario1LinearFlow:
     @staticmethod
     def _read_run_log(base_dir: Path, thread_id: str) -> dict:
         from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+
         log_path = base_dir / RUNS_DIR_NAME / thread_id / RUN_FILENAME
         assert log_path.exists(), f"Run log not found at {log_path}"
         with open(log_path, "r") as f:
@@ -111,7 +112,7 @@ class TestScenario2ParallelVote:
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = engine.run_flow(path, thread_id="test-scenario2")
+        result = engine.run_flow(path, thread_id="test-scenario2", base_dir=tmp_path)
 
         assert "reviews" in result
         assert len(result["reviews"]) == 3
@@ -176,7 +177,9 @@ class TestScenario3WaitWebhook:
             mock_webhook.return_value = True
 
             with patch("builtins.input", return_value="1"):
-                result = engine.run_flow(path, thread_id="test-scenario3")
+                result = engine.run_flow(
+                    path, thread_id="test-scenario3", base_dir=tmp_path
+                )
 
             assert mock_webhook.call_count == 1
             assert "plan_output" in result
@@ -344,7 +347,7 @@ class TestScenario5ExtractionChoice:
         flow, errors = load_flow(path)
         assert flow is not None, f"Failed to load: {errors}"
 
-        result = engine.run_flow(path, thread_id="test-scenario5")
+        result = engine.run_flow(path, thread_id="test-scenario5", base_dir=tmp_path)
 
         assert "raw_output" in result
         assert "decision" in result

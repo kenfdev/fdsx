@@ -26,7 +26,9 @@ class TestUUIDv7Format:
         # M (version) is at index 14 (after removing dashes: position 12)
         # With dashes: positions 0-7, dash, 9-12, dash, 14-17, dash, 19-22, dash, 24-35
         version_nibble = uid[14]
-        assert version_nibble == "7", f"Expected version nibble '7', got '{version_nibble}' in {uid}"
+        assert version_nibble == "7", (
+            f"Expected version nibble '7', got '{version_nibble}' in {uid}"
+        )
 
     def test_uuid7_variant_bits(self) -> None:
         """FR-1.3: Variant bits (first nibble at position 19) must be '8', '9', 'a', or 'b'."""

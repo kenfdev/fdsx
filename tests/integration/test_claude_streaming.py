@@ -11,7 +11,6 @@ fixture to verify:
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from fdsx.providers.base import ProviderResult
 from fdsx.providers.claude import ClaudeProvider, _STREAM_FORMAT_FLAGS
@@ -24,14 +23,27 @@ FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "claude_stream.ndjson
 
 # Expected values derived from the fixture file
 FIXTURE_RESULT_TEXT = "Hello! Here are 3 items:\n\n1. Apple\n2. Banana\n3. Cherry"
-FIXTURE_TEXT_DELTAS = ["Hello", "! Here are 3 items:\n\n", "1. Apple\n2. Banana\n3. Cherry"]
+FIXTURE_TEXT_DELTAS = [
+    "Hello",
+    "! Here are 3 items:\n\n",
+    "1. Apple\n2. Banana\n3. Cherry",
+]
 # After line buffering, fragments are combined and split at newlines
-FIXTURE_BUFFERED_LINES = ["Hello! Here are 3 items:", "1. Apple", "2. Banana", "3. Cherry"]
+FIXTURE_BUFFERED_LINES = [
+    "Hello! Here are 3 items:",
+    "1. Apple",
+    "2. Banana",
+    "3. Cherry",
+]
 
 
 def _load_fixture_lines() -> list[str]:
     """Return non-empty NDJSON lines from the fixture file."""
-    return [line.rstrip("\n") for line in FIXTURE_PATH.read_text().splitlines() if line.strip()]
+    return [
+        line.rstrip("\n")
+        for line in FIXTURE_PATH.read_text().splitlines()
+        if line.strip()
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +51,9 @@ def _load_fixture_lines() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _fake_run_subprocess_factory(fixture_lines: list[str], exit_code: int = 0) -> MagicMock:
+def _fake_run_subprocess_factory(
+    fixture_lines: list[str], exit_code: int = 0
+) -> MagicMock:
     """Return a mock for _run_subprocess that replays fixture lines via output_callback."""
 
     def fake_run_subprocess(**kwargs: object) -> ProviderResult:
@@ -74,7 +88,9 @@ class TestClaudeStreamingEndToEnd:
         """ProviderResult.stdout must match the result event text, not raw NDJSON."""
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.claude._run_subprocess", mock_run):
-            result = self.provider.execute("Say hello and list 3 items", output_callback=lambda _: None)
+            result = self.provider.execute(
+                "Say hello and list 3 items", output_callback=lambda _: None
+            )
 
         assert result.stdout == FIXTURE_RESULT_TEXT
 
@@ -83,7 +99,9 @@ class TestClaudeStreamingEndToEnd:
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.claude._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=received.append)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=received.append
+            )
 
         # Fragments are buffered and emitted as complete lines
         assert received == FIXTURE_BUFFERED_LINES
@@ -93,7 +111,9 @@ class TestClaudeStreamingEndToEnd:
         received: list[str] = []
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.claude._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=received.append)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=received.append
+            )
 
         for item in received:
             assert not item.strip().startswith("{"), (
@@ -104,7 +124,9 @@ class TestClaudeStreamingEndToEnd:
         """_run_subprocess must be called with stream-json CLI flags."""
         mock_run = _fake_run_subprocess_factory(self.fixture_lines)
         with patch("fdsx.providers.claude._run_subprocess", mock_run):
-            self.provider.execute("Say hello and list 3 items", output_callback=lambda _: None)
+            self.provider.execute(
+                "Say hello and list 3 items", output_callback=lambda _: None
+            )
 
         mock_run.assert_called_once()
         called_args: list[str] = mock_run.call_args.kwargs["args"]
@@ -114,13 +136,17 @@ class TestClaudeStreamingEndToEnd:
     def test_no_streaming_flags_without_callback(self) -> None:
         """Without output_callback, _run_subprocess must NOT receive stream-json flags."""
         fake_result = ProviderResult(exit_code=0, stdout="plain response", stderr="")
-        with patch("fdsx.providers.claude._run_subprocess", return_value=fake_result) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=fake_result
+        ) as mock_run:
             result = self.provider.execute("Say hello")
 
         mock_run.assert_called_once()
         called_args: list[str] = mock_run.call_args.kwargs["args"]
         for flag in _STREAM_FORMAT_FLAGS:
-            assert flag not in called_args, f"Unexpected streaming flag found in args: {flag!r}"
+            assert flag not in called_args, (
+                f"Unexpected streaming flag found in args: {flag!r}"
+            )
         assert result.stdout == "plain response"
 
     def test_exit_code_preserved(self) -> None:
@@ -135,8 +161,10 @@ class TestClaudeStreamingEndToEnd:
         """When no result event in stream, stdout falls back to concatenated text_delta."""
         # Only feed text_delta lines (no result event)
         delta_only_lines = [
-            line for line in self.fixture_lines
-            if '"type":"content_block_delta"' in line or '"type": "content_block_delta"' in line
+            line
+            for line in self.fixture_lines
+            if '"type":"content_block_delta"' in line
+            or '"type": "content_block_delta"' in line
         ]
         mock_run = _fake_run_subprocess_factory(delta_only_lines)
         with patch("fdsx.providers.claude._run_subprocess", mock_run):

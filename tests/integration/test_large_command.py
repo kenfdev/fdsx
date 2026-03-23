@@ -50,7 +50,9 @@ class TestLargeCommandIntegration:
         # Simulate a large state value being interpolated into the command.
         large_value = "review_output_line\n" * 7000  # ~130KB+ when embedded
         # Embed the large value as a heredoc-style variable, then process it
-        large_cmd = f"large_state='{large_value}'; echo \"$large_state\" | wc -l | tr -d ' '"
+        large_cmd = (
+            f"large_state='{large_value}'; echo \"$large_state\" | wc -l | tr -d ' '"
+        )
 
         if len(large_cmd.encode("utf-8")) < ARG_MAX_STDIN_THRESHOLD:
             # If the constructed command doesn't hit the threshold, pad it

@@ -1,5 +1,7 @@
 # fdsx — Flow-Driven Stateful eXecution
 
+[![PyPI version](https://img.shields.io/pypi/v/fdsx.svg)](https://pypi.org/project/fdsx/)
+
 A lightweight framework for building and executing complex AI agent workflows using declarative YAML definitions.
 
 ## Overview
@@ -17,6 +19,12 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 
 ```bash
 pip install fdsx
+```
+
+Or with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install fdsx
 ```
 
 ## Quick Start

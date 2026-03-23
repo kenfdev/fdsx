@@ -157,7 +157,9 @@ class TestCheckpointManager:
         entry = next(t for t in threads if t["thread_id"] == "run-log-only-thread")
         assert entry["flow_name"] == "my_flow"
 
-    def test_list_threads_no_duplicate_for_run_log_and_checkpoint(self, manager, temp_dir):
+    def test_list_threads_no_duplicate_for_run_log_and_checkpoint(
+        self, manager, temp_dir
+    ):
         """T003: a thread present in both DB and run log must appear only once."""
         import json
         import sqlite3
@@ -196,11 +198,13 @@ class TestCheckpointManager:
         threads = manager.list_threads()
 
         dual_entries = [t for t in threads if t["thread_id"] == "dual-thread"]
-        assert len(dual_entries) == 1, "Thread must appear exactly once even if in both DB and run log"
+        assert len(dual_entries) == 1, (
+            "Thread must appear exactly once even if in both DB and run log"
+        )
 
     def test_list_threads_ignores_dirs_without_run_json(self, manager, temp_dir):
         """T003: directories in runs/ without a run.json file must not appear."""
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUNS_DIR_NAME
 
         runs_dir = manager.base_dir / RUNS_DIR_NAME
         # A directory without run.json

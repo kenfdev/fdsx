@@ -100,7 +100,9 @@ def run_flow(
         flow_version=flow.version,
     )
 
-    fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
+    fdsx_config = load_config(
+        project_dir=base_dir.parent if base_dir is not None else None
+    )
 
     _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME
     run_dir = _runs_base / RUNS_DIR_NAME / thread_id
@@ -477,7 +479,9 @@ def resume_flow(
             flow_version=flow_version,
         )
 
-        fdsx_config = load_config(project_dir=base_dir.parent if base_dir is not None else None)
+        fdsx_config = load_config(
+            project_dir=base_dir.parent if base_dir is not None else None
+        )
 
         resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id
         resume_log_dir = resume_run_dir / LOGS_DIR_NAME
@@ -505,9 +509,7 @@ def resume_flow(
         }
 
         state_info = compiled.graph.get_state(resume_config)
-        existing_meta = (
-            state_info.values.get("_meta", {}) if state_info.values else {}
-        )
+        existing_meta = state_info.values.get("_meta", {}) if state_info.values else {}
         if "run_dir" not in existing_meta:
             updated_meta = {**existing_meta, "run_dir": str(resume_run_dir)}
             compiled.graph.update_state(resume_config, {"_meta": updated_meta})
@@ -770,20 +772,17 @@ def run_tasks_dir(
                 try:
                     resolved_wf = wf_path.resolve()
                     wf_dir_resolved = workflows_dir.resolve()
-                    if not str(resolved_wf).startswith(
-                        str(wf_dir_resolved) + "/"
-                    ) and resolved_wf != wf_dir_resolved:
+                    if (
+                        not str(resolved_wf).startswith(str(wf_dir_resolved) + "/")
+                        and resolved_wf != wf_dir_resolved
+                    ):
                         raise ValueError(
                             f"Workflow path escapes workflows directory: {entry.workflow}"
                         )
                 except OSError:
-                    raise ValueError(
-                        f"Cannot resolve workflow path: {entry.workflow}"
-                    )
+                    raise ValueError(f"Cannot resolve workflow path: {entry.workflow}")
                 if wf_path.is_symlink():
-                    raise ValueError(
-                        f"Workflow path must not be a symlink: {wf_path}"
-                    )
+                    raise ValueError(f"Workflow path must not be a symlink: {wf_path}")
                 if wf_path.is_dir():
                     wf_file = wf_path / "workflow.yaml"
                     if not wf_file.exists():
