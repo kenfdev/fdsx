@@ -7,13 +7,19 @@
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y \
-  curl \
-  git \
-  ca-certificates \
-  zsh \
-  sudo \
-  && rm -rf /var/lib/apt/lists/*
+ RUN apt-get update && apt-get install -y \
+   curl \
+   git \
+   ca-certificates \
+   zsh \
+   sudo \
+   locales \
+   && rm -rf /var/lib/apt/lists/*
+
+ RUN sed -i '/ja_JP.UTF-8/s/^# //' /etc/locale.gen && locale-gen
+ ENV LANG=ja_JP.UTF-8
+ ENV LC_ALL=ja_JP.UTF-8
+
 
 # Create non-root user (handle pre-existing GID/UID gracefully)
 ARG USERNAME=vscode
