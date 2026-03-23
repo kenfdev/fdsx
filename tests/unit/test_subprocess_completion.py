@@ -1,5 +1,6 @@
-"""TDD tests for stdout-in-daemon-thread refactor (T001, T002) and
-completion_event termination cascade (T003, T004).
+"""TDD tests for stdout-in-daemon-thread refactor (T001, T002),
+completion_event termination cascade (T003, T004), and
+Claude provider completion signal wiring (T005, T006).
 
 These tests verify that _run_subprocess correctly collects stdout and stderr via
 daemon threads, preserving all existing behavioral contracts:
@@ -13,14 +14,20 @@ T002: Refactor _run_subprocess to run stdout reading in a daemon thread.
 
 T003: Write tests for completion_event parameter and termination cascade.
 T004: Implement completion_event support and termination cascade in _run_subprocess.
+
+T005: Write tests for Claude provider completion signal.
+T006: Wire completion event in Claude provider _make_stream_callback and execute().
 """
 
+import json
 import logging
 import sys
 import threading
 import time
+from unittest.mock import patch
 
-from fdsx.providers.base import _run_subprocess
+from fdsx.providers.base import ProviderResult, _run_subprocess
+from fdsx.providers.claude import ClaudeProvider
 
 # Use sys.executable so tests run with the same Python interpreter as the test
 # runner, regardless of PATH or virtualenv configuration.
@@ -458,3 +465,147 @@ class TestCompletionEventTimeoutInteraction:
 
         assert result.exit_code != 124
         assert "data" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# T005: Claude provider completion signal wiring tests
+# ---------------------------------------------------------------------------
+
+
+# Mirror the constant from the production module so tests don't import internals.
+_EVENT_RESULT_TYPE = "result"
+
+
+def _make_result_ndjson(result_value: str = "ok") -> str:
+    """Return a stream-json NDJSON line for a result event."""
+    return json.dumps({"type": _EVENT_RESULT_TYPE, "result": result_value})
+
+
+def _make_content_block_delta_ndjson(text: str = "hello") -> str:
+    """Return a stream-json NDJSON line for a content_block_delta event."""
+    return json.dumps({
+        "type": "content_block_delta",
+        "delta": {"type": "text_delta", "text": text},
+    })
+
+
+class TestMakeStreamCallbackCompletionEvent:
+    """_make_stream_callback sets completion_event only on result events (T005)."""
+
+    def test_completion_event_set_on_result_event(self):
+        """completion_event is set when a result NDJSON event is parsed."""
+        provider = ClaudeProvider()
+        event = threading.Event()
+        output_lines: list[str] = []
+
+        stream_callback, _get_result, _flush = provider._make_stream_callback(
+            output_lines.append, completion_event=event
+        )
+
+        assert not event.is_set(), "Event should not be set before any events"
+
+        stream_callback(_make_result_ndjson("final text"))
+
+        assert event.is_set(), "Event should be set after result event"
+
+    def test_completion_event_not_set_for_content_block_delta(self):
+        """completion_event is NOT set when non-result events are parsed."""
+        provider = ClaudeProvider()
+        event = threading.Event()
+        output_lines: list[str] = []
+
+        stream_callback, _get_result, _flush = provider._make_stream_callback(
+            output_lines.append, completion_event=event
+        )
+
+        stream_callback(_make_content_block_delta_ndjson("some text"))
+
+        assert not event.is_set(), "Event should not be set for content_block_delta"
+
+    def test_completion_event_not_set_for_other_event_types(self):
+        """completion_event is NOT set for content_block_start/stop events."""
+        provider = ClaudeProvider()
+        event = threading.Event()
+        output_lines: list[str] = []
+
+        stream_callback, _get_result, _flush = provider._make_stream_callback(
+            output_lines.append, completion_event=event
+        )
+
+        stream_callback(json.dumps({"type": "content_block_start", "content_block": {"type": "text", "text": ""}}))
+        stream_callback(json.dumps({"type": "content_block_stop"}))
+
+        assert not event.is_set(), "Event should not be set for content_block_start/stop"
+
+    def test_completion_event_set_exactly_once_on_multiple_result_events(self):
+        """Event.set() is idempotent — multiple result events do not raise errors."""
+        provider = ClaudeProvider()
+        event = threading.Event()
+        output_lines: list[str] = []
+
+        stream_callback, _get_result, _flush = provider._make_stream_callback(
+            output_lines.append, completion_event=event
+        )
+
+        stream_callback(_make_result_ndjson("first"))
+        assert event.is_set()
+
+        # Second result event should not raise; event is already set (idempotent)
+        stream_callback(_make_result_ndjson("second"))
+        assert event.is_set()
+
+    def test_completion_event_none_does_not_raise_on_result_event(self):
+        """When completion_event=None, result events are handled without errors."""
+        provider = ClaudeProvider()
+        output_lines: list[str] = []
+
+        stream_callback, get_result, _flush = provider._make_stream_callback(
+            output_lines.append, completion_event=None
+        )
+
+        # Should not raise
+        stream_callback(_make_result_ndjson("some result"))
+
+        assert get_result() == "some result"
+
+
+class TestClaudeProviderExecuteCompletionEvent:
+    """ClaudeProvider.execute() wires completion_event correctly (T005)."""
+
+    def test_execute_with_output_callback_passes_completion_event(self):
+        """execute() creates a threading.Event and passes it to _run_subprocess."""
+        provider = ClaudeProvider()
+        output_lines: list[str] = []
+        captured_kwargs: dict = {}
+
+        def fake_run_subprocess(**kwargs):  # type: ignore[return]
+            captured_kwargs.update(kwargs)
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+            provider.execute(prompt="hello", output_callback=output_lines.append)
+
+        assert "completion_event" in captured_kwargs, (
+            "_run_subprocess should be called with completion_event kwarg"
+        )
+        assert isinstance(captured_kwargs["completion_event"], threading.Event), (
+            "completion_event should be a threading.Event instance"
+        )
+
+    def test_execute_without_output_callback_does_not_pass_completion_event(self):
+        """execute() without output_callback does not pass completion_event."""
+        provider = ClaudeProvider()
+        captured_kwargs: dict = {}
+
+        def fake_run_subprocess(**kwargs):  # type: ignore[return]
+            captured_kwargs.update(kwargs)
+            return ProviderResult(exit_code=0, stdout="done", stderr="")
+
+        with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess):
+            provider.execute(prompt="hello")
+
+        # No completion_event key, or it is None
+        completion_event = captured_kwargs.get("completion_event")
+        assert completion_event is None, (
+            "completion_event should not be passed when output_callback is None"
+        )

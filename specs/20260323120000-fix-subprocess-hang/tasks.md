@@ -72,14 +72,14 @@ No setup tasks required. No new dependencies — uses Python stdlib only (`threa
 
 **Independent test criteria:** `_make_stream_callback` sets the event on `result` event. Event is set exactly once. Non-result events do not set it. `execute()` creates Event only when `output_callback` is provided.
 
-- [ ] T005 Write TDD tests for Claude provider completion signal in `tests/unit/test_subprocess_completion.py`
+- [x] T005 Write TDD tests for Claude provider completion signal in `tests/unit/test_subprocess_completion.py`
   - `_make_stream_callback` with completion_event: event is set when `result` event parsed
   - Event is set exactly once (multiple result events don't cause issues)
   - Event is NOT set for non-result events (content_block_delta, etc.)
   - `ClaudeProvider.execute` with `output_callback`: creates Event and passes to `_run_subprocess`
   - `ClaudeProvider.execute` without `output_callback`: no Event passed (no stream mode)
 
-- [ ] T006 Wire completion event in Claude provider in `src/fdsx/providers/claude.py`
+- [x] T006 Wire completion event in Claude provider in `src/fdsx/providers/claude.py`
   - `_make_stream_callback` gains `completion_event: threading.Event` parameter
   - In `stream_callback`, after `_EVENT_RESULT` handling: `completion_event.set()`
   - `execute()`: when `output_callback` is provided, create `threading.Event()`, pass to both `_make_stream_callback` and `_run_subprocess`

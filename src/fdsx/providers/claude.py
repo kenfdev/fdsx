@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -60,7 +61,9 @@ class ClaudeProvider(ProviderBase):
         self.options: ClaudeOptions = options if options is not None else ClaudeOptions()
 
     def _make_stream_callback(
-        self, output_callback: Callable[[str], None]
+        self,
+        output_callback: Callable[[str], None],
+        completion_event: threading.Event | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None], Callable[[], None]]:
         """Create a streaming callback that parses stream-json NDJSON lines.
 
@@ -171,6 +174,8 @@ class ClaudeProvider(ProviderBase):
             elif event_type == _EVENT_RESULT:
                 _flush_buffer()
                 final_result[0] = event.get("result", "")
+                if completion_event is not None:
+                    completion_event.set()
 
         def flush() -> None:
             """Flush any remaining buffered text after streaming ends."""
@@ -226,13 +231,15 @@ class ClaudeProvider(ProviderBase):
 
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
-            stream_callback, get_result, flush = self._make_stream_callback(output_callback)
+            completion_event = threading.Event()
+            stream_callback, get_result, flush = self._make_stream_callback(output_callback, completion_event)
             result = _run_subprocess(
                 args=args,
                 timeout=timeout,
                 output_callback=stream_callback,
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
+                completion_event=completion_event,
             )
             flush()
             parsed_stdout = get_result()
