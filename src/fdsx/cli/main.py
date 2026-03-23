@@ -4,14 +4,39 @@ from pathlib import Path
 import typer
 import uuid_utils
 
+from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
-from fdsx.core.batch import COMPLETED_SUBDIR, TASKS_DIR, split_tasks_to_groups, write_task_files
+from fdsx.core.batch import (
+    COMPLETED_SUBDIR,
+    TASKS_DIR,
+    split_tasks_to_groups,
+    write_task_files,
+)
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
+
+
+def version_callback(value: bool | None) -> None:
+    if value:
+        typer.echo(f"fdsx {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool | None = typer.Option(
+        None,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    pass
 
 
 @app.command()
