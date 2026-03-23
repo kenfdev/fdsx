@@ -123,7 +123,8 @@ def run_flow(
             "flow_path": str(flow_path),
             "flow_name": flow.name,
             "run_dir": str(run_dir),
-        }
+        },
+        "_state_iterations": {},
     }
 
     if inputs:
@@ -242,6 +243,7 @@ def _sanitize_state_for_log(state: dict[str, Any]) -> dict[str, Any]:
         if not k.startswith("_meta")
         and not k.startswith("__")
         and not k.startswith("_br_")
+        and not k.startswith("_state_")
     }
 
 

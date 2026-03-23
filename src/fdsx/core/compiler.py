@@ -150,8 +150,9 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
         for key in input_keys:
             annotations.setdefault(key, Any)
 
-    # 4. Internal tracking key
+    # 4. Internal tracking keys
     annotations.setdefault("_meta", Any)
+    annotations.setdefault("_state_iterations", Any)
 
     return TypedDict("FlowState", annotations, total=False)  # type: ignore[no-any-return,operator]
 
@@ -610,7 +611,11 @@ def _create_task_node(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet)
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+
+        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet, iteration=iteration)
         try:
             for attempt in range(max_retries + 1):
                 if attempt > 0:
@@ -708,6 +713,7 @@ def _create_task_node(
             )
 
         new_state = _set_next_state_meta(new_state, state)
+        new_state["_state_iterations"] = iters
         return new_state
 
     return node
@@ -733,7 +739,7 @@ def _create_dispatch_node(
     """Create the dispatch node for a Parallel state.
 
     Displays the parallel state start line and triggers fan-out via Send.
-    Returns {} (no state update) — the fan-out is triggered by the conditional edges.
+    Returns updated _state_iterations counter. Fan-out is triggered by conditional edges.
     Only emits display_parallel_start (not display_state_start) to match CLI contract.
     """
 
@@ -741,7 +747,10 @@ def _create_dispatch_node(
         terminal.display_parallel_start(state_name, len(state.branches))
         if recorder is not None:
             recorder.record_state_start(state_name, "parallel")
-        return {}
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        return {"_state_iterations": iters}
 
     return node
 
@@ -791,7 +800,11 @@ def _create_branch_executor(
         result = ProviderResult(exit_code=1, stdout="", stderr="")
         extracted: str | None = None
 
-        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet)
+        iters = state_dict.get("_state_iterations", {})
+        iteration = iters.get(state_name, 1)
+        branch_log_name = f"{state_name}_branch{branch_index + 1}"
+
+        stream_logger = StreamLogger(branch_log_name, log_dir, quiet=quiet, iteration=iteration)
         try:
             for attempt in range(max_retries + 1):
                 if attempt > 0:
