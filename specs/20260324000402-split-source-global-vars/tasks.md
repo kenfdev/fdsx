@@ -32,8 +32,8 @@
 
 **Goal**: `fdsx split <file>` records the verbatim input path as `source` in each generated task YAML.
 
-- [ ] T007 Add integration test for split with source tracking in `tests/integration/test_split.py`
-- [ ] T008 Update `write_task_files` to accept and assign `source`, and pass source from split CLI in `src/fdsx/core/batch.py` and `src/fdsx/cli/main.py`
+- [x] T007 Add integration test for split with source tracking in `tests/integration/test_split.py`
+- [x] T008 Update `write_task_files` to accept and assign `source`, and pass source from split CLI in `src/fdsx/core/batch.py` and `src/fdsx/cli/main.py`
 
 ## Phase 5: Static Analysis — Global Variable Recognition
 
