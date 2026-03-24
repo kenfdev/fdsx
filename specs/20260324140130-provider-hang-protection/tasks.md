@@ -91,11 +91,11 @@ End-to-end scenario tests validating the interaction between completion_event an
 
 **Independent test criteria**: `python -m pytest tests/ -v` — full suite passes with zero regressions.
 
-- [ ] T010 Write end-to-end scenario tests in `tests/integration/test_inactivity_timeout.py` (extend)
+- [x] T010 Write end-to-end scenario tests in `tests/integration/test_inactivity_timeout.py` (extend)
   - `test_completion_event_suppresses_inactivity_timeout` — process with both mechanisms: completion_event fires, inactivity timeout does NOT produce error
   - `test_inactivity_timeout_with_explicit_timeout` — both inactivity and explicit timeout set, inactivity fires first; verify inactivity error (not explicit timeout error)
 
-- [ ] T011 Full test suite regression: `python -m pytest tests/ -v` — all existing and new tests pass
+- [x] T011 Full test suite regression: `python -m pytest tests/ -v` — all existing and new tests pass
 
 ## Dependencies
 

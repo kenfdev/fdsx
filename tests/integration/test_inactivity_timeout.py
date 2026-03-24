@@ -11,6 +11,7 @@ Test criteria (T003): python -m pytest tests/integration/test_inactivity_timeout
 """
 
 import sys
+import threading
 import time
 
 from fdsx.providers.base import _run_subprocess
@@ -184,4 +185,83 @@ class TestInactivityTimeoutErrorDistinguishable:
         )
         assert "timed out" not in inactivity_result.stderr.lower(), (
             f"Inactivity result should not say 'timed out': {inactivity_result.stderr!r}"
+        )
+
+
+class TestCompletionEventSuppressesInactivityTimeout:
+    """completion_event fires → inactivity watchdog is suppressed, no inactivity error."""
+
+    def test_completion_event_suppresses_inactivity_timeout(self):
+        """When completion_event fires, inactivity watchdog is suppressed.
+
+        Process emits a 'ready' line then hangs. The output_callback sets
+        completion_event which sets _suppressed, causing the inactivity watchdog
+        to exit without killing. The termination cascade (from completion_event)
+        kills the hanging process. Result must not show an inactivity timeout error.
+        """
+        completion_event = threading.Event()
+
+        def on_output(line: str) -> None:
+            if "ready" in line:
+                completion_event.set()
+
+        start = time.time()
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time;"
+                " print('ready', flush=True);"
+                " time.sleep(999)",
+            ],
+            completion_event=completion_event,
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            output_callback=on_output,
+        )
+        elapsed = time.time() - start
+
+        assert "inactivity timeout" not in result.stderr.lower(), (
+            f"completion_event should suppress inactivity kill; stderr: {result.stderr!r}"
+        )
+        assert elapsed < _TEST_TIMEOUT, (
+            f"Test took {elapsed:.1f}s — exceeds {_TEST_TIMEOUT}s limit"
+        )
+
+
+class TestInactivityTimeoutWithExplicitTimeout:
+    """Both inactivity_timeout and explicit timeout set; inactivity fires first."""
+
+    def test_inactivity_timeout_with_explicit_timeout(self):
+        """Both timeouts configured; inactivity fires first.
+
+        Process outputs once then goes silent. Inactivity threshold (2s) is much
+        shorter than explicit timeout (30s). The inactivity watchdog fires first,
+        producing an inactivity error (exit_code=124, 'inactivity timeout' in
+        stderr) — not an explicit timeout error ('timed out').
+        """
+        start = time.time()
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time;"
+                " print('output', flush=True);"
+                " time.sleep(999)",
+            ],
+            timeout=30,
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+        )
+        elapsed = time.time() - start
+
+        assert result.exit_code == 124, (
+            f"Expected exit_code=124 (inactivity kill), got {result.exit_code}"
+        )
+        assert "inactivity timeout" in result.stderr.lower(), (
+            f"Expected inactivity error, got: {result.stderr!r}"
+        )
+        assert "timed out" not in result.stderr.lower(), (
+            f"Should be inactivity error, not explicit timeout; stderr: {result.stderr!r}"
+        )
+        assert elapsed < _TEST_TIMEOUT, (
+            f"Test took {elapsed:.1f}s — exceeds {_TEST_TIMEOUT}s limit"
         )
