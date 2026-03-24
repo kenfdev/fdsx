@@ -81,6 +81,16 @@ class TestTaskFileSource:
         tf = TaskFile(entries=[TaskEntry(description="test")], source="cli")
         assert tf.source == "cli"
 
+    def test_source_accepts_arbitrary_string(self):
+        """T001: TaskFile.source accepts an arbitrary path string."""
+        tf = TaskFile(entries=[TaskEntry(description="test")], source="/path/to/tasks.yaml")
+        assert tf.source == "/path/to/tasks.yaml"
+
+    def test_source_accepts_none_explicitly(self):
+        """T001: TaskFile.source=None is accepted explicitly."""
+        tf = TaskFile(entries=[TaskEntry(description="test")], source=None)
+        assert tf.source is None
+
 
 class TestTaskFileSingleEntry:
     def test_flat_format_parsed(self):

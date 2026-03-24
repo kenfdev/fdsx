@@ -345,7 +345,7 @@ def split(
                 return
 
             spinner.update(f"Writing {len(groups)} task file(s)...")
-            created_files = write_task_files(groups, tasks_dir)
+            created_files = write_task_files(groups, tasks_dir, source=str(task_file))
 
         typer.echo(
             f"Created {len(created_files)} task file(s) in {TASKS_DIR}/", err=True
