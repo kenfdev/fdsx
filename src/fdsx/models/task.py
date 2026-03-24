@@ -81,6 +81,10 @@ class TaskFile(BaseModel):
         default_factory=list,
         description="List of task entries in this file",
     )
+    source: str | None = Field(
+        default=None,
+        description="Source/origin of the task file",
+    )
 
 
 _ALLOWED_SYSTEM_SYMLINK_ANCESTORS = {
@@ -142,6 +146,7 @@ def load_task_file(path: Path) -> TaskFile:
         return TaskFile()
 
     if isinstance(raw, dict):
+        source = raw.get("source")
         if "tasks" in raw:
             tasks_raw = raw["tasks"]
             if not isinstance(tasks_raw, list):
@@ -171,7 +176,10 @@ def load_task_file(path: Path) -> TaskFile:
             f"Unexpected task file format at {path}: expected a YAML mapping"
         )
 
-    return TaskFile(entries=entries)
+    try:
+        return TaskFile(entries=entries, source=source)
+    except ValidationError as e:
+        raise ValueError(f"Invalid task file metadata in {path}: {e}") from e
 
 
 def save_task_file(path: Path, task_file: TaskFile) -> None:
@@ -196,6 +204,9 @@ def save_task_file(path: Path, task_file: TaskFile) -> None:
         data = task_file.entries[0].model_dump(exclude_none=True)
     else:
         data = {"tasks": [e.model_dump(exclude_none=True) for e in task_file.entries]}
+
+    if task_file.source is not None:
+        data["source"] = task_file.source
 
     content = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 
