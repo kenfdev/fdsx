@@ -26,7 +26,7 @@ import threading
 import time
 from unittest.mock import patch
 
-from fdsx.providers.base import ProviderResult, _run_subprocess
+from fdsx.providers.base import DEFAULT_INACTIVITY_TIMEOUT, ProviderResult, _run_subprocess
 from fdsx.providers.claude import ClaudeProvider
 
 # Use sys.executable so tests run with the same Python interpreter as the test
@@ -640,3 +640,67 @@ class TestClaudeProviderExecuteCompletionEvent:
         assert completion_event is None, (
             "completion_event should not be passed when output_callback is None"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Inactivity timeout unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultInactivityTimeoutConstant:
+    """DEFAULT_INACTIVITY_TIMEOUT is exported with the expected value."""
+
+    def test_default_inactivity_timeout_value(self):
+        """DEFAULT_INACTIVITY_TIMEOUT equals 300 (5 minutes)."""
+        assert DEFAULT_INACTIVITY_TIMEOUT == 300
+
+    def test_default_inactivity_timeout_is_int(self):
+        """DEFAULT_INACTIVITY_TIMEOUT is an integer."""
+        assert isinstance(DEFAULT_INACTIVITY_TIMEOUT, int)
+
+
+class TestInactivityTimeoutParameter:
+    """inactivity_timeout parameter accepted by _run_subprocess without error."""
+
+    def test_inactivity_timeout_none_default(self):
+        """inactivity_timeout=None (default) — fast process completes normally."""
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "print('ok')"],
+            inactivity_timeout=None,
+        )
+        assert result.exit_code == 0
+        assert result.stdout == "ok"
+
+    def test_inactivity_timeout_zero_disables_watchdog(self):
+        """inactivity_timeout=0 — process completes without being killed."""
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "print('ok')"],
+            inactivity_timeout=0,
+        )
+        assert result.exit_code == 0
+        assert result.stdout == "ok"
+
+    def test_inactivity_timeout_result_exit_code_124(self):
+        """Process killed by inactivity returns exit_code=124."""
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            inactivity_timeout=2,
+        )
+        assert result.exit_code == 124
+
+    def test_inactivity_timeout_result_stderr_message(self):
+        """Inactivity kill message includes threshold duration."""
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            inactivity_timeout=2,
+        )
+        assert "2" in result.stderr
+        assert "inactivity timeout" in result.stderr.lower()
+
+    def test_inactivity_timeout_result_stdout_empty(self):
+        """Process killed by inactivity has empty stdout (like explicit timeout)."""
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            inactivity_timeout=2,
+        )
+        assert result.stdout == ""

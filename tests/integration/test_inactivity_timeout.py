@@ -1,0 +1,187 @@
+"""Integration tests for inactivity timeout watchdog (Phase 2: T001).
+
+These tests verify that _run_subprocess correctly kills subprocesses that go
+silent for longer than the configured inactivity threshold, while allowing
+active processes (those that produce output regularly) to run to completion.
+
+All tests use real subprocesses via sys.executable to ensure realistic behavior.
+Short thresholds (2s) keep the test suite fast while providing sufficient margin.
+
+Test criteria (T003): python -m pytest tests/integration/test_inactivity_timeout.py -v
+"""
+
+import sys
+import time
+
+from fdsx.providers.base import _run_subprocess
+
+# Use the same Python interpreter as the test runner.
+_PYTHON = sys.executable
+
+# Short inactivity threshold for tests (seconds). The watchdog polls every 1s,
+# so a process is killed within ~(threshold + 1)s of going silent.
+_INACTIVITY_THRESHOLD = 2
+
+# Upper bound on how long each test may take: threshold + watchdog poll + cascade overhead.
+_TEST_TIMEOUT = 15
+
+
+class TestProcessKilledAfterInactivityPeriod:
+    """Process goes silent after initial output → killed after threshold."""
+
+    def test_process_killed_after_inactivity_period(self):
+        """Process outputs once then goes silent; killed after threshold with
+        exit_code=124 and 'inactivity timeout' in stderr."""
+        start = time.time()
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time;"
+                " print('output', flush=True);"
+                " time.sleep(999)",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+        )
+        elapsed = time.time() - start
+
+        assert result.exit_code == 124, (
+            f"Expected exit_code=124 (inactivity kill), got {result.exit_code}"
+        )
+        assert "inactivity timeout" in result.stderr.lower(), (
+            f"Expected 'inactivity timeout' in stderr, got: {result.stderr!r}"
+        )
+        assert elapsed < _TEST_TIMEOUT, (
+            f"Test took {elapsed:.1f}s — exceeds {_TEST_TIMEOUT}s limit"
+        )
+
+
+class TestActiveProcessNotKilled:
+    """Process that outputs continuously beyond threshold completes normally."""
+
+    def test_active_process_not_killed(self):
+        """Process emitting output every 0.5s (within 2s threshold) is not killed."""
+        # Output 6 lines at 0.5s intervals → runs for ~3s, well beyond threshold
+        # but never silent for more than 0.5s
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import time;"
+                " [(__import__('sys').stdout.write('line\\n'), __import__('sys').stdout.flush(), time.sleep(0.5)) for _ in range(6)]",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (normal completion), got {result.exit_code}"
+        )
+        assert "inactivity" not in result.stderr.lower(), (
+            f"Process should not be killed by inactivity, stderr: {result.stderr!r}"
+        )
+
+
+class TestStartupHangKilled:
+    """Process that never produces any output is killed after threshold."""
+
+    def test_startup_hang_killed(self):
+        """Process that hangs immediately (no output) is killed after threshold."""
+        start = time.time()
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+        )
+        elapsed = time.time() - start
+
+        assert result.exit_code == 124, (
+            f"Expected exit_code=124 (inactivity kill), got {result.exit_code}"
+        )
+        assert "inactivity timeout" in result.stderr.lower(), (
+            f"Expected 'inactivity timeout' in stderr, got: {result.stderr!r}"
+        )
+        assert elapsed < _TEST_TIMEOUT, (
+            f"Test took {elapsed:.1f}s — exceeds {_TEST_TIMEOUT}s limit"
+        )
+
+
+class TestInactivityTimeoutDisabledWithZero:
+    """inactivity_timeout=0 disables the watchdog; process is NOT killed."""
+
+    def test_inactivity_timeout_disabled_with_zero(self):
+        """Process with inactivity_timeout=0 completes normally even with silence."""
+        # Process produces no output, then exits after 1s.
+        # With inactivity_timeout=0 (disabled), it should NOT be killed early.
+        result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(1)"],
+            inactivity_timeout=0,
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (no inactivity kill), got {result.exit_code}"
+        )
+        assert "inactivity" not in result.stderr.lower(), (
+            f"Unexpected inactivity kill with timeout=0, stderr: {result.stderr!r}"
+        )
+
+
+class TestStderrResetsInactivityTimer:
+    """Stderr output resets the inactivity timer; process is not killed."""
+
+    def test_stderr_resets_inactivity_timer(self):
+        """Process writing to stderr every 0.5s (no stdout) is not killed by inactivity."""
+        # 6 stderr lines at 0.5s intervals → runs for ~3s, timer reset each time
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time;"
+                " [(sys.stderr.write('err\\n'), sys.stderr.flush(), time.sleep(0.5))"
+                "  for _ in range(6)]",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (timer reset by stderr), got {result.exit_code}"
+        )
+        # The collected stderr should contain our expected lines, not an inactivity message
+        assert "inactivity timeout" not in result.stderr.lower(), (
+            f"Process should not be killed by inactivity, stderr: {result.stderr!r}"
+        )
+
+
+class TestInactivityTimeoutErrorDistinguishable:
+    """Inactivity timeout and explicit timeout produce different stderr messages."""
+
+    def test_inactivity_timeout_error_distinguishable_from_explicit_timeout(self):
+        """inactivity vs explicit timeout errors have distinct stderr messages."""
+        # Inactivity timeout: process goes silent
+        inactivity_result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+        )
+        assert inactivity_result.exit_code == 124
+        assert "inactivity timeout" in inactivity_result.stderr.lower(), (
+            f"Expected 'inactivity timeout' in inactivity result, got: {inactivity_result.stderr!r}"
+        )
+
+        # Explicit timeout: process simply takes too long
+        explicit_result = _run_subprocess(
+            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            timeout=1,
+        )
+        assert explicit_result.exit_code == 124
+        assert "timed out" in explicit_result.stderr.lower(), (
+            f"Expected 'timed out' in explicit timeout result, got: {explicit_result.stderr!r}"
+        )
+
+        # The messages must be different from each other
+        assert inactivity_result.stderr != explicit_result.stderr, (
+            "Inactivity and explicit timeout should produce different error messages"
+        )
+        assert "inactivity" not in explicit_result.stderr.lower(), (
+            f"Explicit timeout result should not mention 'inactivity': {explicit_result.stderr!r}"
+        )
+        assert "timed out" not in inactivity_result.stderr.lower(), (
+            f"Inactivity result should not say 'timed out': {inactivity_result.stderr!r}"
+        )
