@@ -349,7 +349,7 @@ def run_batch(
         )
 
         try:
-            task_inputs = {"task": task_description}
+            task_inputs = {"task": task_description, "source": str(tasks_file)}
             run_flow(
                 flow_path=workflow_path,
                 inputs=task_inputs,
@@ -945,7 +945,7 @@ def run_tasks_dir(
             )
 
             try:
-                task_inputs = {"task": description}
+                task_inputs = {"task": description, "source": task_file.source or ""}
                 run_flow(
                     flow_path=effective_workflow,
                     inputs=task_inputs,

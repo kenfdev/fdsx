@@ -46,8 +46,8 @@
 
 **Goal**: `{source}` resolves in all workflow states during task execution.
 
-- [ ] T011 Add integration tests for source injection during execution in `tests/integration/test_tasks_dir.py` and `tests/integration/test_batch.py`
-- [ ] T012 Add `task_inputs["source"] = task_file.source or ""` in `run_batch` and `run_tasks_dir` in `src/fdsx/core/engine.py`
+- [x] T011 Add integration tests for source injection during execution in `tests/integration/test_tasks_dir.py` and `tests/integration/test_batch.py`
+- [x] T012 Add `task_inputs["source"] = task_file.source or ""` in `run_batch` and `run_tasks_dir` in `src/fdsx/core/engine.py`
 
 ## Phase 7: Update Existing Tests
 

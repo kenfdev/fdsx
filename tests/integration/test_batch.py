@@ -225,3 +225,32 @@ class TestBatchQuietFlagPropagation:
         assert mock_run_flow.called
         for call_args in mock_run_flow.call_args_list:
             assert call_args.kwargs.get("quiet") is False
+
+
+class TestBatchSourceInjection:
+    def test_run_batch_injects_source_as_tasks_file_path(self):
+        flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        tasks_file = FIXTURES_DIR / "sample_tasks.md"
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout="1. Task 1\n2. Task 2",
+            stderr="",
+        )
+
+        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+            with patch(
+                "fdsx.core.engine.load_config",
+                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+            ):
+                with patch("fdsx.core.engine.display_task_list", return_value=True):
+                    with patch("fdsx.core.engine.run_flow") as mock_run_flow:
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            base_dir = Path(tmpdir)
+                            engine.run_batch(flow_path, tasks_file, base_dir)
+
+        assert mock_run_flow.called
+        for call_args in mock_run_flow.call_args_list:
+            inputs = call_args.kwargs.get("inputs") or call_args.args[1]
+            assert inputs["source"] == str(tasks_file)
