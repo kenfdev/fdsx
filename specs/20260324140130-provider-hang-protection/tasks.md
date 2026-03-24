@@ -44,7 +44,7 @@ Add structured-stream completion detection to the Codex provider, matching the e
 
 **Independent test criteria**: Run `python -m pytest tests/unit/test_codex_stream_parser.py tests/integration/test_codex_completion.py -v` — all new tests pass.
 
-- [ ] T004 Write tests for Codex completion_event in `tests/unit/test_codex_stream_parser.py` (extend) and `tests/integration/test_codex_completion.py` (new)
+- [x] T004 Write tests for Codex completion_event in `tests/unit/test_codex_stream_parser.py` (extend) and `tests/integration/test_codex_completion.py` (new)
   - Unit tests (extend `tests/unit/test_codex_stream_parser.py`):
     - `test_completion_event_set_on_agent_message_completed` — `item.completed` + `agent_message` → event set
     - `test_completion_event_set_on_turn_failed` — `turn.failed` → event set
@@ -53,12 +53,12 @@ Add structured-stream completion detection to the Codex provider, matching the e
   - Integration test (new `tests/integration/test_codex_completion.py`):
     - `test_codex_hanging_process_killed_by_completion_event` — subprocess emits JSONL with terminal event then hangs; verify termination cascade kills it within ~15s and output preserved
 
-- [ ] T005 Implement Codex completion_event in `src/fdsx/providers/codex.py`
+- [x] T005 Implement Codex completion_event in `src/fdsx/providers/codex.py`
   - Add `completion_event: threading.Event | None = None` parameter to `_make_stream_callback`
   - In `stream_callback`: set `completion_event` when event is terminal (`item.completed` + `agent_message`, `turn.failed`, `error`)
   - In `execute()` when `output_callback is not None`: create `completion_event = threading.Event()`, pass to both `_make_stream_callback` and `_run_subprocess`
 
-- [ ] T006 Verify Phase 3 tests pass: `python -m pytest tests/unit/test_codex_stream_parser.py tests/integration/test_codex_completion.py -v`
+- [x] T006 Verify Phase 3 tests pass: `python -m pytest tests/unit/test_codex_stream_parser.py tests/integration/test_codex_completion.py -v`
 
 ## Phase 4: Per-Provider Inactivity Timeout Configuration (FR-3, FR-5, FR-6)
 
