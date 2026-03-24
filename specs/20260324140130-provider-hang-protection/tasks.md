@@ -68,20 +68,20 @@ Expose `inactivity_timeout` in each provider's options model and wire it through
 
 **Independent test criteria**: Run `python -m pytest tests/unit/test_provider_options.py -v` — all new option tests pass.
 
-- [ ] T007 Write tests for provider inactivity_timeout options in `tests/unit/test_provider_options.py` (extend)
+- [x] T007 Write tests for provider inactivity_timeout options in `tests/unit/test_provider_options.py` (extend)
   - `test_codex_options_inactivity_timeout_default` — `CodexOptions()` has `inactivity_timeout=None`
   - `test_codex_options_inactivity_timeout_custom` — `CodexOptions(inactivity_timeout=600)` accepted
   - `test_codex_options_inactivity_timeout_zero_disables` — `CodexOptions(inactivity_timeout=0)` accepted
   - Same three tests for `ClaudeOptions` and `OpenCodeOptions`
   - `test_provider_passes_inactivity_timeout_to_run_subprocess` — mock `_run_subprocess`, verify each provider passes the resolved `inactivity_timeout`
 
-- [ ] T008 Add `inactivity_timeout` to provider options models in `src/fdsx/providers/codex.py`, `src/fdsx/providers/claude.py`, `src/fdsx/providers/opencode.py`
+- [x] T008 Add `inactivity_timeout` to provider options models in `src/fdsx/providers/codex.py`, `src/fdsx/providers/claude.py`, `src/fdsx/providers/opencode.py`
   - Add `inactivity_timeout: int | None = None` field to each Options model
   - In each `execute()`: resolve effective timeout (`options.inactivity_timeout if not None else DEFAULT_INACTIVITY_TIMEOUT`; 0 means disabled → pass 0)
   - Pass `inactivity_timeout=effective_value` to `_run_subprocess`
   - Import `DEFAULT_INACTIVITY_TIMEOUT` from `base`
 
-- [ ] T009 Verify Phase 4 tests pass: `python -m pytest tests/unit/test_provider_options.py -v`
+- [x] T009 Verify Phase 4 tests pass: `python -m pytest tests/unit/test_provider_options.py -v`
 
 ## Phase 5: Integration Verification
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
+    DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
     _run_subprocess,
@@ -44,6 +45,7 @@ class CodexOptions(BaseModel):
     approval_policy: Literal["untrusted", "on-request", "never"] | None = None
     full_auto: bool = False
     dangerously_bypass_approvals_and_sandbox: bool = False
+    inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
         """Translate options to Codex CLI flags."""
@@ -189,6 +191,12 @@ class CodexProvider(ProviderBase):
             args.append(prompt)
             stdin_data = None
 
+        effective_inactivity = (
+            self.options.inactivity_timeout
+            if self.options.inactivity_timeout is not None
+            else DEFAULT_INACTIVITY_TIMEOUT
+        )
+
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
             completion_event = threading.Event()
@@ -202,6 +210,7 @@ class CodexProvider(ProviderBase):
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
                 completion_event=completion_event,
+                inactivity_timeout=effective_inactivity,
             )
             parsed_stdout = get_result()
             if parsed_stdout is not None:
@@ -218,4 +227,5 @@ class CodexProvider(ProviderBase):
             output_callback=output_callback,
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
+            inactivity_timeout=effective_inactivity,
         )

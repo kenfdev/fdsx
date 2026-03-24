@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
+    DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
     _run_subprocess,
@@ -17,6 +18,7 @@ class OpenCodeOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     permission: str | dict[str, Any] | None = None
+    inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
         """Translate options to OpenCode CLI flags (none currently defined)."""
@@ -73,6 +75,12 @@ class OpenCodeProvider(ProviderBase):
 
         env = self.options.to_env() or None
 
+        effective_inactivity = (
+            self.options.inactivity_timeout
+            if self.options.inactivity_timeout is not None
+            else DEFAULT_INACTIVITY_TIMEOUT
+        )
+
         return _run_subprocess(
             args=args,
             timeout=timeout,
@@ -80,4 +88,5 @@ class OpenCodeProvider(ProviderBase):
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
             env=env,
+            inactivity_timeout=effective_inactivity,
         )
