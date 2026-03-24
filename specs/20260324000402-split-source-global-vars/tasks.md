@@ -25,8 +25,8 @@
 
 **Goal**: When loading a task YAML that contains a `source` field, populate `TaskFile.source`.
 
-- [ ] T005 Add deserialization tests for `load_task_file` with/without `source` in `tests/unit/test_models.py`
-- [ ] T006 Update `load_task_file` to extract `source` from raw dict in both flat and list branches in `src/fdsx/models/task.py`
+- [x] T005 Add deserialization tests for `load_task_file` with/without `source` in `tests/unit/test_models.py`
+- [x] T006 Update `load_task_file` to extract `source` from raw dict in both flat and list branches in `src/fdsx/models/task.py`
 
 ## Phase 4: Split Command — Inject Source Path
 
