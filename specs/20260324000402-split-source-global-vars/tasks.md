@@ -18,8 +18,8 @@
 
 **Goal**: When saving a TaskFile with `source` set, include it in the YAML output. Omit when `None`.
 
-- [ ] T003 Add serialization tests for `save_task_file` with/without `source` in `tests/unit/test_models.py`
-- [ ] T004 Update `save_task_file` to conditionally include `source` in serialized dict in `src/fdsx/models/task.py`
+- [x] T003 Add serialization tests for `save_task_file` with/without `source` in `tests/unit/test_models.py`
+- [x] T004 Update `save_task_file` to conditionally include `source` in serialized dict in `src/fdsx/models/task.py`
 
 ## Phase 3: TaskFile Deserialization — Read `source` from YAML
 
