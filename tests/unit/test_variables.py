@@ -434,6 +434,7 @@ class TestAnalyzeVariableReferences:
         """F2: variables provided via --input must not be flagged as undefined."""
         # Without input_keys the start state is excluded from checking (it is start_at),
         # so we need a second state to demonstrate the fix.
+        # Note: 'task' and 'source' are global vars; use a custom key to test input_keys.
         flow2 = Flow(
             name="Test Flow 2",
             description="Test flow for input keys",
@@ -449,17 +450,17 @@ class TestAnalyzeVariableReferences:
                 "middle": TaskState(
                     type="task",
                     provider="system",
-                    command="echo {task}",
+                    command="echo {cli_input}",
                     result_path="$.other",
                     end=True,
                 ),
             },
         )
-        # Without input_keys: should flag missing 'task'
+        # Without input_keys: should flag missing 'cli_input'
         errors_without = analyze_variable_references(flow2)
-        assert any("task" in e for e in errors_without)
+        assert any("cli_input" in e for e in errors_without)
         # With input_keys: should be clean
-        errors_with = analyze_variable_references(flow2, input_keys={"task"})
+        errors_with = analyze_variable_references(flow2, input_keys={"cli_input"})
         assert len(errors_with) == 0
 
     # F3 regression: full-path tracking + prefix matching
@@ -739,3 +740,50 @@ class TestAnalyzeVariableReferencesExtract:
         )
         errors = analyze_variable_references(flow)
         assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+
+class TestGlobalTaskVarsRecognition:
+    """T009: Global task variables (task, source) must be recognised without errors."""
+
+    def _make_flow(self, command: str) -> Flow:
+        """Helper: 2-state flow where 'middle' uses the given command."""
+        return Flow(
+            name="Global Var Flow",
+            description="Test flow for global task variable recognition",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="middle",
+                ),
+                "middle": TaskState(
+                    type="task",
+                    provider="system",
+                    command=command,
+                    result_path="$.other",
+                    end=True,
+                ),
+            },
+        )
+
+    def test_task_var_no_warning_in_non_start_state(self):
+        """{task} in a non-start state must not produce any error."""
+        flow = self._make_flow("echo {task}")
+        errors = analyze_variable_references(flow)
+        assert errors == []
+
+    def test_source_var_no_warning_in_non_start_state(self):
+        """{source} in a non-start state must not produce any error."""
+        flow = self._make_flow("echo {source}")
+        errors = analyze_variable_references(flow)
+        assert errors == []
+
+    def test_unknown_var_still_warned_in_non_start_state(self):
+        """{unknown_var} in a non-start state must still produce an error."""
+        flow = self._make_flow("echo {unknown_var}")
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "unknown_var" in errors[0]

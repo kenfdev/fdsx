@@ -39,8 +39,8 @@
 
 **Goal**: `{task}` and `{source}` in non-start states no longer trigger static analysis warnings.
 
-- [ ] T009 Add tests for global variable recognition (`{task}`, `{source}`, `{unknown_var}`) in `tests/unit/test_models.py` or `tests/unit/test_variables.py`
-- [ ] T010 Define `GLOBAL_TASK_VARS = {"task", "source"}` and seed into `analyze_variable_references` in `src/fdsx/core/variables.py`
+- [x] T009 Add tests for global variable recognition (`{task}`, `{source}`, `{unknown_var}`) in `tests/unit/test_models.py` or `tests/unit/test_variables.py`
+- [x] T010 Define `GLOBAL_TASK_VARS = {"task", "source"}` and seed into `analyze_variable_references` in `src/fdsx/core/variables.py`
 
 ## Phase 6: Execution — Source Auto-Injection
 
