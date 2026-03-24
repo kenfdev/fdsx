@@ -53,7 +53,7 @@
 
 **Goal**: Verify all existing tests pass with the changes; fix any broken assertions.
 
-- [ ] T013 Run full test suite and fix any tests broken by the new `source` field
+- [x] T013 Run full test suite and fix any tests broken by the new `source` field
 
 ---
 

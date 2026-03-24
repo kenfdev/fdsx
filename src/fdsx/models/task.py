@@ -145,6 +145,7 @@ def load_task_file(path: Path) -> TaskFile:
     if raw is None:
         return TaskFile()
 
+    source = None
     if isinstance(raw, dict):
         source = raw.get("source")
         if "tasks" in raw:
@@ -167,8 +168,9 @@ def load_task_file(path: Path) -> TaskFile:
                 except ValidationError as e:
                     raise ValueError(f"Invalid task entry {i} in {path}: {e}") from e
         else:
+            entry_raw = {k: v for k, v in raw.items() if k != "source"}
             try:
-                entries = [TaskEntry.model_validate(raw)]
+                entries = [TaskEntry.model_validate(entry_raw)]
             except ValidationError as e:
                 raise ValueError(f"Invalid task entry in {path}: {e}") from e
     else:

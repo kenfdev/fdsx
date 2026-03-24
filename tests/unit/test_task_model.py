@@ -169,6 +169,33 @@ class TestLoadTaskFileFlat:
             with pytest.raises(ValueError, match="Invalid task file metadata"):
                 load_task_file(path)
 
+    def test_flat_yaml_source_not_leaked_into_entry(self):
+        """Finding-1 regression: source key must be stripped before TaskEntry.model_validate
+        in the flat branch, so it never contaminates TaskEntry fields."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            path.write_text(
+                yaml.dump({"description": "Fix login bug", "source": "cli"})
+            )
+
+            tf = load_task_file(path)
+            assert len(tf.entries) == 1
+            # source goes to TaskFile.source, not into the entry's fields
+            assert tf.source == "cli"
+            entry_dict = tf.entries[0].model_dump(exclude_none=True)
+            assert "source" not in entry_dict
+
+    def test_flat_yaml_source_initialized_before_isinstance_block(self):
+        """Finding-4 regression: source must be initialized to None before the
+        isinstance(raw, dict) block so it is never unbound when TaskFile is constructed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            # Standard flat YAML without source — source must be None, not unbound
+            path.write_text(yaml.dump({"description": "Simple task"}))
+
+            tf = load_task_file(path)
+            assert tf.source is None
+
 
 class TestLoadTaskFileList:
     def test_loads_list_yaml(self):
