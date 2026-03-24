@@ -331,6 +331,44 @@ class TestSplitCliIntegration:
         assert len(paths) == 1
         assert "Created 1 task file" in result.stderr
 
+    def test_split_command_records_source_path(self, tmp_path, monkeypatch):
+        """Test that split command records the source path in generated task files."""
+        from typer.testing import CliRunner
+        from fdsx.cli.main import app
+
+        task_file = tmp_path / "my_input.md"
+        task_file.write_text("Implement feature A\nImplement feature B")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout='[[{"description": "Implement feature A"}, {"description": "Implement feature B"}]]',
+            stderr="",
+        )
+
+        def mock_load_config(*args, **kwargs):
+            return FdsxConfig(task_splitter=TaskSplitterConfig())
+
+        monkeypatch.chdir(tmp_path)
+
+        with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
+            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+                runner = CliRunner()
+                result = runner.invoke(
+                    app, ["split", str(task_file)], catch_exceptions=False
+                )
+
+        assert result.exit_code == 0
+
+        tasks_dir = tmp_path / TASKS_DIR
+        yaml_files = list(tasks_dir.glob("*.yaml"))
+        assert len(yaml_files) == 1
+
+        content = yaml_files[0].read_text()
+        data = yaml.safe_load(content)
+        assert "source" in data
+        assert data["source"] == str(task_file)
+
     # T001: Split succeeds when only completed/ dir exists (no pending tasks)
     def test_split_command_succeeds_with_only_completed_dir(
         self, tmp_path, monkeypatch

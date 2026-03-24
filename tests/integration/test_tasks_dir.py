@@ -934,3 +934,52 @@ class TestRunTasksDirQuietFlagPropagation:
             assert mock_run_flow.called
             for call_args in mock_run_flow.call_args_list:
                 assert call_args.kwargs.get("quiet") is False
+
+
+class TestRunTasksDirSourceInjection:
+    def test_source_injected_when_task_file_has_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+
+            tf = TaskFile(
+                source="features.md",
+                entries=[TaskEntry(description="task A")],
+            )
+            save_task_file(tasks_dir / "001-a.yaml", tf)
+
+            captured_inputs: list[dict] = []
+
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
+                captured_inputs.append(dict(inputs))
+                return {"result": "ok"}
+
+            with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            assert len(captured_inputs) == 1
+            assert captured_inputs[0]["task"] == "task A"
+            assert captured_inputs[0]["source"] == "features.md"
+
+    def test_source_injected_as_empty_string_when_task_file_source_is_none(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+
+            tf = TaskFile(entries=[TaskEntry(description="task B")])
+            save_task_file(tasks_dir / "001-b.yaml", tf)
+
+            captured_inputs: list[dict] = []
+
+            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
+                captured_inputs.append(dict(inputs))
+                return {"result": "ok"}
+
+            with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
+                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            assert len(captured_inputs) == 1
+            assert captured_inputs[0]["task"] == "task B"
+            assert captured_inputs[0]["source"] == ""

@@ -9,6 +9,9 @@ from fdsx.models.flow import Branch, Flow, ParallelState, State
 # Sub-directory inside run_dir where result files are written
 RESULT_FILE_DATA_DIR = "data"
 
+# Global variables automatically available in every state (injected at runtime by the runner)
+GLOBAL_TASK_VARS: set[str] = {"task", "source"}
+
 
 def write_result_to_file(varname: str, value: Any, run_dir: Path) -> str:
     """Write a result value to a file inside <run_dir>/data/.
@@ -436,6 +439,10 @@ def analyze_variable_references(
     if input_keys:
         for state_name in reachable_states:
             available_vars[state_name] = available_vars[state_name] | input_keys
+
+    # Seed all reachable states with global task variables (task, source)
+    for state_name in reachable_states:
+        available_vars[state_name] = available_vars[state_name] | GLOBAL_TASK_VARS
 
     for state_name in reachable_states:
         state = flow.states[state_name]

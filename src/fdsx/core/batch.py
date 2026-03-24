@@ -322,7 +322,9 @@ def _scan_max_task_index(tasks_dir: Path) -> int:
     return max_idx
 
 
-def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Path]:
+def write_task_files(
+    groups: list[list[TaskEntry]], tasks_dir: Path, *, source: str | None = None
+) -> list[Path]:
     """Write task groups to numbered YAML files in the tasks directory.
 
     Creates files in the format: tasks_dir/NNN-<slug>.yaml where NNN continues
@@ -333,6 +335,7 @@ def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Pat
     Args:
         groups: List of file groups, each containing TaskEntry objects
         tasks_dir: Directory to write task files to
+        source: Optional source/origin path to record in each task file
 
     Returns:
         List of created file paths
@@ -353,7 +356,7 @@ def write_task_files(groups: list[list[TaskEntry]], tasks_dir: Path) -> list[Pat
         if not group:
             continue
 
-        task_file = TaskFile(entries=group)
+        task_file = TaskFile(entries=group, source=source)
         slug = _slugify(group[0].description)
         file_path = tasks_dir / f"{base_index + i + 1:03d}-{slug}.yaml"
         save_task_file(file_path, task_file)

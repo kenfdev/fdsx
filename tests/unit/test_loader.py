@@ -159,7 +159,12 @@ class TestPromptFileResolution:
             )
 
     def test_input_keys_prevent_false_positive_in_loader(self):
-        """F2: load_flow must accept input_keys and suppress warnings for runtime-provided vars."""
+        """F2: load_flow must accept input_keys and suppress warnings for runtime-provided vars.
+
+        Uses {cli_input} instead of {task} because {task} is now a
+        recognised global variable (GLOBAL_TASK_VARS) and would never be
+        flagged as undefined.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             flow_yaml = Path(tmpdir) / "flow.yaml"
             flow_yaml.write_text(
@@ -176,17 +181,17 @@ class TestPromptFileResolution:
                 "  middle:\n"
                 "    type: task\n"
                 "    provider: system\n"
-                "    command: echo {task}\n"
+                "    command: echo {cli_input}\n"
                 "    result_path: '$.other'\n"
                 "    end: true\n"
             )
             # Without input_keys: flow is rejected (variable errors are blocking)
             flow_bad, errors = load_flow(flow_yaml)
             assert flow_bad is None
-            assert any("task" in e for e in errors)
+            assert any("cli_input" in e for e in errors)
 
             # With input_keys: no warnings
-            flow_ok, no_warnings = load_flow(flow_yaml, input_keys={"task"})
+            flow_ok, no_warnings = load_flow(flow_yaml, input_keys={"cli_input"})
             assert flow_ok is not None, (
                 f"Expected load to succeed but got: {no_warnings}"
             )

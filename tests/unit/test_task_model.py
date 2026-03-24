@@ -72,6 +72,26 @@ class TestTaskEntryDefaults:
             TaskEntry(description="test", workflow=".")
 
 
+class TestTaskFileSource:
+    def test_source_defaults_to_none(self):
+        tf = TaskFile(entries=[TaskEntry(description="test")])
+        assert tf.source is None
+
+    def test_source_can_be_set(self):
+        tf = TaskFile(entries=[TaskEntry(description="test")], source="cli")
+        assert tf.source == "cli"
+
+    def test_source_accepts_arbitrary_string(self):
+        """T001: TaskFile.source accepts an arbitrary path string."""
+        tf = TaskFile(entries=[TaskEntry(description="test")], source="/path/to/tasks.yaml")
+        assert tf.source == "/path/to/tasks.yaml"
+
+    def test_source_accepts_none_explicitly(self):
+        """T001: TaskFile.source=None is accepted explicitly."""
+        tf = TaskFile(entries=[TaskEntry(description="test")], source=None)
+        assert tf.source is None
+
+
 class TestTaskFileSingleEntry:
     def test_flat_format_parsed(self):
         tf = TaskFile(entries=[TaskEntry(description="Fix the bug", status="pending")])
@@ -124,6 +144,58 @@ class TestLoadTaskFileFlat:
             tf = load_task_file(path)
             assert tf.entries[0].status == "pending"
 
+    def test_loads_flat_yaml_with_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            path.write_text(
+                yaml.dump({"description": "Fix login bug", "source": "cli"})
+            )
+
+            tf = load_task_file(path)
+            assert tf.source == "cli"
+
+    def test_loads_flat_yaml_without_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            path.write_text(yaml.dump({"description": "Fix login bug"}))
+
+            tf = load_task_file(path)
+            assert tf.source is None
+
+    def test_raises_on_invalid_source_type_flat(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            path.write_text(yaml.dump({"description": "Fix bug", "source": ["bad"]}))
+            with pytest.raises(ValueError, match="Invalid task file metadata"):
+                load_task_file(path)
+
+    def test_flat_yaml_source_not_leaked_into_entry(self):
+        """Finding-1 regression: source key must be stripped before TaskEntry.model_validate
+        in the flat branch, so it never contaminates TaskEntry fields."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            path.write_text(
+                yaml.dump({"description": "Fix login bug", "source": "cli"})
+            )
+
+            tf = load_task_file(path)
+            assert len(tf.entries) == 1
+            # source goes to TaskFile.source, not into the entry's fields
+            assert tf.source == "cli"
+            entry_dict = tf.entries[0].model_dump(exclude_none=True)
+            assert "source" not in entry_dict
+
+    def test_flat_yaml_source_initialized_before_isinstance_block(self):
+        """Finding-4 regression: source must be initialized to None before the
+        isinstance(raw, dict) block so it is never unbound when TaskFile is constructed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            # Standard flat YAML without source — source must be None, not unbound
+            path.write_text(yaml.dump({"description": "Simple task"}))
+
+            tf = load_task_file(path)
+            assert tf.source is None
+
 
 class TestLoadTaskFileList:
     def test_loads_list_yaml(self):
@@ -153,6 +225,53 @@ class TestLoadTaskFileList:
 
             tf = load_task_file(path)
             assert tf.entries[0].status == "pending"
+
+    def test_loads_list_yaml_with_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tasks.yaml"
+            path.write_text(
+                yaml.dump(
+                    {
+                        "source": "api",
+                        "tasks": [
+                            {"description": "Fix login bug", "status": "pending"},
+                        ],
+                    }
+                )
+            )
+
+            tf = load_task_file(path)
+            assert tf.source == "api"
+
+    def test_loads_list_yaml_without_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tasks.yaml"
+            path.write_text(
+                yaml.dump(
+                    {
+                        "tasks": [
+                            {"description": "Fix login bug", "status": "pending"},
+                        ],
+                    }
+                )
+            )
+
+            tf = load_task_file(path)
+            assert tf.source is None
+
+    def test_raises_on_invalid_source_type_list(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tasks.yaml"
+            path.write_text(
+                yaml.dump(
+                    {
+                        "tasks": [{"description": "Fix bug"}],
+                        "source": ["bad"],
+                    }
+                )
+            )
+            with pytest.raises(ValueError, match="Invalid task file metadata"):
+                load_task_file(path)
 
 
 class TestLoadTaskFileRawListRejected:
@@ -309,6 +428,63 @@ class TestSaveTaskFileFlat:
             assert "null" not in content
             assert "None" not in content
 
+    def test_save_flat_with_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            tf = TaskFile(
+                entries=[TaskEntry(description="Fix the bug", status="pending")],
+                source="cli",
+            )
+            save_task_file(path, tf)
+
+            content = path.read_text()
+            data = yaml.safe_load(content)
+            assert data["source"] == "cli"
+
+    def test_save_flat_without_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            tf = TaskFile(
+                entries=[TaskEntry(description="Fix the bug", status="pending")]
+            )
+            save_task_file(path, tf)
+
+            content = path.read_text()
+            data = yaml.safe_load(content)
+            assert "source" not in data
+
+    def test_save_multi_with_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tasks.yaml"
+            tf = TaskFile(
+                entries=[
+                    TaskEntry(description="Task 1"),
+                    TaskEntry(description="Task 2"),
+                ],
+                source="api",
+            )
+            save_task_file(path, tf)
+
+            content = path.read_text()
+            data = yaml.safe_load(content)
+            assert data["source"] == "api"
+            assert "tasks" in data
+
+    def test_save_multi_without_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tasks.yaml"
+            tf = TaskFile(
+                entries=[
+                    TaskEntry(description="Task 1"),
+                    TaskEntry(description="Task 2"),
+                ]
+            )
+            save_task_file(path, tf)
+
+            content = path.read_text()
+            data = yaml.safe_load(content)
+            assert "source" not in data
+
 
 class TestSaveTaskFileMulti:
     def test_save_multi_entry(self):
@@ -380,6 +556,35 @@ class TestRoundTrip:
             loaded = load_task_file(path)
             assert len(loaded.entries) == 1
             assert loaded.entries[0].workflow == "plan.yaml"
+
+    def test_single_entry_with_source_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            original = TaskFile(
+                entries=[TaskEntry(description="Fix bug", status="pending")],
+                source="cli",
+            )
+            save_task_file(path, original)
+
+            loaded = load_task_file(path)
+            assert len(loaded.entries) == 1
+            assert loaded.source == "cli"
+
+    def test_multi_entry_with_source_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tasks.yaml"
+            original = TaskFile(
+                entries=[
+                    TaskEntry(description="Task 1", status="completed"),
+                    TaskEntry(description="Task 2", status="failed"),
+                ],
+                source="api",
+            )
+            save_task_file(path, original)
+
+            loaded = load_task_file(path)
+            assert len(loaded.entries) == 2
+            assert loaded.source == "api"
 
 
 class TestLoadTaskFileSymlinkProtection:
