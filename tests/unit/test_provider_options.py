@@ -1,9 +1,11 @@
 """Unit tests for provider option models (T004, T006, T007) and get_provider factory (T014)."""
 
+from unittest.mock import patch
+
 import pytest
 from pydantic import ValidationError
 
-from fdsx.providers.base import get_provider
+from fdsx.providers.base import DEFAULT_INACTIVITY_TIMEOUT, ProviderResult, get_provider
 from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
 from fdsx.providers.codex import CodexOptions, CodexProvider
 from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
@@ -78,6 +80,21 @@ class TestClaudeOptions:
         """Extra fields must be rejected."""
         with pytest.raises(ValidationError):
             ClaudeOptions(unknown_field="value")  # type: ignore[call-arg]
+
+    def test_claude_options_inactivity_timeout_default(self):
+        """inactivity_timeout defaults to None."""
+        opts = ClaudeOptions()
+        assert opts.inactivity_timeout is None
+
+    def test_claude_options_inactivity_timeout_custom(self):
+        """Custom inactivity_timeout value is accepted."""
+        opts = ClaudeOptions(inactivity_timeout=600)
+        assert opts.inactivity_timeout == 600
+
+    def test_claude_options_inactivity_timeout_zero_disables(self):
+        """inactivity_timeout=0 is accepted (disables the watchdog)."""
+        opts = ClaudeOptions(inactivity_timeout=0)
+        assert opts.inactivity_timeout == 0
 
     def test_claude_options_to_cli_flags_combined(self):
         """All fields set together produce correct combined flags in order."""
@@ -166,6 +183,21 @@ class TestCodexOptions:
         with pytest.raises(ValidationError):
             CodexOptions(unknown_field="value")  # type: ignore[call-arg]
 
+    def test_codex_options_inactivity_timeout_default(self):
+        """inactivity_timeout defaults to None."""
+        opts = CodexOptions()
+        assert opts.inactivity_timeout is None
+
+    def test_codex_options_inactivity_timeout_custom(self):
+        """Custom inactivity_timeout value is accepted."""
+        opts = CodexOptions(inactivity_timeout=600)
+        assert opts.inactivity_timeout == 600
+
+    def test_codex_options_inactivity_timeout_zero_disables(self):
+        """inactivity_timeout=0 is accepted (disables the watchdog)."""
+        opts = CodexOptions(inactivity_timeout=0)
+        assert opts.inactivity_timeout == 0
+
     def test_codex_options_to_cli_flags_combined(self):
         """All fields set together produce correct combined flags in order."""
         opts = CodexOptions(
@@ -201,6 +233,21 @@ class TestOpenCodeOptions:
         """Extra fields must be rejected."""
         with pytest.raises(ValidationError):
             OpenCodeOptions(unknown_field="value")  # type: ignore[call-arg]
+
+    def test_opencode_options_inactivity_timeout_default(self):
+        """inactivity_timeout defaults to None."""
+        opts = OpenCodeOptions()
+        assert opts.inactivity_timeout is None
+
+    def test_opencode_options_inactivity_timeout_custom(self):
+        """Custom inactivity_timeout value is accepted."""
+        opts = OpenCodeOptions(inactivity_timeout=600)
+        assert opts.inactivity_timeout == 600
+
+    def test_opencode_options_inactivity_timeout_zero_disables(self):
+        """inactivity_timeout=0 is accepted (disables the watchdog)."""
+        opts = OpenCodeOptions(inactivity_timeout=0)
+        assert opts.inactivity_timeout == 0
 
 
 class TestGetProvider:
@@ -272,3 +319,90 @@ class TestGetProvider:
         """get_provider with invalid options dict raises ValidationError."""
         with pytest.raises(ValidationError):
             get_provider("claude", {"permission_mode": "invalid_mode"})
+
+
+class TestProviderInactivityTimeoutWiring:
+    """T007: Verify each provider passes resolved inactivity_timeout to _run_subprocess."""
+
+    _MOCK_RESULT = ProviderResult(exit_code=0, stdout="", stderr="")
+
+    def test_codex_passes_default_inactivity_timeout(self):
+        """CodexProvider with default options passes DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
+        provider = CodexProvider(CodexOptions())
+        with patch("fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == DEFAULT_INACTIVITY_TIMEOUT
+
+    def test_codex_passes_custom_inactivity_timeout(self):
+        """CodexProvider with inactivity_timeout=600 passes 600 to _run_subprocess."""
+        provider = CodexProvider(CodexOptions(inactivity_timeout=600))
+        with patch("fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == 600
+
+    def test_codex_passes_zero_inactivity_timeout(self):
+        """CodexProvider with inactivity_timeout=0 passes 0 to _run_subprocess (disabled)."""
+        provider = CodexProvider(CodexOptions(inactivity_timeout=0))
+        with patch("fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == 0
+
+    def test_claude_passes_default_inactivity_timeout(self):
+        """ClaudeProvider with default options passes DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
+        provider = ClaudeProvider(ClaudeOptions())
+        with patch("fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == DEFAULT_INACTIVITY_TIMEOUT
+
+    def test_claude_passes_custom_inactivity_timeout(self):
+        """ClaudeProvider with inactivity_timeout=600 passes 600 to _run_subprocess."""
+        provider = ClaudeProvider(ClaudeOptions(inactivity_timeout=600))
+        with patch("fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == 600
+
+    def test_claude_passes_zero_inactivity_timeout(self):
+        """ClaudeProvider with inactivity_timeout=0 passes 0 to _run_subprocess (disabled)."""
+        provider = ClaudeProvider(ClaudeOptions(inactivity_timeout=0))
+        with patch("fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == 0
+
+    def test_opencode_passes_default_inactivity_timeout(self):
+        """OpenCodeProvider with default options passes DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
+        provider = OpenCodeProvider(OpenCodeOptions())
+        with patch("fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == DEFAULT_INACTIVITY_TIMEOUT
+
+    def test_opencode_passes_custom_inactivity_timeout(self):
+        """OpenCodeProvider with inactivity_timeout=600 passes 600 to _run_subprocess."""
+        provider = OpenCodeProvider(OpenCodeOptions(inactivity_timeout=600))
+        with patch("fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == 600
+
+    def test_opencode_passes_zero_inactivity_timeout(self):
+        """OpenCodeProvider with inactivity_timeout=0 passes 0 to _run_subprocess (disabled)."""
+        provider = OpenCodeProvider(OpenCodeOptions(inactivity_timeout=0))
+        with patch("fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+            provider.execute(prompt="hello")
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["inactivity_timeout"] == 0

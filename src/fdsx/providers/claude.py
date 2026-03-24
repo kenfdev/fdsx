@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
+    DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
     _run_subprocess,
@@ -54,6 +55,7 @@ class ClaudeOptions(BaseModel):
     dangerously_skip_permissions: bool = False
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
+    inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
         """Translate options to Claude CLI flags."""
@@ -246,6 +248,12 @@ class ClaudeProvider(ProviderBase):
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
 
+        effective_inactivity = (
+            self.options.inactivity_timeout
+            if self.options.inactivity_timeout is not None
+            else DEFAULT_INACTIVITY_TIMEOUT
+        )
+
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
             completion_event = threading.Event()
@@ -259,6 +267,7 @@ class ClaudeProvider(ProviderBase):
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
                 completion_event=completion_event,
+                inactivity_timeout=effective_inactivity,
             )
             flush()
             parsed_stdout = get_result()
@@ -276,4 +285,5 @@ class ClaudeProvider(ProviderBase):
             output_callback=output_callback,
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
+            inactivity_timeout=effective_inactivity,
         )

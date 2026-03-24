@@ -1,11 +1,13 @@
 import json
 import logging
+import threading
 from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
+    DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
     _run_subprocess,
@@ -43,6 +45,7 @@ class CodexOptions(BaseModel):
     approval_policy: Literal["untrusted", "on-request", "never"] | None = None
     full_auto: bool = False
     dangerously_bypass_approvals_and_sandbox: bool = False
+    inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
         """Translate options to Codex CLI flags."""
@@ -65,7 +68,9 @@ class CodexProvider(ProviderBase):
         self.options: CodexOptions = options if options is not None else CodexOptions()
 
     def _make_stream_callback(
-        self, output_callback: Callable[[str], None]
+        self,
+        output_callback: Callable[[str], None],
+        completion_event: threading.Event | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None]]:
         """Create a streaming callback that parses Codex ``--json`` JSONL lines.
 
@@ -123,6 +128,8 @@ class CodexProvider(ProviderBase):
                     if text:
                         agent_message_parts.append(text)
                         output_callback(text)
+                    if completion_event is not None:
+                        completion_event.set()
                 elif item_type == _ITEM_TYPE_REASONING:
                     text = item.get("text", "")
                     if text:
@@ -130,11 +137,15 @@ class CodexProvider(ProviderBase):
 
             elif event_type == _EVENT_TURN_FAILED:
                 logger.warning("turn.failed event received: %s", event.get("error", ""))
+                if completion_event is not None:
+                    completion_event.set()
 
             elif event_type == _EVENT_ERROR:
                 logger.warning(
                     "Codex error event: %s", event.get("message", str(event))
                 )
+                if completion_event is not None:
+                    completion_event.set()
 
         def get_result() -> str | None:
             if agent_message_parts:
@@ -180,15 +191,26 @@ class CodexProvider(ProviderBase):
             args.append(prompt)
             stdin_data = None
 
+        effective_inactivity = (
+            self.options.inactivity_timeout
+            if self.options.inactivity_timeout is not None
+            else DEFAULT_INACTIVITY_TIMEOUT
+        )
+
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
-            stream_callback, get_result = self._make_stream_callback(output_callback)
+            completion_event = threading.Event()
+            stream_callback, get_result = self._make_stream_callback(
+                output_callback, completion_event
+            )
             result = _run_subprocess(
                 args=args,
                 timeout=timeout,
                 output_callback=stream_callback,
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
+                completion_event=completion_event,
+                inactivity_timeout=effective_inactivity,
             )
             parsed_stdout = get_result()
             if parsed_stdout is not None:
@@ -205,4 +227,5 @@ class CodexProvider(ProviderBase):
             output_callback=output_callback,
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
+            inactivity_timeout=effective_inactivity,
         )
