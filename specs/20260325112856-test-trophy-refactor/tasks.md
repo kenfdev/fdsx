@@ -76,9 +76,9 @@ Restructure the fdsx test suite to follow the test trophy pattern: remove trivia
 
 ## Phase 5: Document Test Trophy Guidelines (FR-3, FR-4)
 
-- [ ] T032 [FR4] Create `AGENTS.md` at repo root with test trophy guidelines covering directory structure, what belongs at each level, anti-patterns to avoid, and naming conventions (content specified in plan.md Task 4.1)
-- [ ] T033 [FR4] Create `CLAUDE.md` as a symbolic link to `AGENTS.md` via `ln -s AGENTS.md CLAUDE.md`
-- [ ] T034 [FR3] Add integration test feature-centeredness assessment note to `AGENTS.md` confirming all integration tests are already feature-centered per research.md findings
+- [x] T032 [FR4] Create `AGENTS.md` at repo root with test trophy guidelines covering directory structure, what belongs at each level, anti-patterns to avoid, and naming conventions (content specified in plan.md Task 4.1)
+- [x] T033 [FR4] Create `CLAUDE.md` as a symbolic link to `AGENTS.md` via `ln -s AGENTS.md CLAUDE.md`
+- [x] T034 [FR3] Add integration test feature-centeredness assessment note to `AGENTS.md` confirming all integration tests are already feature-centered per research.md findings
 
 ---
 
