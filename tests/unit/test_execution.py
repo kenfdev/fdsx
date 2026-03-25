@@ -1,4 +1,4 @@
-"""Unit tests for fdsx.core.execution — execute_with_retry.
+"""Unit tests for fdsx.core.compiler.execution — execute_with_retry.
 
 T010: Cover retry with exponential backoff, system vs LLM dispatch,
 timeout handling, extraction success, and extraction failure after retries.
@@ -28,7 +28,7 @@ def _make_config(
     stream_logger=None,
 ):
     """Build an ExecutionConfig with sensible defaults."""
-    from fdsx.core.execution import ExecutionConfig
+    from fdsx.core.compiler.execution import ExecutionConfig
 
     mock_provider = MagicMock()
     mock_logger = stream_logger or MagicMock()
@@ -55,7 +55,7 @@ class TestExponentialBackoff:
 
     def test_backoff_delays_correct_sequence(self):
         """Retries 1,2,3 sleep for 1,2,4 seconds (capped at 30)."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=3)
         mock_provider.execute.return_value = ProviderResult(
@@ -63,7 +63,7 @@ class TestExponentialBackoff:
         )
 
         sleep_times: list[float] = []
-        with patch("fdsx.core.execution.time") as mock_time:
+        with patch("fdsx.core.compiler.execution.time") as mock_time:
             mock_time.sleep.side_effect = lambda s: sleep_times.append(s)
             execute_with_retry(config)
 
@@ -71,7 +71,7 @@ class TestExponentialBackoff:
 
     def test_no_sleep_on_first_attempt(self):
         """First attempt (attempt=0) has no preceding sleep."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=0)
         mock_provider.execute.return_value = ProviderResult(
@@ -79,7 +79,7 @@ class TestExponentialBackoff:
         )
 
         sleep_times: list[float] = []
-        with patch("fdsx.core.execution.time") as mock_time:
+        with patch("fdsx.core.compiler.execution.time") as mock_time:
             mock_time.sleep.side_effect = lambda s: sleep_times.append(s)
             execute_with_retry(config)
 
@@ -87,7 +87,7 @@ class TestExponentialBackoff:
 
     def test_backoff_capped_at_30_seconds(self):
         """Sleep never exceeds 30 seconds regardless of retry count."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=10)
         mock_provider.execute.return_value = ProviderResult(
@@ -95,7 +95,7 @@ class TestExponentialBackoff:
         )
 
         sleep_times: list[float] = []
-        with patch("fdsx.core.execution.time") as mock_time:
+        with patch("fdsx.core.compiler.execution.time") as mock_time:
             mock_time.sleep.side_effect = lambda s: sleep_times.append(s)
             execute_with_retry(config)
 
@@ -115,7 +115,7 @@ class TestProviderDispatch:
 
     def test_system_provider_uses_command_kwarg(self):
         """system provider call passes command=..., not prompt."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, mock_logger = _make_config(
             provider_name="system",
@@ -135,7 +135,7 @@ class TestProviderDispatch:
 
     def test_llm_provider_uses_prompt_kwarg(self):
         """Non-system provider call passes prompt=..., no command."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, mock_logger = _make_config(
             provider_name="openai",
@@ -154,7 +154,7 @@ class TestProviderDispatch:
 
     def test_callbacks_forwarded_to_provider(self):
         """output_callback and stderr_callback come from stream_logger."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         mock_logger = MagicMock()
         config, mock_provider, _ = _make_config(
@@ -172,7 +172,7 @@ class TestProviderDispatch:
 
     def test_model_and_timeout_forwarded(self):
         """model and timeout_seconds are passed through to provider.execute."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(
             model="claude-3", timeout_seconds=60, max_retries=0
@@ -198,7 +198,7 @@ class TestTimeoutHandling:
 
     def test_subprocess_timeout_triggers_retry(self):
         """subprocess.TimeoutExpired is caught and retried."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=1)
         mock_provider.execute.side_effect = [
@@ -206,7 +206,7 @@ class TestTimeoutHandling:
             ProviderResult(exit_code=0, stdout="ok", stderr=""),
         ]
 
-        with patch("fdsx.core.execution.time"):
+        with patch("fdsx.core.compiler.execution.time"):
             result = execute_with_retry(config)
 
         assert result.result.exit_code == 0
@@ -214,7 +214,7 @@ class TestTimeoutHandling:
 
     def test_timeout_error_triggers_retry(self):
         """Built-in TimeoutError is caught and retried."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=1)
         mock_provider.execute.side_effect = [
@@ -222,7 +222,7 @@ class TestTimeoutHandling:
             ProviderResult(exit_code=0, stdout="ok", stderr=""),
         ]
 
-        with patch("fdsx.core.execution.time"):
+        with patch("fdsx.core.compiler.execution.time"):
             result = execute_with_retry(config)
 
         assert result.result.exit_code == 0
@@ -230,12 +230,12 @@ class TestTimeoutHandling:
 
     def test_timeout_on_all_attempts_returns_failed_result(self):
         """If every attempt times out the result has exit_code != 0."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=1)
         mock_provider.execute.side_effect = TimeoutError("always")
 
-        with patch("fdsx.core.execution.time"):
+        with patch("fdsx.core.compiler.execution.time"):
             result = execute_with_retry(config)
 
         assert result.result.exit_code != 0
@@ -257,7 +257,7 @@ class TestExtraction:
 
     def test_extraction_success_breaks_loop(self):
         """Successful extraction stops retrying immediately."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
         config, mock_provider, _ = _make_config(
@@ -267,7 +267,7 @@ class TestExtraction:
             exit_code=0, stdout='{"result": "yes"}', stderr=""
         )
 
-        with patch("fdsx.core.execution.extract_value", return_value="yes") as mock_ev:
+        with patch("fdsx.core.compiler.execution.extract_value", return_value="yes") as mock_ev:
             result = execute_with_retry(config)
 
         assert result.extracted == "yes"
@@ -275,7 +275,7 @@ class TestExtraction:
 
     def test_extraction_failure_retries(self):
         """When extraction returns None retries continue."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
         config, mock_provider, _ = _make_config(
@@ -285,8 +285,8 @@ class TestExtraction:
             exit_code=0, stdout="bad output", stderr=""
         )
 
-        with patch("fdsx.core.execution.time"):
-            with patch("fdsx.core.execution.extract_value", return_value=None):
+        with patch("fdsx.core.compiler.execution.time"):
+            with patch("fdsx.core.compiler.execution.extract_value", return_value=None):
                 result = execute_with_retry(config)
 
         # All 3 attempts tried, extraction still None
@@ -295,7 +295,7 @@ class TestExtraction:
 
     def test_extraction_failure_sets_last_error(self):
         """After all retries, last_error reflects extraction failure."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
         config, mock_provider, _ = _make_config(
@@ -305,14 +305,14 @@ class TestExtraction:
             exit_code=0, stdout="bad", stderr=""
         )
 
-        with patch("fdsx.core.execution.extract_value", return_value=None):
+        with patch("fdsx.core.compiler.execution.extract_value", return_value=None):
             result = execute_with_retry(config)
 
         assert "Extraction failed" in result.last_error
 
     def test_no_extract_rule_breaks_loop_on_success(self):
         """Without extract rule, exit_code == 0 immediately breaks retry loop."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=3, extract=None)
         mock_provider.execute.return_value = ProviderResult(
@@ -326,7 +326,7 @@ class TestExtraction:
 
     def test_extract_value_called_with_source_provider(self):
         """extract_value receives source_provider=provider_name."""
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
         config, mock_provider, _ = _make_config(
@@ -340,7 +340,7 @@ class TestExtraction:
             exit_code=0, stdout="output", stderr=""
         )
 
-        with patch("fdsx.core.execution.extract_value", return_value="val") as mock_ev:
+        with patch("fdsx.core.compiler.execution.extract_value", return_value="val") as mock_ev:
             execute_with_retry(config)
 
         _, call_kwargs = mock_ev.call_args
@@ -356,7 +356,7 @@ class TestStreamLoggerLifecycle:
     """stream_logger.close() is always called (even on exception)."""
 
     def test_stream_logger_closed_on_success(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, mock_logger = _make_config(max_retries=0)
         mock_provider.execute.return_value = ProviderResult(
@@ -368,7 +368,7 @@ class TestStreamLoggerLifecycle:
         mock_logger.close.assert_called_once()
 
     def test_stream_logger_closed_even_after_all_failures(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, mock_logger = _make_config(max_retries=0)
         mock_provider.execute.return_value = ProviderResult(
@@ -380,7 +380,7 @@ class TestStreamLoggerLifecycle:
         mock_logger.close.assert_called_once()
 
     def test_stream_logger_closed_on_timeout_exception(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, mock_logger = _make_config(max_retries=0)
         mock_provider.execute.side_effect = TimeoutError("bang")
@@ -399,7 +399,7 @@ class TestExecutionResult:
     """Verify result object fields are correctly populated."""
 
     def test_result_has_provider_result(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=0)
         pr = ProviderResult(exit_code=0, stdout="hello", stderr="")
@@ -410,7 +410,7 @@ class TestExecutionResult:
         assert result.result is pr
 
     def test_result_extracted_none_when_no_extract_rule(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=0, extract=None)
         mock_provider.execute.return_value = ProviderResult(
@@ -422,7 +422,7 @@ class TestExecutionResult:
         assert result.extracted is None
 
     def test_result_last_error_empty_on_success(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=0)
         mock_provider.execute.return_value = ProviderResult(
@@ -435,7 +435,7 @@ class TestExecutionResult:
         assert result.result.exit_code == 0
 
     def test_result_last_error_set_on_provider_failure(self):
-        from fdsx.core.execution import execute_with_retry
+        from fdsx.core.compiler.execution import execute_with_retry
 
         config, mock_provider, _ = _make_config(max_retries=0)
         mock_provider.execute.return_value = ProviderResult(

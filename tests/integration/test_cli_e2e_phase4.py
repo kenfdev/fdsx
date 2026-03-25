@@ -39,8 +39,8 @@ class TestBatchCLIE2E:
             return_value=MockTaskSplitterProvider(),
         ):
             with patch("fdsx.cli.main.load_config", return_value=mock_config):
-                with patch("fdsx.core.engine.load_config", return_value=mock_config):
-                    with patch("fdsx.core.engine.display_task_list", return_value=True):
+                with patch("fdsx.core.engine.batch.load_config", return_value=mock_config):
+                    with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
                         result = runner.invoke(
                             app,
                             ["run", flow_path, "--tasks", tasks_path],

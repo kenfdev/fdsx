@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from io import StringIO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fdsx.core.engine import (
     _calc_elapsed,
@@ -8,6 +8,7 @@ from fdsx.core.engine import (
     _find_failed_state,
     _workflow_persist_id,
 )
+from fdsx.core.engine.interrupts import handle_interrupts
 from fdsx.logging import RunRecorder
 
 
@@ -269,3 +270,120 @@ class TestWorkflowValidatorNesting:
 
         with pytest.raises(Exception, match="relative path"):
             TaskEntry(description="test", workflow="/etc/passwd")
+
+
+class TestHandleInterrupts:
+    """Unit tests for handle_interrupts in engine/interrupts.py."""
+
+    def _make_state_info(self, tasks=None):
+        """Build a mock state_info object."""
+        mock_state = MagicMock()
+        mock_state.tasks = tasks or []
+        return mock_state
+
+    def _make_task_with_interrupt(self, payload: dict):
+        """Build a mock task with an interrupt payload."""
+        mock_interrupt = MagicMock()
+        mock_interrupt.value = payload
+        mock_task = MagicMock()
+        mock_task.interrupts = [mock_interrupt]
+        return mock_task
+
+    def _make_task_without_interrupt(self):
+        """Build a mock task with no interrupt."""
+        mock_task = MagicMock()
+        mock_task.interrupts = []
+        return mock_task
+
+    def test_no_tasks_returns_last_state_unchanged(self):
+        """When no tasks are pending, last_state is returned immediately."""
+        graph = MagicMock()
+        empty_state = self._make_state_info(tasks=[])
+        graph.get_state.return_value = empty_state
+
+        initial_state = {"result": "done"}
+        result = handle_interrupts(graph, {}, initial_state)
+
+        assert result == initial_state
+        graph.stream.assert_not_called()
+
+    def test_task_without_interrupt_breaks_immediately(self):
+        """Tasks with no interrupt payload cause immediate loop exit."""
+        graph = MagicMock()
+        state_with_task = self._make_state_info(
+            tasks=[self._make_task_without_interrupt()]
+        )
+        graph.get_state.return_value = state_with_task
+
+        initial_state = {"result": "pending"}
+        result = handle_interrupts(graph, {}, initial_state)
+
+        assert result == initial_state
+        graph.stream.assert_not_called()
+
+    def test_single_interrupt_prompts_and_resumes(self):
+        """A single interrupt triggers display_wait_prompt and streams Command(resume=...)."""
+        graph = MagicMock()
+        payload = {"message": "approve?", "choices": ["yes", "no"], "state_name": "approval"}
+        task = self._make_task_with_interrupt(payload)
+
+        # First call: task with interrupt. Second call: no tasks (done).
+        empty_state = self._make_state_info(tasks=[])
+        state_with_interrupt = self._make_state_info(tasks=[task])
+        graph.get_state.side_effect = [state_with_interrupt, empty_state]
+
+        # stream yields one non-interrupt snapshot
+        graph.stream.return_value = iter([{"status": "ok"}])
+
+        with patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt", return_value="yes"
+        ) as mock_prompt:
+            result = handle_interrupts(graph, {"configurable": {}}, {"x": 1})
+
+        mock_prompt.assert_called_once_with("approval", "approve?", ["yes", "no"])
+        graph.stream.assert_called_once()
+        assert result == {"status": "ok"}
+
+    def test_multiple_interrupts_loops_until_done(self):
+        """Multiple sequential interrupts are all handled before returning."""
+        graph = MagicMock()
+        payload = {"message": "continue?", "choices": ["yes"], "state_name": "step"}
+        task = self._make_task_with_interrupt(payload)
+        empty_state = self._make_state_info(tasks=[])
+        state_with_interrupt = self._make_state_info(tasks=[task])
+
+        # Two interrupt rounds, then done
+        graph.get_state.side_effect = [
+            state_with_interrupt,
+            state_with_interrupt,
+            empty_state,
+        ]
+        graph.stream.return_value = iter([{"round": 1}])
+
+        with patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt", return_value="yes"
+        ) as mock_prompt:
+            handle_interrupts(graph, {}, {})
+
+        assert mock_prompt.call_count == 2
+
+    def test_interrupt_snapshot_with_interrupt_key_skipped(self):
+        """State snapshots containing '__interrupt__' are skipped (last_state not updated)."""
+        graph = MagicMock()
+        payload = {"message": "ok?", "choices": [], "state_name": "s"}
+        task = self._make_task_with_interrupt(payload)
+        empty_state = self._make_state_info(tasks=[])
+        state_with_interrupt = self._make_state_info(tasks=[task])
+
+        graph.get_state.side_effect = [state_with_interrupt, empty_state]
+        # stream yields an interrupt snapshot then a valid one
+        graph.stream.return_value = iter([
+            {"__interrupt__": True},
+            {"real": "state"},
+        ])
+
+        with patch("fdsx.core.engine.interrupts.display_wait_prompt", return_value="ok"):
+            result = handle_interrupts(graph, {}, {"original": True})
+
+        # The __interrupt__ snapshot was skipped; real state was captured
+        assert result == {"real": "state"}

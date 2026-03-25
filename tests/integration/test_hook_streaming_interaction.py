@@ -79,9 +79,9 @@ class TestHookFiringOrderWithStreaming:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "data.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 mock_exec.side_effect = lambda hooks, **kw: execution_order.append(
                     f"hook_{kw['status']}"
                 )
@@ -208,9 +208,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
@@ -268,9 +268,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks"):
+        with patch("fdsx.core.compiler.compile.execute_hooks"):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
@@ -325,9 +325,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks"):
+        with patch("fdsx.core.compiler.compile.execute_hooks"):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
@@ -377,8 +377,8 @@ class TestHookInputOutputDataWithStreaming:
                 captured_input_data.append(dict(data))
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write):
-            with patch("fdsx.core.compiler.execute_hooks"):
+        with patch("fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 wrapped(initial_state)
 
         assert len(captured_input_data) == 1
@@ -413,8 +413,8 @@ class TestHookInputOutputDataWithStreaming:
                 captured_output_data.append(dict(data))
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write):
-            with patch("fdsx.core.compiler.execute_hooks"):
+        with patch("fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 wrapped({"input": "value"})
 
         assert len(captured_output_data) == 1
@@ -447,9 +447,9 @@ class TestHookAbortWithStreaming:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "in.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 mock_exec.side_effect = HookAbortError("abort-script", 1)
                 with pytest.raises(HookAbortError):
                     wrapped({"input": "x"})
@@ -482,9 +482,9 @@ class TestHookAbortWithStreaming:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "out.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 with pytest.raises(RuntimeError, match="provider failed"):
                     wrapped({"x": 1})
 
@@ -547,9 +547,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}
@@ -631,9 +631,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks"):
+        with patch("fdsx.core.compiler.compile.execute_hooks"):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": thread_id}}

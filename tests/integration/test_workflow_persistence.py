@@ -22,8 +22,8 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.display.terminal.is_interactive", return_value=False
                     ):
@@ -45,8 +45,8 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.display.terminal.is_interactive", return_value=False
                     ):
@@ -85,8 +85,8 @@ class TestWorkflowPersistence:
                 )
                 return workflows_dir / "review.yaml"
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.core.selector.resolve_workflow_for_task",
                         side_effect=mock_resolve,
@@ -115,8 +115,8 @@ class TestWorkflowPersistence:
                 selector_called.append(True)
                 return Path("review.yaml")
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.core.selector.resolve_workflow_for_task",
                         side_effect=track_selector,
@@ -141,8 +141,8 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.display.terminal.is_interactive", return_value=False
                     ):
@@ -168,8 +168,8 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.display.terminal.is_interactive", return_value=False
                     ):
@@ -198,8 +198,8 @@ class TestWorkflowPersistence:
             )
             save_task_file(tasks_dir / "001-multi.yaml", tf)
 
-            with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-                with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     with patch(
                         "fdsx.display.terminal.is_interactive", return_value=False
                     ):
