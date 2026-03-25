@@ -7,7 +7,7 @@ import pytest
 from fdsx.core import engine
 from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 from tests import FIXTURES_DIR
-from tests.integration.cli_test_utils import fixture_path, run_fdsx
+from tests.e2e.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestBatchExecution:

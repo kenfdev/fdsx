@@ -30,37 +30,37 @@ Restructure the fdsx test suite to follow the test trophy pattern: remove trivia
 
 ### Directory Setup
 
-- [ ] T008 [FR2] Create `tests/e2e/` directory with `__init__.py`
-- [ ] T009 [FR2] Copy `tests/integration/cli_test_utils.py` to `tests/e2e/cli_test_utils.py`
-- [ ] T010 [FR2] Create `tests/e2e/conftest.py` with any shared fixtures needed by CLI tests (inspect existing `tests/integration/conftest.py` for relevant fixtures)
+- [x] T008 [FR2] Create `tests/e2e/` directory with `__init__.py`
+- [x] T009 [FR2] Copy `tests/integration/cli_test_utils.py` to `tests/e2e/cli_test_utils.py`
+- [x] T010 [FR2] Create `tests/e2e/conftest.py` with any shared fixtures needed by CLI tests (inspect existing `tests/integration/conftest.py` for relevant fixtures)
 
 ### Move and Rename CLI Test Files
 
-- [ ] T011 [P] [FR2] Move `tests/integration/test_cli_e2e.py` to `tests/e2e/test_cli_validation_and_run.py`, updating imports from `tests.integration.cli_test_utils` to `tests.e2e.cli_test_utils`
-- [ ] T012 [P] [FR2] Move `tests/integration/test_cli_e2e_phase2.py` to `tests/e2e/test_cli_flow_types.py`, updating imports
-- [ ] T013 [P] [FR2] Move `tests/integration/test_cli_e2e_phase3.py` to `tests/e2e/test_cli_wait_and_resume.py`, updating imports
-- [ ] T014 [P] [FR2] Move `tests/integration/test_cli_e2e_phase4.py` to `tests/e2e/test_cli_batch_tasks.py`, updating imports
-- [ ] T015 [P] [FR2] Move `tests/integration/test_thread_id_format.py` to `tests/e2e/test_cli_thread_id.py`, updating imports
-- [ ] T016 [P] [FR2] Move `tests/integration/test_workflow_name_display.py` to `tests/e2e/test_cli_workflow_name.py`, updating imports
-- [ ] T017 [P] [FR2] Move `tests/integration/test_batch.py` to `tests/e2e/test_cli_batch_split.py`, updating imports
-- [ ] T018 [P] [FR2] Move `tests/integration/test_signal_handling.py` to `tests/e2e/test_cli_signal_handling.py`, updating imports
+- [x] T011 [P] [FR2] Move `tests/integration/test_cli_e2e.py` to `tests/e2e/test_cli_validation_and_run.py`, updating imports from `tests.integration.cli_test_utils` to `tests.e2e.cli_test_utils`
+- [x] T012 [P] [FR2] Move `tests/integration/test_cli_e2e_phase2.py` to `tests/e2e/test_cli_flow_types.py`, updating imports
+- [x] T013 [P] [FR2] Move `tests/integration/test_cli_e2e_phase3.py` to `tests/e2e/test_cli_wait_and_resume.py`, updating imports
+- [x] T014 [P] [FR2] Move `tests/integration/test_cli_e2e_phase4.py` to `tests/e2e/test_cli_batch_tasks.py`, updating imports
+- [x] T015 [P] [FR2] Move `tests/integration/test_thread_id_format.py` to `tests/e2e/test_cli_thread_id.py`, updating imports
+- [x] T016 [P] [FR2] Move `tests/integration/test_workflow_name_display.py` to `tests/e2e/test_cli_workflow_name.py`, updating imports
+- [x] T017 [P] [FR2] Move `tests/integration/test_batch.py` to `tests/e2e/test_cli_batch_split.py`, updating imports
+- [x] T018 [P] [FR2] Move `tests/integration/test_signal_handling.py` to `tests/e2e/test_cli_signal_handling.py`, updating imports
 
 ### Split `test_e2e_phase6.py`
 
-- [ ] T019 [FR2] Split `TestBackwardCompat` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_backward_compat.py` with only required imports
-- [ ] T020 [P] [FR2] Split `TestErrorMessages` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_error_messages.py` with only required imports
-- [ ] T021 [P] [FR2] Split `TestEdgeCases` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_edge_cases.py` with only required imports
-- [ ] T022 [P] [FR2] Split `TestFullPipelineE2E`, `TestHelpText`, and `TestSecuritySanitization` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_full_pipeline.py` with only required imports
+- [x] T019 [FR2] Split `TestBackwardCompat` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_backward_compat.py` with only required imports
+- [x] T020 [P] [FR2] Split `TestErrorMessages` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_error_messages.py` with only required imports
+- [x] T021 [P] [FR2] Split `TestEdgeCases` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_edge_cases.py` with only required imports
+- [x] T022 [P] [FR2] Split `TestFullPipelineE2E`, `TestHelpText`, and `TestSecuritySanitization` from `tests/integration/test_e2e_phase6.py` into `tests/e2e/test_batch_full_pipeline.py` with only required imports
 
 ### Rename Integration File
 
-- [ ] T023 [FR2] Rename `tests/integration/test_e2e_scenarios.py` to `tests/integration/test_scenario_flows.py`, updating any internal references
+- [x] T023 [FR2] Rename `tests/integration/test_e2e_scenarios.py` to `tests/integration/test_scenario_flows.py`, updating any internal references
 
 ### Cleanup
 
-- [ ] T024 [FR2] Delete original files from `tests/integration/` that were moved to `tests/e2e/` (test_cli_e2e.py, test_cli_e2e_phase2.py, test_cli_e2e_phase3.py, test_cli_e2e_phase4.py, test_thread_id_format.py, test_workflow_name_display.py, test_batch.py, test_signal_handling.py, test_e2e_phase6.py)
-- [ ] T025 [FR2] Delete `tests/integration/cli_test_utils.py` if no remaining integration tests import it
-- [ ] T026 [FR2] Verify full test suite passes after migration by running `python -m pytest tests/ -v`
+- [x] T024 [FR2] Delete original files from `tests/integration/` that were moved to `tests/e2e/` (test_cli_e2e.py, test_cli_e2e_phase2.py, test_cli_e2e_phase3.py, test_cli_e2e_phase4.py, test_thread_id_format.py, test_workflow_name_display.py, test_batch.py, test_signal_handling.py, test_e2e_phase6.py)
+- [x] T025 [FR2] Delete `tests/integration/cli_test_utils.py` if no remaining integration tests import it
+- [x] T026 [FR2] Verify full test suite passes after migration by running `python -m pytest tests/ -v`
 
 ---
 

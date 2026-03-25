@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tests.integration.cli_test_utils import fixture_path
+from tests.e2e.cli_test_utils import fixture_path
 
 
 def run_fdsx_run(cwd: str | Path) -> subprocess.CompletedProcess[str]:

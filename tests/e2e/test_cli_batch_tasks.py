@@ -11,7 +11,7 @@ from fdsx.cli.main import app
 from fdsx.core.config import FdsxConfig, TaskSplitterConfig
 from fdsx.providers.base import ProviderResult
 from tests import FIXTURES_DIR
-from tests.integration.cli_test_utils import fixture_path, run_fdsx
+from tests.e2e.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestBatchCLIE2E:
