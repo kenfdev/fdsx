@@ -25,12 +25,22 @@ _DEAD_PID = 99999
 
 
 def _try_acquire(
-    base_dir_str: str, thread_id: str, result_queue: "multiprocessing.Queue[bool]"
+    base_dir_str: str,
+    thread_id: str,
+    barrier: "multiprocessing.Barrier",  # type: ignore[type-arg]
+    result_queue: "multiprocessing.Queue[bool]",
 ) -> None:  # type: ignore[type-arg]
-    """Target function for child processes: acquire lock and put result in queue."""
+    """Target function for child processes: acquire lock and put result in queue.
+
+    Uses a barrier to synchronize both processes so they attempt acquisition
+    while both are still alive — preventing the stale-lock recovery path from
+    making both succeed.
+    """
     manager = CheckpointManager(base_dir=Path(base_dir_str))
+    barrier.wait()  # ensure both processes are alive before racing
     result = manager.acquire_lock(thread_id)
     result_queue.put(result)
+    barrier.wait()  # keep both alive until results are collected
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -59,14 +69,15 @@ class TestLockAtomicity:
         threads share a PID and would both succeed or both fail.
         """
         result_queue: "multiprocessing.Queue[bool]" = multiprocessing.Queue()
+        barrier = multiprocessing.Barrier(2, timeout=10)
 
         p1 = multiprocessing.Process(
             target=_try_acquire,
-            args=(str(base_dir), _LOCK_THREAD_ID, result_queue),
+            args=(str(base_dir), _LOCK_THREAD_ID, barrier, result_queue),
         )
         p2 = multiprocessing.Process(
             target=_try_acquire,
-            args=(str(base_dir), _LOCK_THREAD_ID, result_queue),
+            args=(str(base_dir), _LOCK_THREAD_ID, barrier, result_queue),
         )
 
         p1.start()
