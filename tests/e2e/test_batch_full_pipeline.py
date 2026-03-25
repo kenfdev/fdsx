@@ -1,18 +1,15 @@
 """E2E tests for full pipeline (T43), help text (T41/T27), and security sanitization."""
 
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
 from fdsx.cli.main import app
 from fdsx.core import engine
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
-from fdsx.core.config import FdsxConfig, TaskSplitterConfig
-from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
+from fdsx.core.config import TaskSplitterConfig
+from fdsx.models.task import load_task_file, save_task_file
 from tests import FIXTURES_DIR
 
 
@@ -198,7 +195,6 @@ class TestFullPipelineE2E:
         - Re-run skips auto-selection (workflow already set)
         - Error triggers resume command display
         """
-        import yaml
 
         project_root = tmp_path
         workflows_dir = project_root / ".fdsx" / "workflows"
