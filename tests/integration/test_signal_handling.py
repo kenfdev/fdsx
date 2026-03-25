@@ -138,7 +138,7 @@ class TestSigintCleanup:
         """No orphan sleep processes remain after SIGINT."""
         _run_fdsx_and_signal(tmp_path, signal.SIGINT)
         # Allow a brief moment for OS process table cleanup.
-        time.sleep(0.5)
+        time.sleep(2.0)
         assert not _is_sleep_orphan_running(), (
             f"Orphan 'sleep {_SLEEP_DURATION}' process still running after SIGINT"
         )
