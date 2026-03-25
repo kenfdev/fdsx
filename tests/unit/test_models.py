@@ -477,4 +477,3 @@ class TestHookEntryAndHookConfig:
         """T016: HookEntry.on_failure must be 'abort' or 'warn'."""
         with pytest.raises(ValidationError):
             HookEntry(command="echo hello", on_failure="ignore")
-
