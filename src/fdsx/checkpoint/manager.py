@@ -136,9 +136,7 @@ class CheckpointManager:
                 )
         except (ValueError, IOError):
             # Corrupt or empty lock file — treat as stale
-            logger.warning(
-                "Removing corrupt lock file for thread %r", thread_id
-            )
+            logger.warning("Removing corrupt lock file for thread %r", thread_id)
 
         # Remove the stale/corrupt lock and retry once
         lock_path.unlink(missing_ok=True)

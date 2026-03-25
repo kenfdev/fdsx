@@ -324,7 +324,11 @@ class TestHandleInterrupts:
     def test_single_interrupt_prompts_and_resumes(self):
         """A single interrupt triggers display_wait_prompt and streams Command(resume=...)."""
         graph = MagicMock()
-        payload = {"message": "approve?", "choices": ["yes", "no"], "state_name": "approval"}
+        payload = {
+            "message": "approve?",
+            "choices": ["yes", "no"],
+            "state_name": "approval",
+        }
         task = self._make_task_with_interrupt(payload)
 
         # First call: task with interrupt. Second call: no tasks (done).
@@ -377,12 +381,16 @@ class TestHandleInterrupts:
 
         graph.get_state.side_effect = [state_with_interrupt, empty_state]
         # stream yields an interrupt snapshot then a valid one
-        graph.stream.return_value = iter([
-            {"__interrupt__": True},
-            {"real": "state"},
-        ])
+        graph.stream.return_value = iter(
+            [
+                {"__interrupt__": True},
+                {"real": "state"},
+            ]
+        )
 
-        with patch("fdsx.core.engine.interrupts.display_wait_prompt", return_value="ok"):
+        with patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt", return_value="ok"
+        ):
             result = handle_interrupts(graph, {}, {"original": True})
 
         # The __interrupt__ snapshot was skipped; real state was captured

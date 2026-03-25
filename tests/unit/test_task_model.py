@@ -83,7 +83,9 @@ class TestTaskFileSource:
 
     def test_source_accepts_arbitrary_string(self):
         """T001: TaskFile.source accepts an arbitrary path string."""
-        tf = TaskFile(entries=[TaskEntry(description="test")], source="/path/to/tasks.yaml")
+        tf = TaskFile(
+            entries=[TaskEntry(description="test")], source="/path/to/tasks.yaml"
+        )
         assert tf.source == "/path/to/tasks.yaml"
 
     def test_source_accepts_none_explicitly(self):

@@ -26,7 +26,11 @@ import threading
 import time
 from unittest.mock import patch
 
-from fdsx.providers.base import DEFAULT_INACTIVITY_TIMEOUT, ProviderResult, _run_subprocess
+from fdsx.providers.base import (
+    DEFAULT_INACTIVITY_TIMEOUT,
+    ProviderResult,
+    _run_subprocess,
+)
 from fdsx.providers.claude import ClaudeProvider
 
 # Use sys.executable so tests run with the same Python interpreter as the test

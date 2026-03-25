@@ -71,9 +71,12 @@ class TestBackwardCompat:
 
             with patch("fdsx.core.engine.batch.load_config", mock_load_config):
                 with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                    with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
+                    with patch(
+                        "fdsx.core.engine.batch.display_task_list", return_value=True
+                    ):
                         with patch(
-                            "fdsx.core.engine.batch.run_flow", return_value={"result": "ok"}
+                            "fdsx.core.engine.batch.run_flow",
+                            return_value={"result": "ok"},
                         ):
                             engine.run_batch(workflow_path, tasks_file)
 
@@ -198,7 +201,9 @@ class TestEdgeCases:
         tf = TaskFile(entries=[TaskEntry(description="single task")])
         save_task_file(tasks_dir / "001-single.yaml", tf)
 
-        with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+        with patch(
+            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+        ):
             with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
@@ -326,7 +331,9 @@ class TestFullPipelineE2E:
             run_count_after_resume[0] += 1
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume):
+        with patch(
+            "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume
+        ):
             with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 results2 = engine.run_tasks_dir(
                     flow_path, tasks_dir, auto_workflow=True
@@ -375,7 +382,9 @@ class TestFullPipelineE2E:
             )
         created_files = write_task_files(result_groups, tasks_dir)
 
-        with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+        with patch(
+            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+        ):
             with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 runner = CliRunner()
                 result = runner.invoke(
@@ -498,9 +507,13 @@ class TestFullPipelineE2E:
             with patch(
                 "fdsx.core.selector.resolve_workflow_for_task", side_effect=mock_resolve
             ):
-                with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow):
+                with patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+                ):
                     with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                        with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
+                        with patch(
+                            "fdsx.core.engine.tasks_dir.input", side_effect=["n"]
+                        ):
                             engine.run_tasks_dir(
                                 None,
                                 tasks_dir,
@@ -539,10 +552,13 @@ class TestFullPipelineE2E:
                 side_effect=mock_resolve_persist,
             ):
                 with patch(
-                    "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_rerun
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    side_effect=mock_run_flow_rerun,
                 ):
                     with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                        with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
+                        with patch(
+                            "fdsx.core.engine.tasks_dir.input", side_effect=["n"]
+                        ):
                             results2 = engine.run_tasks_dir(
                                 None,
                                 tasks_dir,

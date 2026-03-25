@@ -12,6 +12,7 @@ group management, and lock-file cleanup all follow the real code path.
 All tests use a unique ``sleep 9973`` command to detect orphan processes via
 ``pgrep``, and a fixed ``--thread-id`` so the lock file path is deterministic.
 """
+
 import signal
 import subprocess
 import sys
@@ -131,9 +132,7 @@ class TestSigintCleanup:
     def test_sigint_exits_with_code_130(self, tmp_path: Path) -> None:
         """fdsx exits with code 130 (128+SIGINT) when SIGINT is sent."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        assert proc.returncode == 130, (
-            f"Expected exit code 130, got {proc.returncode}"
-        )
+        assert proc.returncode == 130, f"Expected exit code 130, got {proc.returncode}"
 
     def test_sigint_no_orphan_processes(self, tmp_path: Path) -> None:
         """No orphan sleep processes remain after SIGINT."""
@@ -152,9 +151,7 @@ class TestSigintCleanup:
             f"Lock file still exists after SIGINT: {lock_file}"
         )
 
-    def test_sigint_prints_workflow_interrupted_message(
-        self, tmp_path: Path
-    ) -> None:
+    def test_sigint_prints_workflow_interrupted_message(self, tmp_path: Path) -> None:
         """'Workflow interrupted' message is printed to stderr on SIGINT."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT, text=True)
         assert proc.stderr is not None
@@ -170,9 +167,7 @@ class TestSigtermCleanup:
     def test_sigterm_exits_with_code_143(self, tmp_path: Path) -> None:
         """fdsx exits with code 143 (128+SIGTERM) when SIGTERM is sent."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGTERM)
-        assert proc.returncode == 143, (
-            f"Expected exit code 143, got {proc.returncode}"
-        )
+        assert proc.returncode == 143, f"Expected exit code 143, got {proc.returncode}"
 
     def test_sigterm_cleans_up_lock_file(self, tmp_path: Path) -> None:
         """Lock file is removed after SIGTERM."""

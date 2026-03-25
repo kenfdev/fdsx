@@ -3,6 +3,7 @@
 T036/T037: Covers context manager lifecycle, process registration,
 signal forwarding, SIGKILL escalation, lock release, and exit behavior.
 """
+
 import signal
 import subprocess
 import threading
@@ -207,7 +208,11 @@ class TestHandleSignalSigkill:
         proc = _make_process(alive=True)
         # After wait() the process has exited; subsequent poll() returns 0.
         proc.wait.return_value = None
-        proc.poll.side_effect = [None, None, 0]  # alive for forwarding, dead for kill check
+        proc.poll.side_effect = [
+            None,
+            None,
+            0,
+        ]  # alive for forwarding, dead for kill check
         handler.register_process(proc)
 
         with patch("sys.exit"):

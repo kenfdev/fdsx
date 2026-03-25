@@ -8,6 +8,7 @@ Registers SIGINT and SIGTERM handlers during flow execution that:
 5. Print "Workflow interrupted" to stderr
 6. Exit with code 128 + signum
 """
+
 import signal
 import subprocess
 import sys

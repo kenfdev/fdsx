@@ -38,9 +38,7 @@ class TestProcessKilledAfterInactivityPeriod:
             args=[
                 _PYTHON,
                 "-c",
-                "import sys, time;"
-                " print('output', flush=True);"
-                " time.sleep(999)",
+                "import sys, time; print('output', flush=True); time.sleep(999)",
             ],
             inactivity_timeout=_INACTIVITY_THRESHOLD,
         )
@@ -210,9 +208,7 @@ class TestCompletionEventSuppressesInactivityTimeout:
             args=[
                 _PYTHON,
                 "-c",
-                "import sys, time;"
-                " print('ready', flush=True);"
-                " time.sleep(999)",
+                "import sys, time; print('ready', flush=True); time.sleep(999)",
             ],
             completion_event=completion_event,
             inactivity_timeout=_INACTIVITY_THRESHOLD,
@@ -244,9 +240,7 @@ class TestInactivityTimeoutWithExplicitTimeout:
             args=[
                 _PYTHON,
                 "-c",
-                "import sys, time;"
-                " print('output', flush=True);"
-                " time.sleep(999)",
+                "import sys, time; print('output', flush=True); time.sleep(999)",
             ],
             timeout=30,
             inactivity_timeout=_INACTIVITY_THRESHOLD,

@@ -5,6 +5,7 @@ Validates:
 - Stale lock auto-recovery: dead PID is cleaned up with a warning logged
 - Release idempotency: releasing a non-held lock raises no error
 """
+
 import multiprocessing
 import os
 import tempfile
@@ -23,7 +24,9 @@ _DEAD_PID = 99999
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _try_acquire(base_dir_str: str, thread_id: str, result_queue: "multiprocessing.Queue[bool]") -> None:  # type: ignore[type-arg]
+def _try_acquire(
+    base_dir_str: str, thread_id: str, result_queue: "multiprocessing.Queue[bool]"
+) -> None:  # type: ignore[type-arg]
     """Target function for child processes: acquire lock and put result in queue."""
     manager = CheckpointManager(base_dir=Path(base_dir_str))
     result = manager.acquire_lock(thread_id)
@@ -79,7 +82,9 @@ class TestLockAtomicity:
             f"Expected exactly one True and one False, got {results}"
         )
 
-    def test_stale_lock_auto_recovery(self, manager: CheckpointManager, caplog: pytest.LogCaptureFixture) -> None:
+    def test_stale_lock_auto_recovery(
+        self, manager: CheckpointManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """acquire_lock must succeed and log a warning when the lock file holds a dead PID."""
         lock_path = manager._get_lock_path(_LOCK_THREAD_ID)
         lock_path.write_text(str(_DEAD_PID))
@@ -89,7 +94,9 @@ class TestLockAtomicity:
         with caplog.at_level(logging.WARNING, logger="fdsx.checkpoint.manager"):
             result = manager.acquire_lock(_LOCK_THREAD_ID)
 
-        assert result is True, "Expected acquire_lock to succeed after stale lock removal"
+        assert result is True, (
+            "Expected acquire_lock to succeed after stale lock removal"
+        )
 
         # Verify the lock now contains our PID
         assert lock_path.exists()
@@ -97,7 +104,8 @@ class TestLockAtomicity:
 
         # Verify a warning was logged
         assert any(
-            str(_DEAD_PID) in record.getMessage() or _LOCK_THREAD_ID in record.getMessage()
+            str(_DEAD_PID) in record.getMessage()
+            or _LOCK_THREAD_ID in record.getMessage()
             for record in caplog.records
             if record.levelno == logging.WARNING
         ), f"Expected a warning about the dead PID. Got records: {caplog.records}"

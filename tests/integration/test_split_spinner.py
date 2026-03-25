@@ -133,7 +133,9 @@ class TestAutoSelectionSpinner:
         with patch(
             "fdsx.core.selector.resolve_workflow_for_task", side_effect=mock_resolve
         ):
-            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+            with patch(
+                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            ):
                 with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     engine.run_tasks_dir(
                         None,
@@ -180,7 +182,9 @@ class TestAutoSelectionSpinner:
                 "fdsx.core.selector.resolve_workflow_for_task",
                 return_value=workflows_dir / "test.yaml",
             ):
-                with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+                with patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ):
                     with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                         engine.run_tasks_dir(
                             None,
@@ -230,7 +234,9 @@ class TestAutoSelectionSpinner:
         _MockSpinner.reset()
 
         with patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_MockSpinner):
-            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+            with patch(
+                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            ):
                 with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     engine.run_tasks_dir(
                         None,
@@ -270,7 +276,9 @@ class TestAutoSelectionSpinner:
         _MockSpinner.reset()
 
         with patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_MockSpinner):
-            with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+            with patch(
+                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            ):
                 with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                     engine.run_tasks_dir(
                         workflow_path,

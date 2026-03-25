@@ -27,7 +27,9 @@ class TestBatchExecution:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=True
+                ):
                     with patch(
                         "fdsx.core.engine.batch.run_flow", return_value={"result": "ok"}
                     ):
@@ -61,7 +63,9 @@ class TestBatchExecution:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=False):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=False
+                ):
                     with tempfile.TemporaryDirectory() as tmpdir:
                         base_dir = Path(tmpdir)
                         results = engine.run_batch(flow_path, tasks_file, base_dir)
@@ -74,7 +78,8 @@ class TestBatchExecution:
         tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
         with patch(
-            "fdsx.core.engine.batch.load_config", return_value=FdsxConfig(task_splitter=None)
+            "fdsx.core.engine.batch.load_config",
+            return_value=FdsxConfig(task_splitter=None),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 base_dir = Path(tmpdir)
@@ -122,8 +127,12 @@ class TestBatchIntegrationWithMockedInput:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
-                    with patch("fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=True
+                ):
+                    with patch(
+                        "fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow
+                    ):
                         with tempfile.TemporaryDirectory() as tmpdir:
                             base_dir = Path(tmpdir)
                             with patch(
@@ -159,11 +168,17 @@ class TestBatchIntegrationWithMockedInput:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
-                    with patch("fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=True
+                ):
+                    with patch(
+                        "fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow
+                    ):
                         with tempfile.TemporaryDirectory() as tmpdir:
                             base_dir = Path(tmpdir)
-                            with patch("fdsx.core.engine.batch.input", side_effect=["n"]):
+                            with patch(
+                                "fdsx.core.engine.batch.input", side_effect=["n"]
+                            ):
                                 results = engine.run_batch(
                                     flow_path, tasks_file, base_dir
                                 )
@@ -188,7 +203,9 @@ class TestBatchQuietFlagPropagation:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=True
+                ):
                     with patch("fdsx.core.engine.batch.run_flow") as mock_run_flow:
                         with tempfile.TemporaryDirectory() as tmpdir:
                             base_dir = Path(tmpdir)
@@ -216,7 +233,9 @@ class TestBatchQuietFlagPropagation:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=True
+                ):
                     with patch("fdsx.core.engine.batch.run_flow") as mock_run_flow:
                         with tempfile.TemporaryDirectory() as tmpdir:
                             base_dir = Path(tmpdir)
@@ -244,7 +263,9 @@ class TestBatchSourceInjection:
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
             ):
-                with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
+                with patch(
+                    "fdsx.core.engine.batch.display_task_list", return_value=True
+                ):
                     with patch("fdsx.core.engine.batch.run_flow") as mock_run_flow:
                         with tempfile.TemporaryDirectory() as tmpdir:
                             base_dir = Path(tmpdir)

@@ -437,7 +437,9 @@ class TestWrapWithHooksNodeFailure:
             write_data_calls.append({"data": data, "filename": filename})
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write):
+        with patch(
+            "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write
+        ):
             with patch("fdsx.core.compiler.compile.execute_hooks"):
                 with pytest.raises(RuntimeError):
                     wrapped({"original": "state"})
@@ -561,9 +563,12 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
+        with patch(
+            "fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks
+        ):
             with patch(
-                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
             ):
                 compiled = compile_flow(
                     flow,
@@ -623,9 +628,12 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
+        with patch(
+            "fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks
+        ):
             with patch(
-                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "flow-hook-tid"}}
@@ -682,9 +690,12 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
+        with patch(
+            "fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks
+        ):
             with patch(
-                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
             ):
                 compiled = compile_flow(
                     flow, recorder=recorder, config=fdsx_config, log_dir=log_dir
@@ -746,9 +757,12 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
+        with patch(
+            "fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks
+        ):
             with patch(
-                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
             ):
                 compiled = compile_flow(
                     flow, recorder=recorder, config=fdsx_config, log_dir=log_dir
@@ -835,9 +849,12 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
+        with patch(
+            "fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks
+        ):
             with patch(
-                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "pass-tid"}}
@@ -903,9 +920,12 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
+        with patch(
+            "fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks
+        ):
             with patch(
-                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "par-tid"}}
@@ -958,7 +978,8 @@ states:
             return tmp_path / filename
 
         with patch(
-            "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+            "fdsx.core.compiler.compile.write_hook_data",
+            side_effect=fake_write_hook_data,
         ):
             with patch("fdsx.core.compiler.compile.execute_hooks"):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
@@ -1005,7 +1026,8 @@ states:
             return tmp_path / filename
 
         with patch(
-            "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
+            "fdsx.core.compiler.compile.write_hook_data",
+            side_effect=fake_write_hook_data,
         ):
             with patch("fdsx.core.compiler.compile.execute_hooks"):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=None)

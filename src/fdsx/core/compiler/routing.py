@@ -1,4 +1,5 @@
 """Routing functions for the compiler package."""
+
 from typing import Any, Callable
 
 from langgraph.graph import END

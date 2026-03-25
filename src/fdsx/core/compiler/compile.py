@@ -1,4 +1,5 @@
 """compile_flow implementation for the compiler package."""
+
 import logging
 import subprocess
 from pathlib import Path
@@ -237,7 +238,13 @@ def compile_flow(
         if isinstance(state, TaskState):
             on_start, on_complete = _collect_state_hooks(state)
             node = _create_task_node(
-                state_name, state, flow, recorder, config, log_dir, quiet,
+                state_name,
+                state,
+                flow,
+                recorder,
+                config,
+                log_dir,
+                quiet,
                 on_process_start=on_process_start,
             )
             graph.add_node(
@@ -283,7 +290,13 @@ def compile_flow(
             graph.add_node(
                 f"_branch_{state_name}",
                 _create_branch_executor(
-                    state_name, state, flow, recorder, config, log_dir, quiet,
+                    state_name,
+                    state,
+                    flow,
+                    recorder,
+                    config,
+                    log_dir,
+                    quiet,
                     on_process_start=on_process_start,
                 ),
             )  # type: ignore[call-overload]

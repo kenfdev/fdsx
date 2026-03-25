@@ -1,4 +1,5 @@
 """Node factory functions for the compiler package."""
+
 import subprocess
 import time
 from pathlib import Path
@@ -75,7 +76,9 @@ def _create_task_node(
         iters[state_name] = iteration
         _check_max_iterations(state_name, state, iteration)
 
-        stream_logger = StreamLogger(state_name, log_dir, quiet=quiet, iteration=iteration)
+        stream_logger = StreamLogger(
+            state_name, log_dir, quiet=quiet, iteration=iteration
+        )
         exec_config = ExecutionConfig(
             provider=provider,
             provider_name=state.provider,
