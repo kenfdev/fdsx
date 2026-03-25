@@ -15,7 +15,7 @@ Design notes:
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from fdsx.core.extraction import extract_value
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
@@ -59,6 +59,7 @@ class ExecutionConfig:
     max_retries: int
     extract: "ExtractRule | None"
     stream_logger: "StreamLogger"
+    on_process_start: Callable[[subprocess.Popen[str]], None] | None = None
 
 
 @dataclass
@@ -124,6 +125,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         command=config.command,
                         output_callback=config.stream_logger.on_stdout,
                         stderr_callback=config.stream_logger.on_stderr,
+                        on_process_start=config.on_process_start,
                     )
                 else:
                     result = config.provider.execute(
@@ -132,6 +134,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         timeout=config.timeout_seconds,
                         output_callback=config.stream_logger.on_stdout,
                         stderr_callback=config.stream_logger.on_stderr,
+                        on_process_start=config.on_process_start,
                     )
             except (subprocess.TimeoutExpired, TimeoutError) as exc:
                 last_error = str(exc)

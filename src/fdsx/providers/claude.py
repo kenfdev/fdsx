@@ -1,5 +1,6 @@
 import json
 import logging
+import subprocess
 import threading
 from typing import Callable, Literal
 
@@ -219,6 +220,7 @@ class ClaudeProvider(ProviderBase):
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
+        on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ProviderResult:
         """Execute Claude CLI with a prompt.
 
@@ -233,6 +235,7 @@ class ClaudeProvider(ProviderBase):
                 and ``ProviderResult.stdout`` is populated from the ``result``
                 event (falling back to concatenated ``text_delta`` content).
             stderr_callback: Optional callback for streaming stderr lines
+            on_process_start: Optional callback invoked after Popen creation
 
         Returns:
             ProviderResult with exit code and output
@@ -268,6 +271,7 @@ class ClaudeProvider(ProviderBase):
                 stdin_data=stdin_data,
                 completion_event=completion_event,
                 inactivity_timeout=effective_inactivity,
+                on_process_start=on_process_start,
             )
             flush()
             parsed_stdout = get_result()
@@ -286,4 +290,5 @@ class ClaudeProvider(ProviderBase):
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
             inactivity_timeout=effective_inactivity,
+            on_process_start=on_process_start,
         )

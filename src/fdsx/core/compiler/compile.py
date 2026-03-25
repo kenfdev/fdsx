@@ -1,5 +1,6 @@
 """compile_flow implementation for the compiler package."""
 import logging
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, TypedDict
 
@@ -168,6 +169,7 @@ def compile_flow(
     config: "FdsxConfig | None" = None,
     log_dir: Path | None = None,
     quiet: bool = False,
+    on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -184,6 +186,10 @@ def compile_flow(
                  works on the terminal but no log files are written.
         quiet: When True, suppresses stderr streaming output from StreamLogger.
                Log files are still written.
+        on_process_start: Optional callback invoked immediately after each
+            ``subprocess.Popen()`` creation during flow execution.  Used by
+            ``SignalHandler`` to register active subprocesses for signal
+            forwarding.  Captured in node closures at compile time.
 
     Returns:
         CompiledGraph with the compiled state machine
@@ -231,7 +237,8 @@ def compile_flow(
         if isinstance(state, TaskState):
             on_start, on_complete = _collect_state_hooks(state)
             node = _create_task_node(
-                state_name, state, flow, recorder, config, log_dir, quiet
+                state_name, state, flow, recorder, config, log_dir, quiet,
+                on_process_start=on_process_start,
             )
             graph.add_node(
                 state_name,
@@ -276,7 +283,8 @@ def compile_flow(
             graph.add_node(
                 f"_branch_{state_name}",
                 _create_branch_executor(
-                    state_name, state, flow, recorder, config, log_dir, quiet
+                    state_name, state, flow, recorder, config, log_dir, quiet,
+                    on_process_start=on_process_start,
                 ),
             )  # type: ignore[call-overload]
             collector_node = _create_collector_node(state_name, state, flow, recorder)

@@ -1,3 +1,4 @@
+import subprocess
 from typing import Callable
 
 from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
@@ -14,6 +15,7 @@ class SystemProvider(ProviderBase):
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
+        on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ProviderResult:
         """Execute a shell command.
 
@@ -24,6 +26,7 @@ class SystemProvider(ProviderBase):
             command: Shell command to execute
             output_callback: Optional callback for streaming stdout lines
             stderr_callback: Optional callback for streaming stderr lines
+            on_process_start: Optional callback invoked after Popen creation
 
         Returns:
             ProviderResult with exit code and output
@@ -43,4 +46,5 @@ class SystemProvider(ProviderBase):
             output_callback=output_callback,
             stderr_callback=stderr_callback,
             shell=True,
+            on_process_start=on_process_start,
         )

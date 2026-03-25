@@ -1,4 +1,5 @@
 """Parallel state node factories for the compiler package."""
+import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -57,6 +58,7 @@ def _create_branch_executor(
     config: "FdsxConfig | None" = None,
     log_dir: Path | None = None,
     quiet: bool = False,
+    on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a shared branch executor node invoked once per branch via Send.
 
@@ -105,6 +107,7 @@ def _create_branch_executor(
             max_retries=max_retries,
             extract=branch.extract,
             stream_logger=stream_logger,
+            on_process_start=on_process_start,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result

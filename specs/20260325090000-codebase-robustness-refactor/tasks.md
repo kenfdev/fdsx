@@ -98,12 +98,12 @@
 
 ### Tasks
 
-- [ ] T036 Write integration tests for signal handling in `tests/integration/test_signal_handling.py` — test SIGINT cleanup (spawn fdsx with system provider running `sleep 60`, send SIGINT after 2s, verify no orphan processes and lock cleaned up), test checkpoint preservation after SIGINT, test "workflow interrupted" message output. Use `subprocess.Popen` + `os.kill(pid, signal.SIGINT)`. Add `pytest-timeout` marker as safety net
-- [ ] T037 Create `src/fdsx/core/engine/signals.py` with `SignalHandler` context manager. `__enter__`: save previous SIGINT/SIGTERM handlers via `signal.signal()`, register custom handler. `__exit__`: restore previous handlers. Handler logic: propagate signal to active subprocess → wait 5s → SIGKILL escalation → release lock → print message → `sys.exit(128 + signum)`
-- [ ] T038 Integrate signal handler into `src/fdsx/core/engine/run.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
-- [ ] T039 Integrate signal handler into `src/fdsx/core/engine/resume.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
-- [ ] T040 Wire subprocess registration in `src/fdsx/providers/base.py` — add optional `on_process_start: Callable[[subprocess.Popen], None] | None = None` parameter to `_run_subprocess`. Call it after `Popen()` creation. Thread the callback from `SignalHandler.set_active_process` through the provider execute chain
-- [ ] T041 Run full test suite (`pytest tests/`) and verify zero regressions + signal handling tests pass
+- [x] T036 Write integration tests for signal handling in `tests/integration/test_signal_handling.py` — test SIGINT cleanup (spawn fdsx with system provider running `sleep 60`, send SIGINT after 2s, verify no orphan processes and lock cleaned up), test checkpoint preservation after SIGINT, test "workflow interrupted" message output. Use `subprocess.Popen` + `os.kill(pid, signal.SIGINT)`. Add `pytest-timeout` marker as safety net
+- [x] T037 Create `src/fdsx/core/engine/signals.py` with `SignalHandler` context manager. `__enter__`: save previous SIGINT/SIGTERM handlers via `signal.signal()`, register custom handler. `__exit__`: restore previous handlers. Handler logic: propagate signal to active subprocess → wait 5s → SIGKILL escalation → release lock → print message → `sys.exit(128 + signum)`
+- [x] T038 Integrate signal handler into `src/fdsx/core/engine/run.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
+- [x] T039 Integrate signal handler into `src/fdsx/core/engine/resume.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
+- [x] T040 Wire subprocess registration in `src/fdsx/providers/base.py` — add optional `on_process_start: Callable[[subprocess.Popen], None] | None = None` parameter to `_run_subprocess`. Call it after `Popen()` creation. Thread the callback from `SignalHandler.set_active_process` through the provider execute chain
+- [x] T041 Run full test suite (`pytest tests/`) and verify zero regressions + signal handling tests pass
 
 ---
 

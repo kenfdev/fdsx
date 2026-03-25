@@ -20,6 +20,7 @@ from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
 
 from .interrupts import handle_interrupts
 from .results import _calc_elapsed, _extract_results, _find_failed_state, _sanitize_state_for_log
+from .signals import SignalHandler
 from .validate import FlowValidationError
 
 
@@ -91,6 +92,8 @@ def run_flow(
     run_dir = _runs_base / RUNS_DIR_NAME / thread_id
     log_dir = run_dir / LOGS_DIR_NAME
 
+    handler = SignalHandler(checkpoint_manager, thread_id)
+
     compiled = compile_flow(
         flow,
         input_keys=set(inputs.keys()) if inputs else None,
@@ -99,6 +102,7 @@ def run_flow(
         config=fdsx_config,
         log_dir=log_dir,
         quiet=quiet,
+        on_process_start=handler.register_process,
     )
 
     initial_state: dict[str, Any] = {
@@ -132,14 +136,15 @@ def run_flow(
     last_state: dict[str, Any] = initial_state.copy()
 
     try:
-        for state_snapshot in compiled.graph.stream(
-            initial_state, config=config, stream_mode="values"
-        ):
-            if "__interrupt__" not in state_snapshot:
-                last_state = state_snapshot
+        with handler:
+            for state_snapshot in compiled.graph.stream(
+                initial_state, config=config, stream_mode="values"
+            ):
+                if "__interrupt__" not in state_snapshot:
+                    last_state = state_snapshot
 
-        if needs_checkpointer:
-            last_state = handle_interrupts(compiled.graph, config, last_state)
+            if needs_checkpointer:
+                last_state = handle_interrupts(compiled.graph, config, last_state)
 
         if needs_checkpointer:
             final_state_info = compiled.graph.get_state(config)

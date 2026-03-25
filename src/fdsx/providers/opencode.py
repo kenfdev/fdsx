@@ -1,4 +1,5 @@
 import json
+import subprocess
 from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict
@@ -48,6 +49,7 @@ class OpenCodeProvider(ProviderBase):
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
+        on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ProviderResult:
         """Execute OpenCode CLI with a prompt.
 
@@ -58,6 +60,7 @@ class OpenCodeProvider(ProviderBase):
             command: Ignored for opencode provider
             output_callback: Optional callback for streaming stdout lines
             stderr_callback: Optional callback for streaming stderr lines
+            on_process_start: Optional callback invoked after Popen creation
 
         Returns:
             ProviderResult with exit code and output
@@ -89,4 +92,5 @@ class OpenCodeProvider(ProviderBase):
             stdin_data=stdin_data,
             env=env,
             inactivity_timeout=effective_inactivity,
+            on_process_start=on_process_start,
         )

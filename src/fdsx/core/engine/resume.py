@@ -20,6 +20,7 @@ from fdsx.logging.recorder import LOGS_DIR_NAME
 
 from .interrupts import handle_interrupts
 from .results import _calc_elapsed, _extract_results, _find_failed_state, _sanitize_state_for_log
+from .signals import SignalHandler
 
 
 def resume_flow(
@@ -112,12 +113,15 @@ def resume_flow(
         resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id
         resume_log_dir = resume_run_dir / LOGS_DIR_NAME
 
+        handler = SignalHandler(checkpoint_manager, thread_id)
+
         compiled = compile_flow(
             flow,
             checkpointer=checkpointer,
             recorder=recorder,
             config=fdsx_config,
             log_dir=resume_log_dir,
+            on_process_start=handler.register_process,
         )
 
         parallel_extra = sum(
@@ -141,47 +145,48 @@ def resume_flow(
             compiled.graph.update_state(resume_config, {"_meta": updated_meta})
 
         state_info = compiled.graph.get_state(resume_config)
-        if state_info.tasks:
-            payload = None
-            for task in state_info.tasks:
-                if hasattr(task, "interrupts") and task.interrupts:
-                    payload = task.interrupts[0].value
-                    break
+        with handler:
+            if state_info.tasks:
+                payload = None
+                for task in state_info.tasks:
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        payload = task.interrupts[0].value
+                        break
 
-            if payload:
-                print(
-                    f"Resuming from state: {_sanitize_output(payload.get('state_name', 'wait'))}",
-                    file=sys.stderr,
-                )
-                message = payload.get("message", "")
-                choices = payload.get("choices", [])
-                state_name = payload.get("state_name", "wait")
+                if payload:
+                    print(
+                        f"Resuming from state: {_sanitize_output(payload.get('state_name', 'wait'))}",
+                        file=sys.stderr,
+                    )
+                    message = payload.get("message", "")
+                    choices = payload.get("choices", [])
+                    state_name = payload.get("state_name", "wait")
 
-                user_selection = display_wait_prompt(state_name, message, choices)
+                    user_selection = display_wait_prompt(state_name, message, choices)
 
-                for state_snapshot in compiled.graph.stream(
-                    Command(resume=user_selection),
-                    config=resume_config,
-                    stream_mode="values",
-                ):
-                    if "__interrupt__" not in state_snapshot:
-                        last_state = state_snapshot
+                    for state_snapshot in compiled.graph.stream(
+                        Command(resume=user_selection),
+                        config=resume_config,
+                        stream_mode="values",
+                    ):
+                        if "__interrupt__" not in state_snapshot:
+                            last_state = state_snapshot
+                else:
+                    # Error/pending task (no interrupt) — re-execute from checkpoint
+                    for state_snapshot in compiled.graph.stream(
+                        None, config=resume_config, stream_mode="values"
+                    ):
+                        if "__interrupt__" not in state_snapshot:
+                            last_state = state_snapshot
             else:
-                # Error/pending task (no interrupt) — re-execute from checkpoint
                 for state_snapshot in compiled.graph.stream(
                     None, config=resume_config, stream_mode="values"
                 ):
                     if "__interrupt__" not in state_snapshot:
                         last_state = state_snapshot
-        else:
-            for state_snapshot in compiled.graph.stream(
-                None, config=resume_config, stream_mode="values"
-            ):
-                if "__interrupt__" not in state_snapshot:
-                    last_state = state_snapshot
 
-        # Continue handling any further interrupts (e.g. multi-Wait flows)
-        last_state = handle_interrupts(compiled.graph, resume_config, last_state)
+            # Continue handling any further interrupts (e.g. multi-Wait flows)
+            last_state = handle_interrupts(compiled.graph, resume_config, last_state)
 
         # Read authoritative state from checkpointer after resume completes
         final_state_info = compiled.graph.get_state(resume_config)
