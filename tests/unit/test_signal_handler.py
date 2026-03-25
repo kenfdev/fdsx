@@ -5,16 +5,13 @@ signal forwarding, SIGKILL escalation, lock release, and exit behavior.
 """
 import signal
 import subprocess
-import sys
 import threading
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
-import pytest
 
 from fdsx.core.engine.signals import (
     SignalHandler,
-    _GRACEFUL_SHUTDOWN_TIMEOUT,
     _INTERRUPT_MESSAGE,
     _SIGNAL_EXIT_BASE,
 )

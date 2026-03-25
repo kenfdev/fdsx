@@ -126,5 +126,5 @@ class TestMaxIterationsResumeInteraction:
         )
         # Iteration 3 failed before StreamLogger was created → no plan_3.log
         assert not (log_dir / "plan_3.log").exists(), (
-            f"plan_3.log should not exist (error fires before execution)"
+            "plan_3.log should not exist (error fires before execution)"
         )

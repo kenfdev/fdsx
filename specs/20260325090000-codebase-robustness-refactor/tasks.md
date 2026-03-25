@@ -113,11 +113,11 @@
 
 ### Tasks
 
-- [ ] T042 Run full test suite (`pytest tests/ -v`) — all unit and integration tests pass
-- [ ] T043 Verify no source file exceeds ~400 lines: `find src/fdsx -name "*.py" -exec wc -l {} + | sort -rn | head -10`
-- [ ] T044 Verify no duplicated functions: `grep -rn "def get_next_states\|def _parse_path_segments\|def _parse_jsonpath" src/` returns exactly 2 definitions (one each in `paths.py` and `graph_utils.py`)
-- [ ] T045 Verify backward compatibility: `python -c "from fdsx.core.engine import run_flow, resume_flow, run_batch, validate_flow; from fdsx.core.compiler import compile_flow, CompiledGraph; print('OK')"` succeeds
-- [ ] T046 Run linting and type checks: `ruff check src/ tests/` and `mypy src/fdsx/` pass clean
+- [x] T042 Run full test suite (`pytest tests/ -v`) — all unit and integration tests pass
+- [x] T043 Verify no source file exceeds ~400 lines: `find src/fdsx -name "*.py" -exec wc -l {} + | sort -rn | head -10`
+- [x] T044 Verify no duplicated functions: `grep -rn "def get_next_states\|def _parse_path_segments\|def _parse_jsonpath" src/` returns exactly 2 definitions (one each in `paths.py` and `graph_utils.py`)
+- [x] T045 Verify backward compatibility: `python -c "from fdsx.core.engine import run_flow, resume_flow, run_batch, validate_flow; from fdsx.core.compiler import compile_flow, CompiledGraph; print('OK')"` succeeds
+- [x] T046 Run linting and type checks: `ruff check src/ tests/` and `mypy src/fdsx/` pass clean
 - [ ] T047 Manual smoke test: run a sample workflow with Ctrl+C during provider execution. Verify no orphan processes, lock cleaned up, checkpoint preserved
 
 ---

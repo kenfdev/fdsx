@@ -6,7 +6,6 @@ timeout handling, extraction success, and extraction failure after retries.
 import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from fdsx.providers.base import ProviderResult
 
@@ -267,7 +266,7 @@ class TestExtraction:
             exit_code=0, stdout='{"result": "yes"}', stderr=""
         )
 
-        with patch("fdsx.core.compiler.execution.extract_value", return_value="yes") as mock_ev:
+        with patch("fdsx.core.compiler.execution.extract_value", return_value="yes"):
             result = execute_with_retry(config)
 
         assert result.extracted == "yes"
