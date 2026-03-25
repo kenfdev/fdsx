@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import sqlite3
@@ -7,6 +8,8 @@ from typing import Any
 from langchain_core.runnables.config import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint
 from langgraph.checkpoint.sqlite import SqliteSaver
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_meta_from_checkpoint(
@@ -85,8 +88,27 @@ class CheckpointManager:
             raise ValueError(f"Thread ID escapes lock directory: {thread_id!r}")
         return lock_path
 
+    def _create_lock_file(self, lock_path: Path) -> bool:
+        """Atomically create a lock file and write the current PID.
+
+        Returns:
+            True if the file was created, False if it already exists.
+        """
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                os.write(fd, str(os.getpid()).encode())
+            finally:
+                os.close(fd)
+            return True
+        except FileExistsError:
+            return False
+
     def acquire_lock(self, thread_id: str) -> bool:
         """Acquire a lock for the given thread ID.
+
+        Uses O_CREAT|O_EXCL for atomic creation to prevent TOCTOU race conditions.
+        Automatically recovers stale locks from dead processes.
 
         Args:
             thread_id: The thread ID to lock
@@ -96,25 +118,31 @@ class CheckpointManager:
         """
         lock_path = self._get_lock_path(thread_id)
 
-        if lock_path.exists():
+        if self._create_lock_file(lock_path):
+            return True
+
+        # Lock file already exists — check if the owning process is still alive
+        try:
+            with open(lock_path) as f:
+                pid = int(f.read().strip())
             try:
-                with open(lock_path) as f:
-                    pid = int(f.read().strip())
-                try:
-                    os.kill(pid, 0)
-                    return False
-                except OSError:
-                    pass
-            except (ValueError, IOError):
-                pass
+                os.kill(pid, 0)
+                # Process is alive — lock is legitimately held
+                return False
+            except OSError:
+                # Process is dead — stale lock
+                logger.warning(
+                    "Removing stale lock for thread %r (dead PID %d)", thread_id, pid
+                )
+        except (ValueError, IOError):
+            # Corrupt or empty lock file — treat as stale
+            logger.warning(
+                "Removing corrupt lock file for thread %r", thread_id
+            )
 
-            lock_path.unlink(missing_ok=True)
-
-        fd = os.open(str(lock_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(str(os.getpid()))
-
-        return True
+        # Remove the stale/corrupt lock and retry once
+        lock_path.unlink(missing_ok=True)
+        return self._create_lock_file(lock_path)
 
     def release_lock(self, thread_id: str) -> None:
         """Release the lock for the given thread ID.

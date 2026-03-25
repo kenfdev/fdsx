@@ -50,9 +50,9 @@
 
 ### Tasks
 
-- [ ] T015 Write integration tests for lock atomicity in `tests/integration/test_lock_atomicity.py` — test concurrent lock acquisition (use `multiprocessing.Process` to race two acquires on same thread ID, assert exactly one succeeds), stale lock auto-recovery (write dead PID, verify acquire succeeds with warning), release idempotency (release when no lock held, no error)
-- [ ] T016 Modify `CheckpointManager.acquire_lock()` in `src/fdsx/checkpoint/manager.py` (lines 88-117) to use `os.open(path, O_CREAT | O_EXCL | O_WRONLY, 0o600)` for atomic creation. On `FileExistsError`: read PID, check alive with `os.kill(pid, 0)`, if dead remove stale lock with `logger.warning()` and single retry. Add `import logging` and `logger = logging.getLogger(__name__)` if not present
-- [ ] T017 Run full test suite (`pytest tests/`) and verify zero regressions + new lock tests pass
+- [x] T015 Write integration tests for lock atomicity in `tests/integration/test_lock_atomicity.py` — test concurrent lock acquisition (use `multiprocessing.Process` to race two acquires on same thread ID, assert exactly one succeeds), stale lock auto-recovery (write dead PID, verify acquire succeeds with warning), release idempotency (release when no lock held, no error)
+- [x] T016 Modify `CheckpointManager.acquire_lock()` in `src/fdsx/checkpoint/manager.py` (lines 88-117) to use `os.open(path, O_CREAT | O_EXCL | O_WRONLY, 0o600)` for atomic creation. On `FileExistsError`: read PID, check alive with `os.kill(pid, 0)`, if dead remove stale lock with `logger.warning()` and single retry. Add `import logging` and `logger = logging.getLogger(__name__)` if not present
+- [x] T017 Run full test suite (`pytest tests/`) and verify zero regressions + new lock tests pass
 
 ---
 
