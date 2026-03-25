@@ -66,10 +66,10 @@ Restructure the fdsx test suite to follow the test trophy pattern: remove trivia
 
 ## Phase 4: Minimize Timing Delays (FR-5)
 
-- [ ] T027 [P] [FR5] Reduce `time.sleep(999)` to `time.sleep(5)` in `tests/integration/test_inactivity_timeout.py`
-- [ ] T028 [P] [FR5] Reduce `time.sleep(999)` to `time.sleep(5)` and `sleep 60` to `sleep 5` in `tests/unit/test_subprocess_completion.py`
-- [ ] T029 [P] [FR5] Reduce `time.sleep(999)` to `time.sleep(5)` in `tests/integration/test_codex_completion.py`
-- [ ] T030 [P] [FR5] Reduce `sleep 9973` to `sleep 30` and minimize `_STARTUP_WAIT` in `tests/e2e/test_cli_signal_handling.py`
+- [x] T027 [P] [FR5] Reduce `time.sleep(999)` to `time.sleep(5)` in `tests/integration/test_inactivity_timeout.py`
+- [x] T028 [P] [FR5] Reduce `time.sleep(999)` to `time.sleep(5)` and `sleep 60` to `sleep 5` in `tests/unit/test_subprocess_completion.py`
+- [x] T029 [P] [FR5] Reduce `time.sleep(999)` to `time.sleep(5)` in `tests/integration/test_codex_completion.py`
+- [x] T030 [P] [FR5] Reduce `sleep 9973` to `sleep 30` and minimize `_STARTUP_WAIT` in `tests/e2e/test_cli_signal_handling.py`
 - [ ] T031 [FR5] Verify timing-dependent tests still pass by running `python -m pytest tests/integration/test_inactivity_timeout.py tests/unit/test_subprocess_completion.py tests/integration/test_codex_completion.py tests/e2e/test_cli_signal_handling.py -v`
 
 ---

@@ -9,7 +9,7 @@ Validates:
 These tests spawn fdsx as a real subprocess so that signal delivery, process
 group management, and lock-file cleanup all follow the real code path.
 
-All tests use a unique ``sleep 9973`` command to detect orphan processes via
+All tests use a unique ``sleep 47`` command to detect orphan processes via
 ``pgrep``, and a fixed ``--thread-id`` so the lock file path is deterministic.
 """
 
@@ -24,13 +24,13 @@ import pytest
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 # Unique sleep duration so pgrep can reliably identify our child process.
-_SLEEP_DURATION = 9973
+_SLEEP_DURATION = 47
 
 # Thread ID used for runs so the lock file path is deterministic.
 _THREAD_ID = "signal-test-thread"
 
 # Seconds to wait for the child sleep process to start before sending a signal.
-_STARTUP_WAIT = 2.5
+_STARTUP_WAIT = 1.5
 
 # Seconds to wait for fdsx to exit after receiving a signal.
 _EXIT_WAIT = 15

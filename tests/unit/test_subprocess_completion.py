@@ -239,7 +239,7 @@ class TestTimeout:
     def test_timeout_kills_process_and_returns_124(self):
         """Process exceeding timeout is killed and result has exit_code=124."""
         result = _run_subprocess(
-            args=["sleep 60"],
+            args=["sleep 5"],
             shell=True,
             timeout=1,
         )
@@ -261,7 +261,7 @@ class TestTimeout:
     def test_timeout_output_collected_before_kill(self):
         """Output emitted before timeout fires is discarded (result stdout is empty on timeout)."""
         result = _run_subprocess(
-            args=["echo before_timeout; sleep 60"],
+            args=["echo before_timeout; sleep 5"],
             shell=True,
             timeout=1,
         )
@@ -273,7 +273,7 @@ class TestTimeout:
         """_run_subprocess returns within a reasonable multiple of the timeout value."""
         start = time.time()
         result = _run_subprocess(
-            args=["sleep 60"],
+            args=["sleep 5"],
             shell=True,
             timeout=1,
         )
@@ -298,7 +298,7 @@ class TestCompletionEvent:
                 args=[
                     _PYTHON,
                     "-c",
-                    "import sys,time; print('output',flush=True); time.sleep(999)",
+                    "import sys,time; print('output',flush=True); time.sleep(5)",
                 ],
                 completion_event=event,
             )
@@ -349,7 +349,7 @@ class TestCompletionEvent:
                     _PYTHON,
                     "-c",
                     "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
-                    " print('output',flush=True); time.sleep(999)",
+                    " print('output',flush=True); time.sleep(15)",
                 ],
                 completion_event=event,
             )
@@ -388,7 +388,7 @@ class TestCompletionEvent:
                     " print('line1',flush=True);"
                     " print('line2',flush=True);"
                     " print('line3',flush=True);"
-                    " time.sleep(999)",
+                    " time.sleep(5)",
                 ],
                 completion_event=event,
             )
@@ -412,7 +412,7 @@ class TestCompletionEvent:
                         _PYTHON,
                         "-c",
                         "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
-                        " print('x',flush=True); time.sleep(999)",
+                        " print('x',flush=True); time.sleep(15)",
                     ],
                     completion_event=event,
                 )
@@ -454,7 +454,7 @@ class TestCompletionEventTimeoutInteraction:
         timer.start()
         try:
             result = _run_subprocess(
-                args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+                args=[_PYTHON, "-c", "import time; time.sleep(5)"],
                 timeout=1,
                 completion_event=event,
             )
@@ -475,7 +475,7 @@ class TestCompletionEventTimeoutInteraction:
                 args=[
                     _PYTHON,
                     "-c",
-                    "import time; print('data',flush=True); time.sleep(999)",
+                    "import time; print('data',flush=True); time.sleep(5)",
                 ],
                 timeout=30,
                 completion_event=event,
@@ -687,7 +687,7 @@ class TestInactivityTimeoutParameter:
     def test_inactivity_timeout_result_exit_code_124(self):
         """Process killed by inactivity returns exit_code=124."""
         result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
             inactivity_timeout=2,
         )
         assert result.exit_code == 124
@@ -695,7 +695,7 @@ class TestInactivityTimeoutParameter:
     def test_inactivity_timeout_result_stderr_message(self):
         """Inactivity kill message includes threshold duration."""
         result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
             inactivity_timeout=2,
         )
         assert "2" in result.stderr
@@ -704,7 +704,7 @@ class TestInactivityTimeoutParameter:
     def test_inactivity_timeout_result_stdout_empty(self):
         """Process killed by inactivity has empty stdout (like explicit timeout)."""
         result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
             inactivity_timeout=2,
         )
         assert result.stdout == ""

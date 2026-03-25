@@ -38,7 +38,7 @@ class TestProcessKilledAfterInactivityPeriod:
             args=[
                 _PYTHON,
                 "-c",
-                "import sys, time; print('output', flush=True); time.sleep(999)",
+                "import sys, time; print('output', flush=True); time.sleep(5)",
             ],
             inactivity_timeout=_INACTIVITY_THRESHOLD,
         )
@@ -87,7 +87,7 @@ class TestStartupHangKilled:
         """Process that hangs immediately (no output) is killed after threshold."""
         start = time.time()
         result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
             inactivity_timeout=_INACTIVITY_THRESHOLD,
         )
         elapsed = time.time() - start
@@ -156,7 +156,7 @@ class TestInactivityTimeoutErrorDistinguishable:
         """inactivity vs explicit timeout errors have distinct stderr messages."""
         # Inactivity timeout: process goes silent
         inactivity_result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
             inactivity_timeout=_INACTIVITY_THRESHOLD,
         )
         assert inactivity_result.exit_code == 124
@@ -166,7 +166,7 @@ class TestInactivityTimeoutErrorDistinguishable:
 
         # Explicit timeout: process simply takes too long
         explicit_result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(999)"],
+            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
             timeout=1,
         )
         assert explicit_result.exit_code == 124
@@ -208,7 +208,7 @@ class TestCompletionEventSuppressesInactivityTimeout:
             args=[
                 _PYTHON,
                 "-c",
-                "import sys, time; print('ready', flush=True); time.sleep(999)",
+                "import sys, time; print('ready', flush=True); time.sleep(5)",
             ],
             completion_event=completion_event,
             inactivity_timeout=_INACTIVITY_THRESHOLD,
@@ -240,7 +240,7 @@ class TestInactivityTimeoutWithExplicitTimeout:
             args=[
                 _PYTHON,
                 "-c",
-                "import sys, time; print('output', flush=True); time.sleep(999)",
+                "import sys, time; print('output', flush=True); time.sleep(5)",
             ],
             timeout=30,
             inactivity_timeout=_INACTIVITY_THRESHOLD,
