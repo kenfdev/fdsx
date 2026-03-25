@@ -1,0 +1,219 @@
+"""Helper utilities for the compiler package."""
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
+
+from fdsx.core.config import _deep_merge
+from fdsx.models.flow import (
+    Flow,
+    ParallelState,
+    PassState,
+    TaskState,
+    WaitState,
+)
+
+if TYPE_CHECKING:
+    from fdsx.core.config import FdsxConfig
+
+
+def _top_level_key(path: str) -> str | None:
+    """Extract the top-level key from a JSONPath like '$.reviews' → 'reviews'."""
+    if path.startswith("$."):
+        path = path[2:]
+    if not path:
+        return None
+    return path.split(".")[0].split("[")[0] or None
+
+
+def _parallel_branch_reducer(current: list, update: list) -> list:
+    """Reducer for parallel branch results that supports reset.
+
+    Branch nodes return ``[result]`` which appends via concatenation.
+    The collector node returns ``[]`` after reading the accumulated
+    results, which resets the list so that a subsequent loop iteration
+    starts with a clean accumulator.
+    """
+    if not update:
+        return []  # reset signal from collector
+    return current + update
+
+
+def _merge_provider_options(
+    config: "FdsxConfig | None",
+    flow: Flow,
+    provider_name: str,
+    task_options: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Merge provider options from three levels: config → workflow → task/branch.
+
+    Args:
+        config: Top-level fdsx configuration (level 1 source).
+        flow: The flow definition carrying workflow-level provider options (level 2).
+        provider_name: Provider name (e.g. 'claude', 'codex', 'opencode').
+        task_options: Per-task or per-branch provider_options dict (level 3).
+
+    Returns:
+        Merged options dict, or None if no options were set at any level.
+    """
+    merged: dict[str, Any] = {}
+
+    # Level 1: Config-level options.
+    # Use exclude_defaults=True so that Pydantic default values (False, [], None)
+    # do not override explicit settings at higher-priority levels.
+    if config is not None and config.providers is not None:
+        config_opts = getattr(config.providers, provider_name, None)
+        if config_opts is not None:
+            merged = _deep_merge(merged, config_opts.model_dump(exclude_defaults=True))
+
+    # Level 2: Workflow-level options (from flow.providers dict).
+    if flow.providers is not None:
+        flow_opts = flow.providers.get(provider_name)
+        if flow_opts is not None:
+            merged = _deep_merge(merged, flow_opts)
+
+    # Level 3: Task/Branch-level options.
+    if task_options is not None:
+        merged = _deep_merge(merged, task_options)
+
+    return merged if merged else None
+
+
+def _extract_result_paths(flow: Flow) -> list[str]:
+    """Extract all result_path fields from a flow."""
+    paths = []
+    for state_name, state in flow.states.items():
+        if isinstance(state, TaskState) and state.result_path:
+            paths.append(state.result_path)
+            if state.extract:
+                paths.append(state.extract.result_path)
+            if state.result_file:
+                paths.append(state.result_file)
+        elif isinstance(state, ParallelState) and state.result_path:
+            paths.append(state.result_path)
+            if state.result_file:
+                paths.append(state.result_file)
+        elif isinstance(state, PassState) and state.aggregate:
+            paths.append(state.aggregate.result_path)
+        elif isinstance(state, WaitState) and state.result_path:
+            paths.append(state.result_path)
+    return paths
+
+
+def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, Any]:
+    """Inject _meta.next_state so list_threads can show the correct current state.
+
+    Stores the name of the node that will execute NEXT so that if the next node
+    crashes before its checkpoint is written, list_threads() can still report the
+    correct CURRENT_STATE for the stopped flow.
+    """
+    next_name = ""
+    if hasattr(state, "next") and state.next:
+        next_name = state.next
+    elif hasattr(state, "end") and state.end:
+        next_name = "__end__"
+    if not next_name:
+        return state_dict
+    meta = state_dict.get("_meta", {})
+    if isinstance(meta, dict):
+        state_dict["_meta"] = {**meta, "next_state": next_name}
+    else:
+        state_dict["_meta"] = {"next_state": next_name}
+    return state_dict
+
+
+def _check_max_iterations(state_name: str, state_def: Any, iteration: int) -> None:
+    """Raise RuntimeError if the state has exceeded its max_iterations limit.
+
+    Called BEFORE execution logic so the flow fails on entry when the limit is hit.
+    """
+    max_iter = getattr(state_def, "max_iterations", None)
+    if max_iter is not None and iteration > max_iter:
+        raise RuntimeError(
+            f"State '{state_name}' reached max_iterations limit ({max_iter})"
+        )
+
+
+def _get_next_state(state: Any) -> str | None:
+    """Get the next state from a state."""
+    if hasattr(state, "next") and state.next:
+        return state.next  # type: ignore[no-any-return]
+    if hasattr(state, "end") and state.end:
+        return "END"
+    return None
+
+
+def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
+    """Build a TypedDict state schema that covers ALL state keys used by the flow.
+
+    LangGraph's _get_updates filters every node's output dict to only keys that
+    are declared as channels in the schema. With a partial schema (only _br_* keys),
+    all workflow variables like $.reviews, $.decision, $.plan_output would be silently
+    dropped by _get_updates. This function declares ALL needed keys:
+
+    1. _br_{state_name} reducer channels (Annotated[list, _parallel_branch_reducer]) for each
+       ParallelState — required for Send API fan-in accumulation.
+    2. All result_path / extract / aggregate top-level keys as LastValue channels.
+    3. Input keys from --input CLI flags.
+    4. _meta internal key.
+
+    Returns `object` (→ __root__ single channel, no filtering) for flows with no
+    ParallelState, since they don't need the Send API reducer channels.
+    """
+    has_parallel = any(isinstance(s, ParallelState) for s in flow.states.values())
+    if not has_parallel:
+        return object
+
+    annotations: dict[str, Any] = {}
+
+    # 1. Reducer channels for parallel branch result accumulation
+    for state_name, state in flow.states.items():
+        if isinstance(state, ParallelState):
+            annotations[f"_br_{state_name}"] = Annotated[
+                list, _parallel_branch_reducer
+            ]
+
+    # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
+    for state_name, state in flow.states.items():
+        if isinstance(state, TaskState) and state.result_path:
+            k = _top_level_key(state.result_path)
+            if k:
+                annotations.setdefault(k, Any)
+            if state.extract:
+                k = _top_level_key(state.extract.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
+            if state.result_file:
+                k = _top_level_key(state.result_file)
+                if k:
+                    annotations.setdefault(k, Any)
+        elif isinstance(state, ParallelState) and state.result_path:
+            k = _top_level_key(state.result_path)
+            if k:
+                annotations.setdefault(k, Any)
+            if state.result_file:
+                k = _top_level_key(state.result_file)
+                if k:
+                    annotations.setdefault(k, Any)
+        elif isinstance(state, PassState):
+            if state.aggregate:
+                k = _top_level_key(state.aggregate.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
+            if state.parameters:
+                for target in state.parameters:
+                    k = _top_level_key(str(target))
+                    if k:
+                        annotations.setdefault(k, Any)
+        elif isinstance(state, WaitState) and state.result_path:
+            k = _top_level_key(state.result_path)
+            if k:
+                annotations.setdefault(k, Any)
+
+    # 3. Input keys from --input CLI flags
+    if input_keys:
+        for key in input_keys:
+            annotations.setdefault(key, Any)
+
+    # 4. Internal tracking keys
+    annotations.setdefault("_meta", Any)
+    annotations.setdefault("_state_iterations", Any)
+
+    return TypedDict("FlowState", annotations, total=False)  # type: ignore[no-any-return,operator]

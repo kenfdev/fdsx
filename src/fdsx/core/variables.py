@@ -4,6 +4,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from fdsx.core.paths import parse_jsonpath
 from fdsx.models.flow import Branch, Flow, ParallelState, State
 
 # Sub-directory inside run_dir where result files are written
@@ -93,7 +94,7 @@ def resolve_jsonpath(path: str, data: dict[str, Any]) -> Any:
 
     current = data
 
-    parts = _parse_jsonpath(path)
+    parts = parse_jsonpath(path)
 
     for part in parts:
         if isinstance(current, dict):
@@ -115,47 +116,6 @@ def resolve_jsonpath(path: str, data: dict[str, Any]) -> Any:
     return current
 
 
-def _parse_jsonpath(path: str) -> list[str | int]:
-    """Parse a JSONPath string into parts.
-
-    Converts 'reviews[0].summary' into ['reviews', 0, 'summary']
-    """
-    parts: list[str | int] = []
-    current = ""
-    i = 0
-
-    while i < len(path):
-        char = path[i]
-
-        if char == ".":
-            if current:
-                parts.append(current)
-                current = ""
-        elif char == "[":
-            if current:
-                parts.append(current)
-                current = ""
-            i += 1
-            bracket_content = ""
-            while i < len(path) and path[i] != "]":
-                bracket_content += path[i]
-                i += 1
-            if bracket_content:
-                try:
-                    parts.append(int(bracket_content))
-                except ValueError:
-                    parts.append(bracket_content.strip("\"'"))
-        else:
-            current += char
-
-        i += 1
-
-    if current:
-        parts.append(current)
-
-    return parts
-
-
 def set_jsonpath(path: str, data: dict[str, Any], value: Any) -> dict[str, Any]:
     """Set a value at a JSONPath location.
 
@@ -169,7 +129,7 @@ def set_jsonpath(path: str, data: dict[str, Any], value: Any) -> dict[str, Any]:
     if path.startswith("$."):
         path = path[2:]
 
-    parts = _parse_jsonpath(path)
+    parts = parse_jsonpath(path)
 
     if not parts:
         result = {}
@@ -242,9 +202,9 @@ def _is_var_satisfied(var: str, available: set[str]) -> bool:
     - Descendant: ``review`` satisfied by ``review.summary`` (parent object exists)
     - Bracket notation: ``reviews[0].summary`` satisfied by ``reviews``
     """
-    var_parts = _parse_jsonpath(var)
+    var_parts = parse_jsonpath(var)
     for provided in available:
-        prov_parts = _parse_jsonpath(provided)
+        prov_parts = parse_jsonpath(provided)
         # Exact match
         if var_parts == prov_parts:
             return True
@@ -272,44 +232,9 @@ def analyze_variable_references(
     references in prompts correspond to a result_path set by a
     preceding state on at least one reachable path.
     """
+    from fdsx.core.graph_utils import get_next_states
+
     errors: list[str] = []
-
-    def get_next_states(state: State) -> set[str]:
-        result = set()
-        from fdsx.models.flow import (
-            TaskState,
-            ChoiceState,
-            ParallelState,
-            PassState,
-            WaitState,
-        )
-
-        if isinstance(state, TaskState):
-            if state.next:
-                result.add(state.next)
-            if state.end:
-                result.add("$END")
-        elif isinstance(state, ChoiceState):
-            for choice in state.choices:
-                result.add(choice.next)
-            if state.default:
-                result.add(state.default)
-        elif isinstance(state, ParallelState):
-            if state.next:
-                result.add(state.next)
-            if state.end:
-                result.add("$END")
-        elif isinstance(state, PassState):
-            if state.next:
-                result.add(state.next)
-            if state.end:
-                result.add("$END")
-        elif isinstance(state, WaitState):
-            if state.next:
-                result.add(state.next)
-            if state.end:
-                result.add("$END")
-        return result
 
     def get_prompt_variables(state: State | Branch) -> set[str]:
         variables: set[str] = set()
@@ -405,7 +330,7 @@ def analyze_variable_references(
 
         reachable_states.add(current)
         state = flow.states[current]
-        next_states = get_next_states(state)
+        next_states = get_next_states(state, include_end_sentinel=True)
         state_queue.extend(next_states - reachable_states)
 
     state_provides: dict[str, set[str]] = {}
@@ -416,7 +341,7 @@ def analyze_variable_references(
     predecessors: dict[str, set[str]] = {s: set() for s in reachable_states}
     for state_name in reachable_states:
         state = flow.states[state_name]
-        next_states = get_next_states(state)
+        next_states = get_next_states(state, include_end_sentinel=True)
         for next_state in next_states:
             if next_state in predecessors:
                 predecessors[next_state].add(state_name)

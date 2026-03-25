@@ -105,8 +105,8 @@ class TestWrapWithHooksOnStart:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
-            with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
                 mock_write.return_value = tmp_path / "input.json"
                 result = wrapped({"x": 1})
 
@@ -133,12 +133,12 @@ class TestWrapWithHooksOnStart:
 
         call_order: list[str] = []
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.side_effect = lambda *a, **kw: (
                 call_order.append(f"write:{kw.get('filename', '')}"),
                 tmp_path / kw.get("filename", "out.json"),
             )[-1]
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 mock_exec.side_effect = lambda *a, **kw: call_order.append("exec_hook")
                 wrapped({"y": 2})
 
@@ -161,8 +161,8 @@ class TestWrapWithHooksOnComplete:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
-            with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
                 mock_write.return_value = tmp_path / "out.json"
                 result = wrapped({"a": 1})
 
@@ -186,12 +186,12 @@ class TestWrapWithHooksOnComplete:
 
         call_order: list[str] = []
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.side_effect = lambda *a, **kw: (
                 call_order.append(f"write:{kw.get('filename', '')}"),
                 tmp_path / kw.get("filename", "out.json"),
             )[-1]
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 mock_exec.side_effect = lambda *a, **kw: call_order.append("exec_hook")
                 wrapped({"z": 3})
 
@@ -223,8 +223,8 @@ class TestWrapWithHooksBothEvents:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
-            with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
                 mock_write.return_value = tmp_path / "x.json"
                 wrapped({"input": "value"})
 
@@ -251,9 +251,9 @@ class TestWrapWithHooksDataFiles:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "in.json"
-            with patch("fdsx.core.compiler.execute_hooks"):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 wrapped({"val": 42})
 
         # First call = input.json
@@ -279,9 +279,9 @@ class TestWrapWithHooksDataFiles:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "out.json"
-            with patch("fdsx.core.compiler.execute_hooks"):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 wrapped({"in": "data"})
 
         # Second call = output.json, data = node result
@@ -313,9 +313,9 @@ class TestWrapWithHooksAbortBehavior:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "in.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 mock_exec.side_effect = HookAbortError("fail-script", 1)
                 with pytest.raises(HookAbortError):
                     wrapped({"x": 1})
@@ -342,9 +342,9 @@ class TestWrapWithHooksAbortBehavior:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "out.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 mock_exec.side_effect = HookAbortError("fail-after", 2)
                 with pytest.raises(HookAbortError):
                     wrapped({"x": 1})
@@ -374,9 +374,9 @@ class TestWrapWithHooksNodeFailure:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "out.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 with pytest.raises(RuntimeError, match="node exploded"):
                     wrapped({"x": 1})
 
@@ -404,9 +404,9 @@ class TestWrapWithHooksNodeFailure:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "out.json"
-            with patch("fdsx.core.compiler.execute_hooks"):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 with pytest.raises(ValueError) as exc_info:
                     wrapped({})
 
@@ -437,8 +437,8 @@ class TestWrapWithHooksNodeFailure:
             write_data_calls.append({"data": data, "filename": filename})
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.write_hook_data", side_effect=fake_write):
-            with patch("fdsx.core.compiler.execute_hooks"):
+        with patch("fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 with pytest.raises(RuntimeError):
                     wrapped({"original": "state"})
 
@@ -469,9 +469,9 @@ class TestWrapWithHooksNodeFailure:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "x.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 with pytest.raises(RuntimeError):
                     wrapped({"k": "v"})
 
@@ -496,9 +496,9 @@ class TestWrapWithHooksRecorderFallback:
             fdsx_base_dir=tmp_path,
         )
 
-        with patch("fdsx.core.compiler.write_hook_data") as mock_write:
+        with patch("fdsx.core.compiler.compile.write_hook_data") as mock_write:
             mock_write.return_value = tmp_path / "in.json"
-            with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+            with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
                 wrapped({"k": "v"})
 
         write_kwargs = mock_write.call_args_list[0][1]
@@ -561,9 +561,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(
                     flow,
@@ -623,9 +623,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "flow-hook-tid"}}
@@ -682,9 +682,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(
                     flow, recorder=recorder, config=fdsx_config, log_dir=log_dir
@@ -746,9 +746,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(
                     flow, recorder=recorder, config=fdsx_config, log_dir=log_dir
@@ -789,7 +789,7 @@ states:
         recorder = _make_recorder(thread_id="no-hook-tid")
         log_dir = tmp_path / ".fdsx" / "runs" / "no-hook-tid" / "logs"
 
-        with patch("fdsx.core.compiler.execute_hooks") as mock_exec:
+        with patch("fdsx.core.compiler.compile.execute_hooks") as mock_exec:
             compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
             config_dict = {"configurable": {"thread_id": "no-hook-tid"}}
             list(
@@ -835,9 +835,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "pass-tid"}}
@@ -903,9 +903,9 @@ states:
         def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
             return tmp_path / filename
 
-        with patch("fdsx.core.compiler.execute_hooks", side_effect=fake_execute_hooks):
+        with patch("fdsx.core.compiler.compile.execute_hooks", side_effect=fake_execute_hooks):
             with patch(
-                "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+                "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
             ):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "par-tid"}}
@@ -958,9 +958,9 @@ states:
             return tmp_path / filename
 
         with patch(
-            "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
         ):
-            with patch("fdsx.core.compiler.execute_hooks"):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
                 config_dict = {"configurable": {"thread_id": "test-tid"}}
                 list(
@@ -1005,9 +1005,9 @@ states:
             return tmp_path / filename
 
         with patch(
-            "fdsx.core.compiler.write_hook_data", side_effect=fake_write_hook_data
+            "fdsx.core.compiler.compile.write_hook_data", side_effect=fake_write_hook_data
         ):
-            with patch("fdsx.core.compiler.execute_hooks"):
+            with patch("fdsx.core.compiler.compile.execute_hooks"):
                 compiled = compile_flow(flow, recorder=recorder, log_dir=None)
                 config_dict = {"configurable": {"thread_id": "none-logdir-tid"}}
                 list(

@@ -2,44 +2,8 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from fdsx.core.paths import parse_jsonpath
 from fdsx.models.validators import validate_llm_provider
-
-
-def _parse_path_segments(path: str) -> list[str | int]:
-    """Parse a JSONPath-like string into typed segments.
-
-    Handles dot notation (a.b) and bracket notation (a[0], a["key"]).
-    Note: duplicated from variables._parse_jsonpath to avoid circular import.
-    """
-    parts: list[str | int] = []
-    current = ""
-    i = 0
-    while i < len(path):
-        char = path[i]
-        if char == ".":
-            if current:
-                parts.append(current)
-                current = ""
-        elif char == "[":
-            if current:
-                parts.append(current)
-                current = ""
-            i += 1
-            bracket = ""
-            while i < len(path) and path[i] != "]":
-                bracket += path[i]
-                i += 1
-            if bracket:
-                try:
-                    parts.append(int(bracket))
-                except ValueError:
-                    parts.append(bracket.strip("\"'"))
-        else:
-            current += char
-        i += 1
-    if current:
-        parts.append(current)
-    return parts
 
 
 class LLMClassifyFallback(BaseModel):
@@ -211,7 +175,7 @@ class Branch(BaseModel):
         ep = self.extract.result_path
         if ep.startswith("$."):
             ep = ep[2:]
-        parts = _parse_path_segments(ep)
+        parts = parse_jsonpath(ep)
         first_segment = parts[0] if parts else ""
         reserved = {"output", "exit_code", "error"}
         if isinstance(first_segment, str) and first_segment in reserved:
@@ -331,8 +295,8 @@ class TaskState(BaseModel):
         ep = self.extract.result_path
         if ep.startswith("$."):
             ep = ep[2:]
-        rp_parts = _parse_path_segments(rp)
-        ep_parts = _parse_path_segments(ep)
+        rp_parts = parse_jsonpath(rp)
+        ep_parts = parse_jsonpath(ep)
         min_len = min(len(rp_parts), len(ep_parts))
         if rp_parts[:min_len] == ep_parts[:min_len]:
             raise ValueError(
@@ -481,26 +445,7 @@ class Flow(BaseModel):
 
     @model_validator(mode="after")
     def validate_all_next_references(self) -> "Flow":
-        def get_next_states(state: State) -> set[str]:
-            result = set()
-            if isinstance(state, TaskState):
-                if state.next:
-                    result.add(state.next)
-            elif isinstance(state, ChoiceState):
-                for choice in state.choices:
-                    result.add(choice.next)
-                if state.default:
-                    result.add(state.default)
-            elif isinstance(state, ParallelState):
-                if state.next:
-                    result.add(state.next)
-            elif isinstance(state, PassState):
-                if state.next:
-                    result.add(state.next)
-            elif isinstance(state, WaitState):
-                if state.next:
-                    result.add(state.next)
-            return result
+        from fdsx.core.graph_utils import get_next_states
 
         all_references: set[str] = set()
         for state_name, state in self.states.items():
@@ -514,36 +459,7 @@ class Flow(BaseModel):
 
     @model_validator(mode="after")
     def validate_termination(self) -> "Flow":
-        def get_next_states(state: State) -> set[str]:
-            result = set()
-            if isinstance(state, TaskState):
-                if state.next:
-                    result.add(state.next)
-                if state.end:
-                    result.add("$END")
-            elif isinstance(state, ChoiceState):
-                for choice in state.choices:
-                    result.add(choice.next)
-                if state.default:
-                    result.add(state.default)
-                if state.default is None:
-                    result.add("$END")
-            elif isinstance(state, ParallelState):
-                if state.next:
-                    result.add(state.next)
-                if state.end:
-                    result.add("$END")
-            elif isinstance(state, PassState):
-                if state.next:
-                    result.add(state.next)
-                if state.end:
-                    result.add("$END")
-            elif isinstance(state, WaitState):
-                if state.next:
-                    result.add(state.next)
-                if state.end:
-                    result.add("$END")
-            return result
+        from fdsx.core.graph_utils import get_next_states
 
         def reaches_termination(start: str, visited: set[str]) -> bool:
             stack = [start]
@@ -557,7 +473,7 @@ class Flow(BaseModel):
                 state = self.states.get(current)
                 if state is None:
                     continue
-                next_states = get_next_states(state)
+                next_states = get_next_states(state, include_end_sentinel=True)
                 stack.extend(next_states - visited)
             return False
 
