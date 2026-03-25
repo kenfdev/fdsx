@@ -66,27 +66,27 @@
 
 #### 4a: Decompose engine.py
 
-- [ ] T018 Create `src/fdsx/core/engine/` package directory. Create `src/fdsx/core/engine/validate.py` with `FlowValidationError` class and `validate_flow()` function extracted from `src/fdsx/core/engine.py` (lines 36-39, 619-629)
-- [ ] T019 Create `src/fdsx/core/engine/results.py` with `_extract_results`, `_sanitize_state_for_log`, `_calc_elapsed`, `_find_failed_state` extracted from `src/fdsx/core/engine.py` (lines 224-289)
-- [ ] T020 Create `src/fdsx/core/engine/interrupts.py` with shared interrupt-handling loop extracted from both `run_flow` (lines 158-185) and `resume_flow` (lines 559-580). Implement as `handle_interrupts(graph, config, stream_mode="values") -> dict[str, Any]` that encapsulates the while-loop pattern: get_state → find interrupt → display_wait_prompt → stream Command(resume=...)
-- [ ] T021 Create `src/fdsx/core/engine/run.py` with `run_flow()` extracted from `src/fdsx/core/engine.py` (lines 42-221). Import `handle_interrupts` from `interrupts.py`, result helpers from `results.py`, `FlowValidationError` from `validate.py`
-- [ ] T022 Create `src/fdsx/core/engine/resume.py` with `resume_flow()` extracted from `src/fdsx/core/engine.py` (lines 400-616). Import `handle_interrupts` from `interrupts.py`, result helpers from `results.py`
-- [ ] T023 Create `src/fdsx/core/engine/batch.py` with `run_batch()` extracted from `src/fdsx/core/engine.py` (lines 292-397). Import `run_flow` from `run.py`, `FlowValidationError` from `validate.py`
-- [ ] T024 Create `src/fdsx/core/engine/tasks_dir.py` with `run_tasks_dir()`, `load_tasks_dir()`, `_filter_actionable_entries()`, `_update_task_status()`, `_workflow_persist_id()` extracted from `src/fdsx/core/engine.py` (lines 632-1022)
-- [ ] T025 Write `src/fdsx/core/engine/__init__.py` as a silent re-export facade — re-export all public names: `run_flow`, `resume_flow`, `run_batch`, `run_tasks_dir`, `load_tasks_dir`, `validate_flow`, `FlowValidationError`. Delete the original `src/fdsx/core/engine.py` file
-- [ ] T026 Run full test suite (`pytest tests/`) and verify all imports still work, zero regressions
+- [x] T018 Create `src/fdsx/core/engine/` package directory. Create `src/fdsx/core/engine/validate.py` with `FlowValidationError` class and `validate_flow()` function extracted from `src/fdsx/core/engine.py` (lines 36-39, 619-629)
+- [x] T019 Create `src/fdsx/core/engine/results.py` with `_extract_results`, `_sanitize_state_for_log`, `_calc_elapsed`, `_find_failed_state` extracted from `src/fdsx/core/engine.py` (lines 224-289)
+- [x] T020 Create `src/fdsx/core/engine/interrupts.py` with shared interrupt-handling loop extracted from both `run_flow` (lines 158-185) and `resume_flow` (lines 559-580). Implement as `handle_interrupts(graph, config, stream_mode="values") -> dict[str, Any]` that encapsulates the while-loop pattern: get_state → find interrupt → display_wait_prompt → stream Command(resume=...)
+- [x] T021 Create `src/fdsx/core/engine/run.py` with `run_flow()` extracted from `src/fdsx/core/engine.py` (lines 42-221). Import `handle_interrupts` from `interrupts.py`, result helpers from `results.py`, `FlowValidationError` from `validate.py`
+- [x] T022 Create `src/fdsx/core/engine/resume.py` with `resume_flow()` extracted from `src/fdsx/core/engine.py` (lines 400-616). Import `handle_interrupts` from `interrupts.py`, result helpers from `results.py`
+- [x] T023 Create `src/fdsx/core/engine/batch.py` with `run_batch()` extracted from `src/fdsx/core/engine.py` (lines 292-397). Import `run_flow` from `run.py`, `FlowValidationError` from `validate.py`
+- [x] T024 Create `src/fdsx/core/engine/tasks_dir.py` with `run_tasks_dir()`, `load_tasks_dir()`, `_filter_actionable_entries()`, `_update_task_status()`, `_workflow_persist_id()` extracted from `src/fdsx/core/engine.py` (lines 632-1022)
+- [x] T025 Write `src/fdsx/core/engine/__init__.py` as a silent re-export facade — re-export all public names: `run_flow`, `resume_flow`, `run_batch`, `run_tasks_dir`, `load_tasks_dir`, `validate_flow`, `FlowValidationError`. Delete the original `src/fdsx/core/engine.py` file
+- [x] T026 Run full test suite (`pytest tests/`) and verify all imports still work, zero regressions
 
 #### 4b: Decompose compiler.py
 
-- [ ] T027 Create `src/fdsx/core/compiler/` package directory. Create `src/fdsx/core/compiler/helpers.py` with `_top_level_key`, `_parallel_branch_reducer`, `_merge_provider_options`, `_extract_result_paths`, `_set_next_state_meta`, `_check_max_iterations`, `_get_next_state` extracted from `src/fdsx/core/compiler.py`
-- [ ] T028 Create `src/fdsx/core/compiler/routing.py` with `_create_routing_function` and `_evaluate_condition` extracted from `src/fdsx/core/compiler.py` (lines 1225-1262). Also move `_resolve_jsonpath` (line 1242) here
-- [ ] T029 Create `src/fdsx/core/compiler/aggregation.py` with `_aggregate` function extracted from `src/fdsx/core/compiler.py` (lines 1063-1101)
-- [ ] T030 Move `src/fdsx/core/execution.py` to `src/fdsx/core/compiler/execution.py`. Update imports in compiler modules
-- [ ] T031 Create `src/fdsx/core/compiler/nodes.py` with `_create_task_node`, `_create_choice_node`, `_create_pass_node`, `_create_wait_notify_node`, `_create_wait_interrupt_node` extracted from `src/fdsx/core/compiler.py`. Import `execute_with_retry` from `execution.py`, helpers from `helpers.py`
-- [ ] T032 Create `src/fdsx/core/compiler/parallel.py` with `_create_dispatch_node`, `_create_branch_executor`, `_create_fan_out`, `_create_collector_node` extracted from `src/fdsx/core/compiler.py`. Import `execute_with_retry` from `execution.py`, `_aggregate` from `aggregation.py`
-- [ ] T033 Create `src/fdsx/core/compiler/compile.py` with `compile_flow()`, `CompiledGraph`, `FlowState`, `_build_state_schema`, `_wrap_with_hooks`, `_collect_state_hooks` logic extracted from `src/fdsx/core/compiler.py` (lines 44-431). Import node creators from `nodes.py`, `parallel.py`, routing from `routing.py`
-- [ ] T034 Write `src/fdsx/core/compiler/__init__.py` as a silent re-export facade — re-export `compile_flow`, `CompiledGraph`. Delete the original `src/fdsx/core/compiler.py` file
-- [ ] T035 Update any test files that import internal compiler/engine functions to use new paths (only if re-exports don't cover them). Run full test suite (`pytest tests/`) and verify zero regressions
+- [x] T027 Create `src/fdsx/core/compiler/` package directory. Create `src/fdsx/core/compiler/helpers.py` with `_top_level_key`, `_parallel_branch_reducer`, `_merge_provider_options`, `_extract_result_paths`, `_set_next_state_meta`, `_check_max_iterations`, `_get_next_state` extracted from `src/fdsx/core/compiler.py`
+- [x] T028 Create `src/fdsx/core/compiler/routing.py` with `_create_routing_function` and `_evaluate_condition` extracted from `src/fdsx/core/compiler.py` (lines 1225-1262). Also move `_resolve_jsonpath` (line 1242) here
+- [x] T029 Create `src/fdsx/core/compiler/aggregation.py` with `_aggregate` function extracted from `src/fdsx/core/compiler.py` (lines 1063-1101)
+- [x] T030 Move `src/fdsx/core/execution.py` to `src/fdsx/core/compiler/execution.py`. Update imports in compiler modules
+- [x] T031 Create `src/fdsx/core/compiler/nodes.py` with `_create_task_node`, `_create_choice_node`, `_create_pass_node`, `_create_wait_notify_node`, `_create_wait_interrupt_node` extracted from `src/fdsx/core/compiler.py`. Import `execute_with_retry` from `execution.py`, helpers from `helpers.py`
+- [x] T032 Create `src/fdsx/core/compiler/parallel.py` with `_create_dispatch_node`, `_create_branch_executor`, `_create_fan_out`, `_create_collector_node` extracted from `src/fdsx/core/compiler.py`. Import `execute_with_retry` from `execution.py`, `_aggregate` from `aggregation.py`
+- [x] T033 Create `src/fdsx/core/compiler/compile.py` with `compile_flow()`, `CompiledGraph`, `FlowState`, `_build_state_schema`, `_wrap_with_hooks`, `_collect_state_hooks` logic extracted from `src/fdsx/core/compiler.py` (lines 44-431). Import node creators from `nodes.py`, `parallel.py`, routing from `routing.py`
+- [x] T034 Write `src/fdsx/core/compiler/__init__.py` as a silent re-export facade — re-export `compile_flow`, `CompiledGraph`. Delete the original `src/fdsx/core/compiler.py` file
+- [x] T035 Update any test files that import internal compiler/engine functions to use new paths (only if re-exports don't cover them). Run full test suite (`pytest tests/`) and verify zero regressions
 
 ---
 
@@ -98,12 +98,12 @@
 
 ### Tasks
 
-- [ ] T036 Write integration tests for signal handling in `tests/integration/test_signal_handling.py` — test SIGINT cleanup (spawn fdsx with system provider running `sleep 60`, send SIGINT after 2s, verify no orphan processes and lock cleaned up), test checkpoint preservation after SIGINT, test "workflow interrupted" message output. Use `subprocess.Popen` + `os.kill(pid, signal.SIGINT)`. Add `pytest-timeout` marker as safety net
-- [ ] T037 Create `src/fdsx/core/engine/signals.py` with `SignalHandler` context manager. `__enter__`: save previous SIGINT/SIGTERM handlers via `signal.signal()`, register custom handler. `__exit__`: restore previous handlers. Handler logic: propagate signal to active subprocess → wait 5s → SIGKILL escalation → release lock → print message → `sys.exit(128 + signum)`
-- [ ] T038 Integrate signal handler into `src/fdsx/core/engine/run.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
-- [ ] T039 Integrate signal handler into `src/fdsx/core/engine/resume.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
-- [ ] T040 Wire subprocess registration in `src/fdsx/providers/base.py` — add optional `on_process_start: Callable[[subprocess.Popen], None] | None = None` parameter to `_run_subprocess`. Call it after `Popen()` creation. Thread the callback from `SignalHandler.set_active_process` through the provider execute chain
-- [ ] T041 Run full test suite (`pytest tests/`) and verify zero regressions + signal handling tests pass
+- [x] T036 Write integration tests for signal handling in `tests/integration/test_signal_handling.py` — test SIGINT cleanup (spawn fdsx with system provider running `sleep 60`, send SIGINT after 2s, verify no orphan processes and lock cleaned up), test checkpoint preservation after SIGINT, test "workflow interrupted" message output. Use `subprocess.Popen` + `os.kill(pid, signal.SIGINT)`. Add `pytest-timeout` marker as safety net
+- [x] T037 Create `src/fdsx/core/engine/signals.py` with `SignalHandler` context manager. `__enter__`: save previous SIGINT/SIGTERM handlers via `signal.signal()`, register custom handler. `__exit__`: restore previous handlers. Handler logic: propagate signal to active subprocess → wait 5s → SIGKILL escalation → release lock → print message → `sys.exit(128 + signum)`
+- [x] T038 Integrate signal handler into `src/fdsx/core/engine/run.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
+- [x] T039 Integrate signal handler into `src/fdsx/core/engine/resume.py` — wrap the `graph.stream()` execution in `SignalHandler` context. Pass `checkpoint_manager` and `thread_id` to the handler
+- [x] T040 Wire subprocess registration in `src/fdsx/providers/base.py` — add optional `on_process_start: Callable[[subprocess.Popen], None] | None = None` parameter to `_run_subprocess`. Call it after `Popen()` creation. Thread the callback from `SignalHandler.set_active_process` through the provider execute chain
+- [x] T041 Run full test suite (`pytest tests/`) and verify zero regressions + signal handling tests pass
 
 ---
 
@@ -113,11 +113,11 @@
 
 ### Tasks
 
-- [ ] T042 Run full test suite (`pytest tests/ -v`) — all unit and integration tests pass
-- [ ] T043 Verify no source file exceeds ~400 lines: `find src/fdsx -name "*.py" -exec wc -l {} + | sort -rn | head -10`
-- [ ] T044 Verify no duplicated functions: `grep -rn "def get_next_states\|def _parse_path_segments\|def _parse_jsonpath" src/` returns exactly 2 definitions (one each in `paths.py` and `graph_utils.py`)
-- [ ] T045 Verify backward compatibility: `python -c "from fdsx.core.engine import run_flow, resume_flow, run_batch, validate_flow; from fdsx.core.compiler import compile_flow, CompiledGraph; print('OK')"` succeeds
-- [ ] T046 Run linting and type checks: `ruff check src/ tests/` and `mypy src/fdsx/` pass clean
+- [x] T042 Run full test suite (`pytest tests/ -v`) — all unit and integration tests pass
+- [x] T043 Verify no source file exceeds ~400 lines: `find src/fdsx -name "*.py" -exec wc -l {} + | sort -rn | head -10`
+- [x] T044 Verify no duplicated functions: `grep -rn "def get_next_states\|def _parse_path_segments\|def _parse_jsonpath" src/` returns exactly 2 definitions (one each in `paths.py` and `graph_utils.py`)
+- [x] T045 Verify backward compatibility: `python -c "from fdsx.core.engine import run_flow, resume_flow, run_batch, validate_flow; from fdsx.core.compiler import compile_flow, CompiledGraph; print('OK')"` succeeds
+- [x] T046 Run linting and type checks: `ruff check src/ tests/` and `mypy src/fdsx/` pass clean
 - [ ] T047 Manual smoke test: run a sample workflow with Ctrl+C during provider execution. Verify no orphan processes, lock cleaned up, checkpoint preserved
 
 ---

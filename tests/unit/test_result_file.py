@@ -257,10 +257,10 @@ class TestMetaRunDir:
         try:
             os.chdir(flow_path.parent)
             with (
-                patch("fdsx.core.engine.compile_flow", return_value=mock_compiled),
-                patch("fdsx.core.engine.RunRecorder") as mock_recorder_cls,
-                patch("fdsx.core.engine.display_completion_summary"),
-                patch("fdsx.core.engine.load_config"),
+                patch("fdsx.core.engine.run.compile_flow", return_value=mock_compiled),
+                patch("fdsx.core.engine.run.RunRecorder") as mock_recorder_cls,
+                patch("fdsx.core.engine.run.display_completion_summary"),
+                patch("fdsx.core.engine.run.load_config"),
             ):
                 mock_recorder_instance = MagicMock()
                 mock_recorder_instance.started_at = "2026-01-01T00:00:00+00:00"
@@ -461,8 +461,8 @@ class TestTaskNodeResultFileWiring:
         flow.providers = None
 
         with (
-            patch.object(compiler, "get_provider") as mock_get_provider,
-            patch("fdsx.core.compiler.write_result_to_file", mock_write),
+            patch("fdsx.core.compiler.nodes.get_provider") as mock_get_provider,
+            patch("fdsx.core.compiler.nodes.write_result_to_file", mock_write),
         ):
             mock_provider = MagicMock()
             mock_provider.execute.return_value = MagicMock(
@@ -563,7 +563,7 @@ class TestCollectorNodeResultFileWiring:
 
         flow = MagicMock(spec=Flow)
 
-        with patch("fdsx.core.compiler.write_result_to_file", mock_write):
+        with patch("fdsx.core.compiler.parallel.write_result_to_file", mock_write):
             node_fn = compiler._create_collector_node(state_name, state, flow, None)
             return node_fn(state_dict)
 

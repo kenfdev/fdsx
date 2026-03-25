@@ -3,23 +3,20 @@ from unittest.mock import MagicMock, patch
 from fdsx.providers.base import ProviderResult
 
 
-def _patch_sleep(compiler_mod, execution_mod, sleep_times):
-    """Patch time.sleep in both compiler and execution modules.
+def _patch_sleep(execution_mod, sleep_times):
+    """Patch time.sleep in the execution module.
 
-    After the retry loop was extracted to execution.py, time.sleep is called
-    from that module. We patch both to be safe.
+    time.sleep is only called from execution.py inside execute_with_retry.
     """
-    orig_compiler_sleep = compiler_mod.time.sleep
     orig_execution_sleep = execution_mod.time.sleep
-    recorder = lambda s: sleep_times.append(s)
-    compiler_mod.time.sleep = recorder
+    def recorder(s):
+        sleep_times.append(s)
     execution_mod.time.sleep = recorder
-    return orig_compiler_sleep, orig_execution_sleep
+    return orig_execution_sleep
 
 
-def _restore_sleep(compiler_mod, execution_mod, originals):
-    compiler_mod.time.sleep = originals[0]
-    execution_mod.time.sleep = originals[1]
+def _restore_sleep(execution_mod, originals):
+    execution_mod.time.sleep = originals
 
 
 class TestExponentialBackoff:
@@ -28,7 +25,7 @@ class TestExponentialBackoff:
     def test_backoff_delays_for_retries(self):
         """Verify backoff delays (1, 2, 4 seconds) for 3 retries."""
         import fdsx.core.compiler as compiler
-        import fdsx.core.execution as execution
+        import fdsx.core.compiler.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -56,19 +53,19 @@ class TestExponentialBackoff:
                 return ProviderResult(exit_code=1, stdout="", stderr="error")
             return ProviderResult(exit_code=0, stdout="success", stderr="")
 
-        with patch.object(compiler, "get_provider") as mock_get_provider:
+        with patch("fdsx.core.compiler.nodes.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            originals = _patch_sleep(compiler, execution, sleep_times)
+            originals = _patch_sleep(execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                _restore_sleep(compiler, execution, originals)
+                _restore_sleep(execution, originals)
 
             assert len(sleep_times) == 3
             assert sleep_times == [1, 2, 4]
@@ -76,7 +73,7 @@ class TestExponentialBackoff:
     def test_first_attempt_has_no_delay(self):
         """Verify first attempt has no delay."""
         import fdsx.core.compiler as compiler
-        import fdsx.core.execution as execution
+        import fdsx.core.compiler.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -104,26 +101,26 @@ class TestExponentialBackoff:
                 return ProviderResult(exit_code=1, stdout="", stderr="error")
             return ProviderResult(exit_code=0, stdout="success", stderr="")
 
-        with patch.object(compiler, "get_provider") as mock_get_provider:
+        with patch("fdsx.core.compiler.nodes.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            originals = _patch_sleep(compiler, execution, sleep_times)
+            originals = _patch_sleep(execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                _restore_sleep(compiler, execution, originals)
+                _restore_sleep(execution, originals)
 
             assert len(sleep_times) == 1
 
     def test_exception_triggers_retry_with_backoff(self):
         """Verify timeout exception triggers retry with backoff."""
         import fdsx.core.compiler as compiler
-        import fdsx.core.execution as execution
+        import fdsx.core.compiler.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -151,19 +148,19 @@ class TestExponentialBackoff:
                 raise TimeoutError("Command timed out")
             return ProviderResult(exit_code=0, stdout="success", stderr="")
 
-        with patch.object(compiler, "get_provider") as mock_get_provider:
+        with patch("fdsx.core.compiler.nodes.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            originals = _patch_sleep(compiler, execution, sleep_times)
+            originals = _patch_sleep(execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                _restore_sleep(compiler, execution, originals)
+                _restore_sleep(execution, originals)
 
             assert len(sleep_times) == 2
             assert sleep_times == [1, 2]
@@ -171,7 +168,7 @@ class TestExponentialBackoff:
     def test_backoff_capped_at_30_seconds(self):
         """Verify cap at 30s for high retry counts."""
         import fdsx.core.compiler as compiler
-        import fdsx.core.execution as execution
+        import fdsx.core.compiler.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -197,19 +194,19 @@ class TestExponentialBackoff:
             call_count += 1
             return ProviderResult(exit_code=1, stdout="", stderr="error")
 
-        with patch.object(compiler, "get_provider") as mock_get_provider:
+        with patch("fdsx.core.compiler.nodes.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            originals = _patch_sleep(compiler, execution, sleep_times)
+            originals = _patch_sleep(execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                _restore_sleep(compiler, execution, originals)
+                _restore_sleep(execution, originals)
 
             assert len(sleep_times) == 10
             for i in range(1, 10):
@@ -219,7 +216,7 @@ class TestExponentialBackoff:
     def test_branch_executor_backoff(self):
         """Verify branch executor also uses exponential backoff."""
         import fdsx.core.compiler as compiler
-        import fdsx.core.execution as execution
+        import fdsx.core.compiler.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {"_branch_index": 0}
@@ -248,12 +245,12 @@ class TestExponentialBackoff:
                 return ProviderResult(exit_code=1, stdout="", stderr="error")
             return ProviderResult(exit_code=0, stdout="success", stderr="")
 
-        with patch.object(compiler, "get_provider") as mock_get_provider:
+        with patch("fdsx.core.compiler.parallel.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            originals = _patch_sleep(compiler, execution, sleep_times)
+            originals = _patch_sleep(execution, sleep_times)
 
             try:
                 compiler._create_branch_executor(
@@ -262,7 +259,7 @@ class TestExponentialBackoff:
             except (RuntimeError, KeyError, TypeError):
                 pass
             finally:
-                _restore_sleep(compiler, execution, originals)
+                _restore_sleep(execution, originals)
 
             assert len(sleep_times) == 2
             assert sleep_times[0] == 1

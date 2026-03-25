@@ -62,7 +62,7 @@ class TestCodexHangingProcessKilledByCompletionEvent:
         )
 
         start = time.time()
-        result = _run_subprocess(
+        _run_subprocess(
             args=[_PYTHON, "-c", script],
             output_callback=stream_callback,
             completion_event=completion_event,

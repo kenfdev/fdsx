@@ -1,5 +1,6 @@
 import json
 import logging
+import subprocess
 import threading
 from typing import Callable, Literal
 
@@ -162,6 +163,7 @@ class CodexProvider(ProviderBase):
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
+        on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ProviderResult:
         """Execute Codex CLI with a prompt.
 
@@ -176,6 +178,7 @@ class CodexProvider(ProviderBase):
                 ``agent_message`` item texts (falling back to partial content
                 on unexpected provider exit).
             stderr_callback: Optional callback for streaming stderr lines
+            on_process_start: Optional callback invoked after Popen creation
 
         Returns:
             ProviderResult with exit code and output
@@ -211,6 +214,7 @@ class CodexProvider(ProviderBase):
                 stdin_data=stdin_data,
                 completion_event=completion_event,
                 inactivity_timeout=effective_inactivity,
+                on_process_start=on_process_start,
             )
             parsed_stdout = get_result()
             if parsed_stdout is not None:
@@ -228,4 +232,5 @@ class CodexProvider(ProviderBase):
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,
             inactivity_timeout=effective_inactivity,
+            on_process_start=on_process_start,
         )

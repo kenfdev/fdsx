@@ -69,11 +69,11 @@ class TestBackwardCompat:
                 stderr="",
             )
 
-            with patch("fdsx.core.engine.load_config", mock_load_config):
+            with patch("fdsx.core.engine.batch.load_config", mock_load_config):
                 with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                    with patch("fdsx.core.engine.display_task_list", return_value=True):
+                    with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
                         with patch(
-                            "fdsx.core.engine.run_flow", return_value={"result": "ok"}
+                            "fdsx.core.engine.batch.run_flow", return_value={"result": "ok"}
                         ):
                             engine.run_batch(workflow_path, tasks_file)
 
@@ -178,9 +178,9 @@ class TestEdgeCases:
         save_task_file(tasks_dir / "002-file2.yaml", tf2)
 
         with patch(
-            "fdsx.core.engine.run_flow", return_value={"result": "ok"}
+            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
         ) as mock_run:
-            with patch("fdsx.core.engine.display_tasks_dir_summary"):
+            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
         mock_run.assert_not_called()
@@ -198,8 +198,8 @@ class TestEdgeCases:
         tf = TaskFile(entries=[TaskEntry(description="single task")])
         save_task_file(tasks_dir / "001-single.yaml", tf)
 
-        with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-            with patch("fdsx.core.engine.display_tasks_dir_summary"):
+        with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
         assert len(results) == 1
@@ -300,9 +300,9 @@ class TestFullPipelineE2E:
                 raise RuntimeError("Simulated crash during feature B")
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
-            with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                with patch("fdsx.core.engine.input", side_effect=["n"]):
+        with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow):
+            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
+                with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
                     results1 = engine.run_tasks_dir(
                         flow_path, tasks_dir, auto_workflow=True
                     )
@@ -326,8 +326,8 @@ class TestFullPipelineE2E:
             run_count_after_resume[0] += 1
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow_resume):
-            with patch("fdsx.core.engine.display_tasks_dir_summary"):
+        with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume):
+            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 results2 = engine.run_tasks_dir(
                     flow_path, tasks_dir, auto_workflow=True
                 )
@@ -375,8 +375,8 @@ class TestFullPipelineE2E:
             )
         created_files = write_task_files(result_groups, tasks_dir)
 
-        with patch("fdsx.core.engine.run_flow", return_value={"result": "ok"}):
-            with patch("fdsx.core.engine.display_tasks_dir_summary"):
+        with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 runner = CliRunner()
                 result = runner.invoke(
                     app,
@@ -494,13 +494,13 @@ class TestFullPipelineE2E:
             def update(self, msg):
                 auto_select_spinners.append(f"update:{msg}")
 
-        with patch("fdsx.core.engine.Spinner", side_effect=_SpinnerCapture):
+        with patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_SpinnerCapture):
             with patch(
-                "fdsx.core.engine.resolve_workflow_for_task", side_effect=mock_resolve
+                "fdsx.core.selector.resolve_workflow_for_task", side_effect=mock_resolve
             ):
-                with patch("fdsx.core.engine.run_flow", side_effect=mock_run_flow):
-                    with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                        with patch("fdsx.core.engine.input", side_effect=["n"]):
+                with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow):
+                    with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
+                        with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
                             engine.run_tasks_dir(
                                 None,
                                 tasks_dir,
@@ -533,16 +533,16 @@ class TestFullPipelineE2E:
             run_count_rerun[0] += 1
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.Spinner", side_effect=_SpinnerCapture):
+        with patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_SpinnerCapture):
             with patch(
-                "fdsx.core.engine.resolve_workflow_for_task",
+                "fdsx.core.selector.resolve_workflow_for_task",
                 side_effect=mock_resolve_persist,
             ):
                 with patch(
-                    "fdsx.core.engine.run_flow", side_effect=mock_run_flow_rerun
+                    "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_rerun
                 ):
-                    with patch("fdsx.core.engine.display_tasks_dir_summary"):
-                        with patch("fdsx.core.engine.input", side_effect=["n"]):
+                    with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
+                        with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
                             results2 = engine.run_tasks_dir(
                                 None,
                                 tasks_dir,

@@ -178,7 +178,7 @@ class TestResumeSuccess:
         # Step 1: Run flow until Wait state, simulate crash at prompt
         with pytest.raises(RuntimeError, match="Flow execution failed"):
             with patch(
-                "fdsx.core.engine.display_wait_prompt",
+                "fdsx.core.engine.interrupts.display_wait_prompt",
                 side_effect=Exception("simulated crash"),
             ):
                 engine.run_flow(

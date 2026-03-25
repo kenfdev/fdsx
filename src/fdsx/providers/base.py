@@ -37,6 +37,7 @@ class ProviderBase(Protocol):
         command: str | None = None,
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
+        on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ProviderResult:
         """Execute a provider.
 
@@ -47,6 +48,9 @@ class ProviderBase(Protocol):
             command: Command for system provider
             output_callback: Optional callback for streaming stdout lines
             stderr_callback: Optional callback for streaming stderr lines
+            on_process_start: Optional callback invoked immediately after
+                ``subprocess.Popen()`` creation.  Used by ``SignalHandler`` to
+                register active subprocesses for signal forwarding.
 
         Returns:
             ProviderResult with exit code and output
@@ -71,6 +75,7 @@ def _run_subprocess(
     completion_event: threading.Event | None = None,
     env: dict[str, str] | None = None,
     inactivity_timeout: int | None = None,
+    on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
 ) -> ProviderResult:
     """Shared subprocess execution helper for all providers.
 
@@ -92,6 +97,9 @@ def _run_subprocess(
         inactivity_timeout: Seconds of silence (no stdout or stderr) before
             the process is killed with exit_code=124. Set to 0 to disable.
             None leaves the feature off (callers opt-in explicitly).
+        on_process_start: Optional callback invoked immediately after
+            ``subprocess.Popen()`` creation.  Used by ``SignalHandler`` to
+            register active subprocesses for signal forwarding.
 
     Returns:
         ProviderResult with exit code and output.
@@ -122,6 +130,9 @@ def _run_subprocess(
             bufsize=1,
             env=proc_env,
         )
+
+        if on_process_start is not None:
+            on_process_start(process)
 
         killed_by_timeout = False
         killed_by_inactivity = False
