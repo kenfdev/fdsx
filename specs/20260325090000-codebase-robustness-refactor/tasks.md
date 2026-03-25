@@ -34,11 +34,11 @@
 
 ### Tasks
 
-- [ ] T010 Write unit tests for the shared execution function in `tests/unit/test_execution.py` — test retry with exponential backoff (verify sleep durations), system provider vs LLM provider dispatch, timeout handling (TimeoutExpired), extraction success, extraction failure after retries. Use mock providers
-- [ ] T011 Create `src/fdsx/core/execution.py` with `ExecutionConfig` dataclass and `execute_with_retry(config, state_dict, provider, stream_logger) -> ExecutionResult` function. Extract retry loop, backoff, system vs LLM dispatch, and extraction logic from `src/fdsx/core/compiler.py:632-678`
-- [ ] T012 Refactor `_create_task_node` in `src/fdsx/core/compiler.py` (line 586) to call `execute_with_retry`. Keep task-specific logic: iteration tracking, result path setting, result_file handling, error raising, recorder calls
-- [ ] T013 Refactor `_create_branch_executor` in `src/fdsx/core/compiler.py` (line 776) to call `execute_with_retry`. Keep branch-specific logic: branch_index lookup, branch result dict construction, error capture (no raise)
-- [ ] T014 Run full test suite (`pytest tests/`) and verify zero regressions
+- [x] T010 Write unit tests for the shared execution function in `tests/unit/test_execution.py` — test retry with exponential backoff (verify sleep durations), system provider vs LLM provider dispatch, timeout handling (TimeoutExpired), extraction success, extraction failure after retries. Use mock providers
+- [x] T011 Create `src/fdsx/core/execution.py` with `ExecutionConfig` dataclass and `execute_with_retry(config, state_dict, provider, stream_logger) -> ExecutionResult` function. Extract retry loop, backoff, system vs LLM dispatch, and extraction logic from `src/fdsx/core/compiler.py:632-678`
+- [x] T012 Refactor `_create_task_node` in `src/fdsx/core/compiler.py` (line 586) to call `execute_with_retry`. Keep task-specific logic: iteration tracking, result path setting, result_file handling, error raising, recorder calls
+- [x] T013 Refactor `_create_branch_executor` in `src/fdsx/core/compiler.py` (line 776) to call `execute_with_retry`. Keep branch-specific logic: branch_index lookup, branch result dict construction, error capture (no raise)
+- [x] T014 Run full test suite (`pytest tests/`) and verify zero regressions
 
 ---
 

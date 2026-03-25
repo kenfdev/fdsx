@@ -1,5 +1,4 @@
 import logging
-import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
@@ -598,9 +597,8 @@ def _create_task_node(
     )
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
-        from fdsx.core.extraction import extract_value
+        from fdsx.core.execution import ExecutionConfig, execute_with_retry
         from fdsx.logging.stream_logger import StreamLogger
-        from fdsx.providers.base import ProviderResult
 
         start_time = time.time()
         terminal.display_state_start(
@@ -613,15 +611,12 @@ def _create_task_node(
         if recorder is not None:
             recorder.record_state_start(state_name, "task")
 
-        prompt = state.prompt_template or ""
-        resolved_prompt = resolve_template(prompt, state_dict)
+        resolved_prompt = resolve_template(state.prompt_template or "", state_dict)
+        resolved_command = resolve_template_shell_safe(state.command or "", state_dict)
 
         provider = get_provider(state.provider, merged_options)
 
         max_retries = state.retry if state.retry is not None else 3
-        last_error = "No attempts made"
-        result = ProviderResult(exit_code=1, stdout="", stderr="")
-        extracted: str | None = None
 
         iters = dict(state_dict.get("_state_iterations", {}))
         iteration = iters.get(state_name, 0) + 1
@@ -629,53 +624,21 @@ def _create_task_node(
         _check_max_iterations(state_name, state, iteration)
 
         stream_logger = StreamLogger(state_name, log_dir, quiet=quiet, iteration=iteration)
-        try:
-            for attempt in range(max_retries + 1):
-                if attempt > 0:
-                    time.sleep(min(2 ** (attempt - 1), 30))
-                try:
-                    if state.provider == "system":
-                        resolved_command = resolve_template_shell_safe(
-                            state.command or "", state_dict
-                        )
-                        result = provider.execute(
-                            prompt="",
-                            model=state.model,
-                            timeout=state.timeout_seconds,
-                            command=resolved_command,
-                            output_callback=stream_logger.on_stdout,
-                            stderr_callback=stream_logger.on_stderr,
-                        )
-                    else:
-                        result = provider.execute(
-                            prompt=resolved_prompt,
-                            model=state.model,
-                            timeout=state.timeout_seconds,
-                            output_callback=stream_logger.on_stdout,
-                            stderr_callback=stream_logger.on_stderr,
-                        )
-                except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                    last_error = str(exc)
-                    result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
-                    continue
-
-                if result.exit_code == 0:
-                    if state.extract:
-                        extracted = extract_value(
-                            result.stdout.strip(),
-                            state.extract,
-                            get_provider,
-                            source_provider=state.provider,
-                        )
-                        if extracted is not None:
-                            break
-                        last_error = "Extraction failed: all strategies returned None"
-                    else:
-                        break
-                else:
-                    last_error = result.stderr
-        finally:
-            stream_logger.close()
+        exec_config = ExecutionConfig(
+            provider=provider,
+            provider_name=state.provider,
+            prompt=resolved_prompt,
+            command=resolved_command,
+            model=state.model,
+            timeout_seconds=state.timeout_seconds,
+            max_retries=max_retries,
+            extract=state.extract,
+            stream_logger=stream_logger,
+        )
+        exec_result = execute_with_retry(exec_config)
+        result = exec_result.result
+        extracted = exec_result.extracted
+        last_error = exec_result.last_error
 
         if result.exit_code != 0:
             terminal.display_state_error(state_name, last_error)
@@ -790,9 +753,8 @@ def _create_branch_executor(
     """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
-        from fdsx.core.extraction import extract_value
+        from fdsx.core.execution import ExecutionConfig, execute_with_retry
         from fdsx.logging.stream_logger import StreamLogger
-        from fdsx.providers.base import ProviderResult
 
         branch_index: int = state_dict.get("_branch_index", 0)
         branch = state.branches[branch_index]
@@ -805,8 +767,8 @@ def _create_branch_executor(
             model=branch.model,
         )
 
-        prompt = branch.prompt_template or ""
-        resolved_prompt = resolve_template(prompt, state_dict)
+        resolved_prompt = resolve_template(branch.prompt_template or "", state_dict)
+        resolved_command = resolve_template_shell_safe(branch.command or "", state_dict)
 
         merged_options = _merge_provider_options(
             config, flow, branch.provider, branch.provider_options
@@ -814,62 +776,27 @@ def _create_branch_executor(
         provider = get_provider(branch.provider, merged_options)
 
         max_retries = branch.retry if branch.retry is not None else 3
-        last_error = "No attempts made"
-        result = ProviderResult(exit_code=1, stdout="", stderr="")
-        extracted: str | None = None
 
         iters = state_dict.get("_state_iterations", {})
         iteration = iters.get(state_name, 1)
         branch_log_name = f"{state_name}_branch{branch_index + 1}"
 
         stream_logger = StreamLogger(branch_log_name, log_dir, quiet=quiet, iteration=iteration)
-        try:
-            for attempt in range(max_retries + 1):
-                if attempt > 0:
-                    time.sleep(min(2 ** (attempt - 1), 30))
-                try:
-                    if branch.provider == "system":
-                        resolved_command = resolve_template_shell_safe(
-                            branch.command or "", state_dict
-                        )
-                        result = provider.execute(
-                            prompt="",
-                            model=branch.model,
-                            timeout=branch.timeout_seconds,
-                            command=resolved_command,
-                            output_callback=stream_logger.on_stdout,
-                            stderr_callback=stream_logger.on_stderr,
-                        )
-                    else:
-                        result = provider.execute(
-                            prompt=resolved_prompt,
-                            model=branch.model,
-                            timeout=branch.timeout_seconds,
-                            output_callback=stream_logger.on_stdout,
-                            stderr_callback=stream_logger.on_stderr,
-                        )
-                except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                    last_error = str(exc)
-                    result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
-                    continue
-
-                if result.exit_code == 0:
-                    if branch.extract:
-                        extracted = extract_value(
-                            result.stdout.strip(),
-                            branch.extract,
-                            get_provider,
-                            source_provider=branch.provider,
-                        )
-                        if extracted is not None:
-                            break
-                        last_error = "Extraction failed: all strategies returned None"
-                    else:
-                        break
-                else:
-                    last_error = result.stderr
-        finally:
-            stream_logger.close()
+        exec_config = ExecutionConfig(
+            provider=provider,
+            provider_name=branch.provider,
+            prompt=resolved_prompt,
+            command=resolved_command,
+            model=branch.model,
+            timeout_seconds=branch.timeout_seconds,
+            max_retries=max_retries,
+            extract=branch.extract,
+            stream_logger=stream_logger,
+        )
+        exec_result = execute_with_retry(exec_config)
+        result = exec_result.result
+        extracted = exec_result.extracted
+        last_error = exec_result.last_error
 
         duration = time.time() - start_time
 

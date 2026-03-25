@@ -3,12 +3,32 @@ from unittest.mock import MagicMock, patch
 from fdsx.providers.base import ProviderResult
 
 
+def _patch_sleep(compiler_mod, execution_mod, sleep_times):
+    """Patch time.sleep in both compiler and execution modules.
+
+    After the retry loop was extracted to execution.py, time.sleep is called
+    from that module. We patch both to be safe.
+    """
+    orig_compiler_sleep = compiler_mod.time.sleep
+    orig_execution_sleep = execution_mod.time.sleep
+    recorder = lambda s: sleep_times.append(s)
+    compiler_mod.time.sleep = recorder
+    execution_mod.time.sleep = recorder
+    return orig_compiler_sleep, orig_execution_sleep
+
+
+def _restore_sleep(compiler_mod, execution_mod, originals):
+    compiler_mod.time.sleep = originals[0]
+    execution_mod.time.sleep = originals[1]
+
+
 class TestExponentialBackoff:
     """T064: Unit tests for exponential backoff in retry loops."""
 
     def test_backoff_delays_for_retries(self):
         """Verify backoff delays (1, 2, 4 seconds) for 3 retries."""
         import fdsx.core.compiler as compiler
+        import fdsx.core.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -16,6 +36,7 @@ class TestExponentialBackoff:
         state.provider = "openai"
         state.model = "gpt-4"
         state.prompt_template = "test"
+        state.command = None
         state.timeout_seconds = 30
         state.retry = 3
         state.extract = None
@@ -40,15 +61,14 @@ class TestExponentialBackoff:
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            original_sleep = compiler.time.sleep
-            compiler.time.sleep = lambda s: sleep_times.append(s)
+            originals = _patch_sleep(compiler, execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                compiler.time.sleep = original_sleep
+                _restore_sleep(compiler, execution, originals)
 
             assert len(sleep_times) == 3
             assert sleep_times == [1, 2, 4]
@@ -56,6 +76,7 @@ class TestExponentialBackoff:
     def test_first_attempt_has_no_delay(self):
         """Verify first attempt has no delay."""
         import fdsx.core.compiler as compiler
+        import fdsx.core.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -63,6 +84,7 @@ class TestExponentialBackoff:
         state.provider = "openai"
         state.model = "gpt-4"
         state.prompt_template = "test"
+        state.command = None
         state.timeout_seconds = 30
         state.retry = 1
         state.extract = None
@@ -87,21 +109,21 @@ class TestExponentialBackoff:
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            original_sleep = compiler.time.sleep
-            compiler.time.sleep = lambda s: sleep_times.append(s)
+            originals = _patch_sleep(compiler, execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                compiler.time.sleep = original_sleep
+                _restore_sleep(compiler, execution, originals)
 
             assert len(sleep_times) == 1
 
     def test_exception_triggers_retry_with_backoff(self):
         """Verify timeout exception triggers retry with backoff."""
         import fdsx.core.compiler as compiler
+        import fdsx.core.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -109,6 +131,7 @@ class TestExponentialBackoff:
         state.provider = "openai"
         state.model = "gpt-4"
         state.prompt_template = "test"
+        state.command = None
         state.timeout_seconds = 30
         state.retry = 2
         state.extract = None
@@ -133,15 +156,14 @@ class TestExponentialBackoff:
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            original_sleep = compiler.time.sleep
-            compiler.time.sleep = lambda s: sleep_times.append(s)
+            originals = _patch_sleep(compiler, execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                compiler.time.sleep = original_sleep
+                _restore_sleep(compiler, execution, originals)
 
             assert len(sleep_times) == 2
             assert sleep_times == [1, 2]
@@ -149,6 +171,7 @@ class TestExponentialBackoff:
     def test_backoff_capped_at_30_seconds(self):
         """Verify cap at 30s for high retry counts."""
         import fdsx.core.compiler as compiler
+        import fdsx.core.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {}
@@ -156,6 +179,7 @@ class TestExponentialBackoff:
         state.provider = "openai"
         state.model = "gpt-4"
         state.prompt_template = "test"
+        state.command = None
         state.timeout_seconds = 30
         state.retry = 10
         state.extract = None
@@ -178,15 +202,14 @@ class TestExponentialBackoff:
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            original_sleep = compiler.time.sleep
-            compiler.time.sleep = lambda s: sleep_times.append(s)
+            originals = _patch_sleep(compiler, execution, sleep_times)
 
             try:
                 compiler._create_task_node("test_state", state, flow, None)(state_dict)
             except RuntimeError:
                 pass
             finally:
-                compiler.time.sleep = original_sleep
+                _restore_sleep(compiler, execution, originals)
 
             assert len(sleep_times) == 10
             for i in range(1, 10):
@@ -196,6 +219,7 @@ class TestExponentialBackoff:
     def test_branch_executor_backoff(self):
         """Verify branch executor also uses exponential backoff."""
         import fdsx.core.compiler as compiler
+        import fdsx.core.execution as execution
         from fdsx.models.flow import Flow
 
         state_dict = {"_branch_index": 0}
@@ -229,8 +253,7 @@ class TestExponentialBackoff:
             mock_provider.execute = mock_execute
             mock_get_provider.return_value = mock_provider
 
-            original_sleep = compiler.time.sleep
-            compiler.time.sleep = lambda s: sleep_times.append(s)
+            originals = _patch_sleep(compiler, execution, sleep_times)
 
             try:
                 compiler._create_branch_executor(
@@ -239,7 +262,7 @@ class TestExponentialBackoff:
             except (RuntimeError, KeyError, TypeError):
                 pass
             finally:
-                compiler.time.sleep = original_sleep
+                _restore_sleep(compiler, execution, originals)
 
             assert len(sleep_times) == 2
             assert sleep_times[0] == 1
