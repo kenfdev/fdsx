@@ -24,7 +24,7 @@ def _top_level_key(path: str) -> str | None:
     return path.split(".")[0].split("[")[0] or None
 
 
-def _parallel_branch_reducer(current: list, update: list) -> list:
+def _parallel_branch_reducer(current: list[Any], update: list[Any]) -> list[Any]:
     """Reducer for parallel branch results that supports reset.
 
     Branch nodes return ``[result]`` which appends via concatenation.
