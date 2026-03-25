@@ -168,7 +168,6 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
         return flow, [f"Failed to re-validate flow after prompt_file resolution: {e}"]
 
 
-
 def validate_flow(path: Path) -> tuple[bool, list[str]]:
     """Validate a flow without executing it.
 
