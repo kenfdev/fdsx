@@ -1,5 +1,21 @@
 # Agent Instructions
 
+## Development Environment
+
+This is a Python project managed with `uv`.
+
+**Running Python tools — always use `uv run`:**
+- Tests: `uv run pytest tests/ -v`
+- Type check: `uv run mypy src/`
+- Lint check: `uv run ruff check src/ tests/`
+- Lint fix: `uv run ruff check --fix src/ tests/`
+- Single file: `uv run pytest tests/unit/test_foo.py -v`
+
+**Never use:**
+- Bare `python` or `python3` — system Python lacks project dependencies
+- `.venv/bin/python` directly — venv symlinks may be stale after Python version changes
+- `pip install` — use `uv pip install` or `uv add` instead
+
 ## Testing Guidelines
 
 ### Test Trophy Strategy
