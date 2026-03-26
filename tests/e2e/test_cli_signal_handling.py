@@ -162,13 +162,16 @@ class TestSigintCleanup:
     def test_sigint_no_orphan_processes(self, tmp_path: Path) -> None:
         """No orphan sleep processes remain after SIGINT."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        # Allow a brief moment for OS process table cleanup.
-        time.sleep(2.0)
-        # Check specifically the descendant PIDs we captured before sending the
-        # signal, rather than using a global pgrep that could match processes
-        # from concurrent CI matrix jobs.
+        # Poll for up to 10 seconds for descendant processes to be reaped,
+        # rather than a fixed sleep that can be too short in CI.
         descendant_pids = getattr(proc, "_descendant_pids", [])
-        orphans = [pid for pid in descendant_pids if _is_pid_alive(pid)]
+        deadline = time.monotonic() + 10.0
+        orphans: list[int] = []
+        while time.monotonic() < deadline:
+            orphans = [pid for pid in descendant_pids if _is_pid_alive(pid)]
+            if not orphans:
+                break
+            time.sleep(0.5)
         assert not orphans, (
             f"Orphan processes still running after SIGINT: PIDs {orphans}"
         )

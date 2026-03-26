@@ -44,6 +44,7 @@ def _make_process(
         poll_returns: Explicit sequence of values for poll() side_effect.
     """
     proc = MagicMock(spec=subprocess.Popen)
+    proc.pid = 12345
     if poll_returns is not None:
         proc.poll.side_effect = poll_returns
     else:
@@ -138,44 +139,56 @@ class TestHandleSignalForwarding:
     """Signal is forwarded to all active processes."""
 
     def test_forwards_signal_to_alive_processes(self) -> None:
-        """send_signal is called on each alive process."""
+        """os.killpg is called for each alive process's group."""
         handler = _make_handler()
         procs = [_make_process(alive=True) for _ in range(2)]
+        # Give distinct PIDs so we can verify each killpg call.
+        procs[0].pid = 100
+        procs[1].pid = 200
         for proc in procs:
             handler.register_process(proc)
 
         with (
             patch("time.monotonic", return_value=0.0),
             patch("sys.exit"),
+            patch("fdsx.core.engine.signals.os.killpg") as mock_killpg,
         ):
-            # Make wait() return quickly so the test doesn't stall.
             for proc in procs:
                 proc.wait.return_value = None
 
             handler._handle_signal(signal.SIGINT, None)
 
-        for proc in procs:
-            proc.send_signal.assert_called_once_with(signal.SIGINT)
+        # The first round of killpg calls forwards SIGINT.
+        assert call(100, signal.SIGINT) in mock_killpg.call_args_list
+        assert call(200, signal.SIGINT) in mock_killpg.call_args_list
 
-    def test_skips_send_signal_for_dead_processes(self) -> None:
-        """send_signal is NOT called on already-exited processes."""
+    def test_skips_killpg_for_dead_processes(self) -> None:
+        """os.killpg is NOT called for already-exited processes."""
         handler = _make_handler()
         dead_proc = _make_process(alive=False)
         handler.register_process(dead_proc)
 
-        with patch("sys.exit"):
+        with (
+            patch("sys.exit"),
+            patch("fdsx.core.engine.signals.os.killpg") as mock_killpg,
+        ):
             handler._handle_signal(signal.SIGTERM, None)
 
-        dead_proc.send_signal.assert_not_called()
+        mock_killpg.assert_not_called()
 
-    def test_ignores_oserror_from_send_signal(self) -> None:
-        """OSError during send_signal does not abort the handler."""
+    def test_ignores_oserror_from_killpg(self) -> None:
+        """OSError during os.killpg does not abort the handler."""
         handler = _make_handler()
         proc = _make_process(alive=True)
-        proc.send_signal.side_effect = OSError("already dead")
         handler.register_process(proc)
 
-        with patch("sys.exit"):
+        with (
+            patch("sys.exit"),
+            patch(
+                "fdsx.core.engine.signals.os.killpg",
+                side_effect=OSError("no such group"),
+            ),
+        ):
             # Should not raise.
             handler._handle_signal(signal.SIGINT, None)
 
@@ -189,23 +202,28 @@ class TestHandleSignalSigkill:
     """Processes that survive the grace period are SIGKILLed."""
 
     def test_sigkill_if_process_survives_grace_period(self) -> None:
-        """kill() is called when process still alive after wait timeout."""
+        """os.killpg with SIGKILL is called when process survives grace period."""
         handler = _make_handler()
         proc = _make_process()
+        proc.pid = 999
         # poll() always returns None (never exits on its own).
         proc.poll.return_value = None
         proc.wait.side_effect = subprocess.TimeoutExpired(cmd="sleep", timeout=5)
         handler.register_process(proc)
 
-        with patch("sys.exit"):
+        with (
+            patch("sys.exit"),
+            patch("fdsx.core.engine.signals.os.killpg") as mock_killpg,
+        ):
             handler._handle_signal(signal.SIGINT, None)
 
-        proc.kill.assert_called_once()
+        assert call(999, signal.SIGKILL) in mock_killpg.call_args_list
 
     def test_no_sigkill_if_process_exits_voluntarily(self) -> None:
-        """kill() is NOT called when process exits within the grace period."""
+        """SIGKILL killpg is NOT called when process exits within the grace period."""
         handler = _make_handler()
         proc = _make_process(alive=True)
+        proc.pid = 999
         # After wait() the process has exited; subsequent poll() returns 0.
         proc.wait.return_value = None
         proc.poll.side_effect = [
@@ -215,21 +233,32 @@ class TestHandleSignalSigkill:
         ]  # alive for forwarding, dead for kill check
         handler.register_process(proc)
 
-        with patch("sys.exit"):
+        with (
+            patch("sys.exit"),
+            patch("fdsx.core.engine.signals.os.killpg") as mock_killpg,
+        ):
             handler._handle_signal(signal.SIGINT, None)
 
-        proc.kill.assert_not_called()
+        # SIGINT forwarding happened, but not SIGKILL.
+        for c in mock_killpg.call_args_list:
+            assert c != call(999, signal.SIGKILL)
 
-    def test_ignores_oserror_from_kill(self) -> None:
-        """OSError during kill() does not abort the handler."""
+    def test_ignores_oserror_from_killpg_sigkill(self) -> None:
+        """OSError during SIGKILL killpg does not abort the handler."""
         handler = _make_handler()
         proc = _make_process()
+        proc.pid = 999
         proc.poll.return_value = None
         proc.wait.side_effect = subprocess.TimeoutExpired(cmd="sleep", timeout=5)
-        proc.kill.side_effect = OSError("already dead")
         handler.register_process(proc)
 
-        with patch("sys.exit"):
+        with (
+            patch("sys.exit"),
+            patch(
+                "fdsx.core.engine.signals.os.killpg",
+                side_effect=OSError("no such group"),
+            ),
+        ):
             # Should not raise.
             handler._handle_signal(signal.SIGTERM, None)
 
