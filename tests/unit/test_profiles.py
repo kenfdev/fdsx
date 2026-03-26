@@ -185,6 +185,8 @@ class TestResolveProfilesInFlow:
         assert len(errors) == 1
         assert "not found" in errors[0]
         assert "nonexistent" in errors[0]
+        assert "task1" in errors[0]
+        assert "workflow YAML" in errors[0] or ".fdsx/config.yaml" in errors[0]
 
     def test_noop_when_no_profile(self):
         """Task without profile is left unchanged."""

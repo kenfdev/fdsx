@@ -95,7 +95,8 @@ def resolve_profiles_in_flow(
         if profile_name not in merged_profiles:
             errors.append(
                 f"State '{state_name}': profile '{profile_name}' not found in profiles. "
-                f"Available profiles: {list(merged_profiles.keys())}"
+                f"Available profiles: {list(merged_profiles.keys())}. "
+                f"Define profiles in workflow YAML, project config (.fdsx/config.yaml), or global config (~/.config/fdsx/config.yaml)."
             )
             continue
 

@@ -142,6 +142,96 @@ class TestProfileFlowErrors:
         assert "mutually exclusive" in errors[0]
 
 
+class TestValidateFlowProfileErrors:
+    """T021/T022: Tests for profile errors surfaced via validate_flow()."""
+
+    def test_validate_flow_catches_xor_violation(self, tmp_path):
+        """validate_flow returns is_valid=False when task has both profile and provider."""
+        from fdsx.core.engine.validate import validate_flow
+        import yaml
+
+        flow_dict = {
+            "name": "XOR Flow",
+            "description": "Flow with profile and provider",
+            "start_at": "task1",
+            "profiles": {"my_profile": {"provider": "claude", "model": "sonnet"}},
+            "states": {
+                "task1": {
+                    "type": "task",
+                    "profile": "my_profile",
+                    "provider": "claude",
+                    "prompt_template": "Hello",
+                    "result_path": "$.output",
+                }
+            },
+        }
+        xor_path = tmp_path / "xor_profile.yaml"
+        with open(xor_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        is_valid, errors, flow_name = validate_flow(xor_path)
+        assert is_valid is False
+        assert len(errors) == 1
+        assert "mutually exclusive" in errors[0]
+
+    def test_validate_flow_catches_missing_profile(self, tmp_path):
+        """validate_flow returns is_valid=False when task references non-existent profile."""
+        from fdsx.core.engine.validate import validate_flow
+        import yaml
+
+        flow_dict = {
+            "name": "Bad Profile Flow",
+            "description": "Flow with missing profile reference",
+            "start_at": "task1",
+            "states": {
+                "task1": {
+                    "type": "task",
+                    "profile": "nonexistent",
+                    "prompt_template": "Hello",
+                    "result_path": "$.output",
+                }
+            },
+        }
+        bad_path = tmp_path / "bad_profile.yaml"
+        with open(bad_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        is_valid, errors, flow_name = validate_flow(bad_path)
+        assert is_valid is False
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+        assert "nonexistent" in errors[0]
+        assert "task1" in errors[0]
+
+    def test_validate_flow_error_message_format(self, tmp_path):
+        """Error messages from validate_flow match spec format (state name, profile name)."""
+        from fdsx.core.engine.validate import validate_flow
+        import yaml
+
+        flow_dict = {
+            "name": "Missing Profile Flow",
+            "description": "Flow with missing profile",
+            "start_at": "my_task",
+            "states": {
+                "my_task": {
+                    "type": "task",
+                    "profile": "missing_profile",
+                    "prompt_template": "Hello",
+                    "result_path": "$.output",
+                }
+            },
+        }
+        flow_path = tmp_path / "missing_profile.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        is_valid, errors, flow_name = validate_flow(flow_path)
+        assert is_valid is False
+        assert len(errors) == 1
+        assert "my_task" in errors[0]
+        assert "missing_profile" in errors[0]
+
+
 class TestCascadingProfileOverrides:
     """T018: Integration tests for workflow-level profile override of config-level profile."""
 
