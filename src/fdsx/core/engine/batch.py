@@ -39,11 +39,17 @@ def run_batch(
         FlowValidationError: If flow validation fails
         RuntimeError: If task_splitter is missing or execution fails
     """
-    flow, errors = load_flow(workflow_path)
+    config = load_config()
+
+    config_profiles = None
+    if config.profiles:
+        config_profiles = {
+            name: prof.model_dump() for name, prof in config.profiles.items()
+        }
+
+    flow, errors = load_flow(workflow_path, config_profiles=config_profiles)
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
-
-    config = load_config()
     if config.task_splitter is None:
         raise FlowValidationError(
             "Batch execution requires task_splitter configuration. "

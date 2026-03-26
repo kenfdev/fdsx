@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
 
 
@@ -20,5 +21,12 @@ def validate_flow(flow_path: Path) -> tuple[bool, list[str], str | None]:
     Returns:
         tuple of (is_valid, list of error messages, flow_name or None)
     """
-    flow, errors = load_flow(flow_path)
+    config = load_config()
+    config_profiles = None
+    if config.profiles:
+        config_profiles = {
+            name: prof.model_dump() for name, prof in config.profiles.items()
+        }
+
+    flow, errors = load_flow(flow_path, config_profiles=config_profiles)
     return flow is not None, errors, flow.name if flow else None
