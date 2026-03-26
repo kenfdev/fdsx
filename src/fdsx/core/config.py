@@ -14,8 +14,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
-from fdsx.models.flow import HookConfig
-from fdsx.models.validators import validate_llm_provider
+from fdsx.models.flow import HookConfig, ProfileConfig
+from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
 from fdsx.providers.opencode import OpenCodeOptions
@@ -106,6 +106,10 @@ class FdsxConfig(BaseModel):
         default=None,
         description="Global hook configuration applied to all flows",
     )
+    profiles: dict[str, ProfileConfig] | None = Field(
+        default=None,
+        description="Named provider/model profiles",
+    )
 
     @field_validator("workflows_dir")
     @classmethod
@@ -117,6 +121,17 @@ class FdsxConfig(BaseModel):
             raise ValueError(
                 f"workflows_dir must not contain '..' components, got '{v}'"
             )
+        return v
+
+    @field_validator("profiles", mode="before")
+    @classmethod
+    def validate_profile_names(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise ValueError(f"profiles must be a dict, got {type(v).__name__}")
+        for key in v.keys():
+            validate_profile_name(key)
         return v
 
     model_config = {"extra": "forbid"}

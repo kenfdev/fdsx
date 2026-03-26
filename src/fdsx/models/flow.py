@@ -437,6 +437,9 @@ class Flow(BaseModel):
     hooks: HookConfig | None = Field(
         default=None, description="Flow-level hook configuration"
     )
+    profiles: dict[str, dict[str, Any]] | None = Field(
+        default=None, description="Workflow-level profile definitions"
+    )
 
     @model_validator(mode="before")
     @classmethod

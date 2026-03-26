@@ -388,6 +388,87 @@ class TestFdsxConfigProviders:
             ProviderConfigs.model_validate({"unknown_key": {}})
 
 
+class TestFdsxConfigProfiles:
+    def test_default_profiles_is_none(self):
+        cfg = FdsxConfig()
+        assert cfg.profiles is None
+
+    def test_valid_profile_parsed(self):
+        cfg = FdsxConfig.model_validate(
+            {
+                "profiles": {
+                    "my_profile": {"provider": "claude", "model": "claude-sonnet-4-6"}
+                }
+            }
+        )
+        assert cfg.profiles is not None
+        assert "my_profile" in cfg.profiles
+        assert cfg.profiles["my_profile"].provider == "claude"
+        assert cfg.profiles["my_profile"].model == "claude-sonnet-4-6"
+
+    def test_multiple_profiles_parsed(self):
+        cfg = FdsxConfig.model_validate(
+            {
+                "profiles": {
+                    "profile_a": {"provider": "claude", "model": "claude-sonnet-4-6"},
+                    "profile_b": {"provider": "codex", "model": "gpt-4o"},
+                }
+            }
+        )
+        assert cfg.profiles is not None
+        assert "profile_a" in cfg.profiles
+        assert "profile_b" in cfg.profiles
+        assert cfg.profiles["profile_a"].provider == "claude"
+        assert cfg.profiles["profile_b"].provider == "codex"
+
+    def test_backward_compat_without_profiles(self):
+        """Existing configs without a profiles section still parse correctly."""
+        cfg = FdsxConfig.model_validate({"auto_workflow": True})
+        assert cfg.profiles is None
+        assert cfg.auto_workflow is True
+
+    def test_invalid_profile_name_key_rejected(self):
+        """Profile name that doesn't match pattern is rejected."""
+        with pytest.raises(ValidationError):
+            FdsxConfig.model_validate(
+                {
+                    "profiles": {
+                        "123bad": {"provider": "claude", "model": "claude-sonnet-4-6"}
+                    }
+                }
+            )
+
+    def test_invalid_provider_in_profile_rejected(self):
+        """Profile with invalid provider is rejected."""
+        with pytest.raises(ValidationError):
+            FdsxConfig.model_validate(
+                {
+                    "profiles": {
+                        "valid_name": {
+                            "provider": "invalid_provider",
+                            "model": "some-model",
+                        }
+                    }
+                }
+            )
+
+    def test_profile_with_extra_fields_allowed(self):
+        """ProfileConfig allows extra fields."""
+        cfg = FdsxConfig.model_validate(
+            {
+                "profiles": {
+                    "my_profile": {
+                        "provider": "claude",
+                        "model": "claude-sonnet-4-6",
+                        "extra_option": True,
+                    }
+                }
+            }
+        )
+        assert cfg.profiles is not None
+        assert cfg.profiles["my_profile"].provider == "claude"
+
+
 class TestLoadConfigWithProviders:
     def test_deep_merge_providers_across_global_and_project(self):
         """Global sets claude.permission_mode; project adds dangerously_skip_permissions; both preserved."""
