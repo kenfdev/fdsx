@@ -140,3 +140,81 @@ class TestProfileFlowErrors:
         assert flow is None
         assert len(errors) == 1
         assert "mutually exclusive" in errors[0]
+
+
+class TestCascadingProfileOverrides:
+    """T018: Integration tests for workflow-level profile override of config-level profile."""
+
+    def test_workflow_profile_overrides_config_profile(self, tmp_path):
+        """Workflow-level profile definition overrides config-level profile (full replacement, not deep merge)."""
+        from fdsx.core.loader import load_flow
+        import yaml
+
+        flow_dict = {
+            "name": "Override Flow",
+            "description": "Workflow profile overrides config profile",
+            "start_at": "task1",
+            "profiles": {"smart_guy": {"provider": "codex", "model": "gpt"}},
+            "states": {
+                "task1": {
+                    "type": "task",
+                    "profile": "smart_guy",
+                    "prompt_template": "Hello",
+                    "result_path": "$.output",
+                    "next": "end",
+                },
+                "end": {
+                    "type": "pass",
+                    "end": True,
+                },
+            },
+        }
+        flow_path = tmp_path / "override_flow.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        config_profiles = {"smart_guy": {"provider": "claude", "model": "sonnet"}}
+        flow, errors = load_flow(flow_path, config_profiles=config_profiles)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert len(errors) == 0
+
+        task_state = flow.states["task1"]
+        assert task_state.provider == "codex"
+        assert task_state.model == "gpt"
+
+    def test_config_profile_available_when_not_in_workflow(self, tmp_path):
+        """Config-level profile is used when workflow doesn't define it."""
+        from fdsx.core.loader import load_flow
+        import yaml
+
+        flow_dict = {
+            "name": "Config Only Flow",
+            "description": "Uses config-level profile",
+            "start_at": "task1",
+            "profiles": {"other_profile": {"provider": "opencode", "model": "o1"}},
+            "states": {
+                "task1": {
+                    "type": "task",
+                    "profile": "config_profile",
+                    "prompt_template": "Hello",
+                    "result_path": "$.output",
+                    "next": "end",
+                },
+                "end": {
+                    "type": "pass",
+                    "end": True,
+                },
+            },
+        }
+        flow_path = tmp_path / "config_only_flow.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        config_profiles = {"config_profile": {"provider": "claude", "model": "sonnet"}}
+        flow, errors = load_flow(flow_path, config_profiles=config_profiles)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert len(errors) == 0
+
+        task_state = flow.states["task1"]
+        assert task_state.provider == "claude"
+        assert task_state.model == "sonnet"

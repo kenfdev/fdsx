@@ -310,3 +310,56 @@ class TestResolveProfilesInFlow:
         assert data["states"]["task1"]["model"] == "sonnet"
         assert data["states"]["task2"]["provider"] == "codex"
         assert data["states"]["task2"]["model"] == "gpt"
+
+
+class TestCascadingProfileOverrides:
+    """T014: Tests for 3-level cascading profile overrides (global -> project -> workflow)."""
+
+    def test_workflow_overrides_project_level(self):
+        """When both project-config and workflow define same profile name, workflow wins (full replacement)."""
+        config_profiles = {"shared": {"provider": "claude", "model": "sonnet"}}
+        workflow_profiles = {"shared": {"provider": "codex", "model": "gpt"}}
+        result = merge_profiles(config_profiles, workflow_profiles)
+        assert result["shared"] == {"provider": "codex", "model": "gpt"}
+
+    def test_project_overrides_global_level(self):
+        """Simulate 3-level merge: chaining merge_profiles(global, project) then (result, workflow)."""
+        global_profiles = {"fast": {"provider": "claude", "model": "haiku"}}
+        project_profiles = {"fast": {"provider": "codex", "model": "gpt"}}
+        config_merged = merge_profiles(global_profiles, project_profiles)
+        assert config_merged["fast"] == {"provider": "codex", "model": "gpt"}
+
+    def test_global_only_profile_accessible(self):
+        """A profile defined only at global level is available after merging all 3 levels."""
+        global_profiles = {"global_profile": {"provider": "claude", "model": "sonnet"}}
+        project_profiles = {"project_profile": {"provider": "opencode", "model": "o1"}}
+        workflow_profiles = {"workflow_profile": {"provider": "codex", "model": "gpt"}}
+        config_merged = merge_profiles(global_profiles, project_profiles)
+        result = merge_profiles(config_merged, workflow_profiles)
+        assert "global_profile" in result
+        assert result["global_profile"] == {"provider": "claude", "model": "sonnet"}
+        assert "project_profile" in result
+        assert "workflow_profile" in result
+
+    def test_full_replacement_not_deep_merge(self):
+        """When workflow overrides a profile, it replaces the entire dict (fields from lower level are NOT inherited)."""
+        config_profiles = {
+            "smart": {"provider": "claude", "model": "sonnet", "extra": "field"}
+        }
+        workflow_profiles = {"smart": {"provider": "codex", "model": "gpt"}}
+        result = merge_profiles(config_profiles, workflow_profiles)
+        assert result["smart"] == {"provider": "codex", "model": "gpt"}
+        assert "extra" not in result["smart"]
+
+    def test_three_level_cascade_full_override(self):
+        """Full 3-level cascade: global -> project -> workflow, workflow completely replaces project profile."""
+        global_profiles = {"profile": {"provider": "global", "model": "global-model"}}
+        project_profiles = {
+            "profile": {"provider": "project", "model": "project-model"}
+        }
+        workflow_profiles = {
+            "profile": {"provider": "workflow", "model": "workflow-model"}
+        }
+        config_merged = merge_profiles(global_profiles, project_profiles)
+        result = merge_profiles(config_merged, workflow_profiles)
+        assert result["profile"] == {"provider": "workflow", "model": "workflow-model"}

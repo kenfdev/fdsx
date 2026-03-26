@@ -674,3 +674,54 @@ class TestDeepMergeHookListConcatenation:
         result = _deep_merge(base, override)
         commands = [e["command"] for e in result["hooks"]["on_start"]]
         assert commands == ["global1.sh", "global2.sh", "project.sh"]
+
+
+class TestDeepMergeProfilesShallowReplacement:
+    """T016: Tests for _deep_merge profiles key shallow replacement behavior."""
+
+    def test_profiles_same_name_replaced_not_deep_merged(self):
+        """Base has profiles.fast with claude/haiku, override has profiles.fast with codex/gpt. Result is override entirely."""
+        base = {"profiles": {"fast": {"provider": "claude", "model": "haiku"}}}
+        override = {"profiles": {"fast": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert result["profiles"]["fast"] == {"provider": "codex", "model": "gpt"}
+        assert "haiku" not in str(result["profiles"]["fast"])
+
+    def test_profiles_different_names_both_preserved(self):
+        """Base has profile 'a', override has profile 'b'. Both present in result."""
+        base = {"profiles": {"a": {"provider": "claude", "model": "sonnet"}}}
+        override = {"profiles": {"b": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert "a" in result["profiles"]
+        assert "b" in result["profiles"]
+        assert result["profiles"]["a"] == {"provider": "claude", "model": "sonnet"}
+        assert result["profiles"]["b"] == {"provider": "codex", "model": "gpt"}
+
+    def test_profiles_override_drops_extra_fields_from_base(self):
+        """Base profile has extra fields, override profile doesn't have them. Extra fields should NOT appear in result."""
+        base = {
+            "profiles": {
+                "smart": {
+                    "provider": "claude",
+                    "model": "sonnet",
+                    "extra_field": "should_be_dropped",
+                }
+            }
+        }
+        override = {"profiles": {"smart": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert result["profiles"]["smart"] == {"provider": "codex", "model": "gpt"}
+        assert "extra_field" not in result["profiles"]["smart"]
+
+    def test_profiles_shallow_merge_preserves_unmodified_profiles(self):
+        """Override only changes 'fast', leaves 'slow' profile from base untouched."""
+        base = {
+            "profiles": {
+                "fast": {"provider": "claude", "model": "sonnet"},
+                "slow": {"provider": "opencode", "model": "o1"},
+            }
+        }
+        override = {"profiles": {"fast": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert result["profiles"]["fast"] == {"provider": "codex", "model": "gpt"}
+        assert result["profiles"]["slow"] == {"provider": "opencode", "model": "o1"}

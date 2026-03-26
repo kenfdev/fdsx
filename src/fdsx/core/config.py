@@ -23,6 +23,9 @@ from fdsx.providers.opencode import OpenCodeOptions
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
 _HOOK_LIST_KEYS: frozenset[str] = frozenset({"on_start", "on_complete"})
 
+# Keys whose dict values are shallow-merged instead of deep-merged
+_SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
+
 
 class TaskSplitterConfig(BaseModel):
     """Configuration for batch task splitting (formerly TaskSplitter in flow.py)."""
@@ -143,6 +146,8 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     When both base and override have a dict value for the same key, the dicts
     are merged recursively. For keys in _HOOK_LIST_KEYS (on_start, on_complete),
     list values are concatenated (base + override) rather than replaced.
+    For keys in _SHALLOW_MERGE_KEYS (profiles), dict values are shallow-merged
+    (full replacement per name, not deep merge of individual profile fields).
     Otherwise, the override value wins outright.
 
     Args:
@@ -156,7 +161,10 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     for key, override_val in override.items():
         base_val = result.get(key)
         if isinstance(base_val, dict) and isinstance(override_val, dict):
-            result[key] = _deep_merge(base_val, override_val)
+            if key in _SHALLOW_MERGE_KEYS:
+                result[key] = {**base_val, **override_val}
+            else:
+                result[key] = _deep_merge(base_val, override_val)
         elif (
             key in _HOOK_LIST_KEYS
             and isinstance(base_val, list)
