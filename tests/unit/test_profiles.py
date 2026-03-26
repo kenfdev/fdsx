@@ -503,3 +503,166 @@ class TestCascadingProfileOverrides:
         config_merged = merge_profiles(global_profiles, project_profiles)
         result = merge_profiles(config_merged, workflow_profiles)
         assert result["profile"] == {"provider": "workflow", "model": "workflow-model"}
+
+
+class TestExtractFallbackProfileResolution:
+    """Tests for extract.fallback profile resolution."""
+
+    def _make_flow(self, states, profiles=None):
+        """Helper to create a minimal flow dict."""
+        data = {
+            "name": "Test Flow",
+            "description": "Test flow",
+            "start_at": "task1",
+            "states": states,
+        }
+        if profiles is not None:
+            data["profiles"] = profiles
+        return data
+
+    def test_extract_fallback_profile_resolved(self):
+        """Task with extract.fallback.profile gets fallback resolved to provider."""
+        data = self._make_flow(
+            {
+                "task1": {
+                    "type": "task",
+                    "provider": "claude",
+                    "prompt_template": "Classify this",
+                    "result_path": "$.output",
+                    "extract": {
+                        "strategy": ["json"],
+                        "pattern": ".*",
+                        "result_path": "$.extracted",
+                        "fallback": {
+                            "profile": "smart_guy",
+                            "prompt": "Fallback classify",
+                        },
+                    },
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet-4-6"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        fallback = data["states"]["task1"]["extract"]["fallback"]
+        assert fallback["provider"] == "claude"
+        assert "profile" not in fallback
+
+    def test_extract_fallback_xor_profile_and_provider(self):
+        """Fallback with both profile and provider returns XOR error."""
+        data = self._make_flow(
+            {
+                "task1": {
+                    "type": "task",
+                    "provider": "claude",
+                    "prompt_template": "Classify this",
+                    "result_path": "$.output",
+                    "extract": {
+                        "strategy": ["json"],
+                        "pattern": ".*",
+                        "result_path": "$.extracted",
+                        "fallback": {
+                            "profile": "smart_guy",
+                            "provider": "claude",
+                            "prompt": "Fallback classify",
+                        },
+                    },
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet-4-6"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert len(errors) == 1
+        assert "mutually exclusive" in errors[0]
+        assert "extract.fallback" in errors[0]
+
+    def test_extract_fallback_missing_profile(self):
+        """Fallback referencing nonexistent profile returns error."""
+        data = self._make_flow(
+            {
+                "task1": {
+                    "type": "task",
+                    "provider": "claude",
+                    "prompt_template": "Classify this",
+                    "result_path": "$.output",
+                    "extract": {
+                        "strategy": ["json"],
+                        "pattern": ".*",
+                        "result_path": "$.extracted",
+                        "fallback": {
+                            "profile": "nonexistent",
+                            "prompt": "Fallback classify",
+                        },
+                    },
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet-4-6"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+        assert "nonexistent" in errors[0]
+
+    def test_extract_fallback_no_profile_unchanged(self):
+        """Fallback without profile is left unchanged."""
+        data = self._make_flow(
+            {
+                "task1": {
+                    "type": "task",
+                    "provider": "claude",
+                    "prompt_template": "Classify this",
+                    "result_path": "$.output",
+                    "extract": {
+                        "strategy": ["json"],
+                        "pattern": ".*",
+                        "result_path": "$.extracted",
+                        "fallback": {
+                            "provider": "claude",
+                            "prompt": "Fallback classify",
+                        },
+                    },
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet-4-6"}},
+        )
+        original = dict(data["states"]["task1"]["extract"]["fallback"])
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        assert data["states"]["task1"]["extract"]["fallback"] == original
+
+    def test_parallel_branch_extract_fallback_profile_resolved(self):
+        """Parallel branch with extract.fallback.profile gets fallback resolved."""
+        data = self._make_flow(
+            {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "provider": "claude",
+                            "prompt_template": "Review code",
+                            "extract": {
+                                "strategy": ["json"],
+                                "pattern": ".*",
+                                "result_path": "$.extracted",
+                                "fallback": {
+                                    "profile": "smart_guy",
+                                    "prompt": "Fallback classify",
+                                },
+                            },
+                        }
+                    ],
+                    "result_path": "$.reviews",
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet-4-6"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        fallback = data["states"]["review"]["branches"][0]["extract"]["fallback"]
+        assert fallback["provider"] == "claude"
+        assert "profile" not in fallback

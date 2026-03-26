@@ -103,6 +103,45 @@ def _resolve_profile_on_dict(
     return errors
 
 
+def _resolve_fallback_profile(
+    item: dict[str, Any],
+    label: str,
+    merged_profiles: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Resolve profile reference on extract.fallback dict.
+
+    Operates on raw YAML dicts BEFORE Pydantic validation.
+
+    Args:
+        item: The dict to modify in-place (task state or branch dict).
+        label: Human-readable label for error messages.
+        merged_profiles: Merged profiles dictionary.
+
+    Returns:
+        List of error strings.
+    """
+    errors: list[str] = []
+
+    extract = item.get("extract")
+    if not isinstance(extract, dict):
+        return errors
+
+    fallback = extract.get("fallback")
+    if not isinstance(fallback, dict):
+        return errors
+
+    if "profile" not in fallback:
+        return errors
+
+    fallback_errors = _resolve_profile_on_dict(
+        fallback,
+        f"{label}, extract.fallback",
+        merged_profiles,
+    )
+    errors.extend(fallback_errors)
+    return errors
+
+
 def resolve_profiles_in_flow(
     data: dict[str, Any],
     config_profiles: dict[str, dict[str, Any]] | None = None,
@@ -146,6 +185,12 @@ def resolve_profiles_in_flow(
                 merged_profiles,
             )
             errors.extend(state_errors)
+            fallback_errors = _resolve_fallback_profile(
+                state_data,
+                f"State '{state_name}'",
+                merged_profiles,
+            )
+            errors.extend(fallback_errors)
         elif state_data.get("type") == "parallel":
             for branch_idx, branch in enumerate(state_data.get("branches", [])):
                 if not isinstance(branch, dict):
@@ -156,5 +201,48 @@ def resolve_profiles_in_flow(
                     merged_profiles,
                 )
                 errors.extend(branch_errors)
+                fallback_errors = _resolve_fallback_profile(
+                    branch,
+                    f"State '{state_name}', branch {branch_idx}",
+                    merged_profiles,
+                )
+                errors.extend(fallback_errors)
+
+    return data, errors
+
+
+def resolve_profiles_in_config(
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Resolve profile references in task_splitter and workflow_selector config.
+
+    Operates on raw YAML dicts BEFORE Pydantic validation.
+
+    Args:
+        data: Raw merged config dict (before FdsxConfig.model_validate()).
+
+    Returns:
+        Tuple of (modified_data, errors). The data dict is mutated in-place.
+    """
+    errors: list[str] = []
+
+    profiles = data.get("profiles")
+    if profiles is None or not isinstance(profiles, dict):
+        profiles = {}
+
+    for config_key in ("task_splitter", "workflow_selector"):
+        config_item = data.get(config_key)
+        if not isinstance(config_item, dict):
+            continue
+
+        if "profile" not in config_item or config_item["profile"] is None:
+            continue
+
+        config_errors = _resolve_profile_on_dict(
+            config_item,
+            f"config.{config_key}",
+            profiles,
+        )
+        errors.extend(config_errors)
 
     return data, errors
