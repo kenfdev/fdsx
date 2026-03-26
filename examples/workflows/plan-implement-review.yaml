@@ -8,14 +8,26 @@ version: "1.0"
 start_at: plan
 max_loop: 3
 
+# Profile definitions allow provider/model to be referenced by name instead of
+# inline. Both styles (profile reference and inline provider/model) may coexist.
+profiles:
+  planner:
+    provider: claude
+    model: claude-sonnet-4-6
+  reviewer:
+    provider: codex
+    model: gpt-5.4
+  implementer:
+    provider: opencode
+    model: opencode-go/minimax-m2.5
+
 states:
   # ──────────────────────────────────────────────
-  # Step 1: Planning with Claude
+  # Step 1: Planning with Claude (profile reference)
   # ──────────────────────────────────────────────
   plan:
     type: task
-    provider: claude
-    model: claude-sonnet-4-6
+    profile: planner
     prompt_template: |
       You are a planning agent. Break down the following task into clear,
       actionable implementation steps. Be specific about which files to
@@ -49,14 +61,13 @@ states:
     next: parallel_review
 
   # ──────────────────────────────────────────────
-  # Step 3: Parallel Review (2 branches)
+  # Step 3: Parallel Review (2 branches, profile references)
   # ──────────────────────────────────────────────
   parallel_review:
     type: parallel
     branches:
       # Branch 1: Implementation quality review
-      - provider: codex
-        model: gpt-5.4
+      - profile: reviewer
         prompt_template: |
           You are a code review agent focused on implementation quality.
           Check for correctness, best practices, and completeness.
@@ -80,8 +91,7 @@ states:
         retry: 2
 
       # Branch 2: Security review
-      - provider: codex
-        model: gpt-5.4
+      - profile: reviewer
         prompt_template: |
           You are a security review agent. Check for input validation,
           injection risks, XSS, error handling leaks, and auth concerns.

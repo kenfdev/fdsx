@@ -316,6 +316,110 @@ class TestParallelProfileFlow:
         assert len(result["reviews"]) == 2
 
 
+class TestBackwardCompatibility:
+    """T032: Backward-compatibility tests confirming existing workflows without profiles work identically."""
+
+    def test_simple_flow_loads_compiles_and_runs_without_profiles(self, tmp_path):
+        """Workflows without profiles section load, compile, and run with same results."""
+        path = FIXTURES_DIR / "simple_flow.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert len(errors) == 0
+
+        compiled = compile_flow(flow)
+        assert compiled is not None
+
+        result = run_flow(path, base_dir=tmp_path)
+
+        assert "plan" in result
+        assert "implementation" in result
+        assert "review" in result
+        assert "Plan:" in result["plan"]
+        assert "Implementation:" in result["implementation"]
+        assert "Review:" in result["review"]
+
+    def test_parallel_review_flow_loads_compiles_and_runs_without_profiles(
+        self, tmp_path
+    ):
+        """Parallel workflows without profiles load, compile, and run correctly."""
+        path = FIXTURES_DIR / "parallel_review.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert len(errors) == 0
+
+        compiled = compile_flow(flow)
+        assert compiled is not None
+
+        result = run_flow(path, base_dir=tmp_path)
+
+        assert "reviews" in result
+        assert "decision" in result
+
+
+class TestProfilesOptional:
+    """T034: Tests verifying profiles section is optional at all config levels."""
+
+    def test_simple_flow_has_no_profiles_section(self):
+        """simple_flow.yaml has no profiles key."""
+        path = FIXTURES_DIR / "simple_flow.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert flow.profiles is None
+
+    def test_parallel_review_flow_has_no_profiles_section(self):
+        """parallel_review.yaml has no profiles key."""
+        path = FIXTURES_DIR / "parallel_review.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert flow.profiles is None
+
+    def test_workflow_without_profiles_loads_without_errors_or_warnings(self, tmp_path):
+        """Minimal workflow without profiles loads without errors or deprecation warnings."""
+        import warnings
+        import yaml
+
+        flow_dict = {
+            "name": "Minimal No Profile Flow",
+            "description": "Workflow with no profiles section",
+            "start_at": "task1",
+            "version": "1.0",
+            "states": {
+                "task1": {
+                    "type": "task",
+                    "provider": "system",
+                    "command": "echo 'hello'",
+                    "result_path": "$.output",
+                    "next": "end",
+                },
+                "end": {
+                    "type": "pass",
+                    "end": True,
+                },
+            },
+        }
+        flow_path = tmp_path / "no_profiles_flow.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            flow, errors = load_flow(flow_path)
+
+            assert flow is not None, f"Failed to load: {errors}"
+            assert flow.profiles is None
+
+            deprecation_warnings = [
+                x for x in w if issubclass(x.category, DeprecationWarning)
+            ]
+            assert len(deprecation_warnings) == 0, (
+                f"Unexpected deprecation warnings: {deprecation_warnings}"
+            )
+
+
 class TestCascadingProfileOverrides:
     """T018: Integration tests for workflow-level profile override of config-level profile."""
 
