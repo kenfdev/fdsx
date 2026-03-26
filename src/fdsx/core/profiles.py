@@ -38,6 +38,71 @@ def merge_profiles(
     return result
 
 
+def _resolve_profile_on_dict(
+    item: dict[str, Any],
+    label: str,
+    merged_profiles: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Resolve profile reference on a single dict (task or branch item).
+
+    Operates on raw YAML dicts BEFORE Pydantic validation.
+
+    Args:
+        item: The dict to modify in-place (task state or branch dict).
+        label: Human-readable label for error messages (e.g., "State 'X'" or "State 'X', branch Y").
+        merged_profiles: Merged profiles dictionary.
+
+    Returns:
+        List of error strings.
+    """
+    errors: list[str] = []
+
+    has_profile = "profile" in item
+    has_provider = "provider" in item
+    has_model = "model" in item
+
+    if has_profile and (has_provider or has_model):
+        errors.append(
+            f"{label}: profile and (provider|model) are mutually exclusive. "
+            f"Use either profile reference or explicit provider/model, not both."
+        )
+        return errors
+
+    if not has_profile:
+        return errors
+
+    profile_name = item["profile"]
+    if profile_name not in merged_profiles:
+        errors.append(
+            f"{label}: profile '{profile_name}' not found in profiles. "
+            f"Available profiles: {list(merged_profiles.keys())}. "
+            f"Define profiles in workflow YAML, project config (.fdsx/config.yaml), or global config (~/.config/fdsx/config.yaml)."
+        )
+        return errors
+
+    profile = merged_profiles[profile_name]
+    if not isinstance(profile, dict):
+        errors.append(f"{label}: profile '{profile_name}' must be a dict")
+        return errors
+
+    provider = profile.get("provider")
+    model = profile.get("model")
+
+    if provider is not None:
+        item["provider"] = provider
+
+    if model is not None:
+        item["model"] = model
+
+    extra_fields = {k: v for k, v in profile.items() if k not in ("provider", "model")}
+    if extra_fields:
+        item["provider_options"] = extra_fields
+
+    del item["profile"]
+
+    return errors
+
+
 def resolve_profiles_in_flow(
     data: dict[str, Any],
     config_profiles: dict[str, dict[str, Any]] | None = None,
@@ -74,54 +139,22 @@ def resolve_profiles_in_flow(
         if not isinstance(state_data, dict):
             continue
 
-        if state_data.get("type") != "task":
-            continue
-
-        has_profile = "profile" in state_data
-        has_provider = "provider" in state_data
-        has_model = "model" in state_data
-
-        if has_profile and (has_provider or has_model):
-            errors.append(
-                f"State '{state_name}': profile and (provider|model) are mutually exclusive. "
-                f"Use either profile reference or explicit provider/model, not both."
+        if state_data.get("type") == "task":
+            state_errors = _resolve_profile_on_dict(
+                state_data,
+                f"State '{state_name}'",
+                merged_profiles,
             )
-            continue
-
-        if not has_profile:
-            continue
-
-        profile_name = state_data["profile"]
-        if profile_name not in merged_profiles:
-            errors.append(
-                f"State '{state_name}': profile '{profile_name}' not found in profiles. "
-                f"Available profiles: {list(merged_profiles.keys())}. "
-                f"Define profiles in workflow YAML, project config (.fdsx/config.yaml), or global config (~/.config/fdsx/config.yaml)."
-            )
-            continue
-
-        profile = merged_profiles[profile_name]
-        if not isinstance(profile, dict):
-            errors.append(
-                f"State '{state_name}': profile '{profile_name}' must be a dict"
-            )
-            continue
-
-        provider = profile.get("provider")
-        model = profile.get("model")
-
-        if provider is not None:
-            state_data["provider"] = provider
-
-        if model is not None:
-            state_data["model"] = model
-
-        extra_fields = {
-            k: v for k, v in profile.items() if k not in ("provider", "model")
-        }
-        if extra_fields:
-            state_data["provider_options"] = extra_fields
-
-        del state_data["profile"]
+            errors.extend(state_errors)
+        elif state_data.get("type") == "parallel":
+            for branch_idx, branch in enumerate(state_data.get("branches", [])):
+                if not isinstance(branch, dict):
+                    continue
+                branch_errors = _resolve_profile_on_dict(
+                    branch,
+                    f"State '{state_name}', branch {branch_idx}",
+                    merged_profiles,
+                )
+                errors.extend(branch_errors)
 
     return data, errors

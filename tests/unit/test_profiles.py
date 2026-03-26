@@ -314,6 +314,144 @@ class TestResolveProfilesInFlow:
         assert data["states"]["task2"]["model"] == "gpt"
 
 
+class TestParallelBranchProfileResolution(TestResolveProfilesInFlow):
+    """Tests for profile resolution in parallel state branches."""
+
+    def test_parallel_branch_profile_resolved(self):
+        """A parallel state branch with profile gets resolved to provider/model."""
+        data = self._make_flow(
+            {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "profile": "smart_guy",
+                            "prompt_template": "Review code",
+                        }
+                    ],
+                    "result_path": "$.reviews",
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet-4-6"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        branch = data["states"]["review"]["branches"][0]
+        assert branch["provider"] == "claude"
+        assert branch["model"] == "sonnet-4-6"
+        assert "profile" not in branch
+
+    def test_parallel_branches_different_profiles(self):
+        """Each branch in a parallel state can use a different profile."""
+        data = self._make_flow(
+            {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "profile": "profile_a",
+                            "prompt_template": "Branch A",
+                        },
+                        {
+                            "profile": "profile_b",
+                            "prompt_template": "Branch B",
+                        },
+                    ],
+                    "result_path": "$.reviews",
+                }
+            },
+            profiles={
+                "profile_a": {"provider": "claude", "model": "sonnet"},
+                "profile_b": {"provider": "codex", "model": "gpt"},
+            },
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        assert data["states"]["review"]["branches"][0]["provider"] == "claude"
+        assert data["states"]["review"]["branches"][0]["model"] == "sonnet"
+        assert data["states"]["review"]["branches"][1]["provider"] == "codex"
+        assert data["states"]["review"]["branches"][1]["model"] == "gpt"
+
+    def test_parallel_branch_xor_validation(self):
+        """Branch with both profile and provider returns error."""
+        data = self._make_flow(
+            {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "profile": "smart_guy",
+                            "provider": "claude",
+                            "prompt_template": "Review code",
+                        }
+                    ],
+                    "result_path": "$.reviews",
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert len(errors) == 1
+        assert "mutually exclusive" in errors[0]
+        assert "branch 0" in errors[0]
+
+    def test_parallel_branch_missing_profile(self):
+        """Branch referencing nonexistent profile returns error."""
+        data = self._make_flow(
+            {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "profile": "nonexistent",
+                            "prompt_template": "Review code",
+                        }
+                    ],
+                    "result_path": "$.reviews",
+                }
+            },
+            profiles={"smart_guy": {"provider": "claude", "model": "sonnet"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+        assert "nonexistent" in errors[0]
+        assert "branch 0" in errors[0]
+
+    def test_parallel_branch_extra_fields_to_provider_options(self):
+        """Extra profile fields become provider_options on branch."""
+        data = self._make_flow(
+            {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "profile": "smart_guy",
+                            "prompt_template": "Review code",
+                        }
+                    ],
+                    "result_path": "$.reviews",
+                }
+            },
+            profiles={
+                "smart_guy": {
+                    "provider": "claude",
+                    "model": "sonnet",
+                    "permission_mode": "plan",
+                }
+            },
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        branch = data["states"]["review"]["branches"][0]
+        assert branch["provider_options"] == {"permission_mode": "plan"}
+
+
 class TestCascadingProfileOverrides:
     """T014: Tests for 3-level cascading profile overrides (global -> project -> workflow)."""
 

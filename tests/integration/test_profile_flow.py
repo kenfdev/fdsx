@@ -232,6 +232,90 @@ class TestValidateFlowProfileErrors:
         assert "missing_profile" in errors[0]
 
 
+class TestParallelProfileFlow:
+    """Tests for profile resolution in parallel workflow branches."""
+
+    def test_load_parallel_flow_resolves_branch_profiles(self):
+        """load_flow resolves profile on each parallel branch to provider/model."""
+        path = FIXTURES_DIR / "profile_parallel_flow.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+        assert len(errors) == 0
+
+        review_state = flow.states["review_parallel"]
+        assert review_state.branches[0].provider == "claude"
+        assert review_state.branches[0].model == "claude-sonnet-4-6"
+        assert review_state.branches[1].provider == "codex"
+        assert review_state.branches[1].model == "gpt-5.4"
+
+    def test_compile_parallel_flow_with_profiles(self):
+        """Parallel flow with profile-based branches compiles successfully."""
+        path = FIXTURES_DIR / "profile_parallel_flow.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+
+        compiled = compile_flow(flow)
+        assert compiled is not None
+
+    def test_run_parallel_flow_with_profiles(self, tmp_path):
+        """Parallel flow with profile-based branches executes end-to-end via run_flow."""
+        import yaml
+
+        flow_dict = {
+            "name": "Parallel Profile Execution",
+            "description": "Parallel branches resolved from profiles",
+            "start_at": "review_parallel",
+            "version": "1.0",
+            "profiles": {
+                "echo_approve": {
+                    "provider": "system",
+                },
+                "echo_reject": {
+                    "provider": "system",
+                },
+            },
+            "states": {
+                "review_parallel": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "profile": "echo_approve",
+                            "command": 'echo "APPROVED"',
+                            "extract": {
+                                "strategy": ["keyword"],
+                                "pattern": "APPROVED|REJECTED",
+                                "result_path": "$.decision",
+                            },
+                            "retry": 0,
+                        },
+                        {
+                            "profile": "echo_reject",
+                            "command": 'echo "REJECTED"',
+                            "extract": {
+                                "strategy": ["keyword"],
+                                "pattern": "APPROVED|REJECTED",
+                                "result_path": "$.decision",
+                            },
+                            "retry": 0,
+                        },
+                    ],
+                    "result_path": "$.reviews",
+                    "end": True,
+                }
+            },
+        }
+        flow_path = tmp_path / "parallel_profile_run.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        result = run_flow(flow_path, base_dir=tmp_path)
+
+        assert "reviews" in result
+        assert len(result["reviews"]) == 2
+
+
 class TestCascadingProfileOverrides:
     """T018: Integration tests for workflow-level profile override of config-level profile."""
 
