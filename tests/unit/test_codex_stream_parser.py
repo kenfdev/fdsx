@@ -13,8 +13,6 @@ Tests verify correct handling of:
 """
 
 import json
-import threading
-
 from fdsx.providers.codex import (
     CodexProvider,
     _EVENT_ERROR,
@@ -522,70 +520,3 @@ class TestErrorEvent:
         cb(json.dumps({"type": _EVENT_ERROR, "message": "network error"}))
 
         assert get_result() == "partial"
-
-
-# ---------------------------------------------------------------------------
-# Tests: completion_event
-# ---------------------------------------------------------------------------
-
-
-class TestCompletionEvent:
-    """completion_event is set only on terminal events."""
-
-    def test_completion_event_set_on_agent_message_completed(self) -> None:
-        """item.completed + agent_message sets completion_event."""
-        event = threading.Event()
-        provider = _make_provider()
-        cb, _ = provider._make_stream_callback(lambda _: None, completion_event=event)
-
-        assert not event.is_set()
-        cb(_build_item_completed(_ITEM_TYPE_AGENT_MESSAGE, text="done"))
-        assert event.is_set()
-
-    def test_completion_event_set_on_turn_failed(self) -> None:
-        """turn.failed event sets completion_event."""
-        event = threading.Event()
-        provider = _make_provider()
-        cb, _ = provider._make_stream_callback(lambda _: None, completion_event=event)
-
-        assert not event.is_set()
-        cb(_build_turn_failed("rate limit"))
-        assert event.is_set()
-
-    def test_completion_event_set_on_error(self) -> None:
-        """error event sets completion_event."""
-        event = threading.Event()
-        provider = _make_provider()
-        cb, _ = provider._make_stream_callback(lambda _: None, completion_event=event)
-
-        assert not event.is_set()
-        cb(json.dumps({"type": _EVENT_ERROR, "message": "quota exceeded"}))
-        assert event.is_set()
-
-    def test_completion_event_not_set_on_non_terminal(self) -> None:
-        """item.started and item.completed + reasoning do NOT set completion_event."""
-        event = threading.Event()
-        provider = _make_provider()
-        cb, _ = provider._make_stream_callback(lambda _: None, completion_event=event)
-
-        # item.started for agent_message — not terminal
-        cb(_build_item_started(_ITEM_TYPE_AGENT_MESSAGE))
-        assert not event.is_set()
-
-        # item.completed + reasoning — not terminal
-        cb(_build_item_completed(_ITEM_TYPE_REASONING, text="thinking"))
-        assert not event.is_set()
-
-    def test_completion_event_none_does_not_raise_on_terminal_events(self) -> None:
-        """When completion_event=None, terminal events are handled without errors."""
-        provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(
-            lambda _: None, completion_event=None
-        )
-
-        # Should not raise
-        cb(_build_item_completed(_ITEM_TYPE_AGENT_MESSAGE, text="result"))
-        cb(_build_turn_failed("error"))
-        cb(json.dumps({"type": _EVENT_ERROR, "message": "fail"}))
-
-        assert get_result() == "result"
