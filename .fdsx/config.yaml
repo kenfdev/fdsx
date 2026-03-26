@@ -1,0 +1,17 @@
+task_splitter:
+  provider: claude
+  model: claude-sonnet-4-6
+workflow_selector:
+  provider: claude
+  model: claude-sonnet-4-6
+workflows_dir: .fdsx/workflows
+auto_workflow: false
+providers:
+  claude:
+    permission_mode: bypassPermissions
+    dangerously_skip_permissions: true
+  codex:
+    dangerously_bypass_approvals_and_sandbox: true
+  opencode:
+    permission: "allow"
+
