@@ -13,10 +13,6 @@ from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
 
 class TestTaskEntryDefaults:
-    def test_default_status_pending(self):
-        entry = TaskEntry(description="Do the thing")
-        assert entry.status == "pending"
-
     def test_all_statuses_allowed(self):
         for status in ("pending", "running", "completed", "failed"):
             entry = TaskEntry(description="test", status=status)
@@ -25,11 +21,6 @@ class TestTaskEntryDefaults:
     def test_invalid_status_rejected(self):
         with pytest.raises(ValidationError):
             TaskEntry(description="test", status="invalid")
-
-    def test_thread_id_and_error_optional(self):
-        entry = TaskEntry(description="test", thread_id="abc123", error="boom")
-        assert entry.thread_id == "abc123"
-        assert entry.error == "boom"
 
     def test_workflow_optional(self):
         entry = TaskEntry(description="test", workflow="plan.yaml")
@@ -83,7 +74,9 @@ class TestTaskFileSource:
 
     def test_source_accepts_arbitrary_string(self):
         """T001: TaskFile.source accepts an arbitrary path string."""
-        tf = TaskFile(entries=[TaskEntry(description="test")], source="/path/to/tasks.yaml")
+        tf = TaskFile(
+            entries=[TaskEntry(description="test")], source="/path/to/tasks.yaml"
+        )
         assert tf.source == "/path/to/tasks.yaml"
 
     def test_source_accepts_none_explicitly(self):

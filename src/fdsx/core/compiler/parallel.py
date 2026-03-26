@@ -1,4 +1,5 @@
 """Parallel state node factories for the compiler package."""
+
 import subprocess
 import time
 from pathlib import Path
@@ -96,7 +97,9 @@ def _create_branch_executor(
         iteration = iters.get(state_name, 1)
         branch_log_name = f"{state_name}_branch{branch_index + 1}"
 
-        stream_logger = StreamLogger(branch_log_name, log_dir, quiet=quiet, iteration=iteration)
+        stream_logger = StreamLogger(
+            branch_log_name, log_dir, quiet=quiet, iteration=iteration
+        )
         exec_config = ExecutionConfig(
             provider=provider,
             provider_name=branch.provider,

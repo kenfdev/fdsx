@@ -3,6 +3,7 @@
 T010: Cover retry with exponential backoff, system vs LLM dispatch,
 timeout handling, extraction success, and extraction failure after retries.
 """
+
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -31,17 +32,21 @@ def _make_config(
 
     mock_provider = MagicMock()
     mock_logger = stream_logger or MagicMock()
-    return ExecutionConfig(
-        provider=mock_provider,
-        provider_name=provider_name,
-        prompt=prompt,
-        command=command,
-        model=model,
-        timeout_seconds=timeout_seconds,
-        max_retries=max_retries,
-        extract=extract,
-        stream_logger=mock_logger,
-    ), mock_provider, mock_logger
+    return (
+        ExecutionConfig(
+            provider=mock_provider,
+            provider_name=provider_name,
+            prompt=prompt,
+            command=command,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            extract=extract,
+            stream_logger=mock_logger,
+        ),
+        mock_provider,
+        mock_logger,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +106,7 @@ class TestExponentialBackoff:
         assert len(sleep_times) == 10
         assert max(sleep_times) == 30
         for i, s in enumerate(sleep_times):
-            assert s == min(2 ** i, 30)
+            assert s == min(2**i, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -259,9 +264,7 @@ class TestExtraction:
         from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
-        config, mock_provider, _ = _make_config(
-            max_retries=3, extract=extract_rule
-        )
+        config, mock_provider, _ = _make_config(max_retries=3, extract=extract_rule)
         mock_provider.execute.return_value = ProviderResult(
             exit_code=0, stdout='{"result": "yes"}', stderr=""
         )
@@ -277,9 +280,7 @@ class TestExtraction:
         from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
-        config, mock_provider, _ = _make_config(
-            max_retries=2, extract=extract_rule
-        )
+        config, mock_provider, _ = _make_config(max_retries=2, extract=extract_rule)
         mock_provider.execute.return_value = ProviderResult(
             exit_code=0, stdout="bad output", stderr=""
         )
@@ -297,9 +298,7 @@ class TestExtraction:
         from fdsx.core.compiler.execution import execute_with_retry
 
         extract_rule = self._make_extract_rule()
-        config, mock_provider, _ = _make_config(
-            max_retries=0, extract=extract_rule
-        )
+        config, mock_provider, _ = _make_config(max_retries=0, extract=extract_rule)
         mock_provider.execute.return_value = ProviderResult(
             exit_code=0, stdout="bad", stderr=""
         )
@@ -339,7 +338,9 @@ class TestExtraction:
             exit_code=0, stdout="output", stderr=""
         )
 
-        with patch("fdsx.core.compiler.execution.extract_value", return_value="val") as mock_ev:
+        with patch(
+            "fdsx.core.compiler.execution.extract_value", return_value="val"
+        ) as mock_ev:
             execute_with_retry(config)
 
         _, call_kwargs = mock_ev.call_args

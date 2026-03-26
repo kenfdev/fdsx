@@ -579,7 +579,9 @@ class TestCompletionEvent:
     def test_completion_event_none_does_not_raise_on_terminal_events(self) -> None:
         """When completion_event=None, terminal events are handled without errors."""
         provider = _make_provider()
-        cb, get_result = provider._make_stream_callback(lambda _: None, completion_event=None)
+        cb, get_result = provider._make_stream_callback(
+            lambda _: None, completion_event=None
+        )
 
         # Should not raise
         cb(_build_item_completed(_ITEM_TYPE_AGENT_MESSAGE, text="result"))

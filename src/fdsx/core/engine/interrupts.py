@@ -1,4 +1,5 @@
 """Shared interrupt-handling loop for the engine package."""
+
 from typing import Any
 
 from langgraph.types import Command

@@ -1,4 +1,5 @@
 """Helper utilities for the compiler package."""
+
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from fdsx.core.config import _deep_merge
@@ -23,7 +24,7 @@ def _top_level_key(path: str) -> str | None:
     return path.split(".")[0].split("[")[0] or None
 
 
-def _parallel_branch_reducer(current: list, update: list) -> list:
+def _parallel_branch_reducer(current: list[Any], update: list[Any]) -> list[Any]:
     """Reducer for parallel branch results that supports reset.
 
     Branch nodes return ``[result]`` which appends via concatenation.
@@ -166,9 +167,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     # 1. Reducer channels for parallel branch result accumulation
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
-            annotations[f"_br_{state_name}"] = Annotated[
-                list, _parallel_branch_reducer
-            ]
+            annotations[f"_br_{state_name}"] = Annotated[list, _parallel_branch_reducer]
 
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
     for state_name, state in flow.states.items():

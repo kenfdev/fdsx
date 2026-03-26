@@ -12,6 +12,7 @@ Design notes:
 - Returns ``ExecutionResult``; callers decide whether to raise (task node) or
   capture (branch executor).
 """
+
 import subprocess
 import time
 from dataclasses import dataclass

@@ -1,6 +1,6 @@
 """Integration tests for workflow name display in validate command."""
 
-from tests.integration.cli_test_utils import fixture_path, run_fdsx
+from tests.e2e.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestWorkflowNameDisplay:

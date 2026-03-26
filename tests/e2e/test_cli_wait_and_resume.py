@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from tests.integration.cli_test_utils import fixture_path, run_fdsx
+from tests.e2e.cli_test_utils import fixture_path, run_fdsx
 
 
 class TestCLIE2EPhase3:

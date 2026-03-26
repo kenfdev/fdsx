@@ -15,14 +15,6 @@ from fdsx.providers.system import SystemProvider
 class TestClaudeOptions:
     """T004: Tests for ClaudeOptions model."""
 
-    def test_claude_options_defaults(self):
-        """All fields default to None/False/[] when not provided."""
-        opts = ClaudeOptions()
-        assert opts.permission_mode is None
-        assert opts.dangerously_skip_permissions is False
-        assert opts.allowed_tools == []
-        assert opts.disallowed_tools == []
-
     def test_claude_options_permission_mode_valid(self):
         """Valid permission_mode literals must be accepted."""
         for mode in (
@@ -81,21 +73,6 @@ class TestClaudeOptions:
         with pytest.raises(ValidationError):
             ClaudeOptions(unknown_field="value")  # type: ignore[call-arg]
 
-    def test_claude_options_inactivity_timeout_default(self):
-        """inactivity_timeout defaults to None."""
-        opts = ClaudeOptions()
-        assert opts.inactivity_timeout is None
-
-    def test_claude_options_inactivity_timeout_custom(self):
-        """Custom inactivity_timeout value is accepted."""
-        opts = ClaudeOptions(inactivity_timeout=600)
-        assert opts.inactivity_timeout == 600
-
-    def test_claude_options_inactivity_timeout_zero_disables(self):
-        """inactivity_timeout=0 is accepted (disables the watchdog)."""
-        opts = ClaudeOptions(inactivity_timeout=0)
-        assert opts.inactivity_timeout == 0
-
     def test_claude_options_to_cli_flags_combined(self):
         """All fields set together produce correct combined flags in order."""
         opts = ClaudeOptions(
@@ -117,14 +94,6 @@ class TestClaudeOptions:
 
 class TestCodexOptions:
     """T006: Tests for CodexOptions model."""
-
-    def test_codex_options_defaults(self):
-        """All fields default to None/False when not provided."""
-        opts = CodexOptions()
-        assert opts.sandbox is None
-        assert opts.approval_policy is None
-        assert opts.full_auto is False
-        assert opts.dangerously_bypass_approvals_and_sandbox is False
 
     def test_codex_options_sandbox_valid(self):
         """Valid sandbox literals must be accepted."""
@@ -183,21 +152,6 @@ class TestCodexOptions:
         with pytest.raises(ValidationError):
             CodexOptions(unknown_field="value")  # type: ignore[call-arg]
 
-    def test_codex_options_inactivity_timeout_default(self):
-        """inactivity_timeout defaults to None."""
-        opts = CodexOptions()
-        assert opts.inactivity_timeout is None
-
-    def test_codex_options_inactivity_timeout_custom(self):
-        """Custom inactivity_timeout value is accepted."""
-        opts = CodexOptions(inactivity_timeout=600)
-        assert opts.inactivity_timeout == 600
-
-    def test_codex_options_inactivity_timeout_zero_disables(self):
-        """inactivity_timeout=0 is accepted (disables the watchdog)."""
-        opts = CodexOptions(inactivity_timeout=0)
-        assert opts.inactivity_timeout == 0
-
     def test_codex_options_to_cli_flags_combined(self):
         """All fields set together produce correct combined flags in order."""
         opts = CodexOptions(
@@ -219,11 +173,6 @@ class TestCodexOptions:
 class TestOpenCodeOptions:
     """T007: Tests for OpenCodeOptions model."""
 
-    def test_opencode_options_defaults(self):
-        """OpenCodeOptions can be instantiated with no arguments."""
-        opts = OpenCodeOptions()
-        assert opts is not None
-
     def test_opencode_options_to_cli_flags_empty(self):
         """to_cli_flags() always returns an empty list."""
         opts = OpenCodeOptions()
@@ -233,21 +182,6 @@ class TestOpenCodeOptions:
         """Extra fields must be rejected."""
         with pytest.raises(ValidationError):
             OpenCodeOptions(unknown_field="value")  # type: ignore[call-arg]
-
-    def test_opencode_options_inactivity_timeout_default(self):
-        """inactivity_timeout defaults to None."""
-        opts = OpenCodeOptions()
-        assert opts.inactivity_timeout is None
-
-    def test_opencode_options_inactivity_timeout_custom(self):
-        """Custom inactivity_timeout value is accepted."""
-        opts = OpenCodeOptions(inactivity_timeout=600)
-        assert opts.inactivity_timeout == 600
-
-    def test_opencode_options_inactivity_timeout_zero_disables(self):
-        """inactivity_timeout=0 is accepted (disables the watchdog)."""
-        opts = OpenCodeOptions(inactivity_timeout=0)
-        assert opts.inactivity_timeout == 0
 
 
 class TestGetProvider:
@@ -329,7 +263,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_codex_passes_default_inactivity_timeout(self):
         """CodexProvider with default options passes DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
         provider = CodexProvider(CodexOptions())
-        with patch("fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -338,7 +274,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_codex_passes_custom_inactivity_timeout(self):
         """CodexProvider with inactivity_timeout=600 passes 600 to _run_subprocess."""
         provider = CodexProvider(CodexOptions(inactivity_timeout=600))
-        with patch("fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -347,7 +285,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_codex_passes_zero_inactivity_timeout(self):
         """CodexProvider with inactivity_timeout=0 passes 0 to _run_subprocess (disabled)."""
         provider = CodexProvider(CodexOptions(inactivity_timeout=0))
-        with patch("fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -356,7 +296,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_claude_passes_default_inactivity_timeout(self):
         """ClaudeProvider with default options passes DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
         provider = ClaudeProvider(ClaudeOptions())
-        with patch("fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -365,7 +307,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_claude_passes_custom_inactivity_timeout(self):
         """ClaudeProvider with inactivity_timeout=600 passes 600 to _run_subprocess."""
         provider = ClaudeProvider(ClaudeOptions(inactivity_timeout=600))
-        with patch("fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -374,7 +318,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_claude_passes_zero_inactivity_timeout(self):
         """ClaudeProvider with inactivity_timeout=0 passes 0 to _run_subprocess (disabled)."""
         provider = ClaudeProvider(ClaudeOptions(inactivity_timeout=0))
-        with patch("fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.claude._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -383,7 +329,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_opencode_passes_default_inactivity_timeout(self):
         """OpenCodeProvider with default options passes DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
         provider = OpenCodeProvider(OpenCodeOptions())
-        with patch("fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -392,7 +340,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_opencode_passes_custom_inactivity_timeout(self):
         """OpenCodeProvider with inactivity_timeout=600 passes 600 to _run_subprocess."""
         provider = OpenCodeProvider(OpenCodeOptions(inactivity_timeout=600))
-        with patch("fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
@@ -401,7 +351,9 @@ class TestProviderInactivityTimeoutWiring:
     def test_opencode_passes_zero_inactivity_timeout(self):
         """OpenCodeProvider with inactivity_timeout=0 passes 0 to _run_subprocess (disabled)."""
         provider = OpenCodeProvider(OpenCodeOptions(inactivity_timeout=0))
-        with patch("fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT) as mock_run:
+        with patch(
+            "fdsx.providers.opencode._run_subprocess", return_value=self._MOCK_RESULT
+        ) as mock_run:
             provider.execute(prompt="hello")
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args

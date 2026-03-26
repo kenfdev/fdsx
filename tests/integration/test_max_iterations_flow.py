@@ -94,7 +94,10 @@ class TestMaxIterationsResumeInteraction:
         """
         # First "retry" allows plan to run a 2nd time.
         # Second "retry" would route back to plan a 3rd time, triggering max_iterations.
-        with patch("fdsx.core.engine.interrupts.display_wait_prompt", side_effect=["retry", "retry"]):
+        with patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt",
+            side_effect=["retry", "retry"],
+        ):
             with pytest.raises(
                 RuntimeError,
                 match="State 'plan' reached max_iterations limit \\(2\\)",
@@ -107,7 +110,10 @@ class TestMaxIterationsResumeInteraction:
         Verifies that log files are created for iterations that completed successfully
         before max_iterations was triggered.
         """
-        with patch("fdsx.core.engine.interrupts.display_wait_prompt", side_effect=["retry", "retry"]):
+        with patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt",
+            side_effect=["retry", "retry"],
+        ):
             with pytest.raises(RuntimeError, match="max_iterations limit"):
                 run_flow(MAX_ITERATIONS_WAIT_FLOW, base_dir=tmp_path, quiet=True)
 

@@ -1,4 +1,5 @@
 """resume_flow implementation for the engine package."""
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,12 @@ from fdsx.logging import RunRecorder
 from fdsx.logging.recorder import LOGS_DIR_NAME
 
 from .interrupts import handle_interrupts
-from .results import _calc_elapsed, _extract_results, _find_failed_state, _sanitize_state_for_log
+from .results import (
+    _calc_elapsed,
+    _extract_results,
+    _find_failed_state,
+    _sanitize_state_for_log,
+)
 from .signals import SignalHandler
 
 

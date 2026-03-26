@@ -9,8 +9,10 @@ def _patch_sleep(execution_mod, sleep_times):
     time.sleep is only called from execution.py inside execute_with_retry.
     """
     orig_execution_sleep = execution_mod.time.sleep
+
     def recorder(s):
         sleep_times.append(s)
+
     execution_mod.time.sleep = recorder
     return orig_execution_sleep
 

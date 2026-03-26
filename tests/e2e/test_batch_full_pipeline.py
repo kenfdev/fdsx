@@ -1,240 +1,16 @@
-"""Integration tests for Phase 6: Polish, Backward Compatibility & E2E.
+"""E2E tests for full pipeline (T43), help text (T41/T27), and security sanitization."""
 
-Tests:
-- T39: Backward compatibility for --tasks flag
-- T40: Clear error messages for invalid task files
-- T42: Edge cases (empty dir, all completed, single task file, invalid YAML)
-- T43: End-to-end full pipeline (split → edit → run → crash → resume → complete)
-"""
-
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
 from fdsx.cli.main import app
 from fdsx.core import engine
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
-from fdsx.core.config import FdsxConfig, TaskSplitterConfig
-from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
+from fdsx.core.config import TaskSplitterConfig
+from fdsx.models.task import load_task_file, save_task_file
 from tests import FIXTURES_DIR
-
-
-class TestBackwardCompat:
-    """T39: Verify --tasks (in-memory batch) reads task_splitter from config, not flow."""
-
-    def test_tasks_flag_reads_config_not_flow(self):
-        """Verify run_batch calls load_config() and uses config.task_splitter."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workflow_path = Path(tmpdir) / "flow.yaml"
-            workflow_path.write_text(
-                yaml.dump(
-                    {
-                        "name": "Test Flow",
-                        "description": "A test flow",
-                        "start_at": "step1",
-                        "version": "1.0",
-                        "states": {
-                            "step1": {
-                                "type": "task",
-                                "provider": "system",
-                                "command": "echo test",
-                                "result_path": "$.result",
-                                "end": True,
-                            }
-                        },
-                    }
-                )
-            )
-            tasks_file = Path(tmpdir) / "tasks.txt"
-            tasks_file.write_text("Task 1\nTask 2\n")
-
-            config_loaded = []
-
-            def mock_load_config(*args, **kwargs):
-                config_loaded.append(True)
-                return FdsxConfig(
-                    task_splitter=TaskSplitterConfig(
-                        provider="claude", model="claude-sonnet-4-6"
-                    )
-                )
-
-            mock_provider = MagicMock()
-            mock_provider.execute.return_value = MagicMock(
-                exit_code=0,
-                stdout='[{"description": "Task 1"}, {"description": "Task 2"}]',
-                stderr="",
-            )
-
-            with patch("fdsx.core.engine.batch.load_config", mock_load_config):
-                with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                    with patch("fdsx.core.engine.batch.display_task_list", return_value=True):
-                        with patch(
-                            "fdsx.core.engine.batch.run_flow", return_value={"result": "ok"}
-                        ):
-                            engine.run_batch(workflow_path, tasks_file)
-
-            assert len(config_loaded) > 0, "load_config should have been called"
-            assert "task_splitter" not in workflow_path.read_text().lower(), (
-                "task_splitter should not be in flow YAML"
-            )
-
-
-class TestErrorMessages:
-    """T40: Clear error messages for various failure scenarios."""
-
-    def test_invalid_yaml_task_file_via_cli(self, tmp_path):
-        """Invalid YAML in task file should produce a clear error via CLI."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        (tasks_dir / "001-bad.yaml").write_text(": [broken yaml\n")
-
-        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
-
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "run",
-                str(workflow_path),
-                "--tasks-dir",
-                str(tasks_dir),
-                "--auto-workflow",
-            ],
-        )
-
-        assert result.exit_code == 2, f"Expected exit code 2, got {result.exit_code}"
-        assert "001-bad.yaml" in result.stderr or "invalid" in result.stderr.lower(), (
-            f"Error should mention the invalid file: {result.stderr}"
-        )
-
-    def test_invalid_yaml_task_file_via_api(self, tmp_path):
-        """Invalid YAML in task file should produce a clear error via API."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        (tasks_dir / "001-bad.yaml").write_text(": [broken yaml\n")
-
-        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
-
-        with pytest.raises(engine.FlowValidationError) as exc_info:
-            engine.run_tasks_dir(workflow_path, tasks_dir, auto_workflow=True)
-
-        assert (
-            "001-bad.yaml" in str(exc_info.value)
-            or "invalid" in str(exc_info.value).lower()
-        ), f"Error should mention the invalid file: {exc_info.value}"
-
-
-class TestEdgeCases:
-    """T42: Edge case handling."""
-
-    def test_empty_tasks_dir_error_via_cli(self, tmp_path):
-        """Empty tasks directory should produce a clear error via CLI."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
-
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "run",
-                str(workflow_path),
-                "--tasks-dir",
-                str(tasks_dir),
-                "--auto-workflow",
-            ],
-        )
-
-        assert result.exit_code == 2, f"Expected exit code 2, got {result.exit_code}"
-        assert (
-            "no .yaml" in result.stderr.lower() or "empty" in result.stderr.lower()
-        ), f"Error should mention no YAML files: {result.stderr}"
-
-    def test_all_tasks_completed_multi_file_noop(self, tmp_path):
-        """Multiple files with all entries completed should result in no run_flow calls."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        flow_path = FIXTURES_DIR / "batch_flow.yaml"
-
-        tf1 = TaskFile(
-            entries=[
-                TaskEntry(description="task 1", status="completed"),
-                TaskEntry(description="task 2", status="completed"),
-            ]
-        )
-        save_task_file(tasks_dir / "001-file1.yaml", tf1)
-
-        tf2 = TaskFile(
-            entries=[
-                TaskEntry(description="task 3", status="completed"),
-                TaskEntry(description="task 4", status="completed"),
-            ]
-        )
-        save_task_file(tasks_dir / "002-file2.yaml", tf2)
-
-        with patch(
-            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
-        ) as mock_run:
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
-
-        mock_run.assert_not_called()
-        assert len(results) == 4
-        for r in results:
-            assert r["category"] == "skipped"
-            assert r["status"] == "completed"
-
-    def test_single_task_file_single_entry(self, tmp_path):
-        """One file with one entry should execute correctly."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        flow_path = FIXTURES_DIR / "batch_flow.yaml"
-
-        tf = TaskFile(entries=[TaskEntry(description="single task")])
-        save_task_file(tasks_dir / "001-single.yaml", tf)
-
-        with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
-
-        assert len(results) == 1
-        assert results[0]["status"] == "completed"
-        assert results[0]["category"] == "new"
-
-        # After all entries complete, the file is moved to completed/
-        loaded = load_task_file(tasks_dir / "completed" / "001-single.yaml")
-        assert loaded.entries[0].status == "completed"
-
-    def test_mix_valid_and_invalid_yaml_files(self, tmp_path):
-        """Mix of valid and invalid YAML files should error clearly."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        (tasks_dir / "001-valid.yaml").write_text("description: valid task\n")
-        (tasks_dir / "002-invalid.yaml").write_text(": [broken yaml\n")
-        (tasks_dir / "003-also-valid.yaml").write_text("description: another valid\n")
-
-        workflow_path = FIXTURES_DIR / "simple_flow.yaml"
-
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "run",
-                str(workflow_path),
-                "--tasks-dir",
-                str(tasks_dir),
-                "--auto-workflow",
-            ],
-        )
-
-        assert result.exit_code == 2
-        assert "002-invalid.yaml" in result.stderr or "invalid" in result.stderr.lower()
 
 
 class TestFullPipelineE2E:
@@ -326,7 +102,9 @@ class TestFullPipelineE2E:
             run_count_after_resume[0] += 1
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume):
+        with patch(
+            "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume
+        ):
             with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 results2 = engine.run_tasks_dir(
                     flow_path, tasks_dir, auto_workflow=True
@@ -375,7 +153,9 @@ class TestFullPipelineE2E:
             )
         created_files = write_task_files(result_groups, tasks_dir)
 
-        with patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}):
+        with patch(
+            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+        ):
             with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
                 runner = CliRunner()
                 result = runner.invoke(
@@ -415,7 +195,6 @@ class TestFullPipelineE2E:
         - Re-run skips auto-selection (workflow already set)
         - Error triggers resume command display
         """
-        import yaml
 
         project_root = tmp_path
         workflows_dir = project_root / ".fdsx" / "workflows"
@@ -498,9 +277,13 @@ class TestFullPipelineE2E:
             with patch(
                 "fdsx.core.selector.resolve_workflow_for_task", side_effect=mock_resolve
             ):
-                with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow):
+                with patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+                ):
                     with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                        with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
+                        with patch(
+                            "fdsx.core.engine.tasks_dir.input", side_effect=["n"]
+                        ):
                             engine.run_tasks_dir(
                                 None,
                                 tasks_dir,
@@ -539,10 +322,13 @@ class TestFullPipelineE2E:
                 side_effect=mock_resolve_persist,
             ):
                 with patch(
-                    "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_rerun
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    side_effect=mock_run_flow_rerun,
                 ):
                     with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                        with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
+                        with patch(
+                            "fdsx.core.engine.tasks_dir.input", side_effect=["n"]
+                        ):
                             results2 = engine.run_tasks_dir(
                                 None,
                                 tasks_dir,

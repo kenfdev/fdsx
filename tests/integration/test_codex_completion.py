@@ -49,9 +49,7 @@ class TestCodexHangingProcessKilledByCompletionEvent:
             }
         )
         script = (
-            f"import sys, time\n"
-            f"print({terminal_line!r}, flush=True)\n"
-            f"time.sleep(999)\n"
+            f"import sys, time\nprint({terminal_line!r}, flush=True)\ntime.sleep(5)\n"
         )
 
         provider = CodexProvider()

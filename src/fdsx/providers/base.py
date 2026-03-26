@@ -1,5 +1,6 @@
 import logging
 import os
+import signal as signal_module
 import subprocess
 import threading
 import time
@@ -129,6 +130,7 @@ def _run_subprocess(
             text=True,
             bufsize=1,
             env=proc_env,
+            start_new_session=True,
         )
 
         if on_process_start is not None:
@@ -144,6 +146,13 @@ def _run_subprocess(
         # the inactivity watchdog from issuing a redundant kill.
         _suppressed = threading.Event()
 
+        def _killpg(sig: int) -> None:
+            """Send *sig* to the subprocess's process group (best-effort)."""
+            try:
+                os.killpg(process.pid, sig)
+            except OSError:
+                pass  # Already dead or no such group
+
         def _watchdog() -> None:
             nonlocal killed_by_timeout
             if timeout is None:
@@ -152,7 +161,7 @@ def _run_subprocess(
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 killed_by_timeout = True
-                process.kill()
+                _killpg(signal_module.SIGKILL)
                 process.wait()  # Reap zombie so pipes close and readers unblock
 
         if timeout:
@@ -180,17 +189,11 @@ def _run_subprocess(
                         process.pid,
                         inactivity_timeout,
                     )
-                    try:
-                        process.terminate()  # SIGTERM
-                    except OSError:
-                        pass  # Already dead
+                    _killpg(signal_module.SIGTERM)
                     try:
                         process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
-                        try:
-                            process.kill()  # SIGKILL
-                        except OSError:
-                            pass  # Already dead
+                        _killpg(signal_module.SIGKILL)
                         process.wait()  # Reap zombie
                     break
 
@@ -269,10 +272,7 @@ def _run_subprocess(
                         " sending SIGTERM",
                         process.pid,
                     )
-                    try:
-                        process.terminate()  # 2) SIGTERM
-                    except OSError:
-                        pass  # Already dead
+                    _killpg(signal_module.SIGTERM)  # 2) SIGTERM the group
                     try:
                         process.wait(timeout=5)  # 3) Wait after SIGTERM
                     except subprocess.TimeoutExpired:
@@ -281,10 +281,7 @@ def _run_subprocess(
                             " sending SIGKILL",
                             process.pid,
                         )
-                        try:
-                            process.kill()  # 4) SIGKILL
-                        except OSError:
-                            pass  # Already dead
+                        _killpg(signal_module.SIGKILL)  # 4) SIGKILL the group
                         process.wait()  # 5) Reap zombie
                 stdout_thread.join(timeout=1)
                 stderr_thread.join(timeout=1)

@@ -9,9 +9,11 @@ Validates:
 These tests spawn fdsx as a real subprocess so that signal delivery, process
 group management, and lock-file cleanup all follow the real code path.
 
-All tests use a unique ``sleep 9973`` command to detect orphan processes via
+All tests use a unique ``sleep 47`` command to detect orphan processes via
 ``pgrep``, and a fixed ``--thread-id`` so the lock file path is deterministic.
 """
+
+import os
 import signal
 import subprocess
 import sys
@@ -23,13 +25,13 @@ import pytest
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 # Unique sleep duration so pgrep can reliably identify our child process.
-_SLEEP_DURATION = 9973
+_SLEEP_DURATION = 47
 
 # Thread ID used for runs so the lock file path is deterministic.
 _THREAD_ID = "signal-test-thread"
 
 # Seconds to wait for the child sleep process to start before sending a signal.
-_STARTUP_WAIT = 2.5
+_STARTUP_WAIT = 1.5
 
 # Seconds to wait for fdsx to exit after receiving a signal.
 _EXIT_WAIT = 15
@@ -60,17 +62,35 @@ def _fdsx_bin() -> str:
     return "fdsx"
 
 
-def _is_sleep_orphan_running() -> bool:
-    """Return True if a 'sleep <_SLEEP_DURATION>' process is still alive."""
+def _get_descendant_pids(parent_pid: int) -> list[int]:
+    """Return PIDs of all descendant processes of *parent_pid*.
+
+    Uses /proc to walk the process tree, avoiding global pgrep which can match
+    processes from concurrent CI matrix jobs.
+    """
+    children: list[int] = []
     try:
         result = subprocess.run(
-            ["pgrep", "-f", f"sleep {_SLEEP_DURATION}"],
+            ["pgrep", "-P", str(parent_pid)],
             capture_output=True,
             text=True,
         )
-        return result.returncode == 0
-    except FileNotFoundError:
-        # pgrep not available; skip orphan check
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                pid = int(line.strip())
+                children.append(pid)
+                children.extend(_get_descendant_pids(pid))
+    except (FileNotFoundError, ValueError):
+        pass
+    return children
+
+
+def _is_pid_alive(pid: int) -> bool:
+    """Return True if *pid* is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
         return False
 
 
@@ -111,6 +131,12 @@ def _run_fdsx_and_signal(
     )
 
     time.sleep(_STARTUP_WAIT)
+
+    # Snapshot descendant PIDs before sending the signal so we can check
+    # specifically *these* processes after fdsx exits, rather than using a
+    # global pgrep that could match concurrent CI matrix jobs.
+    proc._descendant_pids = _get_descendant_pids(proc.pid)  # type: ignore[attr-defined]
+
     proc.send_signal(sig)
 
     try:
@@ -131,17 +157,23 @@ class TestSigintCleanup:
     def test_sigint_exits_with_code_130(self, tmp_path: Path) -> None:
         """fdsx exits with code 130 (128+SIGINT) when SIGINT is sent."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        assert proc.returncode == 130, (
-            f"Expected exit code 130, got {proc.returncode}"
-        )
+        assert proc.returncode == 130, f"Expected exit code 130, got {proc.returncode}"
 
     def test_sigint_no_orphan_processes(self, tmp_path: Path) -> None:
         """No orphan sleep processes remain after SIGINT."""
-        _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        # Allow a brief moment for OS process table cleanup.
-        time.sleep(0.5)
-        assert not _is_sleep_orphan_running(), (
-            f"Orphan 'sleep {_SLEEP_DURATION}' process still running after SIGINT"
+        proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT)
+        # Poll for up to 10 seconds for descendant processes to be reaped,
+        # rather than a fixed sleep that can be too short in CI.
+        descendant_pids = getattr(proc, "_descendant_pids", [])
+        deadline = time.monotonic() + 10.0
+        orphans: list[int] = []
+        while time.monotonic() < deadline:
+            orphans = [pid for pid in descendant_pids if _is_pid_alive(pid)]
+            if not orphans:
+                break
+            time.sleep(0.5)
+        assert not orphans, (
+            f"Orphan processes still running after SIGINT: PIDs {orphans}"
         )
 
     def test_sigint_cleans_up_lock_file(self, tmp_path: Path) -> None:
@@ -152,9 +184,7 @@ class TestSigintCleanup:
             f"Lock file still exists after SIGINT: {lock_file}"
         )
 
-    def test_sigint_prints_workflow_interrupted_message(
-        self, tmp_path: Path
-    ) -> None:
+    def test_sigint_prints_workflow_interrupted_message(self, tmp_path: Path) -> None:
         """'Workflow interrupted' message is printed to stderr on SIGINT."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT, text=True)
         assert proc.stderr is not None
@@ -170,9 +200,7 @@ class TestSigtermCleanup:
     def test_sigterm_exits_with_code_143(self, tmp_path: Path) -> None:
         """fdsx exits with code 143 (128+SIGTERM) when SIGTERM is sent."""
         proc = _run_fdsx_and_signal(tmp_path, signal.SIGTERM)
-        assert proc.returncode == 143, (
-            f"Expected exit code 143, got {proc.returncode}"
-        )
+        assert proc.returncode == 143, f"Expected exit code 143, got {proc.returncode}"
 
     def test_sigterm_cleans_up_lock_file(self, tmp_path: Path) -> None:
         """Lock file is removed after SIGTERM."""

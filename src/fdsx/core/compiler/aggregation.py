@@ -1,4 +1,5 @@
 """Aggregation logic for parallel branch results in the compiler package."""
+
 from typing import Any
 
 from fdsx.models.flow import AggregateRule

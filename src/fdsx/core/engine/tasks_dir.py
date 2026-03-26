@@ -1,4 +1,5 @@
 """Tasks directory execution for the engine package."""
+
 import sys
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -213,6 +214,7 @@ def run_tasks_dir(
                 auto_selection_keys.append((file_idx, entry_idx))
                 try:
                     from fdsx.core.selector import resolve_workflow_for_task
+
                     resolved = resolve_workflow_for_task(
                         task_description=description,
                         workflows_dir=workflows_dir,

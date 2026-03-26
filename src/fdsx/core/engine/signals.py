@@ -1,13 +1,15 @@
 """Signal handler context manager for graceful subprocess cleanup.
 
 Registers SIGINT and SIGTERM handlers during flow execution that:
-1. Propagate the signal to all active child subprocesses
+1. Propagate the signal to all active child process groups
 2. Wait up to 5 seconds for voluntary exit
-3. SIGKILL any surviving subprocesses
+3. SIGKILL any surviving process groups
 4. Release the flow's checkpoint lock (idempotent)
 5. Print "Workflow interrupted" to stderr
 6. Exit with code 128 + signum
 """
+
+import os
 import signal
 import subprocess
 import sys
@@ -92,13 +94,16 @@ class SignalHandler:
         with self._processes_lock:
             procs = list(self._active_processes)
 
-        # Step 1: Forward the signal to all active child processes.
+        # Step 1: Forward the signal to all active child process groups.
+        # Each subprocess is started with start_new_session=True, so its PID
+        # is also its process group ID.  Killing the entire group ensures
+        # grandchild processes (e.g. "sleep" spawned by "sh -c") are cleaned up.
         for proc in procs:
             if proc.poll() is None:
                 try:
-                    proc.send_signal(signum)
+                    os.killpg(proc.pid, signum)
                 except OSError:
-                    pass  # Already dead
+                    pass  # Already dead or no such group
 
         # Step 2: Wait up to _GRACEFUL_SHUTDOWN_TIMEOUT seconds for voluntary exit.
         deadline = time.monotonic() + _GRACEFUL_SHUTDOWN_TIMEOUT
@@ -112,13 +117,13 @@ class SignalHandler:
                 except subprocess.TimeoutExpired:
                     pass
 
-        # Step 3: SIGKILL any processes still alive after the grace period.
+        # Step 3: SIGKILL any process groups still alive after the grace period.
         for proc in procs:
             if proc.poll() is None:
                 try:
-                    proc.kill()
+                    os.killpg(proc.pid, signal.SIGKILL)
                 except OSError:
-                    pass  # Already dead
+                    pass  # Already dead or no such group
                 try:
                     proc.wait(timeout=1)
                 except subprocess.TimeoutExpired:

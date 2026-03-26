@@ -5,7 +5,6 @@ import yaml
 
 from fdsx.core.variables import analyze_variable_references
 from fdsx.models.flow import Flow
-from fdsx.providers.base import check_cli_exists
 
 
 def load_flow(
@@ -44,11 +43,8 @@ def load_flow(
 
     var_errors = analyze_variable_references(flow, input_keys=input_keys)
 
-    cli_errors = _check_provider_clis(flow)
-
-    errors = var_errors + cli_errors
-    if errors:
-        return None, errors
+    if var_errors:
+        return None, var_errors
 
     return flow, []
 
@@ -170,49 +166,6 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
         return Flow(**flow_dict), []
     except Exception as e:
         return flow, [f"Failed to re-validate flow after prompt_file resolution: {e}"]
-
-
-def _check_provider_clis(flow: Flow) -> list[str]:
-    """Check that all provider CLIs exist on PATH."""
-    errors: list[str] = []
-
-    from fdsx.models.flow import TaskState, ParallelState
-
-    checked_providers: set[str] = set()
-
-    for state_name, state in flow.states.items():
-        if isinstance(state, TaskState):
-            if state.provider != "system" and state.provider not in checked_providers:
-                provider_cli = _get_provider_cli(state.provider)
-                if provider_cli and not check_cli_exists(provider_cli):
-                    errors.append(
-                        f"State '{state_name}': provider CLI '{provider_cli}' not found on PATH"
-                    )
-                checked_providers.add(state.provider)
-        elif isinstance(state, ParallelState):
-            for branch_idx, branch in enumerate(state.branches):
-                if (
-                    branch.provider != "system"
-                    and branch.provider not in checked_providers
-                ):
-                    provider_cli = _get_provider_cli(branch.provider)
-                    if provider_cli and not check_cli_exists(provider_cli):
-                        errors.append(
-                            f"Parallel state '{state_name}' branch {branch_idx}: provider CLI '{provider_cli}' not found on PATH"
-                        )
-                    checked_providers.add(branch.provider)
-
-    return errors
-
-
-def _get_provider_cli(provider: str) -> str | None:
-    """Get the CLI command for a provider."""
-    cli_map = {
-        "claude": "claude",
-        "opencode": "opencode",
-        "codex": "codex",
-    }
-    return cli_map.get(provider)
 
 
 def validate_flow(path: Path) -> tuple[bool, list[str]]:

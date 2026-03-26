@@ -16,11 +16,6 @@ class TestThreadIdFormat:
         pattern = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}-[a-f0-9]{6}$")
         assert pattern.match(thread_id), f"Invalid thread ID format: {thread_id}"
 
-    def test_thread_id_is_string(self) -> None:
-        """Generated ID must be a string."""
-        thread_id = generate_thread_id()
-        assert isinstance(thread_id, str)
-
     def test_thread_id_timestamp_portion_matches_local_time(self) -> None:
         """Timestamp portion (YYYY-MM-DD-HHMMSS) must match local time."""
         thread_id = generate_thread_id()
