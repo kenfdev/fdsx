@@ -101,6 +101,50 @@ class GeminiProvider(ProviderBase):
             else DEFAULT_INACTIVITY_TIMEOUT
         )
 
+        if output_callback is not None:
+            args.extend(["--output-format", "stream-json"])
+            completion_event = threading.Event()
+            suspend_fn: list[Callable[[], None] | None] = [None]
+            resume_fn: list[Callable[[], None] | None] = [None]
+
+            def on_inactivity_hooks(
+                suspend: Callable[[], None], resume: Callable[[], None]
+            ) -> None:
+                suspend_fn[0] = suspend
+                resume_fn[0] = resume
+
+            stream_callback, get_result, flush = self._make_stream_callback(
+                output_callback,
+                completion_event,
+                summary_callback,
+                on_tool_start=lambda: (
+                    suspend_fn[0]() if suspend_fn[0] is not None else None
+                ),
+                on_tool_end=lambda: (
+                    resume_fn[0]() if resume_fn[0] is not None else None
+                ),
+            )
+            result = _run_subprocess(
+                args=args,
+                timeout=timeout,
+                output_callback=stream_callback,
+                stderr_callback=stderr_callback,
+                stdin_data=stdin_data,
+                completion_event=completion_event,
+                inactivity_timeout=effective_inactivity,
+                on_process_start=on_process_start,
+                on_inactivity_hooks=on_inactivity_hooks,
+            )
+            flush()
+            parsed_stdout = get_result()
+            if parsed_stdout is not None:
+                return ProviderResult(
+                    exit_code=result.exit_code,
+                    stdout=parsed_stdout,
+                    stderr=result.stderr,
+                )
+            return result
+
         return _run_subprocess(
             args=args,
             timeout=timeout,
