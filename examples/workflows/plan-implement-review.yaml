@@ -11,13 +11,13 @@ max_loop: 3
 # Profile definitions allow provider/model to be referenced by name instead of
 # inline. Both styles (profile reference and inline provider/model) may coexist.
 profiles:
-  planner:
+  smarty:
     provider: claude
     model: claude-sonnet-4-6
-  reviewer:
+  specialist:
     provider: codex
     model: gpt-5.4
-  implementer:
+  doer:
     provider: opencode
     model: opencode-go/minimax-m2.5
 
@@ -27,7 +27,7 @@ states:
   # ──────────────────────────────────────────────
   plan:
     type: task
-    profile: planner
+    profile: smarty
     prompt_template: |
       You are a planning agent. Break down the following task into clear,
       actionable implementation steps. Be specific about which files to
@@ -44,8 +44,7 @@ states:
   # ──────────────────────────────────────────────
   implement:
     type: task
-    provider: opencode
-    model: opencode-go/minimax-m2.5
+    profile: doer
     prompt_template: |
       You are an implementation agent. Follow this plan exactly and write the code.
       Output ALL files with their full paths and content.
@@ -67,7 +66,7 @@ states:
     type: parallel
     branches:
       # Branch 1: Implementation quality review
-      - profile: reviewer
+      - profile: specialist
         prompt_template: |
           You are a code review agent focused on implementation quality.
           Check for correctness, best practices, and completeness.
@@ -91,7 +90,7 @@ states:
         retry: 2
 
       # Branch 2: Security review
-      - profile: reviewer
+      - profile: specialist
         prompt_template: |
           You are a security review agent. Check for input validation,
           injection risks, XSS, error handling leaks, and auth concerns.

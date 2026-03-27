@@ -13,8 +13,7 @@ states:
   # ──────────────────────────────────────────────
   plan:
     type: task
-    provider: claude
-    model: claude-opus-4-6
+    profile: smarty
     prompt_file: plan.md
     result_path: $.plan_output
     result_file: $.plan_ref
@@ -39,8 +38,7 @@ states:
   # ──────────────────────────────────────────────
   implement:
     type: task
-    provider: opencode
-    model: opencode-go/minimax-m2.7
+    profile: doer
     prompt_file: implement.md
     result_path: $.implementation_output
     result_file: $.implementation_ref
@@ -67,8 +65,7 @@ states:
     type: parallel
     branches:
       # Branch 1: Code quality review
-      - provider: codex
-        model: gpt-5.4
+      - profile: specialist
         prompt_file: review-code-quality.md
         extract:
           strategy: [keyword, regex]
@@ -77,8 +74,7 @@ states:
         retry: 2
 
       # Branch 2: Security review
-      - provider: codex
-        model: gpt-5.4
+      - profile: specialist
         prompt_file: review-security.md
         extract:
           strategy: [keyword, regex]
@@ -119,8 +115,7 @@ states:
   # ──────────────────────────────────────────────
   replan:
     type: task
-    provider: claude
-    model: claude-opus-4-6
+    profile: smarty
     prompt_file: replan.md
     result_path: $.replan_output
     result_file: $.replan_ref
@@ -150,8 +145,7 @@ states:
   # ──────────────────────────────────────────────
   fix_simple:
     type: task
-    provider: opencode
-    model: opencode-go/minimax-m2.7
+    profile: doer
     prompt_file: fix.md
     result_path: $.fix_simple_output
     result_file: $.fix_simple_ref
@@ -184,8 +178,7 @@ states:
   # ──────────────────────────────────────────────
   fix_complex:
     type: task
-    provider: claude
-    model: claude-opus-4-6
+    profile: smarty
     prompt_file: fix.md
     result_path: $.fix_complex_output
     result_file: $.fix_complex_ref
@@ -214,8 +207,7 @@ states:
   # ──────────────────────────────────────────────
   finalize:
     type: task
-    provider: claude
-    model: claude-sonnet-4-6
+    profile: generalist
     prompt_file: finalize.md
     result_path: $.finalize_output
     retry: 2

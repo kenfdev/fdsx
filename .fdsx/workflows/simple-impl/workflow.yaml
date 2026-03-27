@@ -12,8 +12,7 @@ states:
   # ──────────────────────────────────────────────
   plan:
     type: task
-    provider: claude
-    model: claude-opus-4-6
+    profile: smarty
     prompt_file: plan.md
     result_path: $.plan_output
     result_file: $.plan_ref
@@ -38,8 +37,7 @@ states:
   # ──────────────────────────────────────────────
   implement:
     type: task
-    provider: opencode
-    model: opencode-go/minimax-m2.7
+    profile: doer
     prompt_file: implement.md
     result_path: $.implementation_output
     result_file: $.implementation_ref
@@ -64,8 +62,7 @@ states:
   # ──────────────────────────────────────────────
   review:
     type: task
-    provider: codex
-    model: gpt-5.4
+    profile: specialist
     prompt_file: review-general.md
     result_path: $.review_output
     result_file: $.review_ref
@@ -90,8 +87,7 @@ states:
   # ──────────────────────────────────────────────
   replan:
     type: task
-    provider: claude
-    model: claude-opus-4-6
+    profile: smarty
     prompt_file: replan.md
     result_path: $.replan_output
     result_file: $.replan_ref
@@ -117,8 +113,7 @@ states:
   # ──────────────────────────────────────────────
   fix:
     type: task
-    provider: claude
-    model: claude-opus-4-6
+    profile: smarty
     prompt_file: fix.md
     result_path: $.fix_output
     result_file: $.fix_ref
@@ -147,8 +142,7 @@ states:
   # ──────────────────────────────────────────────
   finalize:
     type: task
-    provider: claude
-    model: claude-sonnet-4-6
+    profile: generalist
     prompt_file: finalize.md
     result_path: $.finalize_output
     retry: 2
