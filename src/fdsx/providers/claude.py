@@ -85,6 +85,8 @@ class ClaudeProvider(ProviderBase):
         output_callback: Callable[[str], None],
         completion_event: threading.Event | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        on_tool_start: Callable[[], None] | None = None,
+        on_tool_end: Callable[[], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None], Callable[[], None]]:
         """Create a streaming callback that parses stream-json NDJSON lines.
 
@@ -111,6 +113,8 @@ class ClaudeProvider(ProviderBase):
         _buffer: list[str] = []
         # Tracks current buffer content type: "text", "thinking", or None.
         _buffer_type: list[str | None] = [None]
+        # Tracks whether we are currently inside a tool_use block.
+        _in_tool_use: list[bool] = [False]
 
         def _flush_buffer() -> None:
             """Emit buffered content as complete lines via output_callback."""
@@ -174,6 +178,9 @@ class ClaudeProvider(ProviderBase):
             if event_type == _EVENT_CONTENT_BLOCK_START:
                 content_block = event.get("content_block", {})
                 if content_block.get("type") == _CONTENT_TYPE_TOOL_USE:
+                    _in_tool_use[0] = True
+                    if on_tool_start is not None:
+                        on_tool_start()
                     _flush_buffer()
                     tool_name = content_block.get("name", "unknown")
                     cb = summary_callback if summary_callback else output_callback
@@ -193,6 +200,10 @@ class ClaudeProvider(ProviderBase):
                         _append_and_emit(thinking, "thinking")
 
             elif event_type == _EVENT_CONTENT_BLOCK_STOP:
+                if _in_tool_use[0]:
+                    _in_tool_use[0] = False
+                    if on_tool_end is not None:
+                        on_tool_end()
                 _flush_buffer()
 
             elif event_type == _EVENT_RESULT:
@@ -267,8 +278,25 @@ class ClaudeProvider(ProviderBase):
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
             completion_event = threading.Event()
+            suspend_fn: list[Callable[[], None] | None] = [None]
+            resume_fn: list[Callable[[], None] | None] = [None]
+
+            def on_inactivity_hooks(
+                suspend: Callable[[], None], resume: Callable[[], None]
+            ) -> None:
+                suspend_fn[0] = suspend
+                resume_fn[0] = resume
+
             stream_callback, get_result, flush = self._make_stream_callback(
-                output_callback, completion_event, summary_callback
+                output_callback,
+                completion_event,
+                summary_callback,
+                on_tool_start=lambda: (
+                    suspend_fn[0]() if suspend_fn[0] is not None else None
+                ),
+                on_tool_end=lambda: (
+                    resume_fn[0]() if resume_fn[0] is not None else None
+                ),
             )
             result = _run_subprocess(
                 args=args,
@@ -279,6 +307,7 @@ class ClaudeProvider(ProviderBase):
                 completion_event=completion_event,
                 inactivity_timeout=effective_inactivity,
                 on_process_start=on_process_start,
+                on_inactivity_hooks=on_inactivity_hooks,
             )
             flush()
             parsed_stdout = get_result()

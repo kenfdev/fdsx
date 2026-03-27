@@ -10,11 +10,21 @@ Short thresholds (2s) keep the test suite fast while providing sufficient margin
 Test criteria (T003): python -m pytest tests/integration/test_inactivity_timeout.py -v
 """
 
+import json
 import sys
 import threading
 import time
+from collections.abc import Callable
+from unittest.mock import MagicMock, patch
 
-from fdsx.providers.base import _run_subprocess
+from fdsx.providers.base import ProviderResult, _run_subprocess
+from fdsx.providers.claude import (
+    _CONTENT_TYPE_TOOL_USE,
+    _EVENT_CONTENT_BLOCK_START,
+    _EVENT_CONTENT_BLOCK_STOP,
+    ClaudeOptions,
+    ClaudeProvider,
+)
 
 # Use the same Python interpreter as the test runner.
 _PYTHON = sys.executable
@@ -335,3 +345,63 @@ class TestToolInProgressSuspendsInactivity:
         assert "inactivity" not in result.stderr.lower(), (
             f"Process should not be killed; clock reset on resume, stderr: {result.stderr!r}"
         )
+
+
+class TestClaudeToolInProgressSuspendsInactivity:
+    """T014: Claude tool_use events trigger suspend/resume to prevent false inactivity kills."""
+
+    def test_tool_use_event_suspends_timer(self):
+        """content_block_start(tool_use) triggers suspend; content_block_stop triggers resume."""
+        provider = ClaudeProvider(ClaudeOptions(inactivity_timeout=60))
+
+        captured_hooks: list[tuple[MagicMock, MagicMock]] = []
+        captured_callback: list[Callable[[str], None]] = []
+
+        def mock_run_subprocess(**kwargs):
+            captured_callback.append(kwargs["output_callback"])
+            hooks = kwargs.get("on_inactivity_hooks")
+            if hooks:
+                suspend_fn = MagicMock()
+                resume_fn = MagicMock()
+                hooks(suspend_fn, resume_fn)
+                captured_hooks.append((suspend_fn, resume_fn))
+            return ProviderResult(exit_code=0, stdout="done", stderr="")
+
+        with patch("fdsx.providers.claude._run_subprocess", mock_run_subprocess):
+            result = provider.execute(
+                prompt="test",
+                output_callback=MagicMock(),
+            )
+
+        assert result.exit_code == 0
+        assert len(captured_hooks) == 1
+        suspend_fn, resume_fn = captured_hooks[0]
+
+        output_cb = captured_callback[0]
+        output_cb(
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": _EVENT_CONTENT_BLOCK_START,
+                        "index": 1,
+                        "content_block": {
+                            "type": _CONTENT_TYPE_TOOL_USE,
+                            "id": "tu_001",
+                            "name": "Bash",
+                        },
+                    },
+                }
+            )
+        )
+        suspend_fn.assert_called_once()
+
+        output_cb(
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {"type": _EVENT_CONTENT_BLOCK_STOP, "index": 1},
+                }
+            )
+        )
+        resume_fn.assert_called_once()

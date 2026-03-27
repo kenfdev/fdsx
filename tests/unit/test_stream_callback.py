@@ -15,6 +15,7 @@ from fdsx.providers.claude import (
     _DELTA_TYPE_THINKING,
     _EVENT_CONTENT_BLOCK_DELTA,
     _EVENT_CONTENT_BLOCK_START,
+    _EVENT_CONTENT_BLOCK_STOP,
 )
 
 
@@ -52,6 +53,15 @@ def _build_tool_use_start_line(tool_name: str, index: int = 1) -> str:
                 "id": "tu_001",
                 "name": tool_name,
             },
+        }
+    )
+
+
+def _build_content_block_stop_line(index: int = 0) -> str:
+    return json.dumps(
+        {
+            "type": _EVENT_CONTENT_BLOCK_STOP,
+            "index": index,
         }
     )
 
@@ -198,3 +208,50 @@ class TestTextDeltaCallsOutputCallback:
 
         assert output_received == ["start", "end"]
         assert summary_received == ["[thinking] thinking..."]
+
+
+class TestToolStartEndCallbacks:
+    """T011: on_tool_start / on_tool_end callbacks fire on tool_use block boundaries."""
+
+    def test_tool_start_triggers_on_tool_start(self) -> None:
+        """content_block_start(tool_use) triggers on_tool_start callback."""
+        output_received: list[str] = []
+        on_tool_start_called: list[bool] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(
+            output_received.append,
+            on_tool_start=lambda: on_tool_start_called.append(True),
+        )
+
+        cb(_build_tool_use_start_line("Bash"))
+
+        assert on_tool_start_called == [True]
+
+    def test_tool_end_triggers_on_tool_end(self) -> None:
+        """content_block_stop after tool_use start triggers on_tool_end callback."""
+        output_received: list[str] = []
+        on_tool_end_called: list[bool] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(
+            output_received.append,
+            on_tool_end=lambda: on_tool_end_called.append(True),
+        )
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_content_block_stop_line())
+
+        assert on_tool_end_called == [True]
+
+    def test_non_tool_block_stop_does_not_trigger_on_tool_end(self) -> None:
+        """content_block_stop without preceding tool_use start does not trigger on_tool_end."""
+        output_received: list[str] = []
+        on_tool_end_called: list[bool] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(
+            output_received.append,
+            on_tool_end=lambda: on_tool_end_called.append(True),
+        )
+
+        cb(_build_content_block_stop_line())
+
+        assert on_tool_end_called == []
