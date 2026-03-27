@@ -37,7 +37,7 @@ states:
 
   research:
     type: task
-    profile: generalist
+    profile: behemoth
     prompt_file: research.md
     result_path: $.research_output
     next: write_lessons
