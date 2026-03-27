@@ -46,3 +46,15 @@ class TestAutoInit:
             assert "Initialized .fdsx/" not in result.stderr
             assert "Created:" not in result.stderr
             assert "Next steps:" not in result.stderr
+
+    def test_ci_flag_skips_init(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            result = run_fdsx(["--ci", "run"], cwd=tmp_path)
+
+            assert not (tmp_path / ".fdsx").exists()
+
+            assert "Initialized .fdsx/" not in result.stderr
+
+            assert result.returncode == 2
+            assert "Error: workflow argument is required" in result.stderr
