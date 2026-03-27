@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
+    DEFAULT_EXECUTION_TIMEOUT,
     DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
@@ -100,6 +101,9 @@ class GeminiProvider(ProviderBase):
             if self.options.inactivity_timeout is not None
             else DEFAULT_INACTIVITY_TIMEOUT
         )
+        effective_timeout = (
+            timeout if timeout is not None else DEFAULT_EXECUTION_TIMEOUT
+        )
 
         if output_callback is not None:
             args.extend(["--output-format", "stream-json"])
@@ -126,7 +130,7 @@ class GeminiProvider(ProviderBase):
             )
             result = _run_subprocess(
                 args=args,
-                timeout=timeout,
+                timeout=effective_timeout,
                 output_callback=stream_callback,
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
@@ -147,7 +151,7 @@ class GeminiProvider(ProviderBase):
 
         return _run_subprocess(
             args=args,
-            timeout=timeout,
+            timeout=effective_timeout,
             output_callback=output_callback,
             stderr_callback=stderr_callback,
             stdin_data=stdin_data,

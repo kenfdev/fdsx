@@ -18,6 +18,13 @@ ARG_MAX_STDIN_THRESHOLD = 131072  # 128 KB
 # Set inactivity_timeout=0 to disable.
 DEFAULT_INACTIVITY_TIMEOUT = 300
 
+# Default hard execution timeout in seconds (30 minutes). A wall-clock limit that
+# kills the subprocess regardless of activity. Prevents runaway LLM processes that
+# stay "active" (e.g., chaining tool calls indefinitely) from blocking a workflow
+# forever. Applied by LLM providers when no explicit timeout_seconds is set.
+# Set to 0 or None to disable.
+DEFAULT_EXECUTION_TIMEOUT = 1800
+
 
 @dataclass
 class ProviderResult:
@@ -109,8 +116,8 @@ def _run_subprocess(
             register active subprocesses for signal forwarding.
         on_inactivity_hooks: Optional callback invoked with (suspend_fn, resume_fn)
             when inactivity_timeout is active. Callers can use these to prevent
-            false inactivity kills during long-running tool execution. suspend_fn
-            stops the inactivity timer; resume_fn restarts it from the current time.
+            false inactivity kills during long-running tool execution. Both suspend_fn
+            and resume_fn reset the inactivity timer to the current time.
 
     Returns:
         ProviderResult with exit code and output.
@@ -155,15 +162,12 @@ def _run_subprocess(
         # _suppressed: set when the completion_event path takes control, preventing
         # the inactivity watchdog from issuing a redundant kill.
         _suppressed = threading.Event()
-        # _tool_in_progress: set when a tool is running (suspend) to prevent
-        # the inactivity watchdog from issuing a false kill.
-        _tool_in_progress = threading.Event()
 
         def _suspend_inactivity() -> None:
-            _tool_in_progress.set()
+            with _last_activity_lock:
+                _last_activity[0] = time.monotonic()
 
         def _resume_inactivity() -> None:
-            _tool_in_progress.clear()
             with _last_activity_lock:
                 _last_activity[0] = time.monotonic()
 
@@ -198,8 +202,6 @@ def _run_subprocess(
                     break
                 if process.poll() is not None:
                     break
-                if _tool_in_progress.is_set():
-                    continue
                 with _last_activity_lock:
                     idle = time.monotonic() - _last_activity[0]
                 if idle > inactivity_timeout:
