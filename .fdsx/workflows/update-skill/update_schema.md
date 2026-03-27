@@ -8,7 +8,7 @@ You are updating the fdsx `/fdsx` skill's yaml-schema.md reference file based on
 
 ## Your Task
 
-Rewrite the yaml-schema.md file at `~/.claude/skills/fdsx/references/yaml-schema.md` to be fully up-to-date with the current source code.
+Generate the complete updated yaml-schema.md content and **print it to stdout as plain text**. Do NOT use any tools (Read, Edit, Write, Bash) to modify files. Your entire text output will be captured and saved automatically by the workflow engine.
 
 **Rules:**
 1. Preserve the existing structure: Table of Contents, then each state type, then Extract/Aggregate/Hook/Validation sections
@@ -20,4 +20,4 @@ Rewrite the yaml-schema.md file at `~/.claude/skills/fdsx/references/yaml-schema
 7. If new fields or state types exist in source, add them
 8. If fields were removed from source, remove them from the schema
 
-Write the complete updated yaml-schema.md file content. The file will be saved automatically.
+**IMPORTANT: Output ONLY the raw file content. No preamble, no explanation, no code fences. Just the complete yaml-schema.md content starting with `# fdsx YAML Schema Reference`.**

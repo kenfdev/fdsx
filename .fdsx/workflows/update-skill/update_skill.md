@@ -8,7 +8,7 @@ You are updating the fdsx `/fdsx` skill's SKILL.md file based on a source code a
 
 ## Your Task
 
-Rewrite the SKILL.md file at `~/.claude/skills/fdsx/SKILL.md` to be fully up-to-date with the current source code.
+Generate the complete updated SKILL.md content and **print it to stdout as plain text**. Do NOT use any tools (Read, Edit, Write, Bash) to modify files. Your entire text output will be captured and saved automatically by the workflow engine.
 
 **Rules:**
 1. Preserve the existing structure and writing style of SKILL.md
@@ -21,4 +21,4 @@ Rewrite the SKILL.md file at `~/.claude/skills/fdsx/SKILL.md` to be fully up-to-
 8. If new features were added, add them in the most logical existing section (or create a minimal new section if needed)
 9. If features were removed, remove them cleanly without leaving stubs
 
-Write the complete updated SKILL.md file content. The file will be saved automatically.
+**IMPORTANT: Output ONLY the raw file content. No preamble, no explanation, no code fences. Just the complete SKILL.md content starting with the `---` frontmatter.**
