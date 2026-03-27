@@ -15,15 +15,19 @@ from fdsx.core.batch import (
 )
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
+from fdsx.core.init import needs_init, scaffold
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
 _interactive_mode: bool | None = None
 
+OPERATIONAL_CMDS = frozenset({"run", "validate", "resume", "list", "split"})
+
 
 @app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False,
         "--version",
@@ -53,6 +57,25 @@ def main(
         _interactive_mode = False
     else:
         _interactive_mode = sys.stdin.isatty()
+    if (
+        ctx.invoked_subcommand in OPERATIONAL_CMDS
+        and _interactive_mode
+        and needs_init(Path.cwd())
+    ):
+        created = scaffold(Path.cwd())
+        typer.echo("Initialized .fdsx/ directory with example workflows.\n", err=True)
+        typer.echo("Created:", err=True)
+        for f in created:
+            typer.echo(f"  {f}", err=True)
+        typer.echo("", err=True)
+        typer.echo("Next steps:", err=True)
+        typer.echo(
+            "  1. Edit .fdsx/config.yaml to configure profiles and provider settings",
+            err=True,
+        )
+        typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
+        typer.echo(f"  3. Re-run your command: fdsx {ctx.invoked_subcommand}", err=True)
+        raise typer.Exit(code=0)
     if version:
         typer.echo(f"fdsx {__version__}")
         raise typer.Exit()
