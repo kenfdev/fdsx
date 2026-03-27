@@ -387,6 +387,59 @@ class TestToolInProgressSuspendsInactivity:
             f"Process should not be killed when timer keeps being reset, stderr: {result.stderr!r}"
         )
 
+    def test_suspend_resets_timer_preventing_premature_kill(self):
+        """A well-timed _suspend_inactivity call gives the process a full new timeout window.
+
+        Process outputs once then goes silent. At ~1.5s (close to the 2s threshold),
+        a suspend call resets the timer, giving another 2s window. Process exits
+        normally at ~3s total — proving the timer was reset, not just bypassed.
+        """
+
+        def schedule_suspend_near_threshold(suspend, resume):
+            threading.Timer(1.5, suspend).start()
+
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time; print('output', flush=True); time.sleep(3)",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            on_inactivity_hooks=schedule_suspend_near_threshold,
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (timer reset prevented kill), got {result.exit_code}"
+        )
+        assert "inactivity" not in result.stderr.lower(), (
+            f"Process should not be killed when timer is reset near threshold, stderr: {result.stderr!r}"
+        )
+
+    def test_tool_hanging_beyond_timeout_kills_process(self):
+        """Even when _suspend_inactivity is called, process IS killed if tool hangs
+        beyond the inactivity_timeout window.
+
+        This verifies the bug-fix behavior: a single suspend call only resets the
+        timer once. If the tool hangs longer than the threshold after that, the
+        process is killed.
+        """
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time; print('output', flush=True); time.sleep(5)",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            on_inactivity_hooks=lambda suspend, resume: suspend(),
+        )
+
+        assert result.exit_code == 124, (
+            f"Expected exit_code=124 (killed despite suspend), got {result.exit_code}"
+        )
+        assert "inactivity timeout" in result.stderr.lower(), (
+            f"Expected 'inactivity timeout' in stderr, got: {result.stderr!r}"
+        )
+
 
 class TestDefaultExecutionTimeout:
     """LLM providers apply DEFAULT_EXECUTION_TIMEOUT when no explicit timeout is set."""
