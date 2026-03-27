@@ -11,7 +11,7 @@ You receive two pieces of input:
 Problems identified by the analyzer, one per line:
 
 ```
-PROBLEM|{flow_name}|{category}|{description}
+PROBLEM|<flow_name>|<category>|<description>
 ```
 
 **Column meanings:**
@@ -25,8 +25,8 @@ Research findings for each problem, one block per problem:
 
 ```
 ---
-PROBLEM: {flow_name}|{category}|{description}
-FINDINGS: {research findings or knowledge-based recommendation}
+PROBLEM: <flow_name>|<category>|<description>
+FINDINGS: <findings>
 ---
 ```
 

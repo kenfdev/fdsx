@@ -7,7 +7,7 @@ You are a **best-practice researcher**. Your job is to find relevant documentati
 The following problems were identified by the analyzer. Each problem is a pipe-delimited record:
 
 ```
-PROBLEM|{flow_name}|{category}|{description}
+PROBLEM|<flow_name>|<category>|<description>
 ```
 
 **Column meanings:**
@@ -42,12 +42,12 @@ For each problem, output a block in this format:
 
 ```
 ---
-PROBLEM: {flow_name}|{category}|{description}
-FINDINGS: {research findings or knowledge-based recommendation}
+PROBLEM: <flow_name>|<category>|<description>
+FINDINGS: <findings>
 ---
 ```
 
-- `{flow_name}` — the workflow name from the problem
-- `{category}` — the problem category
-- `{description}` — the original problem description
-- `{findings}` — actionable recommendations, documented solutions, or expert guidance (may be multiple sentences)
+- `<flow_name>` — the workflow name from the problem
+- `<category>` — the problem category
+- `<description>` — the original problem description
+- `<findings>` — actionable recommendations, documented solutions, or expert guidance (may be multiple sentences)

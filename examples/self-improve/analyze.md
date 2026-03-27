@@ -72,12 +72,12 @@ For each problem you identify, assign two tags:
 For each problem found, output a line in this format:
 
 ```
-PROBLEM|{flow_name}|{category}|{description}
+PROBLEM|<flow_name>|<category>|<description>
 ```
 
-- `{flow_name}` — the workflow name from the data
-- `{category}` — Prompts, Workflow, or Rules
-- `{description}` — concise description of what is wrong and why it matters
+- `<flow_name>` — the workflow name from the data
+- `<category>` — Prompts, Workflow, or Rules
+- `<description>` — concise description of what is wrong and why it matters
 
 ## Verdict (MANDATORY)
 
