@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import typer
@@ -18,24 +19,43 @@ from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_comm
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
-
-def version_callback(value: bool | None) -> None:
-    if value:
-        typer.echo(f"fdsx {__version__}")
-        raise typer.Exit()
+_interactive_mode: bool | None = None
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
-    version: bool | None = typer.Option(
-        None,
+    version: bool = typer.Option(
+        False,
         "--version",
-        callback=version_callback,
-        is_eager=True,
         help="Show version and exit.",
     ),
+    ci: bool = typer.Option(
+        False,
+        "--ci",
+        help="Run in CI mode (non-interactive, equivalent to --interactive=false).",
+    ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        help="Run in interactive mode (enables TTY detection if not explicitly set).",
+    ),
 ) -> None:
-    pass
+    global _interactive_mode
+    if ci and interactive:
+        typer.echo(
+            "Error: --ci and --interactive are mutually exclusive",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if interactive:
+        _interactive_mode = True
+    elif ci:
+        _interactive_mode = False
+    else:
+        _interactive_mode = sys.stdin.isatty()
+    if version:
+        typer.echo(f"fdsx {__version__}")
+        raise typer.Exit()
 
 
 @app.command()
