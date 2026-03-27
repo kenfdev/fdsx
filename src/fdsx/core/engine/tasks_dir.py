@@ -153,6 +153,12 @@ def run_tasks_dir(
             f"Workflows directory must not be a symlink: {workflows_dir}"
         )
 
+    config_profiles = None
+    if config.profiles:
+        config_profiles = {
+            name: prof.model_dump() for name, prof in config.profiles.items()
+        }
+
     auto_selection_entries: list[tuple[int, int, Path, str]] = []
 
     for file_idx, (file_path, task_file) in enumerate(task_files):
@@ -220,6 +226,7 @@ def run_tasks_dir(
                         workflows_dir=workflows_dir,
                         selector_config=config.workflow_selector,
                         auto_workflow=True,
+                        config_profiles=config_profiles,
                     )
                     if resolved is not None:
                         workflow_assignments[(file_idx, entry_idx)] = resolved
@@ -234,7 +241,7 @@ def run_tasks_dir(
         from fdsx.core.selector import discover_workflows
         from fdsx.display.terminal import confirm_workflow_assignments_interactive
 
-        discovered = discover_workflows(workflows_dir)
+        discovered = discover_workflows(workflows_dir, config_profiles=config_profiles)
         display_keys = sorted(workflow_assignments.keys()) + [
             k for k in auto_selection_keys if k not in workflow_assignments
         ]

@@ -12,6 +12,7 @@ import sys
 import warnings
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from fdsx.core.config import WorkflowSelectorConfig
 from fdsx.core.loader import load_flow
@@ -19,7 +20,10 @@ from fdsx.display.terminal import _sanitize_output
 from fdsx.providers.base import get_provider
 
 
-def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
+def discover_workflows(
+    workflows_dir: Path,
+    config_profiles: dict[str, dict[str, Any]] | None = None,
+) -> list[tuple[Path, str, str]]:
     """Discover all workflow files in the given directory.
 
     Scans for:
@@ -30,6 +34,8 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
 
     Args:
         workflows_dir: Directory containing workflow files and subdirectories.
+        config_profiles: Config-level profiles to pass through to load_flow for
+            resolving profile references in workflow YAML files.
 
     Returns:
         List of ``(workflow_path, description, display_name)`` tuples sorted by
@@ -75,7 +81,7 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
             continue
 
         try:
-            flow, errors = load_flow(wf_file)
+            flow, errors = load_flow(wf_file, config_profiles=config_profiles)
             if flow is None:
                 warnings.warn(
                     f"Skipping invalid workflow file {wf_file}: {', '.join(errors)}",
@@ -112,7 +118,7 @@ def discover_workflows(workflows_dir: Path) -> list[tuple[Path, str, str]]:
                 )
                 continue
             try:
-                flow, errors = load_flow(fp)
+                flow, errors = load_flow(fp, config_profiles=config_profiles)
                 if flow is None:
                     warnings.warn(
                         f"Skipping invalid workflow file {fp}: {', '.join(errors)}",
@@ -388,6 +394,7 @@ def resolve_workflow_for_task(
     workflows_dir: Path,
     selector_config: WorkflowSelectorConfig,
     auto_workflow: bool,
+    config_profiles: dict[str, dict[str, Any]] | None = None,
 ) -> Path | None:
     """Resolve which workflow to use for a task via auto-discovery and LLM selection.
 
@@ -396,11 +403,12 @@ def resolve_workflow_for_task(
         workflows_dir: Directory to discover workflows from.
         selector_config: Configuration for the workflow selector LLM.
         auto_workflow: If True, skip confirmation prompt.
+        config_profiles: Config-level profiles for resolving profile references.
 
     Returns:
         Path to the selected workflow, or None if the user cancels manual pick.
     """
-    discovered = discover_workflows(workflows_dir)
+    discovered = discover_workflows(workflows_dir, config_profiles=config_profiles)
 
     if len(discovered) == 0:
         raise ValueError(
