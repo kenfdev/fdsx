@@ -203,3 +203,32 @@ class TestInitGuard:
             f"Expected exit 0, got {result.exit_code}. output: {result.output}"
         )
         assert "Initialized .fdsx/" in result.output
+
+    def test_stderr_output_format(self, tmp_path, monkeypatch):
+        """Init guard stderr output contains header, file list, and next steps sections."""
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        fake_created = [
+            ".fdsx/config.yaml",
+            ".fdsx/workflows/example/main.yaml",
+            ".fdsx/workflows/review/main.yaml",
+        ]
+        with (
+            patch("fdsx.cli.main.needs_init", return_value=True),
+            patch("fdsx.cli.main.scaffold", return_value=fake_created),
+        ):
+            result = runner.invoke(
+                main.app, ["--interactive", "run", "dummy.yaml"], catch_exceptions=False
+            )
+
+        assert result.exit_code == 0
+
+        assert "Initialized .fdsx/" in result.output
+        assert "Created:" in result.output
+        for f in fake_created:
+            assert f"  {f}" in result.output
+        assert "Next steps:" in result.output
+        assert "1. Edit .fdsx/config.yaml" in result.output
+        assert "2. Customize workflows in .fdsx/workflows/" in result.output
+        assert "3. Re-run your command: fdsx run" in result.output
