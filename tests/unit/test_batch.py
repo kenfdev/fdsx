@@ -1,23 +1,23 @@
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from fdsx.core.batch import (
     COMPLETED_SUBDIR,
     TASKS_DIR,
+    _build_task_split_prompt,
+    _extract_input_variables,
+    _parse_structured_tasks,
+    _parse_task_list,
     _scan_max_task_index,
     _slugify,
+    display_batch_summary,
+    display_task_list,
     move_task_to_completed,
     split_tasks,
     split_tasks_to_groups,
-    display_task_list,
-    display_batch_summary,
-    _parse_task_list,
-    _parse_structured_tasks,
-    _build_task_split_prompt,
-    _extract_input_variables,
     write_task_files,
 )
 from fdsx.core.config import TaskSplitterConfig

@@ -324,5 +324,5 @@ class TestMinSuccessDefault:
         compiled = compile_flow(flow)
 
         # With min_success=None (default=all), one failed branch should raise
-        with pytest.raises(RuntimeError, match="only .* branches succeeded"):
+        with pytest.raises(RuntimeError, match=r"only .* branches succeeded"):
             compiled.graph.invoke({})

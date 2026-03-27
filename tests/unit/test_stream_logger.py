@@ -310,7 +310,7 @@ class TestStreamLoggerThreadSafety:
         log_path = log_dir / f"ThreadedState_1{LOG_FILE_SUFFIX}"
         content = log_path.read_text(encoding="utf-8")
         lines = content.splitlines()
-        # 5 threads × 20 lines = 100 total lines
+        # 5 threads x 20 lines = 100 total lines
         assert len(lines) == 100
 
     def test_parallel_branches_share_log_file(self, tmp_path):

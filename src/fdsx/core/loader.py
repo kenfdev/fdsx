@@ -118,7 +118,7 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
 
     for state_name, state_data in flow_dict.get("states", {}).items():
         if state_data.get("type") == "task":
-            if "prompt_file" in state_data and state_data["prompt_file"]:
+            if state_data.get("prompt_file"):
                 prompt_path = (yaml_dir / state_data["prompt_file"]).resolve()
                 path_error = _validate_prompt_file_path(
                     state_data["prompt_file"],
@@ -144,7 +144,7 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
                     )
         elif state_data.get("type") == "parallel":
             for branch_idx, branch in enumerate(state_data.get("branches", [])):
-                if "prompt_file" in branch and branch["prompt_file"]:
+                if branch.get("prompt_file"):
                     prompt_path = (yaml_dir / branch["prompt_file"]).resolve()
                     path_error = _validate_prompt_file_path(
                         branch["prompt_file"],

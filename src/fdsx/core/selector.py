@@ -59,6 +59,7 @@ def discover_workflows(
                 warnings.warn(
                     f"Skipping symlinked workflow directory: {entry}",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
             continue
 
@@ -77,6 +78,7 @@ def discover_workflows(
                 warnings.warn(
                     f"Skipping symlinked workflow file in directory: {entry}",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
             continue
 
@@ -86,6 +88,7 @@ def discover_workflows(
                 warnings.warn(
                     f"Skipping invalid workflow file {wf_file}: {', '.join(errors)}",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
                 continue
             display_name = flow.name
@@ -95,6 +98,7 @@ def discover_workflows(
             warnings.warn(
                 f"Skipping unparseable workflow file {wf_file}: {e}",
                 RuntimeWarning,
+                stacklevel=2,
             )
 
     # --- Phase 2: flat files (*.yaml then *.yml, yaml takes precedence) ---
@@ -109,12 +113,14 @@ def discover_workflows(
                 warnings.warn(
                     f"Skipping symlinked workflow file: {fp}",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
                 continue
             if not fp.is_file():
                 warnings.warn(
                     f"Skipping non-regular workflow file: {fp}",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
                 continue
             try:
@@ -123,6 +129,7 @@ def discover_workflows(
                     warnings.warn(
                         f"Skipping invalid workflow file {fp}: {', '.join(errors)}",
                         RuntimeWarning,
+                        stacklevel=2,
                     )
                     continue
                 results.append((fp, flow.description, flow.name))
@@ -131,6 +138,7 @@ def discover_workflows(
                 warnings.warn(
                     f"Skipping unparseable workflow file {fp}: {e}",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
 
     results.sort(key=lambda t: t[2])
@@ -299,13 +307,13 @@ def select_workflow(
     # (e.g. "plan" should not match inside "planning"; "review" should not
     # match inside "review-code").
     matches: list[Path] = []
-    for wf_path, _, display_name in workflows:
+    for wf_path, _description, display_name in workflows:
         pattern = r"(?:^|\s)" + re.escape(display_name) + r"(?:$|\s)"
         if re.search(pattern, selected_name):
             if wf_path not in matches:
                 matches.append(wf_path)
     if not matches:
-        for wf_path, _, display_name in workflows:
+        for wf_path, _description, _display_name in workflows:
             pattern = r"(?:^|\s)" + re.escape(wf_path.name) + r"(?:$|\s)"
             if re.search(pattern, selected_name):
                 if wf_path not in matches:
@@ -378,7 +386,7 @@ def pick_workflow_manually(
     """
     print("\nAvailable workflows:", file=sys.stderr)
     print("-" * 60, file=sys.stderr)
-    for i, (wf_path, description, display_name) in enumerate(workflows, 1):
+    for i, (_wf_path, description, display_name) in enumerate(workflows, 1):
         desc_preview = (
             description[:50] + "..." if len(description) > 50 else description
         )

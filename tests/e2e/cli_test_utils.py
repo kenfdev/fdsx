@@ -1,9 +1,8 @@
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
-
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 

@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 OUTPUT_PREVIEW_MAX_LENGTH = 500
 
 THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -156,7 +155,7 @@ class RunRecorder:
         file_path = thread_dir / RUN_FILENAME
 
         if file_path.exists():
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 existing_log: dict[str, Any] = json.load(f)
 
             existing_states = existing_log.get("states", [])

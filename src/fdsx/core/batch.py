@@ -16,7 +16,6 @@ from fdsx.models.task import (
 )
 from fdsx.providers.base import get_provider
 
-
 TASKS_DIR = ".fdsx/tasks"
 COMPLETED_SUBDIR = "completed"
 
@@ -216,7 +215,7 @@ def _extract_input_variables(flow: Flow) -> set[str]:
     # Matches {var}, {var.field}, {var[0]} etc.
     var_pattern = r"\{(\w+(?:\.\w+)*(?:\[\d+\])?)\}"
 
-    for state_name, state in flow.states.items():
+    for _state_name, state in flow.states.items():
         if isinstance(state, TaskState) and state.prompt_template:
             for match in re.findall(var_pattern, state.prompt_template):
                 root = match.split(".")[0].split("[")[0]

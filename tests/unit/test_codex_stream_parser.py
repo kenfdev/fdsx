@@ -13,8 +13,8 @@ Tests verify correct handling of:
 """
 
 import json
+
 from fdsx.providers.codex import (
-    CodexProvider,
     _EVENT_ERROR,
     _EVENT_ITEM_COMPLETED,
     _EVENT_ITEM_STARTED,
@@ -24,8 +24,8 @@ from fdsx.providers.codex import (
     _ITEM_TYPE_FILE_CHANGE,
     _ITEM_TYPE_MCP_TOOL_CALL,
     _ITEM_TYPE_REASONING,
+    CodexProvider,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -13,8 +13,8 @@ import pytest
 
 from fdsx.core import engine
 from fdsx.core.variables import RESULT_FILE_DATA_DIR
-from tests import FIXTURES_DIR
 from fdsx.logging.recorder import RUNS_DIR_NAME
+from tests import FIXTURES_DIR
 
 
 class TestTaskResultFileIntegration:

@@ -10,8 +10,8 @@ from langgraph.errors import GraphRecursionError
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
-from fdsx.core.thread_id import generate_thread_id
 from fdsx.core.loader import load_flow
+from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import (
     _sanitize_output,
     display_completion_summary,
@@ -79,7 +79,7 @@ def run_flow(
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
 
-    from fdsx.models.flow import WaitState, ParallelState
+    from fdsx.models.flow import ParallelState, WaitState
 
     needs_checkpointer = any(isinstance(s, WaitState) for s in flow.states.values())
 
@@ -191,7 +191,7 @@ def run_flow(
         display_completion_summary(
             flow.name, _calc_elapsed(recorder), failed_state_name, error_message
         )
-        raise RuntimeError(f"Flow execution failed: {e}")
+        raise RuntimeError(f"Flow execution failed: {e}") from e
     finally:
         if checkpoint_manager is not None:
             checkpoint_manager.release_lock(thread_id)

@@ -139,7 +139,7 @@ def run_tasks_dir(
     except ValueError as e:
         raise FlowValidationError(str(e)) from e
     except FileNotFoundError as e:
-        raise FlowValidationError(str(e))
+        raise FlowValidationError(str(e)) from e
     results: list[dict[str, Any]] = []
     workflow_assignments: dict[tuple[int, int], Path] = {}
 
@@ -177,8 +177,10 @@ def run_tasks_dir(
                         raise ValueError(
                             f"Workflow path escapes workflows directory: {entry.workflow}"
                         )
-                except OSError:
-                    raise ValueError(f"Cannot resolve workflow path: {entry.workflow}")
+                except OSError as e:
+                    raise ValueError(
+                        f"Cannot resolve workflow path: {entry.workflow}"
+                    ) from e
                 if wf_path.is_symlink():
                     raise ValueError(f"Workflow path must not be a symlink: {wf_path}")
                 if wf_path.is_dir():

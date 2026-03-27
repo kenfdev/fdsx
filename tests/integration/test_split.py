@@ -117,6 +117,7 @@ class TestSplitCliIntegration:
     ):
         """Test split command falls back to built-in defaults when task_splitter is not configured."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         task_file = tmp_path / "tasks.md"
@@ -150,6 +151,7 @@ class TestSplitCliIntegration:
     def test_split_command_missing_task_file(self, tmp_path):
         """Test split command fails when task file doesn't exist."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         with patch(
@@ -165,6 +167,7 @@ class TestSplitCliIntegration:
     def test_split_command_non_empty_dir_without_force(self, tmp_path, monkeypatch):
         """Test split command fails when tasks dir is non-empty and --force is not used."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -192,6 +195,7 @@ class TestSplitCliIntegration:
     def test_split_command_with_force_flag(self, tmp_path, monkeypatch):
         """Test split command clears existing dir with --force flag."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -229,6 +233,7 @@ class TestSplitCliIntegration:
     ):
         """Test --force refuses to delete tasks directory when it is a symlink."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         real_dir = tmp_path / "real_tasks"
@@ -261,6 +266,7 @@ class TestSplitCliIntegration:
     def test_split_command_force_preserves_non_yaml_files(self, tmp_path, monkeypatch):
         """Test --force only deletes .yaml files, preserving other files."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -299,6 +305,7 @@ class TestSplitCliIntegration:
     def test_split_command_success(self, tmp_path, monkeypatch):
         """Test successful split command execution."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         task_file = tmp_path / "tasks.md"
@@ -334,6 +341,7 @@ class TestSplitCliIntegration:
     def test_split_command_records_source_path(self, tmp_path, monkeypatch):
         """Test that split command records the source path in generated task files."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         task_file = tmp_path / "my_input.md"
@@ -375,6 +383,7 @@ class TestSplitCliIntegration:
     ):
         """Split without --force succeeds when tasks dir contains only completed/ subdir."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -418,6 +427,7 @@ class TestSplitCliIntegration:
     ):
         """Split preserves completed/ directory and its contents when no pending tasks exist."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -459,6 +469,7 @@ class TestSplitCliIntegration:
     ):
         """New task files are numbered starting after the highest index in completed/."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -500,6 +511,7 @@ class TestSplitCliIntegration:
     def test_split_command_still_blocks_with_pending_yaml(self, tmp_path, monkeypatch):
         """Split without --force fails when a pending .yaml file exists directly in tasks dir."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR
@@ -574,6 +586,7 @@ class TestSplitCliIntegration:
     def test_split_command_force_preserves_completed_dir(self, tmp_path, monkeypatch):
         """--force clears pending .yaml files but preserves completed/ and its contents."""
         from typer.testing import CliRunner
+
         from fdsx.cli.main import app
 
         tasks_dir = tmp_path / TASKS_DIR

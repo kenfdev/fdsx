@@ -16,7 +16,6 @@ from fdsx.providers.codex import CodexOptions, CodexProvider
 from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
 from fdsx.providers.system import SystemProvider
 
-
 # ---------------------------------------------------------------------------
 # Helper: fake ProviderResult for mocking _run_subprocess
 # ---------------------------------------------------------------------------

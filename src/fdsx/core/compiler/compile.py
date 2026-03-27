@@ -2,8 +2,9 @@
 
 import logging
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -151,7 +152,7 @@ def _wrap_with_hooks(
         except BaseException:
             if node_error is not None:
                 logger.warning("Hook cleanup failed after node error", exc_info=True)
-                raise node_error
+                raise node_error from None
             raise
 
         if node_error is not None:
@@ -208,7 +209,7 @@ def compile_flow(
             checkpointer = MemorySaver()
 
     # Derive the .fdsx base directory for hook data files from log_dir.
-    # log_dir = .fdsx/runs/<thread-id>/logs/ → parent×3 = .fdsx/
+    # log_dir = .fdsx/runs/<thread-id>/logs/ -> parent x3 = .fdsx/
     fdsx_base_dir: Path | None = (
         log_dir.parent.parent.parent if log_dir is not None else None
     )

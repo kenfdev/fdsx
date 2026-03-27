@@ -209,6 +209,7 @@ class TestScenario4FullResume:
     ):
         """T051: crash mid-flow (implement state) → resume → all remaining states execute."""
         from unittest.mock import patch
+
         from fdsx.providers.system import SystemProvider
 
         base_dir = temp_dir / ".fdsx"
@@ -249,6 +250,7 @@ class TestScenario4FullResume:
     def test_list_shows_stopped_after_crash(self, temp_dir, checkpoint_flow_path):
         """T051: crash mid-flow → fdsx list shows 'stopped' not 'waiting'."""
         from unittest.mock import patch
+
         from fdsx.providers.system import SystemProvider
 
         base_dir = temp_dir / ".fdsx"

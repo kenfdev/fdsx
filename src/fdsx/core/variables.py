@@ -92,7 +92,7 @@ def resolve_jsonpath(path: str, data: dict[str, Any]) -> Any:
     if path.startswith("$."):
         path = path[2:]
 
-    current = data
+    current: Any = data
 
     parts = parse_jsonpath(path)
 
@@ -238,7 +238,7 @@ def analyze_variable_references(
 
     def get_prompt_variables(state: State | Branch) -> set[str]:
         variables: set[str] = set()
-        from fdsx.models.flow import TaskState, Branch, PassState
+        from fdsx.models.flow import Branch, PassState, TaskState
 
         if isinstance(state, TaskState):
             prompt = state.prompt_template or ""

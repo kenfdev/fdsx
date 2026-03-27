@@ -15,8 +15,9 @@ Design notes:
 
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from fdsx.core.extraction import extract_value
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider

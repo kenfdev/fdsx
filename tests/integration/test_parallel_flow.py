@@ -59,7 +59,7 @@ class TestParallelMinSuccess:
 
     def test_min_success_failure_raises_error(self):
         """Test that when too many branches fail, flow raises error."""
-        from fdsx.models.flow import Flow, ParallelState, Branch
+        from fdsx.models.flow import Branch, Flow, ParallelState
 
         flow = Flow(
             name="Parallel All Fail",
@@ -96,7 +96,7 @@ class TestParallelMinSuccess:
 
         compiled = compile_flow(flow)
 
-        with pytest.raises(RuntimeError, match="only .* branches succeeded"):
+        with pytest.raises(RuntimeError, match=r"only .* branches succeeded"):
             compiled.graph.invoke({})
 
 

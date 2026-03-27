@@ -1,5 +1,5 @@
 import subprocess
-from typing import Callable
+from collections.abc import Callable
 
 from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
 

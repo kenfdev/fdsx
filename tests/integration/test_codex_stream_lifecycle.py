@@ -9,11 +9,11 @@ from unittest.mock import MagicMock, patch
 
 from fdsx.providers.base import ProviderResult
 from fdsx.providers.codex import (
-    CodexProvider,
     _EVENT_ITEM_COMPLETED,
     _EVENT_ITEM_STARTED,
     _ITEM_TYPE_AGENT_MESSAGE,
     _ITEM_TYPE_REASONING,
+    CodexProvider,
 )
 
 

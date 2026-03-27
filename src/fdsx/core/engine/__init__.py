@@ -6,13 +6,13 @@ to work without changes.
 """
 
 from .batch import run_batch
-from .resume import resume_flow
 from .results import (
     _calc_elapsed,
     _extract_results,
     _find_failed_state,
     _sanitize_state_for_log,
 )
+from .resume import resume_flow
 from .run import run_flow
 from .tasks_dir import (
     _filter_actionable_entries,

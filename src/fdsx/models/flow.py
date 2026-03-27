@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -417,7 +417,7 @@ class WaitState(BaseModel):
 
 
 State = Annotated[
-    Union[TaskState, ChoiceState, ParallelState, PassState, WaitState],
+    TaskState | ChoiceState | ParallelState | PassState | WaitState,
     Field(discriminator="type"),
 ]
 
@@ -464,7 +464,7 @@ class Flow(BaseModel):
         from fdsx.core.graph_utils import get_next_states
 
         all_references: set[str] = set()
-        for state_name, state in self.states.items():
+        for _state_name, state in self.states.items():
             all_references.update(get_next_states(state))
 
         for ref in all_references:

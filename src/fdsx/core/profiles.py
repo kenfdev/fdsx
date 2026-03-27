@@ -81,9 +81,6 @@ def _resolve_profile_on_dict(
         return errors
 
     profile = merged_profiles[profile_name]
-    if not isinstance(profile, dict):
-        errors.append(f"{label}: profile '{profile_name}' must be a dict")
-        return errors
 
     provider = profile.get("provider")
     model = profile.get("model")

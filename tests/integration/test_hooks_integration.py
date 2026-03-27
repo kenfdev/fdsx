@@ -24,7 +24,6 @@ from fdsx.core.hooks import INPUT_FILENAME, OUTPUT_FILENAME
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import HookConfig, HookEntry
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -667,7 +666,7 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        flow, errors = load_flow(flow_path)
+        flow, _errors = load_flow(flow_path)
         assert flow is not None
 
         # Config with global hook
@@ -736,7 +735,7 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        flow, errors = load_flow(flow_path)
+        flow, _errors = load_flow(flow_path)
         assert flow is not None
 
         fdsx_config = FdsxConfig(
@@ -797,7 +796,7 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        flow, errors = load_flow(flow_path)
+        flow, _errors = load_flow(flow_path)
         assert flow is not None
 
         recorder = _make_recorder(thread_id="no-hook-tid")
@@ -964,7 +963,7 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        flow, errors = load_flow(flow_path)
+        flow, _errors = load_flow(flow_path)
         assert flow is not None
 
         fdsx_root = tmp_path / ".fdsx"
@@ -1015,7 +1014,7 @@ states:
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
 
-        flow, errors = load_flow(flow_path)
+        flow, _errors = load_flow(flow_path)
         assert flow is not None
 
         recorder = _make_recorder(thread_id="none-logdir-tid")

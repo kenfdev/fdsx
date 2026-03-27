@@ -3,10 +3,10 @@ import sys
 from pathlib import Path
 
 import typer
+
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
-from fdsx.core.thread_id import generate_thread_id
 from fdsx.core.batch import (
     COMPLETED_SUBDIR,
     TASKS_DIR,
@@ -16,6 +16,7 @@ from fdsx.core.batch import (
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
 from fdsx.core.init import needs_init, scaffold
+from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
@@ -154,15 +155,15 @@ def run(
             err=True,
         )
         raise typer.Exit(code=2)
-    elif workflow is None and tasks_dir is None:
-        typer.echo(
-            "Error: workflow argument is required when not using --tasks-dir",
-            err=True,
-        )
-        raise typer.Exit(code=2)
     elif tasks_file is not None and workflow is None:
         typer.echo(
             "Error: workflow argument is required when using --tasks",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    elif workflow is None and tasks_dir is None:
+        typer.echo(
+            "Error: workflow argument is required when not using --tasks-dir",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -227,21 +228,21 @@ def run(
             engine.run_flow(workflow, inputs, current_thread_id, base_dir, quiet=quiet)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from None
     except KeyboardInterrupt:
         _display_resume_on_error(tasks_dir, current_thread_id)
-        raise typer.Exit(code=130)
+        raise typer.Exit(code=130) from None
     except RuntimeError as e:
         if isinstance(e, typer.Exit):
             raise
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         _display_resume_on_error(tasks_dir, current_thread_id)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     except Exception as e:
         if not isinstance(e, typer.Exit):
             typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
             _display_resume_on_error(tasks_dir, current_thread_id)
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
         raise
 
 
@@ -289,16 +290,16 @@ def resume(
                 f"Error: No checkpoint found for thread ID {_sanitize_output(thread_id)}",
                 err=True,
             )
-            raise typer.Exit(code=2)
+            raise typer.Exit(code=2) from None
         elif "locked by PID" in error_msg:
             typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
-            raise typer.Exit(code=2)
+            raise typer.Exit(code=2) from None
         else:
             typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
     except Exception as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command(name="list")
@@ -399,10 +400,10 @@ def split(
 
     except RuntimeError as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     except ValueError as e:
         typer.echo(f"Error parsing tasks: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 if __name__ == "__main__":

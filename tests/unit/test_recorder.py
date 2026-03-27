@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from fdsx.logging.recorder import RunRecorder, OUTPUT_PREVIEW_MAX_LENGTH, RUN_FILENAME
+from fdsx.logging.recorder import OUTPUT_PREVIEW_MAX_LENGTH, RUN_FILENAME, RunRecorder
 
 
 class TestRunRecorder:
@@ -182,7 +182,7 @@ class TestRunRecorder:
             assert file_path == expected
             assert file_path.exists()
 
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 data = json.load(f)
 
             assert data["thread_id"] == "test-123"
@@ -254,7 +254,7 @@ class TestRunRecorder:
 
             recorder.save(base_dir=Path(tmpdir))
 
-            with open(existing_file, "r") as f:
+            with open(existing_file) as f:
                 data = json.load(f)
 
             assert len(data["states"]) == 2

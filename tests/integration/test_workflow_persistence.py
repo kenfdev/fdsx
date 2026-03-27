@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-
 from fdsx.core import engine
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 from tests import FIXTURES_DIR

@@ -7,9 +7,7 @@ timeout handling, extraction success, and extraction failure after retries.
 import subprocess
 from unittest.mock import MagicMock, patch
 
-
 from fdsx.providers.base import ProviderResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
@@ -121,7 +119,7 @@ class TestProviderDispatch:
         """system provider call passes command=..., not prompt."""
         from fdsx.core.compiler.execution import execute_with_retry
 
-        config, mock_provider, mock_logger = _make_config(
+        config, mock_provider, _mock_logger = _make_config(
             provider_name="system",
             prompt="",
             command="echo hello",
@@ -141,7 +139,7 @@ class TestProviderDispatch:
         """Non-system provider call passes prompt=..., no command."""
         from fdsx.core.compiler.execution import execute_with_retry
 
-        config, mock_provider, mock_logger = _make_config(
+        config, mock_provider, _mock_logger = _make_config(
             provider_name="openai",
             prompt="analyze this",
             max_retries=0,

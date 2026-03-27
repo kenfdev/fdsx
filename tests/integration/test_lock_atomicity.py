@@ -68,7 +68,7 @@ class TestLockAtomicity:
         Uses multiprocessing (not threading) because the lock is PID-based —
         threads share a PID and would both succeed or both fail.
         """
-        result_queue: "multiprocessing.Queue[bool]" = multiprocessing.Queue()
+        result_queue: multiprocessing.Queue[bool] = multiprocessing.Queue()
         barrier = multiprocessing.Barrier(2, timeout=10)
 
         p1 = multiprocessing.Process(

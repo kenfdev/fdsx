@@ -24,7 +24,6 @@ from pydantic import ValidationError
 from fdsx.core.variables import write_result_to_file
 from fdsx.models.flow import ParallelState, TaskState
 
-
 # ---------------------------------------------------------------------------
 # T001: write_result_to_file() helper
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, ClassVar, TextIO
 
 
 def is_interactive() -> bool:
@@ -363,7 +363,7 @@ class Spinner:
         _running: Whether the spinner is currently active.
     """
 
-    _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    _FRAMES: ClassVar[list[str]] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     def __init__(self, message: str = "", stream: TextIO | None = None) -> None:
         """Initialize the spinner.
@@ -590,7 +590,7 @@ def confirm_workflow_assignments_interactive(
 
         stream.write("\nAvailable workflows:\n")
         stream.write("-" * 60 + "\n")
-        for i, (wf_path, description, display_name) in enumerate(
+        for i, (_wf_path, description, display_name) in enumerate(
             available_workflows, 1
         ):
             desc_preview = (

@@ -133,7 +133,7 @@ class TestCheckpointManager:
         """T003: list_threads must include threads that have a run log but no checkpoint."""
         import json
 
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
 
         # Create a run log directory for a thread with no checkpoint
         runs_dir = manager.base_dir / RUNS_DIR_NAME
@@ -164,7 +164,7 @@ class TestCheckpointManager:
         import json
         import sqlite3
 
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
 
         # Add thread to checkpoint DB
         db_path = manager.checkpoints_dir / "checkpoints.db"
@@ -218,7 +218,7 @@ class TestCheckpointManager:
 
     def test_list_threads_tolerates_corrupt_run_json(self, manager, temp_dir):
         """F3: corrupt run.json must not crash list_threads — targeted exception handling."""
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
 
         runs_dir = manager.base_dir / RUNS_DIR_NAME
         thread_dir = runs_dir / "corrupt-thread"

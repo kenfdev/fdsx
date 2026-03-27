@@ -92,8 +92,9 @@ class TestProfileFlowErrors:
 
     def test_error_when_profile_not_found(self, tmp_path):
         """Error returned when task references non-existent profile."""
-        from fdsx.core.loader import load_flow
         import yaml
+
+        from fdsx.core.loader import load_flow
 
         flow_dict = {
             "name": "Bad Profile Flow",
@@ -120,8 +121,9 @@ class TestProfileFlowErrors:
 
     def test_error_when_profile_and_provider_mutually_exclusive(self, tmp_path):
         """Error returned when task has both profile and provider."""
-        from fdsx.core.loader import load_flow
         import yaml
+
+        from fdsx.core.loader import load_flow
 
         flow_dict = {
             "name": "XOR Flow",
@@ -153,8 +155,9 @@ class TestValidateFlowProfileErrors:
 
     def test_validate_flow_catches_xor_violation(self, tmp_path):
         """validate_flow returns is_valid=False when task has both profile and provider."""
-        from fdsx.core.engine.validate import validate_flow
         import yaml
+
+        from fdsx.core.engine.validate import validate_flow
 
         flow_dict = {
             "name": "XOR Flow",
@@ -175,15 +178,16 @@ class TestValidateFlowProfileErrors:
         with open(xor_path, "w") as f:
             yaml.dump(flow_dict, f)
 
-        is_valid, errors, flow_name = validate_flow(xor_path)
+        is_valid, errors, _flow_name = validate_flow(xor_path)
         assert is_valid is False
         assert len(errors) == 1
         assert "mutually exclusive" in errors[0]
 
     def test_validate_flow_catches_missing_profile(self, tmp_path):
         """validate_flow returns is_valid=False when task references non-existent profile."""
-        from fdsx.core.engine.validate import validate_flow
         import yaml
+
+        from fdsx.core.engine.validate import validate_flow
 
         flow_dict = {
             "name": "Bad Profile Flow",
@@ -202,7 +206,7 @@ class TestValidateFlowProfileErrors:
         with open(bad_path, "w") as f:
             yaml.dump(flow_dict, f)
 
-        is_valid, errors, flow_name = validate_flow(bad_path)
+        is_valid, errors, _flow_name = validate_flow(bad_path)
         assert is_valid is False
         assert len(errors) == 1
         assert "not found" in errors[0]
@@ -211,8 +215,9 @@ class TestValidateFlowProfileErrors:
 
     def test_validate_flow_error_message_format(self, tmp_path):
         """Error messages from validate_flow match spec format (state name, profile name)."""
-        from fdsx.core.engine.validate import validate_flow
         import yaml
+
+        from fdsx.core.engine.validate import validate_flow
 
         flow_dict = {
             "name": "Missing Profile Flow",
@@ -231,7 +236,7 @@ class TestValidateFlowProfileErrors:
         with open(flow_path, "w") as f:
             yaml.dump(flow_dict, f)
 
-        is_valid, errors, flow_name = validate_flow(flow_path)
+        is_valid, errors, _flow_name = validate_flow(flow_path)
         assert is_valid is False
         assert len(errors) == 1
         assert "my_task" in errors[0]
@@ -386,6 +391,7 @@ class TestProfilesOptional:
     def test_workflow_without_profiles_loads_without_errors_or_warnings(self, tmp_path):
         """Minimal workflow without profiles loads without errors or deprecation warnings."""
         import warnings
+
         import yaml
 
         flow_dict = {
@@ -431,8 +437,9 @@ class TestCascadingProfileOverrides:
 
     def test_workflow_profile_overrides_config_profile(self, tmp_path):
         """Workflow-level profile definition overrides config-level profile (full replacement, not deep merge)."""
-        from fdsx.core.loader import load_flow
         import yaml
+
+        from fdsx.core.loader import load_flow
 
         flow_dict = {
             "name": "Override Flow",
@@ -468,8 +475,9 @@ class TestCascadingProfileOverrides:
 
     def test_config_profile_available_when_not_in_workflow(self, tmp_path):
         """Config-level profile is used when workflow doesn't define it."""
-        from fdsx.core.loader import load_flow
         import yaml
+
+        from fdsx.core.loader import load_flow
 
         flow_dict = {
             "name": "Config Only Flow",

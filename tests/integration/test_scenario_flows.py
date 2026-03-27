@@ -87,11 +87,11 @@ class TestScenario1LinearFlow:
 
     @staticmethod
     def _read_run_log(base_dir: Path, thread_id: str) -> dict:
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
 
         log_path = base_dir / RUNS_DIR_NAME / thread_id / RUN_FILENAME
         assert log_path.exists(), f"Run log not found at {log_path}"
-        with open(log_path, "r") as f:
+        with open(log_path) as f:
             return json.load(f)
 
 

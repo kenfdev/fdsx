@@ -18,12 +18,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fdsx.core.compiler import compile_flow, _wrap_with_hooks
-from fdsx.core.hooks import INPUT_FILENAME, OUTPUT_FILENAME, HOOKS_DIR_NAME
-from fdsx.logging.recorder import RUNS_DIR_NAME, LOGS_DIR_NAME
+from fdsx.core.compiler import _wrap_with_hooks, compile_flow
+from fdsx.core.hooks import HOOKS_DIR_NAME, INPUT_FILENAME, OUTPUT_FILENAME
+from fdsx.logging.recorder import LOGS_DIR_NAME, RUNS_DIR_NAME
 from fdsx.logging.stream_logger import LOG_FILE_SUFFIX, StreamLogger
 from fdsx.models.flow import HookEntry
-
 
 # ---------------------------------------------------------------------------
 # Helpers

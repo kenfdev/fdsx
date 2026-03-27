@@ -9,13 +9,13 @@ Tests verify that:
 import json
 
 from fdsx.providers.claude import (
-    ClaudeProvider,
     _CONTENT_TYPE_TOOL_USE,
     _DELTA_TYPE_TEXT,
     _DELTA_TYPE_THINKING,
     _EVENT_CONTENT_BLOCK_DELTA,
     _EVENT_CONTENT_BLOCK_START,
     _EVENT_CONTENT_BLOCK_STOP,
+    ClaudeProvider,
 )
 
 

@@ -1,6 +1,7 @@
+from unittest.mock import patch
+
 import pytest
 import yaml
-from unittest.mock import patch
 
 from fdsx.core.init import CONFIG_TEMPLATE, needs_init, scaffold
 

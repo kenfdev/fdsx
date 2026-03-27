@@ -1,6 +1,6 @@
-import yaml
 from unittest.mock import MagicMock, patch
 
+import yaml
 
 from fdsx.cli.main import app
 from fdsx.models.task import TaskEntry, TaskFile, save_task_file

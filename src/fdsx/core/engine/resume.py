@@ -98,8 +98,8 @@ def resume_flow(
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
-        from fdsx.models.flow import WaitState, ParallelState
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
+        from fdsx.models.flow import ParallelState, WaitState
 
         runs_dir = base_dir / RUNS_DIR_NAME
         existing_log_path = runs_dir / thread_id / RUN_FILENAME
@@ -107,7 +107,7 @@ def resume_flow(
         if existing_log_path.exists():
             import json
 
-            with open(existing_log_path, "r") as f:
+            with open(existing_log_path) as f:
                 existing_log = json.load(f)
             flow_name = existing_log.get("flow_name", flow.name)
             flow_version = existing_log.get("flow_version")
@@ -231,6 +231,6 @@ def resume_flow(
                 failed_state_name,
                 error_message,
             )
-        raise RuntimeError(f"Flow resume failed: {e}")
+        raise RuntimeError(f"Flow resume failed: {e}") from e
     finally:
         checkpoint_manager.release_lock(thread_id)

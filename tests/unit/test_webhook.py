@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-from fdsx.notify.webhook import send_notification, send_webhook
 from fdsx.models.flow import NotifyConfig, WebhookConfig
+from fdsx.notify.webhook import send_notification, send_webhook
 
 
 class TestSendWebhook:

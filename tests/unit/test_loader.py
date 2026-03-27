@@ -36,18 +36,18 @@ class TestLoadFlow:
 
     def test_load_missing_start_at(self):
         path = FIXTURES_DIR / "invalid_flows" / "missing_start_at.yaml"
-        flow, errors = load_flow(path)
-        assert flow is None
+        _flow, _errors = load_flow(path)
+        assert _flow is None
 
     def test_load_bad_next_reference(self):
         path = FIXTURES_DIR / "invalid_flows" / "bad_next_ref.yaml"
-        flow, errors = load_flow(path)
-        assert flow is None
+        _flow, _errors = load_flow(path)
+        assert _flow is None
 
     def test_load_mutual_exclusive(self):
         path = FIXTURES_DIR / "invalid_flows" / "mutual_exclusive.yaml"
-        flow, errors = load_flow(path)
-        assert flow is None
+        _flow, _errors = load_flow(path)
+        assert _flow is None
 
     def test_load_yaml_list_root_returns_error(self):
         """Regression: non-dict YAML root (list) must not crash with TypeError."""
@@ -93,7 +93,7 @@ class TestValidateFlow:
 
     def test_validate_nonexistent(self):
         path = FIXTURES_DIR / "nonexistent.yaml"
-        is_valid, errors = validate_flow(path)
+        is_valid, _errors = validate_flow(path)
         assert not is_valid
 
 

@@ -1,3 +1,4 @@
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import yaml
@@ -11,8 +12,8 @@ from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 class _MockSpinner:
     """Test double for Spinner that records start and update calls."""
 
-    _started_messages: list[str] = []
-    _update_messages: list[str] = []
+    _started_messages: ClassVar[list[str]] = []
+    _update_messages: ClassVar[list[str]] = []
 
     def __init__(self, message: str = ""):
         self._message = message

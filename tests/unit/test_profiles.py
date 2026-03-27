@@ -279,7 +279,7 @@ class TestResolveProfilesInFlow:
             "states": {"step1": {"type": "task", "profile": "foo"}},
             "profiles": ["not", "a", "mapping"],
         }
-        result, errors = resolve_profiles_in_flow(data)
+        _result, errors = resolve_profiles_in_flow(data)
         assert len(errors) == 1
         assert "mapping" in errors[0]
 

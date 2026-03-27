@@ -30,7 +30,7 @@ FAKE_SUCCESS = ProviderResult(exit_code=0, stdout="ok", stderr="")
 
 
 # ---------------------------------------------------------------------------
-# Test classes (populated in T002–T004)
+# Test classes (populated in T002-T004)
 # ---------------------------------------------------------------------------
 
 

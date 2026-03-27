@@ -49,5 +49,7 @@ jobs:
         run: ruff format --check .
       - name: mypy
         run: mypy src/fdsx
-      - name: pytest
-        run: pytest
+      - name: pytest with coverage
+        run: pytest --cov=fdsx --cov-report=xml --cov-fail-under=80
+      - name: pip-audit
+        run: pip-audit

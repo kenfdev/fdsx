@@ -252,6 +252,7 @@ class TestWorkflowValidatorNesting:
 
     def test_deep_nesting_rejected(self):
         import pytest
+
         from fdsx.models.task import TaskEntry
 
         with pytest.raises(Exception, match="nesting too deep"):
@@ -259,6 +260,7 @@ class TestWorkflowValidatorNesting:
 
     def test_parent_traversal_rejected(self):
         import pytest
+
         from fdsx.models.task import TaskEntry
 
         with pytest.raises(Exception, match="without \\.\\."):
@@ -266,6 +268,7 @@ class TestWorkflowValidatorNesting:
 
     def test_absolute_path_rejected(self):
         import pytest
+
         from fdsx.models.task import TaskEntry
 
         with pytest.raises(Exception, match="relative path"):

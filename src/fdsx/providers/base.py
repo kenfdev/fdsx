@@ -4,8 +4,9 @@ import signal as signal_module
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 

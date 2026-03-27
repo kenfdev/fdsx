@@ -1,11 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from fdsx.models.validators import validate_profile_name
 from fdsx.models.flow import (
     Branch,
-    ChoiceState,
     ChoiceRule,
+    ChoiceState,
     ExtractRule,
     Flow,
     HookEntry,
@@ -17,6 +16,7 @@ from fdsx.models.flow import (
     WaitState,
     WebhookConfig,
 )
+from fdsx.models.validators import validate_profile_name
 
 
 class TestPydanticModels:
@@ -144,7 +144,7 @@ class TestPydanticModels:
 
     def test_choice_rule_invalid_operator_rejected(self):
         """F1 regression: ChoiceRule.operator must be one of the valid literals."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ChoiceRule(
                 variable="$.x",
                 operator="typo",  # invalid operator
@@ -342,7 +342,7 @@ class TestWaitStateValidation:
 
     def test_wait_state_rejects_empty_choices(self):
         """CQ-2: WaitState with empty choices list must raise ValidationError."""
-        with pytest.raises(ValidationError, match="too_short|at least 1"):
+        with pytest.raises(ValidationError, match=r"too_short|at least 1"):
             WaitState(
                 type="wait",
                 mode="prompt",

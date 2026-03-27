@@ -15,7 +15,6 @@ Tests verify correct handling of:
 import json
 
 from fdsx.providers.claude import (
-    ClaudeProvider,
     _CONTENT_TYPE_TOOL_USE,
     _DELTA_TYPE_TEXT,
     _DELTA_TYPE_THINKING,
@@ -23,8 +22,8 @@ from fdsx.providers.claude import (
     _EVENT_CONTENT_BLOCK_START,
     _EVENT_CONTENT_BLOCK_STOP,
     _EVENT_RESULT,
+    ClaudeProvider,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

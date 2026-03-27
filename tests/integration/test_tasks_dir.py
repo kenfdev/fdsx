@@ -28,7 +28,7 @@ class TestTasksDirLoader:
     def test_load_tasks_dir_empty_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            with pytest.raises(ValueError, match="No .yaml files"):
+            with pytest.raises(ValueError, match=r"No .yaml files"):
                 engine.load_tasks_dir(tasks_dir)
 
     def test_load_tasks_dir_nonexistent_dir(self):

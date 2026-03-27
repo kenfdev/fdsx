@@ -11,9 +11,8 @@ fixture to verify:
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 from fdsx.providers.base import ProviderResult
-from fdsx.providers.claude import ClaudeProvider, _STREAM_FORMAT_FLAGS
+from fdsx.providers.claude import _STREAM_FORMAT_FLAGS, ClaudeProvider
 
 # ---------------------------------------------------------------------------
 # Fixture loading

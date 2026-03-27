@@ -80,7 +80,7 @@ def _merge_provider_options(
 def _extract_result_paths(flow: Flow) -> list[str]:
     """Extract all result_path fields from a flow."""
     paths = []
-    for state_name, state in flow.states.items():
+    for _state_name, state in flow.states.items():
         if isinstance(state, TaskState) and state.result_path:
             paths.append(state.result_path)
             if state.extract:
@@ -170,7 +170,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
             annotations[f"_br_{state_name}"] = Annotated[list, _parallel_branch_reducer]
 
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
-    for state_name, state in flow.states.items():
+    for _state_name, state in flow.states.items():
         if isinstance(state, TaskState) and state.result_path:
             k = _top_level_key(state.result_path)
             if k:

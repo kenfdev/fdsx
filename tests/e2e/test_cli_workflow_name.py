@@ -12,8 +12,9 @@ class TestWorkflowNameDisplay:
 
     def test_validate_workflows_name_display_alpha(self):
         """discover_workflows should find the alpha workflow with its flow.name."""
-        from fdsx.core.selector import discover_workflows
         from pathlib import Path
+
+        from fdsx.core.selector import discover_workflows
 
         fixtures_dir = Path(__file__).parent.parent / "fixtures"
         workflows_dir = fixtures_dir / "workflows_name_display"

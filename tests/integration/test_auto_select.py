@@ -9,12 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
+from fdsx.core.config import WorkflowSelectorConfig
 from fdsx.core.selector import (
     discover_workflows,
     resolve_workflow_for_task,
     select_workflow,
 )
-from fdsx.core.config import WorkflowSelectorConfig
 
 
 class TestDiscoverWorkflowsIntegration:

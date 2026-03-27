@@ -104,3 +104,64 @@ All integration tests are already feature-centered. No files need restructuring 
 - `test_scenario_flows.py` — cross-cutting scenario flows
 
 The integration test suite is well-organized around features (checkpoint, choice, parallel, loop, extraction, etc.) rather than implementation phases. No restructuring was required.
+
+## Error Handling
+
+1. **Never leak implementation exceptions across module boundaries.** Catch low-level errors (`json.JSONDecodeError`, `KeyError`, `yaml.YAMLError`) and re-raise as domain-specific exceptions (e.g., `FlowValidationError`, `CheckpointCorruptedError`). Raw tracebacks from stdlib or third-party libs should not reach callers outside the module.
+2. **Never use `assert` for production precondition checks.** `python -O` disables assertions. Use `if not condition: raise ValueError(...)` instead.
+3. **Log at WARNING or ERROR before re-raising at module boundaries.** Log at DEBUG for internal state transitions. This ensures boundary errors are always observable in logs even if the caller swallows them.
+4. **Only catch broad `Exception` at the top-level CLI entry point** (`cli/main.py`) to emit a user-facing message. Everywhere else, catch specific exception types.
+
+## Logging
+
+This project uses `structlog` for structured logging. Follow these conventions:
+
+1. **Bind shared context once at flow start** using `structlog.contextvars.bind_contextvars(thread_id=..., flow_name=...)` so all subsequent log calls in that execution inherit those fields automatically.
+2. **Emit one structured summary log line at flow completion** with fields: `thread_id`, `flow_name`, `status`, `duration_seconds`, `states_run`.
+3. **Never use f-strings as the first argument to log calls.** Use keyword arguments: `log.info("state_entered", state=name)` not `log.info(f"entered {name}")`.
+4. **Log levels:**
+   - `DEBUG` — internal transitions, variable resolution, checkpoint reads
+   - `INFO` — state entry/exit, flow start/completion
+   - `WARNING` — retries, recoverable errors, deprecated usage
+   - `ERROR` — unrecoverable failures, corrupt state
+
+## Architecture
+
+### Context
+
+fdsx is a framework that executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into LangGraph state machines, executes them by invoking LLM CLI tools (`claude`, `codex`, `opencode`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
+
+### Building Blocks
+
+| Module | Responsibility | Does NOT |
+|---|---|---|
+| `cli/` | Parse CLI arguments (Typer), dispatch to engine | Own business logic; validate workflow semantics |
+| `models/` | Pydantic models for workflow YAML (Flow, TaskState, ChoiceState, ParallelState, etc.) | Execute anything; access filesystem |
+| `core/loader.py` | Load YAML, parse into Pydantic models, resolve profiles | Compile graphs; run workflows |
+| `core/compiler/` | Compile a `Flow` model into a LangGraph `StateGraph` with nodes and edges | Load YAML; execute the graph; manage checkpoints |
+| `core/engine/` | Execute compiled graphs (`run_flow`, `resume_flow`), handle signals, batch/tasks-dir orchestration | Compile the graph; own the provider abstraction |
+| `core/variables.py` | JSONPath variable resolution and substitution in prompts | Persist state; know about providers |
+| `providers/` | Adapter layer: invoke LLM CLIs or system commands as subprocesses, return `ProviderResult` | Parse YAML; know about graph structure or state |
+| `checkpoint/` | SQLite-backed checkpoint persistence via LangGraph's `CheckpointSaver` | Execute workflows; compile graphs |
+| `display/` | Terminal UI output (progress, summaries, prompts) to stderr | Own state; make decisions |
+| `logging/` | Run recording, stream logging to stderr and structured log files | Control flow; modify state |
+| `notify/` | Optional notification dispatch (e.g., on completion) | Block execution; own state |
+
+### Runtime View
+
+```
+YAML file
+  → loader.py (parse + validate + resolve profiles)
+  → compiler/ (build StateGraph with nodes/edges)
+  → engine/run.py (execute graph with checkpoint saver)
+      → providers/ (subprocess call per task state)
+      → checkpoint/ (persist after each state)
+      → display/ (render progress to stderr)
+  → engine/results.py (extract final results)
+```
+
+### Key Decisions
+
+- **Subprocesses, not SDKs**: Providers invoke CLI binaries via `subprocess.run`, keeping fdsx independent of any LLM SDK.
+- **LangGraph as runtime**: The compiled `StateGraph` handles state transitions, interrupts, and checkpoint integration.
+- **Stderr for UI**: All human-facing output goes to stderr so stdout remains clean for machine-readable results.

@@ -21,7 +21,7 @@ import json
 import sys
 import threading
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from fdsx.providers.base import _run_subprocess
 

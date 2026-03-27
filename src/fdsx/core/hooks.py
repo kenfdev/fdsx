@@ -93,7 +93,7 @@ def execute_hooks(
 
     for hook in hooks:
         full_command = hook.command + positional_args
-        result = subprocess.run(full_command, shell=True, env=env)  # noqa: S602
+        result = subprocess.run(full_command, shell=True, env=env)
 
         if result.returncode != 0:
             if hook.on_failure == "abort":

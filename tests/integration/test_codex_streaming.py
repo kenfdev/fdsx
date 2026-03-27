@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fdsx.providers.base import ProviderResult
-from fdsx.providers.codex import CodexProvider, _STREAM_FORMAT_FLAGS
+from fdsx.providers.codex import _STREAM_FORMAT_FLAGS, CodexProvider
 
 # ---------------------------------------------------------------------------
 # Fixture loading

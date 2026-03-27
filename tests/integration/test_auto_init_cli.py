@@ -9,6 +9,7 @@ Tests verify:
 """
 
 from unittest.mock import patch
+
 from typer.testing import CliRunner
 
 from fdsx.cli import main

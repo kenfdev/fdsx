@@ -429,7 +429,7 @@ class TestSecuritySanitization:
     def test_validation_error_ansi_stripped_from_cli_output(self, tmp_path):
         """Regression: FlowValidationError containing ANSI escape sequences must not leak
         to the terminal.  A crafted .yaml filename with embedded escape bytes was the
-        reported attack vector (security finding – unsanitized validation errors).
+        reported attack vector (security finding - unsanitized validation errors).
         """
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()

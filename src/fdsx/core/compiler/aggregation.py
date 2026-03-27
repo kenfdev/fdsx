@@ -22,9 +22,6 @@ def _aggregate(source_data: list[dict[str, Any]], rule: AggregateRule) -> str:
     if not source_data:
         return rule.no_match
 
-    if not isinstance(source_data, list):
-        return rule.no_match
-
     # Use total branch count as denominator — failed/missing branches count as no_match
     total = len(source_data)
 

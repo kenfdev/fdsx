@@ -134,7 +134,7 @@ class CheckpointManager:
                 logger.warning(
                     "Removing stale lock for thread %r (dead PID %d)", thread_id, pid
                 )
-        except (ValueError, IOError):
+        except (OSError, ValueError):
             # Corrupt or empty lock file — treat as stale
             logger.warning("Removing corrupt lock file for thread %r", thread_id)
 
@@ -173,7 +173,7 @@ class CheckpointManager:
                 return True, pid
             except OSError:
                 return False, None
-        except (ValueError, IOError):
+        except (OSError, ValueError):
             return False, None
 
     def verify_checkpoint(self, thread_id: str) -> bool:
@@ -211,7 +211,7 @@ class CheckpointManager:
         Returns:
             List of thread info dictionaries with thread_id, status, flow_name
         """
-        from fdsx.logging.recorder import RUNS_DIR_NAME, RUN_FILENAME
+        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
 
         # Collect thread IDs from checkpoint DB
         checkpoint_thread_ids: list[str] = []
@@ -249,7 +249,7 @@ class CheckpointManager:
             threads = []
             checkpointer = self.get_checkpointer() if db_path.exists() else None
             for thread_id in all_thread_ids:
-                is_locked, pid = self.is_locked(thread_id)
+                is_locked, _pid = self.is_locked(thread_id)
                 status = "running" if is_locked else "stopped"
                 flow_name = thread_id  # fallback default
 
@@ -307,7 +307,7 @@ class CheckpointManager:
 
                         run_log_path = runs_dir / thread_id / RUN_FILENAME
                         if run_log_path.is_file():
-                            with open(run_log_path, "r") as f:
+                            with open(run_log_path) as f:
                                 run_log = json.load(f)
                             if flow_name == thread_id:
                                 flow_name = run_log.get("flow_name", thread_id)

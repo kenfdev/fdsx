@@ -2,8 +2,9 @@
 
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from langgraph.types import interrupt
 
@@ -198,6 +199,7 @@ def _create_pass_node(
 
         if state.aggregate:
             from fdsx.core.variables import resolve_jsonpath
+
             from .aggregation import _aggregate
 
             source_data = resolve_jsonpath(state.aggregate.source, state_dict)

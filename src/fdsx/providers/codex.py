@@ -1,7 +1,8 @@
 import json
 import logging
 import subprocess
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
