@@ -61,8 +61,20 @@ def run_flow(
 
     print(f"Thread ID: {_sanitize_output(thread_id)}", file=sys.stderr)
 
+    fdsx_config = load_config(
+        project_dir=base_dir.parent if base_dir is not None else None
+    )
+
+    config_profiles = None
+    if fdsx_config.profiles:
+        config_profiles = {
+            name: prof.model_dump() for name, prof in fdsx_config.profiles.items()
+        }
+
     flow, errors = load_flow(
-        flow_path, input_keys=set(inputs.keys()) if inputs else None
+        flow_path,
+        input_keys=set(inputs.keys()) if inputs else None,
+        config_profiles=config_profiles,
     )
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
@@ -88,10 +100,6 @@ def run_flow(
         thread_id=thread_id,
         flow_name=flow.name,
         flow_version=flow.version,
-    )
-
-    fdsx_config = load_config(
-        project_dir=base_dir.parent if base_dir is not None else None
     )
 
     _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME

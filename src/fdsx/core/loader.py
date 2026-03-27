@@ -3,18 +3,22 @@ from typing import Any
 
 import yaml
 
+from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
 from fdsx.models.flow import Flow
 
 
 def load_flow(
-    path: Path, input_keys: set[str] | None = None
+    path: Path,
+    input_keys: set[str] | None = None,
+    config_profiles: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[Flow | None, list[str]]:
     """Load and validate a flow from a YAML file.
 
     Args:
         path: Path to the YAML workflow file
         input_keys: Optional set of CLI --input variable keys known at runtime
+        config_profiles: Optional config-level profiles for resolution
 
     Returns:
         tuple of (Flow or None, list of error messages)
@@ -34,7 +38,7 @@ def load_flow(
     if not isinstance(data, dict):
         return None, ["Workflow file must be a YAML mapping, not a list or scalar"]
 
-    flow, flow_errors = _parse_and_validate_flow(data, path)
+    flow, flow_errors = _parse_and_validate_flow(data, path, config_profiles)
     if flow_errors:
         return None, flow_errors
 
@@ -50,7 +54,9 @@ def load_flow(
 
 
 def _parse_and_validate_flow(
-    data: dict[str, Any], yaml_path: Path
+    data: dict[str, Any],
+    yaml_path: Path,
+    config_profiles: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[Flow | None, list[str]]:
     """Parse raw YAML data into Flow model and validate."""
     errors: list[str] = []
@@ -61,6 +67,10 @@ def _parse_and_validate_flow(
             "Please add a description to your workflow file, e.g.:\n"
             "  description: 'My workflow that does X and Y'"
         ]
+
+    data, profile_errors = resolve_profiles_in_flow(data, config_profiles)
+    if profile_errors:
+        return None, profile_errors
 
     try:
         flow = Flow(**data)

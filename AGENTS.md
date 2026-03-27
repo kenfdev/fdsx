@@ -1,5 +1,25 @@
 # Agent Instructions
 
+## Development Environment
+
+This is a Python project managed with `uv`.
+
+**Running Python tools — always use `uv run`:**
+- Tests: `uv run pytest tests/ -v`
+- Type check: `uv run mypy src/`
+- Lint check: `uv run ruff check src/ tests/`
+- Lint fix: `uv run ruff check --fix src/ tests/`
+- Single file: `uv run pytest tests/unit/test_foo.py -v`
+
+**Before committing**, always run:
+- Format check: `uv run ruff format --check .`
+- If files need reformatting: `uv run ruff format .`
+
+**Never use:**
+- Bare `python` or `python3` — system Python lacks project dependencies
+- `.venv/bin/python` directly — venv symlinks may be stale after Python version changes
+- `pip install` — use `uv pip install` or `uv add` instead
+
 ## Testing Guidelines
 
 ### Test Trophy Strategy
@@ -32,8 +52,24 @@ This project follows the test trophy pattern. Tests are organized into three lay
 - CLI argument parsing and mutual exclusion
 - Signal handling
 
+#### Provider mocking
+
+Tests must never invoke real provider binaries (`claude`, `codex`, `opencode`). Always mock `_run_subprocess` for the relevant provider module. Follow the pattern from `tests/integration/test_provider_options.py`:
+
+```python
+from unittest.mock import patch
+from fdsx.providers.base import ProviderResult
+
+fake = ProviderResult(exit_code=0, stdout="mocked output", stderr="")
+with patch("fdsx.providers.claude._run_subprocess", return_value=fake):
+    result = run_flow(path, base_dir=tmp_path)
+```
+
+Use `provider: system` with `echo` commands when the test doesn't need to verify provider-specific behavior.
+
 #### Anti-patterns to avoid
 
+- **Calling real provider binaries**: Never let tests hit `claude`, `codex`, or `opencode` binaries. CI doesn't have them.
 - **Trivial field assertion tests**: Don't test that `TaskState(type="task").type == "task"`. Pydantic guarantees this.
 - **isinstance checks**: Don't test `isinstance(generate_thread_id(), str)`. The type system handles this.
 - **Default value tests**: Don't test that `ClaudeOptions().permission_mode is None`. This is framework behavior.

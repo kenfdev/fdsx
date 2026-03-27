@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from fdsx.models.validators import validate_profile_name
 from fdsx.models.flow import (
     Branch,
     ChoiceState,
@@ -11,6 +12,7 @@ from fdsx.models.flow import (
     LLMClassifyFallback,
     ParallelState,
     PassState,
+    ProfileConfig,
     TaskState,
     WaitState,
     WebhookConfig,
@@ -477,3 +479,54 @@ class TestHookEntryAndHookConfig:
         """T016: HookEntry.on_failure must be 'abort' or 'warn'."""
         with pytest.raises(ValidationError):
             HookEntry(command="echo hello", on_failure="ignore")
+
+
+class TestProfileConfig:
+    """Tests for ProfileConfig model."""
+
+    @pytest.mark.parametrize("provider", ["claude", "codex", "opencode"])
+    def test_valid_provider_accepted(self, provider: str):
+        """ProfileConfig accepts all valid LLM providers."""
+        cfg = ProfileConfig(provider=provider, model="test-model")
+        assert cfg.provider == provider
+
+    def test_system_provider_rejected(self):
+        """ProfileConfig with provider='system' must raise ValidationError."""
+        with pytest.raises(ValidationError, match="system"):
+            ProfileConfig(provider="system", model="test-model")
+
+    def test_missing_provider_raises(self):
+        """ProfileConfig without provider must raise ValidationError."""
+        with pytest.raises(ValidationError, match="provider"):
+            ProfileConfig(model="test-model")
+
+    def test_missing_model_raises(self):
+        """ProfileConfig without model must raise ValidationError."""
+        with pytest.raises(ValidationError, match="model"):
+            ProfileConfig(provider="claude")
+
+    def test_extra_fields_allowed(self):
+        """ProfileConfig with extra fields must be accepted and accessible."""
+        cfg = ProfileConfig(
+            provider="claude",
+            model="test-model",
+            permission_mode="auto",
+        )
+        assert cfg.permission_mode == "auto"
+
+
+class TestValidateProfileName:
+    """Tests for validate_profile_name function."""
+
+    @pytest.mark.parametrize("name", ["fast", "smart_guy", "review-model", "A123"])
+    def test_valid_names_accepted(self, name: str):
+        """Valid profile names are accepted."""
+        assert validate_profile_name(name) == name
+
+    @pytest.mark.parametrize(
+        "name", ["123start", "", "has space", "_leading", "-leading", "special!char"]
+    )
+    def test_invalid_names_rejected(self, name: str):
+        """Invalid profile names are rejected with ValueError."""
+        with pytest.raises(ValueError, match="profile name"):
+            validate_profile_name(name)

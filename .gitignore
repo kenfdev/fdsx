@@ -21,6 +21,8 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# fdsx runtime data
-.fdsx/
+# fdsx runtime data (keep config and workflows version-controlled)
+.fdsx/*
+!.fdsx/config.yaml
+!.fdsx/workflows/
 specs/

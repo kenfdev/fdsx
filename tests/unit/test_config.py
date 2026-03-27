@@ -388,6 +388,87 @@ class TestFdsxConfigProviders:
             ProviderConfigs.model_validate({"unknown_key": {}})
 
 
+class TestFdsxConfigProfiles:
+    def test_default_profiles_is_none(self):
+        cfg = FdsxConfig()
+        assert cfg.profiles is None
+
+    def test_valid_profile_parsed(self):
+        cfg = FdsxConfig.model_validate(
+            {
+                "profiles": {
+                    "my_profile": {"provider": "claude", "model": "claude-sonnet-4-6"}
+                }
+            }
+        )
+        assert cfg.profiles is not None
+        assert "my_profile" in cfg.profiles
+        assert cfg.profiles["my_profile"].provider == "claude"
+        assert cfg.profiles["my_profile"].model == "claude-sonnet-4-6"
+
+    def test_multiple_profiles_parsed(self):
+        cfg = FdsxConfig.model_validate(
+            {
+                "profiles": {
+                    "profile_a": {"provider": "claude", "model": "claude-sonnet-4-6"},
+                    "profile_b": {"provider": "codex", "model": "gpt-4o"},
+                }
+            }
+        )
+        assert cfg.profiles is not None
+        assert "profile_a" in cfg.profiles
+        assert "profile_b" in cfg.profiles
+        assert cfg.profiles["profile_a"].provider == "claude"
+        assert cfg.profiles["profile_b"].provider == "codex"
+
+    def test_backward_compat_without_profiles(self):
+        """Existing configs without a profiles section still parse correctly."""
+        cfg = FdsxConfig.model_validate({"auto_workflow": True})
+        assert cfg.profiles is None
+        assert cfg.auto_workflow is True
+
+    def test_invalid_profile_name_key_rejected(self):
+        """Profile name that doesn't match pattern is rejected."""
+        with pytest.raises(ValidationError):
+            FdsxConfig.model_validate(
+                {
+                    "profiles": {
+                        "123bad": {"provider": "claude", "model": "claude-sonnet-4-6"}
+                    }
+                }
+            )
+
+    def test_invalid_provider_in_profile_rejected(self):
+        """Profile with invalid provider is rejected."""
+        with pytest.raises(ValidationError):
+            FdsxConfig.model_validate(
+                {
+                    "profiles": {
+                        "valid_name": {
+                            "provider": "invalid_provider",
+                            "model": "some-model",
+                        }
+                    }
+                }
+            )
+
+    def test_profile_with_extra_fields_allowed(self):
+        """ProfileConfig allows extra fields."""
+        cfg = FdsxConfig.model_validate(
+            {
+                "profiles": {
+                    "my_profile": {
+                        "provider": "claude",
+                        "model": "claude-sonnet-4-6",
+                        "extra_option": True,
+                    }
+                }
+            }
+        )
+        assert cfg.profiles is not None
+        assert cfg.profiles["my_profile"].provider == "claude"
+
+
 class TestLoadConfigWithProviders:
     def test_deep_merge_providers_across_global_and_project(self):
         """Global sets claude.permission_mode; project adds dangerously_skip_permissions; both preserved."""
@@ -593,3 +674,277 @@ class TestDeepMergeHookListConcatenation:
         result = _deep_merge(base, override)
         commands = [e["command"] for e in result["hooks"]["on_start"]]
         assert commands == ["global1.sh", "global2.sh", "project.sh"]
+
+
+class TestDeepMergeProfilesShallowReplacement:
+    """T016: Tests for _deep_merge profiles key shallow replacement behavior."""
+
+    def test_profiles_same_name_replaced_not_deep_merged(self):
+        """Base has profiles.fast with claude/haiku, override has profiles.fast with codex/gpt. Result is override entirely."""
+        base = {"profiles": {"fast": {"provider": "claude", "model": "haiku"}}}
+        override = {"profiles": {"fast": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert result["profiles"]["fast"] == {"provider": "codex", "model": "gpt"}
+        assert "haiku" not in str(result["profiles"]["fast"])
+
+    def test_profiles_different_names_both_preserved(self):
+        """Base has profile 'a', override has profile 'b'. Both present in result."""
+        base = {"profiles": {"a": {"provider": "claude", "model": "sonnet"}}}
+        override = {"profiles": {"b": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert "a" in result["profiles"]
+        assert "b" in result["profiles"]
+        assert result["profiles"]["a"] == {"provider": "claude", "model": "sonnet"}
+        assert result["profiles"]["b"] == {"provider": "codex", "model": "gpt"}
+
+    def test_profiles_override_drops_extra_fields_from_base(self):
+        """Base profile has extra fields, override profile doesn't have them. Extra fields should NOT appear in result."""
+        base = {
+            "profiles": {
+                "smart": {
+                    "provider": "claude",
+                    "model": "sonnet",
+                    "extra_field": "should_be_dropped",
+                }
+            }
+        }
+        override = {"profiles": {"smart": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert result["profiles"]["smart"] == {"provider": "codex", "model": "gpt"}
+        assert "extra_field" not in result["profiles"]["smart"]
+
+    def test_profiles_shallow_merge_preserves_unmodified_profiles(self):
+        """Override only changes 'fast', leaves 'slow' profile from base untouched."""
+        base = {
+            "profiles": {
+                "fast": {"provider": "claude", "model": "sonnet"},
+                "slow": {"provider": "opencode", "model": "o1"},
+            }
+        }
+        override = {"profiles": {"fast": {"provider": "codex", "model": "gpt"}}}
+        result = _deep_merge(base, override)
+        assert result["profiles"]["fast"] == {"provider": "codex", "model": "gpt"}
+        assert result["profiles"]["slow"] == {"provider": "opencode", "model": "o1"}
+
+
+class TestTaskSplitterConfigProfile:
+    """Tests for TaskSplitterConfig profile field."""
+
+    def test_profile_field_accepted(self):
+        """TaskSplitterConfig(profile='my_profile') is accepted."""
+        cfg = TaskSplitterConfig(profile="my_profile")
+        assert cfg.profile == "my_profile"
+        assert cfg.provider == "claude"
+        assert cfg.model == "claude-sonnet-4-6"
+
+    def test_profile_xor_with_explicit_provider(self):
+        """Providing both profile and non-default provider raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskSplitterConfig(profile="my_profile", provider="codex")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_xor_with_explicit_model(self):
+        """Providing both profile and non-default model raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskSplitterConfig(profile="my_profile", model="gpt-4o")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_xor_with_default_provider_raises(self):
+        """Providing profile and provider='claude' (default) still raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskSplitterConfig(profile="fast", provider="claude")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_xor_with_default_model_raises(self):
+        """Providing profile and model='claude-sonnet-4-6' (default) still raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskSplitterConfig(profile="fast", model="claude-sonnet-4-6")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_only_valid(self):
+        """Profile alone is valid."""
+        cfg = TaskSplitterConfig(profile="fast")
+        assert cfg.profile == "fast"
+        assert cfg.provider == "claude"
+        assert cfg.model == "claude-sonnet-4-6"
+
+    def test_no_profile_with_provider_valid(self):
+        """Provider alone (no profile) is valid."""
+        cfg = TaskSplitterConfig(provider="claude")
+        assert cfg.provider == "claude"
+
+
+class TestWorkflowSelectorConfigProfile:
+    """Tests for WorkflowSelectorConfig profile field."""
+
+    def test_profile_field_accepted(self):
+        """WorkflowSelectorConfig(profile='my_profile') is accepted."""
+        cfg = WorkflowSelectorConfig(profile="my_profile")
+        assert cfg.profile == "my_profile"
+        assert cfg.provider == "claude"
+        assert cfg.model == "claude-sonnet-4-6"
+
+    def test_profile_xor_with_explicit_provider(self):
+        """Providing both profile and non-default provider raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowSelectorConfig(profile="my_profile", provider="codex")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_xor_with_explicit_model(self):
+        """Providing both profile and non-default model raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowSelectorConfig(profile="my_profile", model="gpt-4o")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_xor_with_default_provider_raises(self):
+        """Providing profile and provider='claude' (default) still raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowSelectorConfig(profile="fast", provider="claude")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_xor_with_default_model_raises(self):
+        """Providing profile and model='claude-sonnet-4-6' (default) still raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowSelectorConfig(profile="fast", model="claude-sonnet-4-6")
+        assert "mutually exclusive" in str(exc_info.value)
+
+    def test_profile_only_valid(self):
+        """Profile alone is valid."""
+        cfg = WorkflowSelectorConfig(profile="fast")
+        assert cfg.profile == "fast"
+        assert cfg.provider == "claude"
+        assert cfg.model == "claude-sonnet-4-6"
+
+    def test_no_profile_with_provider_valid(self):
+        """Provider alone (no profile) is valid."""
+        cfg = WorkflowSelectorConfig(provider="claude")
+        assert cfg.provider == "claude"
+
+
+class TestResolveProfilesInConfig:
+    """Tests for resolve_profiles_in_config function."""
+
+    def test_resolve_profiles_in_config_task_splitter(self):
+        """Raw dict with task_splitter.profile gets resolved."""
+        from fdsx.core.profiles import resolve_profiles_in_config
+
+        data = {
+            "task_splitter": {"profile": "fast"},
+            "profiles": {"fast": {"provider": "claude", "model": "haiku"}},
+        }
+        data, errors = resolve_profiles_in_config(data)
+
+        assert errors == []
+        assert data["task_splitter"]["provider"] == "claude"
+        assert data["task_splitter"]["model"] == "haiku"
+        assert "profile" not in data["task_splitter"]
+
+    def test_resolve_profiles_in_config_workflow_selector(self):
+        """Raw dict with workflow_selector.profile gets resolved."""
+        from fdsx.core.profiles import resolve_profiles_in_config
+
+        data = {
+            "workflow_selector": {"profile": "smart"},
+            "profiles": {"smart": {"provider": "claude", "model": "sonnet-4-6"}},
+        }
+        data, errors = resolve_profiles_in_config(data)
+
+        assert errors == []
+        assert data["workflow_selector"]["provider"] == "claude"
+        assert data["workflow_selector"]["model"] == "sonnet-4-6"
+        assert "profile" not in data["workflow_selector"]
+
+    def test_resolve_profiles_in_config_missing_profile_error(self):
+        """Profile not in profiles dict returns error."""
+        from fdsx.core.profiles import resolve_profiles_in_config
+
+        data = {
+            "task_splitter": {"profile": "nonexistent"},
+            "profiles": {"fast": {"provider": "claude", "model": "haiku"}},
+        }
+        data, errors = resolve_profiles_in_config(data)
+
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+        assert "nonexistent" in errors[0]
+
+    def test_resolve_profiles_in_config_no_profiles_no_reference_noop(self):
+        """No profiles section and no profile references is a no-op."""
+        from fdsx.core.profiles import resolve_profiles_in_config
+
+        data = {"task_splitter": {"provider": "claude", "model": "haiku"}}
+        original = dict(data["task_splitter"])
+        data, errors = resolve_profiles_in_config(data)
+
+        assert errors == []
+        assert data["task_splitter"] == original
+
+    def test_resolve_profiles_in_config_missing_profiles_section_with_reference_errors(
+        self,
+    ):
+        """Missing profiles section with a profile reference produces an error."""
+        from fdsx.core.profiles import resolve_profiles_in_config
+
+        data = {"task_splitter": {"profile": "fast"}}
+        data, errors = resolve_profiles_in_config(data)
+
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+        assert "fast" in errors[0]
+
+    def test_resolve_profiles_in_config_missing_profiles_section_workflow_selector_errors(
+        self,
+    ):
+        """Missing profiles section with workflow_selector profile reference produces an error."""
+        from fdsx.core.profiles import resolve_profiles_in_config
+
+        data = {"workflow_selector": {"profile": "smart"}}
+        data, errors = resolve_profiles_in_config(data)
+
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+        assert "smart" in errors[0]
+
+
+class TestLoadConfigResolvesProfiles:
+    """Tests that profile resolution works end-to-end through load_config()."""
+
+    def test_load_config_resolves_workflow_selector_profile(
+        self, tmp_path, monkeypatch
+    ):
+        """workflow_selector.profile resolves through load_config() without false XOR."""
+        monkeypatch.chdir(tmp_path)
+        config_dir = tmp_path / ".fdsx"
+        config_dir.mkdir()
+        config_file = config_dir / "config.yaml"
+        config_file.write_text(
+            "profiles:\n"
+            "  fast:\n"
+            "    provider: codex\n"
+            "    model: codex-mini\n"
+            "workflow_selector:\n"
+            "  profile: fast\n"
+        )
+        cfg = load_config(project_dir=tmp_path, load_global=False)
+        assert cfg.workflow_selector.provider == "codex"
+        assert cfg.workflow_selector.model == "codex-mini"
+        assert cfg.workflow_selector.profile is None  # resolved and removed
+
+    def test_load_config_resolves_task_splitter_profile(self, tmp_path, monkeypatch):
+        """task_splitter.profile resolves through load_config() without false XOR."""
+        monkeypatch.chdir(tmp_path)
+        config_dir = tmp_path / ".fdsx"
+        config_dir.mkdir()
+        config_file = config_dir / "config.yaml"
+        config_file.write_text(
+            "profiles:\n"
+            "  fast:\n"
+            "    provider: codex\n"
+            "    model: codex-mini\n"
+            "task_splitter:\n"
+            "  profile: fast\n"
+        )
+        cfg = load_config(project_dir=tmp_path, load_global=False)
+        assert cfg.task_splitter is not None
+        assert cfg.task_splitter.provider == "codex"
+        assert cfg.task_splitter.model == "codex-mini"

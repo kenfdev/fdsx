@@ -1,0 +1,35 @@
+name: Profile Parallel Flow
+description: Parallel review with profile-based provider resolution
+start_at: review_parallel
+version: '1.0'
+
+profiles:
+  reviewer:
+    provider: claude
+    model: claude-sonnet-4-6
+  security_reviewer:
+    provider: codex
+    model: gpt-5.4
+
+states:
+  review_parallel:
+    type: parallel
+    branches:
+      - profile: reviewer
+        prompt_template: "Review this code"
+        extract:
+          strategy:
+            - keyword
+          pattern: APPROVED|REJECTED
+          result_path: $.decision
+        retry: 0
+      - profile: security_reviewer
+        prompt_template: "Security review this code"
+        extract:
+          strategy:
+            - keyword
+          pattern: APPROVED|REJECTED
+          result_path: $.decision
+        retry: 0
+    result_path: $.reviews
+    end: true

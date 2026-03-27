@@ -1,0 +1,31 @@
+name: Profile Flow
+description: Workflow with profile-based provider resolution
+start_at: plan
+version: '1.0'
+
+profiles:
+  smart_guy:
+    provider: claude
+    model: claude-sonnet-4-6
+
+states:
+  plan:
+    type: task
+    profile: smart_guy
+    prompt_template: "Create a plan for: hello world"
+    result_path: $.plan
+    next: implement
+
+  implement:
+    type: task
+    provider: system
+    command: "echo 'Implementation: def hello(): print(Hello World)'"
+    result_path: $.implementation
+    next: review
+
+  review:
+    type: task
+    profile: smart_guy
+    prompt_template: "Review this implementation"
+    result_path: $.review
+    end: true

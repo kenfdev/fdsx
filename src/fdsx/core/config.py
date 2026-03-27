@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from fdsx.models.flow import HookConfig
-from fdsx.models.validators import validate_llm_provider
+from fdsx.core.profiles import resolve_profiles_in_config
+from fdsx.models.flow import HookConfig, ProfileConfig
+from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
 from fdsx.providers.opencode import OpenCodeOptions
@@ -23,10 +24,17 @@ from fdsx.providers.opencode import OpenCodeOptions
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
 _HOOK_LIST_KEYS: frozenset[str] = frozenset({"on_start", "on_complete"})
 
+# Keys whose dict values are shallow-merged instead of deep-merged
+_SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
+
 
 class TaskSplitterConfig(BaseModel):
     """Configuration for batch task splitting (formerly TaskSplitter in flow.py)."""
 
+    profile: str | None = Field(
+        default=None,
+        description="Profile name for provider/model configuration",
+    )
     provider: str = Field(
         default="claude",
         description="Provider name (claude/opencode/codex)",
@@ -35,6 +43,20 @@ class TaskSplitterConfig(BaseModel):
         default="claude-sonnet-4-6",
         description="Model name",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_profile_xor(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(values, dict):
+            has_profile = "profile" in values and values["profile"] is not None
+            has_provider = "provider" in values
+            has_model = "model" in values
+            if has_profile and (has_provider or has_model):
+                raise ValueError(
+                    "profile and (provider|model) are mutually exclusive. "
+                    "Use either profile reference or explicit provider/model, not both."
+                )
+        return values
 
     @field_validator("provider")
     @classmethod
@@ -45,6 +67,10 @@ class TaskSplitterConfig(BaseModel):
 class WorkflowSelectorConfig(BaseModel):
     """Configuration for workflow auto-selection."""
 
+    profile: str | None = Field(
+        default=None,
+        description="Profile name for provider/model configuration",
+    )
     provider: str = Field(
         default="claude",
         description="Provider for workflow selection",
@@ -53,6 +79,20 @@ class WorkflowSelectorConfig(BaseModel):
         default="claude-sonnet-4-6",
         description="Model for workflow selection",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_profile_xor(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(values, dict):
+            has_profile = "profile" in values and values["profile"] is not None
+            has_provider = "provider" in values
+            has_model = "model" in values
+            if has_profile and (has_provider or has_model):
+                raise ValueError(
+                    "profile and (provider|model) are mutually exclusive. "
+                    "Use either profile reference or explicit provider/model, not both."
+                )
+        return values
 
     @field_validator("provider")
     @classmethod
@@ -106,6 +146,10 @@ class FdsxConfig(BaseModel):
         default=None,
         description="Global hook configuration applied to all flows",
     )
+    profiles: dict[str, ProfileConfig] | None = Field(
+        default=None,
+        description="Named provider/model profiles",
+    )
 
     @field_validator("workflows_dir")
     @classmethod
@@ -119,6 +163,17 @@ class FdsxConfig(BaseModel):
             )
         return v
 
+    @field_validator("profiles", mode="before")
+    @classmethod
+    def validate_profile_names(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise ValueError(f"profiles must be a dict, got {type(v).__name__}")
+        for key in v.keys():
+            validate_profile_name(key)
+        return v
+
     model_config = {"extra": "forbid"}
 
 
@@ -128,6 +183,8 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     When both base and override have a dict value for the same key, the dicts
     are merged recursively. For keys in _HOOK_LIST_KEYS (on_start, on_complete),
     list values are concatenated (base + override) rather than replaced.
+    For keys in _SHALLOW_MERGE_KEYS (profiles), dict values are shallow-merged
+    (full replacement per name, not deep merge of individual profile fields).
     Otherwise, the override value wins outright.
 
     Args:
@@ -141,7 +198,10 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     for key, override_val in override.items():
         base_val = result.get(key)
         if isinstance(base_val, dict) and isinstance(override_val, dict):
-            result[key] = _deep_merge(base_val, override_val)
+            if key in _SHALLOW_MERGE_KEYS:
+                result[key] = {**base_val, **override_val}
+            else:
+                result[key] = _deep_merge(base_val, override_val)
         elif (
             key in _HOOK_LIST_KEYS
             and isinstance(base_val, list)
@@ -226,8 +286,15 @@ def load_config(
         if proj_config_dir is not None:
             raw_project = _load_yaml(proj_config_dir / "config.yaml")
 
-    merged: dict[str, Any] = _deep_merge(
-        _deep_merge(defaults.model_dump(), raw_global), raw_project
-    )
+    # Merge user configs first (without defaults) so profile resolution
+    # sees only explicitly-provided keys — no false XOR from defaults.
+    user_merged: dict[str, Any] = _deep_merge(raw_global, raw_project)
+
+    user_merged, profile_errors = resolve_profiles_in_config(user_merged)
+    if profile_errors:
+        raise ValueError("; ".join(profile_errors))
+
+    # Now merge with defaults to fill in missing fields
+    merged: dict[str, Any] = _deep_merge(defaults.model_dump(), user_merged)
 
     return FdsxConfig.model_validate(merged)

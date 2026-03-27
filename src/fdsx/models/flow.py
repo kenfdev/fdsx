@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from fdsx.core.paths import parse_jsonpath
 from fdsx.models.validators import validate_llm_provider
@@ -132,6 +132,19 @@ def _validate_provider_fields(
             raise ValueError(
                 f"provider={provider} requires prompt_template or prompt_file"
             )
+
+
+class ProfileConfig(BaseModel):
+    """Named provider/model configuration bundle."""
+
+    provider: str = Field(..., description="LLM provider")
+    model: str = Field(..., description="Model name")
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> "ProfileConfig":
+        validate_llm_provider(self.provider, "Profile")
+        return self
 
 
 class Branch(BaseModel):
@@ -423,6 +436,9 @@ class Flow(BaseModel):
     )
     hooks: HookConfig | None = Field(
         default=None, description="Flow-level hook configuration"
+    )
+    profiles: dict[str, dict[str, Any]] | None = Field(
+        default=None, description="Workflow-level profile definitions"
     )
 
     @model_validator(mode="before")

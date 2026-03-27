@@ -85,7 +85,16 @@ def resume_flow(
                     "Please provide the flow YAML path using the flow_path parameter."
                 )
 
-        flow, errors = load_flow(flow_path)
+        config = load_config(
+            project_dir=base_dir.parent if base_dir is not None else None
+        )
+        config_profiles = None
+        if config.profiles:
+            config_profiles = {
+                name: prof.model_dump() for name, prof in config.profiles.items()
+            }
+
+        flow, errors = load_flow(flow_path, config_profiles=config_profiles)
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
@@ -112,10 +121,6 @@ def resume_flow(
             flow_version=flow_version,
         )
 
-        fdsx_config = load_config(
-            project_dir=base_dir.parent if base_dir is not None else None
-        )
-
         resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id
         resume_log_dir = resume_run_dir / LOGS_DIR_NAME
 
@@ -125,7 +130,7 @@ def resume_flow(
             flow,
             checkpointer=checkpointer,
             recorder=recorder,
-            config=fdsx_config,
+            config=config,
             log_dir=resume_log_dir,
             on_process_start=handler.register_process,
         )
