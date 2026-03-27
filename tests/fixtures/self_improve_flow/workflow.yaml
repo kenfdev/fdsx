@@ -1,0 +1,47 @@
+name: Self-Improve Flow
+description: Test flow for self-improve workflow testing
+start_at: collect_data
+version: '1.0'
+
+states:
+  collect_data:
+    type: task
+    provider: system
+    command: ".fdsx/workflows/self-improve/collect_data.sh"
+    result_path: $.run_summary
+    extract:
+      strategy:
+        - keyword
+      pattern: HAS_RUNS|NO_RUNS
+      result_path: $.collect_decision
+    next: check_runs
+
+  check_runs:
+    type: choice
+    choices:
+      - variable: $.collect_decision
+        operator: equals
+        value: HAS_RUNS
+        next: write_lessons
+    default: update_timestamp_clean
+
+  write_lessons:
+    type: task
+    provider: system
+    command: "echo 'Lessons written from run data'"
+    result_path: $.lessons
+    next: update_timestamp
+
+  update_timestamp:
+    type: task
+    provider: system
+    command: "mv .fdsx/self-improve-last-run.pending .fdsx/self-improve-last-run 2>/dev/null || true"
+    result_path: $.timestamp_update
+    end: true
+
+  update_timestamp_clean:
+    type: task
+    provider: system
+    command: "mv .fdsx/self-improve-last-run.pending .fdsx/self-improve-last-run 2>/dev/null || true; echo 'No new runs'"
+    result_path: $.timestamp_update
+    end: true
