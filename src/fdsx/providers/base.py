@@ -80,6 +80,8 @@ def _run_subprocess(
     env: dict[str, str] | None = None,
     inactivity_timeout: int | None = None,
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+    on_inactivity_hooks: Callable[[Callable[[], None], Callable[[], None]], None]
+    | None = None,
 ) -> ProviderResult:
     """Shared subprocess execution helper for all providers.
 
@@ -104,6 +106,10 @@ def _run_subprocess(
         on_process_start: Optional callback invoked immediately after
             ``subprocess.Popen()`` creation.  Used by ``SignalHandler`` to
             register active subprocesses for signal forwarding.
+        on_inactivity_hooks: Optional callback invoked with (suspend_fn, resume_fn)
+            when inactivity_timeout is active. Callers can use these to prevent
+            false inactivity kills during long-running tool execution. suspend_fn
+            stops the inactivity timer; resume_fn restarts it from the current time.
 
     Returns:
         ProviderResult with exit code and output.
@@ -148,6 +154,17 @@ def _run_subprocess(
         # _suppressed: set when the completion_event path takes control, preventing
         # the inactivity watchdog from issuing a redundant kill.
         _suppressed = threading.Event()
+        # _tool_in_progress: set when a tool is running (suspend) to prevent
+        # the inactivity watchdog from issuing a false kill.
+        _tool_in_progress = threading.Event()
+
+        def _suspend_inactivity() -> None:
+            _tool_in_progress.set()
+
+        def _resume_inactivity() -> None:
+            _tool_in_progress.clear()
+            with _last_activity_lock:
+                _last_activity[0] = time.monotonic()
 
         def _killpg(sig: int) -> None:
             """Send *sig* to the subprocess's process group (best-effort)."""
@@ -180,6 +197,8 @@ def _run_subprocess(
                     break
                 if process.poll() is not None:
                     break
+                if _tool_in_progress.is_set():
+                    continue
                 with _last_activity_lock:
                     idle = time.monotonic() - _last_activity[0]
                 if idle > inactivity_timeout:
@@ -205,6 +224,9 @@ def _run_subprocess(
                 target=_inactivity_watchdog, daemon=True
             )
             inactivity_watchdog_thread.start()
+
+        if on_inactivity_hooks is not None and inactivity_timeout:
+            on_inactivity_hooks(_suspend_inactivity, _resume_inactivity)
 
         # Write stdin data if provided, then close stdin
         if stdin_data is not None and process.stdin:

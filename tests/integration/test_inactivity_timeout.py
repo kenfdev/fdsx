@@ -259,3 +259,79 @@ class TestInactivityTimeoutWithExplicitTimeout:
         assert elapsed < _TEST_TIMEOUT, (
             f"Test took {elapsed:.1f}s — exceeds {_TEST_TIMEOUT}s limit"
         )
+
+
+class TestToolInProgressSuspendsInactivity:
+    """on_inactivity_hooks can suspend/resume the inactivity watchdog timer."""
+
+    def test_suspended_process_not_killed(self):
+        """Process goes silent but suspend_fn called immediately → not killed."""
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time; print('output', flush=True); time.sleep(4)",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            on_inactivity_hooks=lambda suspend, resume: suspend(),
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (suspended, not killed), got {result.exit_code}"
+        )
+        assert "inactivity" not in result.stderr.lower(), (
+            f"Process should not be killed by inactivity when suspended, stderr: {result.stderr!r}"
+        )
+
+    def test_resumed_timer_kills_after_threshold(self):
+        """Suspend immediately, resume after 0.5s, then stay silent → killed."""
+        resume_time = 0.5
+
+        def schedule_resume(suspend, resume):
+            suspend()
+            threading.Timer(resume_time, resume).start()
+
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time; print('output', flush=True); time.sleep(4)",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            on_inactivity_hooks=schedule_resume,
+        )
+
+        assert result.exit_code == 124, (
+            f"Expected exit_code=124 (killed after resumed inactivity), got {result.exit_code}"
+        )
+        assert "inactivity timeout" in result.stderr.lower(), (
+            f"Expected 'inactivity timeout' in stderr after resume, got: {result.stderr!r}"
+        )
+
+    def test_resume_resets_activity_timestamp(self):
+        """Suspend near threshold, resume, then continue → not killed (clock reset)."""
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                (
+                    "import sys, time;"
+                    " print('output', flush=True);"
+                    " time.sleep(1.5);"  # suspend for ~1.5s (close to 2s threshold)
+                    " print('more output', flush=True);"
+                    " time.sleep(1.5)"  # then silent for ~1.5s more (total ~3s)
+                ),
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            on_inactivity_hooks=lambda suspend, resume: (
+                suspend(),
+                threading.Timer(1.5, resume).start(),
+            ),
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (clock reset on resume), got {result.exit_code}"
+        )
+        assert "inactivity" not in result.stderr.lower(), (
+            f"Process should not be killed; clock reset on resume, stderr: {result.stderr!r}"
+        )
