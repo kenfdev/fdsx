@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Collects run data from .fdsx/runs/ for self-improvement analysis.
-# Reads run.json from each run directory, filters based on last analysis timestamp,
-# and outputs a pipe-delimited table with run information.
+# Collects review feedback data from .fdsx/runs/ for self-improvement analysis.
+# Extracts reviewer decisions, findings, and fix cycle information from each run.
 
 set -euo pipefail
 
@@ -22,67 +21,71 @@ if [[ -f "$LAST_RUN_FILE" ]]; then
     last_run_dir=$(cat "$LAST_RUN_FILE")
 fi
 
-output_header="run_dir|flow_name|run_status|state_name|state_type|duration_s|state_status|retry_count"
-output_lines=""
 has_new_runs=false
 newest_run_dir=""
+output=""
 
 while IFS= read -r run_dir; do
     run_json="${run_dir}run.json"
     if [[ ! -f "$run_json" ]]; then
         continue
     fi
-    
-    # Capture Python output — empty means run was filtered out
-    py_output=$(python3 -c "
-import json
-import sys
-import os
 
-run_dir = sys.argv[1]
-run_json = sys.argv[2]
-last_run_dir = sys.argv[3] if len(sys.argv) > 3 else ''
+    run_name=$(basename "$run_dir" | tr -d '/')
 
-with open(run_json, 'r') as f:
-    data = json.load(f)
+    # Skip runs already analyzed
+    if [[ -n "$last_run_dir" ]] && [[ "$run_name" < "$last_run_dir" || "$run_name" == "$last_run_dir" ]]; then
+        continue
+    fi
 
-run_name = os.path.basename(run_dir.rstrip('/'))
-flow_name = data.get('flow_name', 'unknown')
-run_status = data.get('status', 'unknown')
+    has_new_runs=true
+    if [[ -z "$newest_run_dir" ]] || [[ "$run_name" > "$newest_run_dir" ]]; then
+        newest_run_dir="$run_name"
+    fi
 
-if last_run_dir and run_name <= last_run_dir:
-    sys.exit(0)
+    # Extract flow_name and status from run.json
+    flow_info=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+print(d.get('flow_name', 'unknown'))
+print(d.get('status', 'unknown'))
+# Find review_decision in final_variables
+fv = d.get('final_variables', {})
+print(fv.get('review_decision', 'UNKNOWN'))
+" "$run_json" 2>/dev/null || echo -e "unknown\nunknown\nUNKNOWN")
 
-states = data.get('states', [])
-for state in states:
-    state_name = state.get('name', '')
-    state_type = state.get('type', '')
-    duration = state.get('duration_seconds', 0)
-    state_status = state.get('status', '')
+    flow_name=$(echo "$flow_info" | sed -n '1p')
+    run_status=$(echo "$flow_info" | sed -n '2p')
+    review_decision=$(echo "$flow_info" | sed -n '3p')
 
-    logs_dir = os.path.join(run_dir, 'logs')
-    retry_count = 0
-    if os.path.isdir(logs_dir):
-        import glob
-        log_pattern = os.path.join(logs_dir, f'{state_name}_*.log')
-        log_files = glob.glob(log_pattern)
-        retry_count = len(log_files) - 1 if log_files else 0
+    # Check for fix cycle (presence of fix_*.log or replan_*.log)
+    fix_cycle="no"
+    if ls "${run_dir}logs/fix_"*.log 1>/dev/null 2>&1 || ls "${run_dir}logs/replan_"*.log 1>/dev/null 2>&1; then
+        fix_cycle="yes"
+    fi
 
-    print(f'{run_name}|{flow_name}|{run_status}|{state_name}|{state_type}|{duration}|{state_status}|{retry_count}')
+    # Read review findings from data/review_ref.md
+    review_findings=""
+    review_ref="${run_dir}data/review_ref.md"
+    if [[ -f "$review_ref" ]]; then
+        review_findings=$(cat "$review_ref")
+    fi
 
-# If no states, still emit a run-level line so we know it passed the filter
-if not states:
-    print(f'{run_name}|{flow_name}|{run_status}||||0|0')
-" "$run_dir" "$run_json" "$last_run_dir" 2>/dev/null || true)
+    # Build output block
+    block="=== RUN: ${run_name} | FLOW: ${flow_name} | STATUS: ${run_status} ===
+REVIEW_DECISION: ${review_decision}
+FIX_CYCLE: ${fix_cycle}
+REVIEW_FINDINGS:
+${review_findings}
+=== END ==="
 
-    # Only count as new if Python produced output (run passed the date filter)
-    if [[ -n "$py_output" ]]; then
-        output_lines="${output_lines:+${output_lines}
-}${py_output}"
-        has_new_runs=true
-        if [[ -z "$newest_run_dir" ]] || [[ "$run_dir" > "$newest_run_dir" ]]; then
-            newest_run_dir="$run_dir"
-        fi
+    if [[ -n "$output" ]]; then
+        output="${output}
+
+${block}"
+    else
+        output="$block"
     fi
 done < <(ls -1d "$RUNS_DIR"/*/ 2>/dev/null | sort)
 
@@ -91,16 +94,10 @@ if [[ "$has_new_runs" == "false" ]]; then
     exit 0
 fi
 
-echo "$output_header"
-if [[ -n "$output_lines" ]]; then
-    echo "$output_lines"
-fi
+echo "$output"
 
 if [[ -n "$newest_run_dir" ]]; then
-    newest_name=$(basename "$newest_run_dir" | tr -d '/')
-    # Write pending file for workflow's update_timestamp state
-    printf '%s' "$newest_name" > "$PENDING_FILE"
-    echo "NEWEST_RUN:${newest_name}"
+    printf '%s' "$newest_run_dir" > "$PENDING_FILE"
 fi
 
 echo "HAS_RUNS"

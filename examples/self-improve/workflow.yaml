@@ -1,7 +1,7 @@
 name: Self-Improve
 description: >
-  Analyzes recent workflow runs to extract lessons learned
-  and improve future performance.
+  Analyzes codebase quality and recent workflow review feedback
+  to identify improvements and write lessons learned.
 version: "1.0"
 start_at: collect_data
 
@@ -11,21 +11,7 @@ states:
     provider: system
     command: "bash .fdsx/workflows/self-improve/collect_data.sh"
     result_path: $.run_summary
-    extract:
-      strategy:
-        - keyword
-      pattern: HAS_RUNS|NO_RUNS
-      result_path: $.collect_decision
-    next: check_data
-
-  check_data:
-    type: choice
-    choices:
-      - variable: $.collect_decision
-        operator: equals
-        value: HAS_RUNS
-        next: analyze
-    default: end_no_runs
+    next: analyze
 
   analyze:
     type: task
@@ -75,11 +61,4 @@ states:
     provider: system
     command: "mv .fdsx/self-improve-last-run.pending .fdsx/self-improve-last-run 2>/dev/null || true; echo 'Analysis complete. No problems detected.'"
     result_path: $.timestamp_update
-    end: true
-
-  end_no_runs:
-    type: task
-    provider: system
-    command: "echo 'No new workflow runs to analyze.'"
-    result_path: $.no_runs_message
     end: true
