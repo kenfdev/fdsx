@@ -84,6 +84,7 @@ class ClaudeProvider(ProviderBase):
         self,
         output_callback: Callable[[str], None],
         completion_event: threading.Event | None = None,
+        summary_callback: Callable[[str], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None], Callable[[], None]]:
         """Create a streaming callback that parses stream-json NDJSON lines.
 
@@ -123,11 +124,12 @@ class ClaudeProvider(ProviderBase):
                 return
             # Split on newlines; emit each complete line.
             lines = joined.split("\n")
+            cb = summary_callback if summary_callback else output_callback
             for line in lines:
                 if not line:
                     continue
                 if buf_type == "thinking":
-                    output_callback(f"[thinking] {line}")
+                    cb(f"[thinking] {line}")
                 else:
                     output_callback(line)
 
@@ -148,8 +150,9 @@ class ClaudeProvider(ProviderBase):
                 for line in parts[:-1]:
                     if not line:
                         continue
+                    cb = summary_callback if summary_callback else output_callback
                     if buf_type == "thinking":
-                        output_callback(f"[thinking] {line}")
+                        cb(f"[thinking] {line}")
                     else:
                         output_callback(line)
 
@@ -173,7 +176,8 @@ class ClaudeProvider(ProviderBase):
                 if content_block.get("type") == _CONTENT_TYPE_TOOL_USE:
                     _flush_buffer()
                     tool_name = content_block.get("name", "unknown")
-                    output_callback(f"[tool: {tool_name}]")
+                    cb = summary_callback if summary_callback else output_callback
+                    cb(f"[tool: {tool_name}]")
 
             elif event_type == _EVENT_CONTENT_BLOCK_DELTA:
                 delta = event.get("delta", {})
@@ -221,6 +225,7 @@ class ClaudeProvider(ProviderBase):
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+        summary_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute Claude CLI with a prompt.
 
@@ -236,6 +241,8 @@ class ClaudeProvider(ProviderBase):
                 event (falling back to concatenated ``text_delta`` content).
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
+            summary_callback: Optional callback for summary lines ([tool: X],
+                [thinking] ...) that should be visible even in quiet mode.
 
         Returns:
             ProviderResult with exit code and output
@@ -261,7 +268,7 @@ class ClaudeProvider(ProviderBase):
             args.extend(_STREAM_FORMAT_FLAGS)
             completion_event = threading.Event()
             stream_callback, get_result, flush = self._make_stream_callback(
-                output_callback, completion_event
+                output_callback, completion_event, summary_callback
             )
             result = _run_subprocess(
                 args=args,

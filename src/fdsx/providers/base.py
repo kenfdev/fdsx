@@ -39,6 +39,7 @@ class ProviderBase(Protocol):
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+        summary_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute a provider.
 
@@ -52,6 +53,8 @@ class ProviderBase(Protocol):
             on_process_start: Optional callback invoked immediately after
                 ``subprocess.Popen()`` creation.  Used by ``SignalHandler`` to
                 register active subprocesses for signal forwarding.
+            summary_callback: Optional callback for summary lines ([tool: X],
+                [thinking] ...) that should be visible even in quiet mode.
 
         Returns:
             ProviderResult with exit code and output

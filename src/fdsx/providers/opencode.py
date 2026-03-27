@@ -50,6 +50,7 @@ class OpenCodeProvider(ProviderBase):
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+        summary_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute OpenCode CLI with a prompt.
 
@@ -61,6 +62,7 @@ class OpenCodeProvider(ProviderBase):
             output_callback: Optional callback for streaming stdout lines
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
+            summary_callback: Optional callback for summary lines (ignored for OpenCode).
 
         Returns:
             ProviderResult with exit code and output

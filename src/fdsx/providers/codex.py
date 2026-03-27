@@ -156,6 +156,7 @@ class CodexProvider(ProviderBase):
         output_callback: Callable[[str], None] | None = None,
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+        summary_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
         """Execute Codex CLI with a prompt.
 
@@ -171,6 +172,7 @@ class CodexProvider(ProviderBase):
                 on unexpected provider exit).
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
+            summary_callback: Optional callback for summary lines (ignored for Codex).
 
         Returns:
             ProviderResult with exit code and output

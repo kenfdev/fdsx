@@ -49,6 +49,9 @@ class ExecutionConfig:
         stream_logger: Logger whose ``on_stdout`` / ``on_stderr`` callbacks are
             forwarded to ``provider.execute()``.  ``close()`` is called by
             ``execute_with_retry`` in a ``finally`` block.
+        summary_callback: Optional callback for summary lines that should be
+            visible even in quiet mode. When ``None``, ``stream_logger.on_summary``
+            is used.
     """
 
     provider: ProviderBase
@@ -61,6 +64,7 @@ class ExecutionConfig:
     extract: "ExtractRule | None"
     stream_logger: "StreamLogger"
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None
+    summary_callback: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -127,6 +131,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         output_callback=config.stream_logger.on_stdout,
                         stderr_callback=config.stream_logger.on_stderr,
                         on_process_start=config.on_process_start,
+                        summary_callback=config.summary_callback,
                     )
                 else:
                     result = config.provider.execute(
@@ -136,6 +141,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         output_callback=config.stream_logger.on_stdout,
                         stderr_callback=config.stream_logger.on_stderr,
                         on_process_start=config.on_process_start,
+                        summary_callback=config.summary_callback,
                     )
             except (subprocess.TimeoutExpired, TimeoutError) as exc:
                 last_error = str(exc)

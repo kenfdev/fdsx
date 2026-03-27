@@ -90,6 +90,7 @@ def _create_task_node(
             extract=state.extract,
             stream_logger=stream_logger,
             on_process_start=on_process_start,
+            summary_callback=stream_logger.on_summary,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
