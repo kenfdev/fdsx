@@ -72,9 +72,15 @@ class TestProfileFlow:
 
     def test_run_flow_with_profiles(self, tmp_path):
         """Profile-based flow executes end-to-end."""
+        from unittest.mock import patch
+
+        from fdsx.providers.base import ProviderResult
+
         path = FIXTURES_DIR / "profile_flow.yaml"
 
-        result = run_flow(path, base_dir=tmp_path)
+        fake = ProviderResult(exit_code=0, stdout="mocked output", stderr="")
+        with patch("fdsx.providers.claude._run_subprocess", return_value=fake):
+            result = run_flow(path, base_dir=tmp_path)
 
         assert "plan" in result
         assert "implementation" in result
