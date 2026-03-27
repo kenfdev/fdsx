@@ -259,13 +259,23 @@ class TestResultEvent:
         assert get_result() == "error message text"
 
     def test_empty_result_field(self) -> None:
-        """result event with empty string result field returns empty string."""
+        """result event with empty string result field and no text_parts returns empty string."""
         provider = _make_provider()
         cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_result_line(""))
 
         assert get_result() == ""
+
+    def test_empty_result_with_text_parts_falls_back(self) -> None:
+        """result event with empty result falls back to text_parts when available."""
+        provider = _make_provider()
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
+
+        cb(_build_text_delta_line("Hello world\n[STEP:1]"))
+        cb(_build_result_line(""))
+
+        assert get_result() == "Hello world\n[STEP:1]"
 
 
 class TestMalformedJsonSkip:

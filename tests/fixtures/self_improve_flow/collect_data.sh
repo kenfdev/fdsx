@@ -1,1 +1,1 @@
-/workspaces/fdsx/.fdsx/workflows/self-improve/collect_data.sh
+../../../.fdsx/workflows/self-improve/collect_data.sh
