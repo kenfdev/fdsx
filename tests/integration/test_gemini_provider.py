@@ -2,6 +2,9 @@
 
 from unittest.mock import patch
 
+import yaml
+
+from fdsx.core.engine import run_flow
 from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult, get_provider
 from fdsx.providers.gemini import GeminiOptions, GeminiProvider
 
@@ -188,3 +191,108 @@ class TestGeminiProviderRegistration:
         provider = get_provider("gemini", {"yolo": True})
         assert isinstance(provider, GeminiProvider)
         assert provider.options.yolo is True
+
+
+class TestGeminiWorkflowExecution:
+    """T013: Workflow-level integration tests for Gemini provider."""
+
+    def test_gemini_workflow_execution(self, tmp_path):
+        """A workflow with provider: gemini executes successfully via run_flow()."""
+        flow_dict = {
+            "name": "Gemini Workflow Test",
+            "description": "Two gemini tasks in sequence",
+            "version": "1.0",
+            "start_at": "step1",
+            "states": {
+                "step1": {
+                    "type": "task",
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash",
+                    "prompt_template": "Say hello",
+                    "result_path": "$.greeting",
+                    "next": "step2",
+                },
+                "step2": {
+                    "type": "task",
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash",
+                    "prompt_template": "Say goodbye",
+                    "result_path": "$.farewell",
+                    "end": True,
+                },
+            },
+        }
+        flow_path = tmp_path / "gemini_workflow.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        fake = ProviderResult(exit_code=0, stdout="gemini output", stderr="")
+        with patch("fdsx.providers.gemini._run_subprocess", return_value=fake):
+            result = run_flow(flow_path, base_dir=tmp_path)
+
+        assert "greeting" in result
+        assert "farewell" in result
+        assert result["greeting"] == "gemini output"
+        assert result["farewell"] == "gemini output"
+
+    def test_gemini_mixed_provider_workflow(self, tmp_path):
+        """A mixed claude+gemini workflow passes state correctly between providers."""
+        flow_dict = {
+            "name": "Mixed Provider Workflow",
+            "description": "Claude task followed by gemini task",
+            "version": "1.0",
+            "start_at": "claude_step",
+            "states": {
+                "claude_step": {
+                    "type": "task",
+                    "provider": "claude",
+                    "model": "claude-sonnet-4-6",
+                    "prompt_template": "Generate a greeting",
+                    "result_path": "$.claude_output",
+                    "next": "gemini_step",
+                },
+                "gemini_step": {
+                    "type": "task",
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash",
+                    "prompt_template": "Transform: {claude_output}",
+                    "result_path": "$.gemini_output",
+                    "end": True,
+                },
+            },
+        }
+        flow_path = tmp_path / "mixed_workflow.yaml"
+        with open(flow_path, "w") as f:
+            yaml.dump(flow_dict, f)
+
+        claude_fake = ProviderResult(exit_code=0, stdout="claude result", stderr="")
+        gemini_fake = ProviderResult(exit_code=0, stdout="gemini result", stderr="")
+
+        gemini_calls = []
+
+        def capture_gemini_call(*args, **kwargs):
+            gemini_calls.append((args, kwargs))
+            return gemini_fake
+
+        with patch("fdsx.providers.claude._run_subprocess", return_value=claude_fake):
+            with patch(
+                "fdsx.providers.gemini._run_subprocess", side_effect=capture_gemini_call
+            ):
+                result = run_flow(flow_path, base_dir=tmp_path)
+
+        assert "claude_output" in result
+        assert "gemini_output" in result
+        assert result["claude_output"] == "claude result"
+        assert result["gemini_output"] == "gemini result"
+
+        # Verify Gemini received the interpolated Claude output
+        assert len(gemini_calls) == 1
+        call_args, call_kwargs = gemini_calls[0]
+        gemini_args = call_kwargs.get("args") or call_args[0]  # keyword or positional
+        gemini_cmd = " ".join(gemini_args)
+        assert "claude result" in gemini_cmd, (
+            f"Gemini subprocess should receive interpolated Claude output, got: {gemini_cmd}"
+        )
+        assert "{claude_output}" not in gemini_cmd, (
+            f"Raw placeholder should be resolved, got: {gemini_cmd}"
+        )
