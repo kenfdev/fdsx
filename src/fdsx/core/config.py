@@ -43,6 +43,10 @@ class TaskSplitterConfig(BaseModel):
         default="claude-sonnet-4-6",
         description="Model name",
     )
+    extra_instructions: str | None = Field(
+        default=None,
+        description="Additional instructions appended to the task split prompt",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -78,6 +82,10 @@ class WorkflowSelectorConfig(BaseModel):
     model: str = Field(
         default="claude-sonnet-4-6",
         description="Model for workflow selection",
+    )
+    extra_instructions: str | None = Field(
+        default=None,
+        description="Additional instructions appended to the workflow selection prompt",
     )
 
     @model_validator(mode="before")

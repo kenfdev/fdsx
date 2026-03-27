@@ -39,6 +39,19 @@ class TestTaskSplitterConfigDefaults:
         with pytest.raises(ValidationError):
             TaskSplitterConfig(provider="invalid")
 
+    def test_extra_instructions_parses(self):
+        cfg = TaskSplitterConfig(extra_instructions="foo")
+        assert cfg.extra_instructions == "foo"
+
+    def test_extra_instructions_defaults_none(self):
+        cfg = TaskSplitterConfig()
+        assert cfg.extra_instructions is None
+
+    def test_extra_instructions_with_profile(self):
+        cfg = TaskSplitterConfig(profile="smarty", extra_instructions="custom")
+        assert cfg.profile == "smarty"
+        assert cfg.extra_instructions == "custom"
+
 
 class TestWorkflowSelectorConfigDefaults:
     def test_default_provider(self):
@@ -57,6 +70,19 @@ class TestWorkflowSelectorConfigDefaults:
     def test_invalid_provider_rejected(self):
         with pytest.raises(ValidationError):
             WorkflowSelectorConfig(provider="invalid")
+
+    def test_extra_instructions_parses(self):
+        cfg = WorkflowSelectorConfig(extra_instructions="foo")
+        assert cfg.extra_instructions == "foo"
+
+    def test_extra_instructions_defaults_none(self):
+        cfg = WorkflowSelectorConfig()
+        assert cfg.extra_instructions is None
+
+    def test_extra_instructions_with_profile(self):
+        cfg = WorkflowSelectorConfig(profile="smarty", extra_instructions="custom")
+        assert cfg.profile == "smarty"
+        assert cfg.extra_instructions == "custom"
 
 
 class TestFdsxConfigDefaults:
