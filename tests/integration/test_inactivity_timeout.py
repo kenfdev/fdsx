@@ -15,9 +15,14 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from fdsx.providers.base import ProviderResult, _run_subprocess
+from fdsx.providers.base import (
+    DEFAULT_EXECUTION_TIMEOUT,
+    ProviderResult,
+    _run_subprocess,
+)
 from fdsx.providers.claude import (
     _CONTENT_TYPE_TOOL_USE,
     _EVENT_CONTENT_BLOCK_START,
@@ -25,6 +30,9 @@ from fdsx.providers.claude import (
     ClaudeOptions,
     ClaudeProvider,
 )
+from fdsx.providers.codex import CodexProvider
+from fdsx.providers.gemini import GeminiProvider
+from fdsx.providers.opencode import OpenCodeProvider
 
 # Use the same Python interpreter as the test runner.
 _PYTHON = sys.executable
@@ -275,7 +283,11 @@ class TestToolInProgressSuspendsInactivity:
     """on_inactivity_hooks can suspend/resume the inactivity watchdog timer."""
 
     def test_suspended_process_not_killed(self):
-        """Process goes silent but suspend_fn called immediately → not killed."""
+        """Process goes silent but suspend_fn called immediately → still killed.
+
+        A single suspend call only resets the timer once. After that, if the
+        process remains silent beyond the threshold, it is killed.
+        """
         result = _run_subprocess(
             args=[
                 _PYTHON,
@@ -286,11 +298,11 @@ class TestToolInProgressSuspendsInactivity:
             on_inactivity_hooks=lambda suspend, resume: suspend(),
         )
 
-        assert result.exit_code == 0, (
-            f"Expected exit_code=0 (suspended, not killed), got {result.exit_code}"
+        assert result.exit_code == 124, (
+            f"Expected exit_code=124 (killed despite single suspend), got {result.exit_code}"
         )
-        assert "inactivity" not in result.stderr.lower(), (
-            f"Process should not be killed by inactivity when suspended, stderr: {result.stderr!r}"
+        assert "inactivity timeout" in result.stderr.lower(), (
+            f"Expected 'inactivity timeout' in stderr, got: {result.stderr!r}"
         )
 
     def test_resumed_timer_kills_after_threshold(self):
@@ -345,6 +357,87 @@ class TestToolInProgressSuspendsInactivity:
         assert "inactivity" not in result.stderr.lower(), (
             f"Process should not be killed; clock reset on resume, stderr: {result.stderr!r}"
         )
+
+    def test_periodic_suspend_calls_keep_process_alive(self):
+        """Repeated suspend calls (each resetting timer) keep process alive.
+
+        Process outputs once then sleeps for 4s. With 2s threshold, it would be
+        killed. But periodic suspend calls (every 1s) keep resetting the timer,
+        allowing the process to complete.
+        """
+        result = _run_subprocess(
+            args=[
+                _PYTHON,
+                "-c",
+                "import sys, time; print('output', flush=True); time.sleep(4)",
+            ],
+            inactivity_timeout=_INACTIVITY_THRESHOLD,
+            on_inactivity_hooks=lambda suspend, resume: (
+                suspend(),
+                threading.Timer(1.0, suspend).start(),
+                threading.Timer(2.0, suspend).start(),
+                threading.Timer(3.0, suspend).start(),
+            ),
+        )
+
+        assert result.exit_code == 0, (
+            f"Expected exit_code=0 (periodic suspends keep alive), got {result.exit_code}"
+        )
+        assert "inactivity" not in result.stderr.lower(), (
+            f"Process should not be killed when timer keeps being reset, stderr: {result.stderr!r}"
+        )
+
+
+class TestDefaultExecutionTimeout:
+    """LLM providers apply DEFAULT_EXECUTION_TIMEOUT when no explicit timeout is set."""
+
+    def _capture_timeout(self, provider_cls, provider_module_path, **execute_kwargs):
+        """Run provider.execute() with a mocked _run_subprocess, return the timeout kwarg."""
+        captured: dict[str, Any] = {}
+
+        def mock_run_subprocess(**kwargs):
+            captured.update(kwargs)
+            return ProviderResult(exit_code=0, stdout="done", stderr="")
+
+        with patch(provider_module_path, mock_run_subprocess):
+            provider_cls().execute(prompt="test", **execute_kwargs)
+
+        return captured.get("timeout")
+
+    def test_claude_applies_default_execution_timeout(self):
+        """ClaudeProvider uses DEFAULT_EXECUTION_TIMEOUT when timeout=None."""
+        timeout = self._capture_timeout(
+            ClaudeProvider, "fdsx.providers.claude._run_subprocess"
+        )
+        assert timeout == DEFAULT_EXECUTION_TIMEOUT
+
+    def test_claude_respects_explicit_timeout(self):
+        """ClaudeProvider uses explicit timeout when provided."""
+        timeout = self._capture_timeout(
+            ClaudeProvider, "fdsx.providers.claude._run_subprocess", timeout=60
+        )
+        assert timeout == 60
+
+    def test_gemini_applies_default_execution_timeout(self):
+        """GeminiProvider uses DEFAULT_EXECUTION_TIMEOUT when timeout=None."""
+        timeout = self._capture_timeout(
+            GeminiProvider, "fdsx.providers.gemini._run_subprocess"
+        )
+        assert timeout == DEFAULT_EXECUTION_TIMEOUT
+
+    def test_codex_applies_default_execution_timeout(self):
+        """CodexProvider uses DEFAULT_EXECUTION_TIMEOUT when timeout=None."""
+        timeout = self._capture_timeout(
+            CodexProvider, "fdsx.providers.codex._run_subprocess"
+        )
+        assert timeout == DEFAULT_EXECUTION_TIMEOUT
+
+    def test_opencode_applies_default_execution_timeout(self):
+        """OpenCodeProvider uses DEFAULT_EXECUTION_TIMEOUT when timeout=None."""
+        timeout = self._capture_timeout(
+            OpenCodeProvider, "fdsx.providers.opencode._run_subprocess"
+        )
+        assert timeout == DEFAULT_EXECUTION_TIMEOUT
 
 
 class TestClaudeToolInProgressSuspendsInactivity:
