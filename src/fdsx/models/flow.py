@@ -108,7 +108,7 @@ def _validate_provider_fields(
     model: str | None,
 ) -> None:
     """Shared provider-field validation logic for TaskState and Branch."""
-    valid_providers = {"claude", "opencode", "codex", "system"}
+    valid_providers = {"claude", "opencode", "codex", "gemini", "system"}
     if provider not in valid_providers:
         raise ValueError(
             f"provider must be one of {', '.join(sorted(valid_providers))}, got '{provider}'"

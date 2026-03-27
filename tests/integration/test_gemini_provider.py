@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult
+from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult, get_provider
 from fdsx.providers.gemini import GeminiOptions, GeminiProvider
 
 FAKE_SUCCESS = ProviderResult(exit_code=0, stdout="ok", stderr="")
@@ -173,3 +173,18 @@ class TestGeminiStreamingExecution:
             result = provider.execute(prompt="hello", output_callback=lambda x: None)
 
         assert result.stdout == "partial1 partial2"
+
+
+class TestGeminiProviderRegistration:
+    """Verify GeminiProvider is registered in the provider factory."""
+
+    def test_get_provider_returns_gemini_provider(self):
+        """get_provider("gemini") returns a GeminiProvider instance."""
+        provider = get_provider("gemini")
+        assert isinstance(provider, GeminiProvider)
+
+    def test_get_provider_with_options(self):
+        """get_provider("gemini", {"yolo": True}) returns provider with yolo=True."""
+        provider = get_provider("gemini", {"yolo": True})
+        assert isinstance(provider, GeminiProvider)
+        assert provider.options.yolo is True

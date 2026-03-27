@@ -19,6 +19,7 @@ from fdsx.models.flow import HookConfig, ProfileConfig
 from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
+from fdsx.providers.gemini import GeminiOptions
 from fdsx.providers.opencode import OpenCodeOptions
 
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
@@ -122,6 +123,10 @@ class ProviderConfigs(BaseModel):
     opencode: OpenCodeOptions | None = Field(
         default=None,
         description="OpenCode provider options",
+    )
+    gemini: GeminiOptions | None = Field(
+        default=None,
+        description="Gemini provider options",
     )
 
     model_config = {"extra": "forbid"}
