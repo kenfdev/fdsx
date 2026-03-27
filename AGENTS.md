@@ -11,6 +11,10 @@ This is a Python project managed with `uv`.
 - Lint fix: `uv run ruff check --fix src/ tests/`
 - Single file: `uv run pytest tests/unit/test_foo.py -v`
 
+**Before committing**, always run:
+- Format check: `uv run ruff format --check .`
+- If files need reformatting: `uv run ruff format .`
+
 **Never use:**
 - Bare `python` or `python3` — system Python lacks project dependencies
 - `.venv/bin/python` directly — venv symlinks may be stale after Python version changes
