@@ -1,3 +1,5 @@
+import importlib.resources
+import os
 from pathlib import Path
 
 CONFIG_TEMPLATE = """\
@@ -27,3 +29,40 @@ CONFIG_TEMPLATE = """\
 
 def needs_init(cwd: Path) -> bool:
     return not (cwd / ".fdsx").is_dir()
+
+
+def scaffold(cwd: Path) -> list[str]:
+    cwd = Path(cwd)
+    fdsx_dir = cwd / ".fdsx"
+    workflows_dir = fdsx_dir / "workflows"
+
+    os.makedirs(workflows_dir, exist_ok=True)
+
+    config_path = fdsx_dir / "config.yaml"
+    config_path.write_text(CONFIG_TEMPLATE)
+
+    examples_pkg = importlib.resources.files("fdsx.examples.workflows")
+    created_paths: list[str] = []
+
+    for resource in examples_pkg.iterdir():
+        if resource.name in ("__init__.py", "__pycache__"):
+            continue
+        if not resource.is_dir():
+            continue
+
+        workflow_name = resource.name
+        dest_workflow_dir = workflows_dir / workflow_name
+        os.makedirs(dest_workflow_dir, exist_ok=True)
+
+        for file_resource in resource.iterdir():
+            if file_resource.name == "__init__.py":
+                continue
+            if not file_resource.is_file():
+                continue
+            content = file_resource.read_text()
+            dest_file = dest_workflow_dir / file_resource.name
+            dest_file.write_text(content)
+            created_paths.append(str(dest_file.relative_to(cwd)))
+
+    created_paths.append(str(config_path.relative_to(cwd)))
+    return sorted(created_paths)
