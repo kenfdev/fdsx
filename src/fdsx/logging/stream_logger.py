@@ -76,6 +76,16 @@ class StreamLogger:
             sys.stderr.flush()
         self._write_to_file(line)
 
+    def on_summary(self, line: str) -> None:
+        """Handle a summary/status line from the provider.
+
+        Prefixes the line with ``[state_name]`` and prints to stderr
+        regardless of quiet mode, then appends the raw line to the log file.
+        """
+        print(f"[{self.state_name}] {line}", file=sys.stderr)
+        sys.stderr.flush()
+        self._write_to_file(line)
+
     def _write_to_file(self, line: str) -> None:
         """Write a line to the per-state log file, creating it lazily."""
         if self.log_dir is None:
