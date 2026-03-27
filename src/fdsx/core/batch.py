@@ -50,7 +50,12 @@ def split_tasks(
     state_names = list(flow.states.keys())
     input_vars = _extract_input_variables(flow)
 
-    prompt = _build_task_split_prompt(task_content, state_names, input_vars)
+    prompt = _build_task_split_prompt(
+        task_content,
+        state_names,
+        input_vars,
+        extra_instructions=task_splitter.extra_instructions,
+    )
 
     result = provider.execute(
         prompt=prompt,
@@ -95,7 +100,12 @@ def split_tasks_to_groups(
     """
     provider = get_provider(task_splitter.provider)
 
-    prompt = _build_task_split_prompt(task_content, state_names, input_vars)
+    prompt = _build_task_split_prompt(
+        task_content,
+        state_names,
+        input_vars,
+        extra_instructions=task_splitter.extra_instructions,
+    )
 
     result = provider.execute(
         prompt=prompt,
@@ -109,7 +119,10 @@ def split_tasks_to_groups(
 
 
 def _build_task_split_prompt(
-    task_content: str, state_names: list[str] | None, input_vars: set[str] | None
+    task_content: str,
+    state_names: list[str] | None,
+    input_vars: set[str] | None,
+    extra_instructions: str | None = None,
 ) -> str:
     """Build the prompt for the task splitter LLM.
 
@@ -120,6 +133,11 @@ def _build_task_split_prompt(
     """
     states_desc = ", ".join(state_names) if state_names else "any workflow"
     input_vars_desc = ", ".join(input_vars) if input_vars else "task"
+    extra_section = (
+        f"ADDITIONAL INSTRUCTIONS:\n{extra_instructions}\n\n"
+        if extra_instructions
+        else ""
+    )
 
     prompt = f"""You are a task splitter. Given a batch of work, group related work into feature-level tasks and organize them into file groups.
 
@@ -161,7 +179,7 @@ GOOD (feature-level tasks with numbered sub-steps):
     }}
   ]
 ]
-
+{extra_section}
 OUTPUT FORMAT:
 Return a JSON array of file groups. Each group is an array of task objects that belong in the same file.
 ```json

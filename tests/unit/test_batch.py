@@ -414,6 +414,30 @@ class TestWriteTaskFiles:
 
 
 class TestBuildTaskSplitPrompt:
+    def test_extra_instructions_inserts_section(self):
+        prompt = _build_task_split_prompt(
+            "test content", None, None, extra_instructions="Group by package"
+        )
+
+        assert "ADDITIONAL INSTRUCTIONS:\nGroup by package" in prompt
+        assert prompt.index("ADDITIONAL INSTRUCTIONS:") < prompt.index("OUTPUT FORMAT:")
+
+    def test_extra_instructions_none_leaves_prompt_unchanged(self):
+        baseline = _build_task_split_prompt("test content", None, None)
+        result = _build_task_split_prompt(
+            "test content", None, None, extra_instructions=None
+        )
+
+        assert result == baseline
+
+    def test_extra_instructions_empty_string_leaves_prompt_unchanged(self):
+        baseline = _build_task_split_prompt("test content", None, None)
+        result = _build_task_split_prompt(
+            "test content", None, None, extra_instructions=""
+        )
+
+        assert result == baseline
+
     def test_build_prompt_with_state_names_and_input_vars(self):
         prompt = _build_task_split_prompt(
             "test content", ["plan", "implement"], {"task"}
