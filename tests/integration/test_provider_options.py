@@ -13,6 +13,7 @@ from fdsx.models.flow import Branch, Flow, ParallelState, TaskState
 from fdsx.providers.base import ProviderResult, get_provider
 from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
 from fdsx.providers.codex import CodexOptions, CodexProvider
+from fdsx.providers.gemini import GeminiOptions, GeminiProvider
 from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
 from fdsx.providers.system import SystemProvider
 
@@ -194,6 +195,21 @@ class TestConfigWorkflowMerge:
         # permission_mode from config, dangerously_skip from workflow
         assert merged.get("permission_mode") == "acceptEdits"
         assert merged.get("dangerously_skip_permissions") is True
+
+    def test_gemini_provider_options_from_config(self):
+        """GeminiOptions from config are merged correctly."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                gemini=GeminiOptions(yolo=True),
+            )
+        )
+        flow = _make_single_task_flow(provider="gemini")
+        merged = _merge_provider_options(config, flow, "gemini", None)
+
+        assert merged is not None
+        provider = get_provider("gemini", merged)
+        assert isinstance(provider, GeminiProvider)
+        assert provider.options.yolo is True
 
 
 # ---------------------------------------------------------------------------

@@ -403,5 +403,10 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
 
         codex_opts = CodexOptions.model_validate(options) if options else None
         return CodexProvider(codex_opts)
+    elif name == "gemini":
+        from fdsx.providers.gemini import GeminiOptions, GeminiProvider
+
+        gemini_opts = GeminiOptions.model_validate(options) if options else None
+        return GeminiProvider(gemini_opts)
     else:
         raise ValueError(f"Unknown provider: {name}")
