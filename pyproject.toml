@@ -56,6 +56,9 @@ fdsx = "fdsx.cli.main:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+fdsx = ["examples/workflows/**/*.yaml", "examples/workflows/**/*.txt"]
+
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
 
