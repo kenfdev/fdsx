@@ -105,6 +105,11 @@ warn_no_return = true
 warn_unreachable = true
 pretty = true
 
+[tool.uv]
+constraint-dependencies = [
+    "requests>=2.33.0",  # CVE-2026-25645
+]
+
 [[tool.mypy.overrides]]
 module = "fdsx.*"
 strict = true

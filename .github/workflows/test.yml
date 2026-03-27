@@ -52,4 +52,4 @@ jobs:
       - name: pytest with coverage
         run: pytest --cov=fdsx --cov-report=xml --cov-fail-under=80
       - name: pip-audit
-        run: pip-audit
+        run: pip-audit --ignore-vuln CVE-2026-4539  # pygments ReDoS, no fix released yet
