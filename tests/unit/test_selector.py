@@ -357,6 +357,42 @@ class TestBuildWorkflowSelectionPrompt:
         assert "workflow name" in prompt.lower()
         assert "Return ONLY" in prompt or "only" in prompt.lower()
 
+    def test_extra_instructions_inserts_section(self):
+        workflows = [(Path("plan.yaml"), "Plan workflow", "plan")]
+        prompt = _build_workflow_selection_prompt(
+            "Implement a feature",
+            workflows,
+            extra_instructions="Prefer Code Review for PRs",
+        )
+        assert "ADDITIONAL INSTRUCTIONS:\nPrefer Code Review for PRs" in prompt
+
+    def test_extra_instructions_before_output_format(self):
+        workflows = [(Path("plan.yaml"), "Plan workflow", "plan")]
+        prompt = _build_workflow_selection_prompt(
+            "Implement a feature", workflows, extra_instructions="Test instruction"
+        )
+        assert prompt.index("ADDITIONAL INSTRUCTIONS:") < prompt.index("OUTPUT FORMAT:")
+
+    def test_extra_instructions_none_leaves_prompt_unchanged(self):
+        workflows = [(Path("plan.yaml"), "Plan workflow", "plan")]
+        prompt_with_none = _build_workflow_selection_prompt(
+            "Implement a feature", workflows, extra_instructions=None
+        )
+        prompt_without = _build_workflow_selection_prompt(
+            "Implement a feature", workflows
+        )
+        assert prompt_with_none == prompt_without
+
+    def test_extra_instructions_empty_string_leaves_prompt_unchanged(self):
+        workflows = [(Path("plan.yaml"), "Plan workflow", "plan")]
+        prompt_with_empty = _build_workflow_selection_prompt(
+            "Implement a feature", workflows, extra_instructions=""
+        )
+        prompt_without = _build_workflow_selection_prompt(
+            "Implement a feature", workflows
+        )
+        assert prompt_with_empty == prompt_without
+
 
 class TestParseWorkflowSelection:
     def test_parses_plain_filename(self):

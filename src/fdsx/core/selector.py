@@ -150,13 +150,16 @@ def discover_workflows(
 
 
 def _build_workflow_selection_prompt(
-    task_description: str, workflows: list[tuple[Path, str, str]]
+    task_description: str,
+    workflows: list[tuple[Path, str, str]],
+    extra_instructions: str | None = None,
 ) -> str:
     """Build the LLM prompt for workflow selection.
 
     Args:
         task_description: The task/goal description to match against workflows.
         workflows: List of (path, description, display_name) tuples.
+        extra_instructions: Additional instructions to inject into the prompt.
 
     Returns:
         The formatted prompt string.
@@ -164,6 +167,11 @@ def _build_workflow_selection_prompt(
     workflow_list = "\n".join(
         f"- **{display_name}**: {description}"
         for _, description, display_name in workflows
+    )
+    extra_section = (
+        f"ADDITIONAL INSTRUCTIONS:\n{extra_instructions}\n\n"
+        if extra_instructions
+        else ""
     )
 
     return f"""You are a workflow selector. Given a task description, select the most appropriate workflow from the available options.
@@ -179,8 +187,7 @@ INSTRUCTIONS:
 2. Consider which workflow best matches the task's goal and requirements
 3. Return ONLY the exact workflow name as shown in the list above (e.g., "Code Review" or "Code Review (ci/workflow.yaml)" if a path is shown)
 4. Do not include any explanations, markdown, or additional text — just the workflow name
-
-OUTPUT FORMAT:
+{extra_section}OUTPUT FORMAT:
 Return the exact workflow name string as displayed above, including any parenthetical path if present."""
 
 
@@ -254,7 +261,11 @@ def select_workflow(
 
     provider = get_provider(selector_config.provider)
 
-    prompt = _build_workflow_selection_prompt(task_description, workflows)
+    prompt = _build_workflow_selection_prompt(
+        task_description,
+        workflows,
+        extra_instructions=selector_config.extra_instructions,
+    )
 
     result = provider.execute(
         prompt=prompt,
