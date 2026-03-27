@@ -96,3 +96,80 @@ class TestGeminiBasicExecution:
         assert "-p" in args
         assert "-" in args
         assert captured_kwargs[0].get("stdin_data") == large_prompt
+
+
+class TestGeminiStreamingExecution:
+    """Verify streaming execution wires _make_stream_callback correctly."""
+
+    def test_gemini_streaming_appends_format_flag(self):
+        """When output_callback is provided, --output-format and stream-json are in args."""
+        provider = GeminiProvider()
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            return FAKE_SUCCESS
+
+        with patch(
+            "fdsx.providers.gemini._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        args = captured_args[0]
+        assert "--output-format" in args
+        assert "stream-json" in args
+
+    def test_gemini_streaming_parses_ndjson(self):
+        """NDJSON assistant delta lines are parsed and forwarded to output_callback."""
+        provider = GeminiProvider()
+        received_lines: list[str] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    '{"type":"message","role":"assistant","delta":true,"content":"hello"}'
+                )
+                cb(
+                    '{"type":"message","role":"assistant","delta":true,"content":" world"}'
+                )
+                cb('{"type":"result"}')
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with patch(
+            "fdsx.providers.gemini._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(
+                prompt="hello", output_callback=lambda x: received_lines.append(x)
+            )
+
+        assert "hello world" in received_lines
+
+    def test_gemini_streaming_result_from_messages(self):
+        """ProviderResult.stdout is the concatenated assistant delta content."""
+        provider = GeminiProvider()
+
+        def fake_run_subprocess(args, **kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    '{"type":"message","role":"assistant","delta":true,"content":"partial1"}'
+                )
+                cb(
+                    '{"type":"message","role":"assistant","delta":true,"content":" partial2"}'
+                )
+                cb('{"type":"result"}')
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="raw stdout", stderr="")
+
+        with patch(
+            "fdsx.providers.gemini._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            result = provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        assert result.stdout == "partial1 partial2"
