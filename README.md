@@ -151,7 +151,11 @@ states:
 
 Run this example:
 ```bash
-fdsx run examples/workflows/plan-implement-review.yaml --input task="Build a web calculator"
+# First run in a new directory scaffolds .fdsx/ with example workflows:
+fdsx run
+
+# Then run the scaffolded example workflow:
+fdsx run .fdsx/workflows/plan-implement-review/workflow.yaml --input task="Build a web calculator"
 ```
 
 ## License
