@@ -909,7 +909,9 @@ class TestResolveProfilesInConfig:
 class TestLoadConfigResolvesProfiles:
     """Tests that profile resolution works end-to-end through load_config()."""
 
-    def test_load_config_resolves_workflow_selector_profile(self, tmp_path, monkeypatch):
+    def test_load_config_resolves_workflow_selector_profile(
+        self, tmp_path, monkeypatch
+    ):
         """workflow_selector.profile resolves through load_config() without false XOR."""
         monkeypatch.chdir(tmp_path)
         config_dir = tmp_path / ".fdsx"

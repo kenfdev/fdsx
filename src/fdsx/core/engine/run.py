@@ -72,7 +72,8 @@ def run_flow(
         }
 
     flow, errors = load_flow(
-        flow_path, input_keys=set(inputs.keys()) if inputs else None,
+        flow_path,
+        input_keys=set(inputs.keys()) if inputs else None,
         config_profiles=config_profiles,
     )
     if flow is None:
