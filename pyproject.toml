@@ -110,6 +110,11 @@ constraint-dependencies = [
     "requests>=2.33.0",  # CVE-2026-25645
 ]
 
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20250915",
+]
+
 [[tool.mypy.overrides]]
 module = "fdsx.*"
 strict = true
