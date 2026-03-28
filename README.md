@@ -15,7 +15,8 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Batch task processing (in-memory and persistent)
 - Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
-- Lifecycle hooks at flow and state level
+- Webhook notifications on wait states
+- Lifecycle hooks (on_start / on_complete) at flow and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Workflow auto-selection via LLM-based matching
 
@@ -37,7 +38,7 @@ Create a simple YAML workflow file:
 
 ```yaml
 name: SimpleFlow
-description: "A simple greeting workflow"
+description: A minimal hello-world workflow
 start_at: greet
 version: "1.0"
 
@@ -56,84 +57,339 @@ Run it:
 fdsx run simple_flow.yaml
 ```
 
-## Feature Overview
+## Workflow YAML Schema
 
-### State Types
-- **task** — Execute LLM or CLI commands with optional output extraction
-- **parallel** — Run multiple branches concurrently with `min_success` threshold
-- **choice** — Conditional routing based on variables
-- **wait** — Pause for human input via terminal prompt with selectable choices
-- **pass** — Pass-through state for data transformation and parallel result aggregation
+Below is the full annotated schema. Every field is shown with its type, default, and constraints as inline comments.
 
-### Parallel Execution
-Define parallel branches that execute simultaneously. Use `min_success` to set how many branches must succeed. Aggregate results via a `pass` state with `aggregate` rules (majority, all, any).
-
-### Checkpoint & Resume
-Flows automatically persist state. Resume from interruption with:
-```bash
-fdsx resume --thread-id <thread_id>
-```
-
-### Batch Tasks
-Process multiple tasks in batch mode (in-memory splitting):
-```bash
-fdsx run workflow.yaml --tasks tasks.md
-```
-
-Or use persistent batch execution with resume support:
-```bash
-fdsx split tasks.md
-fdsx run --tasks-dir .fdsx/tasks/
-```
-
-### Profiles
-Define named provider/model bundles in your workflow or config to avoid repetition:
 ```yaml
+# ============================================================
+# Flow — top-level workflow definition
+# ============================================================
+name: MyWorkflow                # (string, REQUIRED) human-readable flow name
+description: What this flow does # (string, REQUIRED) flow description
+start_at: first_state           # (string, REQUIRED) name of the initial state; must exist in `states`
+version: "1.0"                  # (string, optional) version identifier
+max_loop: 10                    # (int, default: 10) max times any state can be re-entered before aborting
+
+# --- Profiles: named provider+model bundles (optional) ---
+# Define here or in .fdsx/config.yaml. Workflow-level overrides config-level.
+# Extra fields beyond provider/model are passed as provider_options.
 profiles:
-  fast:
-    provider: claude
-    model: claude-haiku-4-5-20251001
-  strong:
-    provider: claude
-    model: claude-sonnet-4-6
+  smarty:
+    provider: claude            # (string, REQUIRED) one of: claude, codex, opencode, gemini
+    model: claude-opus-4-6      # (string, REQUIRED) model name
+  doer:
+    provider: opencode
+    model: opencode-go/minimax-m2.7
 
-states:
-  plan:
-    type: task
-    profile: fast
-    prompt_template: "Plan the task: {task}"
-    result_path: $.plan
-    next: implement
-```
+# --- Workflow-level provider configs (optional) ---
+# Applied to all states using this provider. Overridden by per-task provider_options.
+providers:
+  claude:
+    permission_mode: bypassPermissions
+  codex:
+    full_auto: true
 
-### Hooks
-Run shell commands before or after flow/state execution:
-```yaml
+# --- Flow-level hooks (optional) ---
+# Run before/after the entire flow. Merged with config-level hooks.
 hooks:
   on_start:
-    - command: "echo 'Starting...'"
+    - command: "echo 'Flow starting'"  # (string, REQUIRED) shell command
+      on_failure: warn                  # "warn" (default) = log and continue, "abort" = stop execution
+  on_complete:
+    - command: "echo 'Flow done'"
+      on_failure: warn
+
+# ============================================================
+# States — the execution graph
+# ============================================================
+states:
+
+  # ----------------------------------------------------------
+  # task — execute an LLM or shell command
+  # ----------------------------------------------------------
+  my_task:
+    type: task                          # (REQUIRED) literal "task"
+
+    # --- Provider (pick ONE approach) ---
+    # Approach A: explicit provider + model
+    provider: claude                    # (string, REQUIRED*) one of: claude, codex, opencode, gemini, system
+    model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
+    # Approach B: profile reference (mutually exclusive with provider/model)
+    # profile: smarty
+
+    # --- Prompt (REQUIRED for LLM providers, FORBIDDEN for system) ---
+    # Use exactly one of prompt_template or prompt_file:
+    prompt_template: |                  # (string) inline prompt; {variable} refs resolved at runtime
+      Implement this task: {task}
+    # prompt_file: plan.md             # (string) path to external prompt file
+
+    # --- Command (REQUIRED for system provider, FORBIDDEN for LLM providers) ---
+    # command: "echo hello"
+
+    # --- Output ---
+    result_path: $.plan                 # (string, REQUIRED) JSONPath where raw output is stored
+    result_file: $.plan_ref             # (string, optional) stores absolute path of a result file
+                                        #   must be a simple $.varname (no nesting)
+
+    # --- Extraction: parse structured signals from LLM output (optional) ---
+    extract:
+      strategy: [keyword, regex]        # (list, REQUIRED) tried in order; values: json, regex, keyword
+      pattern: "APPROVED|NEEDS_FIX"     # (string, REQUIRED) regex or keyword pattern
+      result_path: $.decision           # (string, REQUIRED) where extracted value is stored
+                                        #   must not overlap with the parent result_path
+      # --- LLM fallback when extraction strategies all fail (optional) ---
+      fallback:
+        type: llm_classify              # (literal, REQUIRED) only "llm_classify" supported
+        provider: claude                # (string, REQUIRED) LLM provider for classification
+        prompt: "Classify as APPROVED or NEEDS_FIX"  # (string, REQUIRED)
+
+    # --- Execution control ---
+    retry: 3                            # (int, default: 3) retry attempts on failure
+    timeout_seconds: 300                # (int, optional) kill task after this many seconds
+    max_iterations: 5                   # (int, optional, >= 1) max times this state can be entered
+
+    # --- Per-task provider option overrides (optional) ---
+    # Overrides workflow-level and config-level provider settings.
+    provider_options:
+      permission_mode: dontAsk
+
+    # --- State-level hooks (optional) ---
+    hooks:
+      on_start:
+        - command: "echo 'task starting'"
+          on_failure: warn
+      on_complete:
+        - command: "echo 'task done'"
+          on_failure: abort             # abort = stop the flow if this hook fails
+
+    # --- Transition (pick one) ---
+    next: next_state                    # (string) go to this state
+    # end: true                         # (bool) terminate the flow
+    #   next and end are mutually exclusive
+
+  # ----------------------------------------------------------
+  # choice — conditional branching based on variable values
+  # ----------------------------------------------------------
+  check_result:
+    type: choice                        # (REQUIRED) literal "choice"
+    choices:                            # (list, REQUIRED) evaluated in order; first match wins
+      - variable: $.decision            # (string, REQUIRED) JSONPath to the value to compare
+        operator: equals                # (string, REQUIRED) one of:
+                                        #   equals, not_equals, greater_than, less_than, contains
+        value: "APPROVED"               # (any, REQUIRED) value to compare against
+        next: done                      # (string, REQUIRED) target state if condition matches
+      - variable: $.decision
+        operator: contains
+        value: "FIX"
+        next: fix
+    default: fallback_state             # (string, optional) state when no choice matches
+    max_iterations: 10                  # (int, optional) max times this state can be entered
+    hooks:                              # (optional) same structure as task hooks
+
+  # ----------------------------------------------------------
+  # parallel — run multiple branches concurrently
+  # ----------------------------------------------------------
+  parallel_review:
+    type: parallel                      # (REQUIRED) literal "parallel"
+    branches:                           # (list, REQUIRED) each branch is an independent execution
+      - provider: claude                # same provider rules as task (or use profile:)
+        model: claude-sonnet-4-6
+        prompt_template: |
+          Review code quality: {implementation}
+        # prompt_file: review.md        # alternative to prompt_template
+        # command: "echo test"          # for system provider
+        extract:                        # (optional) same structure as task extract
+          strategy: [keyword]
+          pattern: "approved|needs_fix"
+          result_path: $.verdict
+        retry: 2                        # (int, default: 3)
+        timeout_seconds: 120            # (int, optional)
+        provider_options:               # (map, optional) per-branch overrides
+          permission_mode: plan
+
+      - provider: codex
+        model: gpt-5.4
+        prompt_file: review-security.md
+        extract:
+          strategy: [keyword]
+          pattern: "approved|needs_fix"
+          result_path: $.verdict
+
+    result_path: $.reviews              # (string, REQUIRED) JSONPath for the results array
+    result_file: $.reviews_ref          # (string, optional) path to result file
+    min_success: 2                      # (int, optional) minimum branches that must succeed
+    max_iterations: 3                   # (int, optional)
+    hooks:                              # (optional)
+    next: aggregate_reviews             # next / end — same rules as task
+    # end: true
+
+  # ----------------------------------------------------------
+  # pass — data transformation / aggregation (no execution)
+  # ----------------------------------------------------------
+  aggregate_reviews:
+    type: pass                          # (REQUIRED) literal "pass"
+
+    # --- Variable transformation (optional) ---
+    parameters:                         # (map, optional) set/transform variables
+      status: "reviewed"
+
+    # --- Aggregate parallel results (optional) ---
+    aggregate:
+      source: $.reviews                 # (string, REQUIRED) JSONPath to the parallel results array
+      field: verdict                    # (string, REQUIRED) field to aggregate from each result
+      strategy: all                     # (string, REQUIRED) one of: majority, all, any
+      match: "approved"                 # (string, REQUIRED) value that counts as a positive match
+      no_match: "needs_fix"             # (string, REQUIRED) value when strategy condition not met
+      result_path: $.review_decision    # (string, REQUIRED) where aggregated result is stored
+
+    max_iterations: 3                   # (int, optional)
+    hooks:                              # (optional)
+    next: review_route                  # next / end — same rules as task
+    # end: true
+
+  # ----------------------------------------------------------
+  # wait — pause for human input, optionally send webhook
+  # ----------------------------------------------------------
+  approval:
+    type: wait                          # (REQUIRED) literal "wait"
+    mode: prompt                        # (REQUIRED) currently only "prompt" is supported
+    message: "Approve the changes?"     # (string, REQUIRED) displayed in the terminal
+    choices: ["approve", "reject"]      # (list, REQUIRED, min 1 item) options the user selects from
+    result_path: $.approval             # (string, REQUIRED) where the selected value is stored
+
+    # --- Webhook notification (optional) ---
+    # Fires a POST request when this wait state is reached.
+    # Useful for alerting a team (e.g., Slack) that human input is needed.
+    notify:
+      webhook:
+        url: "https://hooks.slack.com/services/T.../B.../xxx"
+                                        # (string, REQUIRED) must be HTTPS
+                                        #   HTTP allowed only for localhost / 127.0.0.1
+        template: "Approval needed for: {task}"
+                                        # (string, REQUIRED) {variable} refs resolved from current state
+                                        # Sends POST with JSON body: {"text": "<resolved message>"}
+                                        # Non-2xx responses are logged as warnings, never fail the flow
+
+    max_iterations: 1                   # (int, optional)
+    hooks:                              # (optional)
+    next: post_approval                 # next / end — same rules as task
+    # end: true
+```
+
+### Variable References
+
+Variables use JSONPath syntax throughout:
+
+```yaml
+# Storing output — result_path sets where a state's output goes
+result_path: $.plan               # stored at key "plan" in flow state
+
+# Reading variables — {variable} in prompts, templates, and webhook messages
+prompt_template: |
+  Here is the plan: {plan}        # reads from $.plan
+  Reviews: {reviews}              # reads from $.reviews
+
+# Comparing variables — choice rules reference with $.
+choices:
+  - variable: $.review_decision   # reads from $.review_decision
+    operator: equals
+    value: "approved"
+    next: done
+```
+
+## Project Configuration (`.fdsx/config.yaml`)
+
+Config is loaded from two sources (later wins):
+1. Global: `$XDG_CONFIG_HOME/fdsx/config.yaml` (or `~/.config/fdsx/config.yaml`)
+2. Project: `.fdsx/config.yaml`
+
+```yaml
+# ============================================================
+# .fdsx/config.yaml — full annotated schema
+# ============================================================
+
+# --- Profiles (optional) ---
+# Same format as workflow-level profiles. Config profiles are available
+# to all workflows; workflow-level profiles override by name.
+profiles:
+  smarty:
+    provider: claude
+    model: claude-opus-4-6
+  doer:
+    provider: opencode
+    model: opencode-go/minimax-m2.7
+
+# --- Workflows directory ---
+workflows_dir: .fdsx/workflows    # (string, default: ".fdsx/workflows")
+                                  #   must be relative, no ".." components
+                                  #   where `fdsx run --tasks-dir` discovers workflows
+
+# --- Auto-workflow selection ---
+auto_workflow: false              # (bool, default: false) skip interactive confirmation UI
+
+# --- Workflow selector: LLM used for auto-selecting workflows ---
+workflow_selector:
+  profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
+  # provider: claude              # (string, default: "claude") one of: claude, codex, opencode, gemini
+  # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
+  extra_instructions: |           # (string, optional) appended to the selection prompt
+    Prefer simple-impl for small tasks.
+
+# --- Task splitter: LLM used by `fdsx split` ---
+task_splitter:
+  profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
+  # provider: claude              # (string, default: "claude")
+  # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
+  extra_instructions: |           # (string, optional) appended to the split prompt
+    Group related tasks together.
+
+# --- Provider-specific defaults (optional) ---
+# Applied to all workflows using that provider.
+# Overridden by workflow-level `providers:` and per-task `provider_options:`.
+# Merge precedence: config < workflow < task/branch
+providers:
+
+  claude:
+    permission_mode: bypassPermissions  # (string, optional) one of:
+                                        #   default, acceptEdits, bypassPermissions, dontAsk, plan, auto
+    dangerously_skip_permissions: true   # (bool, default: false)
+    allowed_tools: []                    # (list of strings, default: []) tool allowlist
+    disallowed_tools: []                 # (list of strings, default: []) tool denylist
+    inactivity_timeout: 600              # (int, optional) seconds before killing inactive subprocess
+
+  codex:
+    sandbox: workspace-write             # (string, optional) one of:
+                                         #   read-only, workspace-write, danger-full-access
+    approval_policy: never               # (string, optional) one of: untrusted, on-request, never
+    full_auto: false                     # (bool, default: false)
+    dangerously_bypass_approvals_and_sandbox: false  # (bool, default: false)
+    inactivity_timeout: 600              # (int, optional)
+
+  opencode:
+    permission: "allow"                  # (string or map, optional)
+                                         #   passed as OPENCODE_CONFIG_CONTENT env var
+    inactivity_timeout: 600              # (int, optional)
+
+  gemini:
+    approval_mode: auto_edit             # (string, optional) one of: default, auto_edit, yolo, plan
+    yolo: false                          # (bool, default: false) overrides approval_mode when true
+    sandbox: false                       # (bool, default: false)
+    include_directories: []              # (list of strings, default: []) extra directories to include
+    extensions: []                       # (list of strings, default: []) extensions to enable
+    policy: []                           # (list of strings, default: []) policy files to apply
+    inactivity_timeout: 600              # (int, optional)
+
+# --- Global hooks (optional) ---
+# Merged with flow-level hooks (config hooks run first).
+hooks:
+  on_start:
+    - command: "echo 'global start'"
       on_failure: warn
   on_complete:
-    - command: "echo 'Done!'"
+    - command: "echo 'global done'"
+      on_failure: warn
 ```
-
-### Output Extraction
-Extract structured values from LLM output using `json`, `regex`, or `keyword` strategies with optional LLM classification fallback:
-```yaml
-extract:
-  strategy: [keyword, regex]
-  pattern: "APPROVED|REJECTED"
-  result_path: $.decision
-```
-
-### Workflow Auto-Selection
-When using `--tasks-dir` without specifying a workflow, fdsx discovers workflows from your workflows directory and uses an LLM to select the best match for each task.
-
-### Structured Logging
-Execution details are logged under `.fdsx/runs/<thread_id>/logs/`.
-
-### Provider Support
-Use any CLI-based LLM provider: Claude, Codex, Gemini, OpenCode, or system commands. Providers can be configured globally in `.fdsx/config.yaml` or per-task via `provider_options`.
 
 ## CLI Reference
 
@@ -151,7 +407,7 @@ Use any CLI-based LLM provider: Claude, Codex, Gemini, OpenCode, or system comma
 |---------|-------------|
 | `fdsx run <workflow.yaml>` | Execute a workflow |
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
-| `fdsx run <workflow.yaml> --tasks tasks.md` | In-memory batch execution |
+| `fdsx run <workflow.yaml> --tasks tasks.yaml` | In-memory batch execution |
 | `fdsx run --tasks-dir <dir>` | Persistent batch execution (workflow optional) |
 | `fdsx run ... --quiet` | Suppress stderr streaming output |
 | `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
@@ -164,56 +420,24 @@ Use any CLI-based LLM provider: Claude, Codex, Gemini, OpenCode, or system comma
 | `fdsx split <task_file>` | Split a task file into individual task files |
 | `fdsx split <task_file> --force` | Clear existing tasks directory before splitting |
 
-## Configuration
-
-fdsx loads configuration from two levels (later wins):
-1. Global: `~/.config/fdsx/config.yaml`
-2. Project: `.fdsx/config.yaml`
-
-```yaml
-# .fdsx/config.yaml
-profiles:
-  default:
-    provider: claude
-    model: claude-sonnet-4-6
-
-task_splitter:
-  provider: claude
-  model: claude-sonnet-4-6
-
-workflow_selector:
-  provider: claude
-  model: claude-sonnet-4-6
-
-workflows_dir: ".fdsx/workflows"
-auto_workflow: false
-
-providers:
-  claude:
-    permission_mode: auto
-  codex:
-    full_auto: true
-
-hooks:
-  on_start:
-    - command: "echo 'Flow starting'"
-      on_failure: warn
-```
-
 ## Example Workflow
 
 ```yaml
 name: Plan-Implement-Review Loop
-description: "Iterative plan-implement-review cycle with LLM-based approval gating"
+description: Iterative plan-implement-review cycle with LLM-based approval gating
 start_at: plan
 version: "1.0"
 max_loop: 3
 
+profiles:
+  planner:
+    provider: claude
+    model: claude-sonnet-4-6
+
 states:
   plan:
     type: task
-    provider: claude
-    model: claude-sonnet-4-6
+    profile: planner
     prompt_template: |
       You are a planning agent. Break down the following task into clear,
       actionable implementation steps.
@@ -243,12 +467,16 @@ states:
       Plan: {plan}
       Implementation: {implementation}
     result_path: $.review
+    extract:
+      strategy: [keyword]
+      pattern: "APPROVED|NEEDS_FIX"
+      result_path: $.review_verdict
     next: check_review
 
   check_review:
     type: choice
     choices:
-      - variable: $.review
+      - variable: $.review_verdict
         operator: contains
         value: "APPROVED"
         next: done
@@ -266,6 +494,19 @@ fdsx run
 
 # Then run the scaffolded example workflow:
 fdsx run .fdsx/workflows/plan-implement-review/workflow.yaml --input task="Build a web calculator"
+```
+
+## Checkpoint & Resume
+
+Flows automatically persist state after each step. If interrupted (Ctrl+C, crash), resume from where you left off:
+
+```bash
+fdsx resume --thread-id <thread_id>
+```
+
+List all executions:
+```bash
+fdsx list
 ```
 
 ## License
