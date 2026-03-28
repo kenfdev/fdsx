@@ -92,6 +92,7 @@ providers:
 
 # --- Flow-level hooks (optional) ---
 # Run before/after the entire flow. Merged with config-level hooks.
+# See "Hook Environment" section below for available env vars and positional args.
 hooks:
   on_start:
     - command: "echo 'Flow starting'"  # (string, REQUIRED) shell command
@@ -276,6 +277,49 @@ states:
     next: post_approval                 # next / end — same rules as task
     # end: true
 ```
+
+### Hook Environment
+
+Every hook command receives context via **environment variables** and **positional arguments**.
+
+**Environment variables:**
+
+| Variable | Description | Example |
+|---|---|---|
+| `FDSX_STATE_NAME` | Name of the current state | `plan` |
+| `FDSX_STATUS` | Lifecycle status | `starting`, `completed`, or `failed` |
+| `FDSX_DATA_PATH` | Path to the state data JSON file | `.fdsx/runs/<thread_id>/hooks/plan/input.json` |
+| `FDSX_THREAD_ID` | Current run thread ID | `abc123` |
+| `FDSX_FLOW_NAME` | Name of the flow | `MyWorkflow` |
+
+**Positional arguments** (appended to your command):
+
+| Position | Value | Same as env var |
+|---|---|---|
+| `$1` | State name | `FDSX_STATE_NAME` |
+| `$2` | Status | `FDSX_STATUS` |
+| `$3` | Data path | `FDSX_DATA_PATH` |
+
+**Data files:** Before each hook runs, fdsx writes a JSON file containing the current state dictionary:
+
+- `on_start` hooks receive `input.json` — the state *before* execution
+- `on_complete` hooks receive `output.json` — the state *after* execution
+
+Files are written to `.fdsx/runs/<thread_id>/hooks/<state_name>/`.
+
+**Example hook using env vars:**
+
+```yaml
+hooks:
+  on_start:
+    - command: "curl -X POST https://slack.example.com/webhook -d '{\"text\": \"State '\"$FDSX_STATE_NAME\"' starting in flow '\"$FDSX_FLOW_NAME\"'\"}'"
+      on_failure: warn
+  on_complete:
+    - command: "cat $FDSX_DATA_PATH | jq .review_verdict"
+      on_failure: warn
+```
+
+**Merge order:** Hooks from multiple levels are concatenated (not replaced) in this order: global config → project config → flow → state. All hooks at every level run.
 
 ### Variable References
 
