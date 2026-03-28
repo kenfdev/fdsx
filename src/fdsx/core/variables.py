@@ -240,11 +240,7 @@ def analyze_variable_references(
         variables: set[str] = set()
         from fdsx.models.flow import Branch, PassState, TaskState
 
-        if isinstance(state, TaskState):
-            prompt = state.prompt_template or ""
-            command = state.command or ""
-            prompt = prompt + " " + command
-        elif isinstance(state, Branch):
+        if isinstance(state, (TaskState, Branch)):
             prompt = state.prompt_template or ""
             command = state.command or ""
             prompt = prompt + " " + command

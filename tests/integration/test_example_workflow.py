@@ -58,7 +58,7 @@ class TestExampleWorkflow:
         The raw YAML must have profile references on task states and parallel
         branches because load_flow resolves (and deletes) them during loading.
         """
-        with open(workflow_path) as f:
+        with workflow_path.open() as f:
             data = yaml.safe_load(f)
 
         assert "profiles" not in data, (
@@ -143,7 +143,7 @@ class TestExampleWorkflow:
 
     def test_prompt_template_still_present_on_parallel_branches(self, workflow_path):
         """T007: Parallel branches retain inline prompt_template (not converted to prompt_file)."""
-        with open(workflow_path) as f:
+        with workflow_path.open() as f:
             data = yaml.safe_load(f)
 
         parallel_review = data["states"]["parallel_review"]

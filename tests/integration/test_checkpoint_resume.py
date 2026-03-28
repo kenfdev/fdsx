@@ -50,12 +50,12 @@ class TestPIDLock:
         lock_path = manager._get_lock_path(thread_id)
 
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "w") as f:
+        with lock_path.open("w") as f:
             f.write("99999")
 
         assert manager.acquire_lock(thread_id) is True
 
-        with open(lock_path) as f:
+        with lock_path.open() as f:
             pid = int(f.read().strip())
         assert pid == os.getpid()
 
@@ -176,16 +176,18 @@ class TestResumeSuccess:
         thread_id = "test-resume-wait"
 
         # Step 1: Run flow until Wait state, simulate crash at prompt
-        with pytest.raises(RuntimeError, match="Flow execution failed"):
-            with patch(
+        with (
+            pytest.raises(RuntimeError, match="Flow execution failed"),
+            patch(
                 "fdsx.core.engine.interrupts.display_wait_prompt",
                 side_effect=Exception("simulated crash"),
-            ):
-                engine.run_flow(
-                    wait_resume_flow_path,
-                    thread_id=thread_id,
-                    base_dir=base_dir,
-                )
+            ),
+        ):
+            engine.run_flow(
+                wait_resume_flow_path,
+                thread_id=thread_id,
+                base_dir=base_dir,
+            )
 
         # Verify checkpoint was saved before the crash
         manager = CheckpointManager(base_dir=base_dir)
@@ -226,15 +228,15 @@ class TestScenario4FullResume:
             return original_execute(*args, **kwargs)
 
         # Step 1: Run flow until implement state crashes
-        with pytest.raises(RuntimeError, match="Flow execution failed"):
-            with patch.object(
-                SystemProvider, "execute", side_effect=crash_on_second_call
-            ):
-                engine.run_flow(
-                    checkpoint_flow_path,
-                    thread_id=thread_id,
-                    base_dir=base_dir,
-                )
+        with (
+            pytest.raises(RuntimeError, match="Flow execution failed"),
+            patch.object(SystemProvider, "execute", side_effect=crash_on_second_call),
+        ):
+            engine.run_flow(
+                checkpoint_flow_path,
+                thread_id=thread_id,
+                base_dir=base_dir,
+            )
 
         # Verify checkpoint was saved (plan completed before crash)
         manager = CheckpointManager(base_dir=base_dir)
@@ -266,15 +268,15 @@ class TestScenario4FullResume:
                 raise Exception("simulated crash")
             return original_execute(*args, **kwargs)
 
-        with pytest.raises(RuntimeError, match="Flow execution failed"):
-            with patch.object(
-                SystemProvider, "execute", side_effect=crash_on_second_call
-            ):
-                engine.run_flow(
-                    checkpoint_flow_path,
-                    thread_id=thread_id,
-                    base_dir=base_dir,
-                )
+        with (
+            pytest.raises(RuntimeError, match="Flow execution failed"),
+            patch.object(SystemProvider, "execute", side_effect=crash_on_second_call),
+        ):
+            engine.run_flow(
+                checkpoint_flow_path,
+                thread_id=thread_id,
+                base_dir=base_dir,
+            )
 
         manager = CheckpointManager(base_dir=base_dir)
         threads = manager.list_threads()

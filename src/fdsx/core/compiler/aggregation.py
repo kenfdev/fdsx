@@ -27,9 +27,12 @@ def _aggregate(source_data: list[dict[str, Any]], rule: AggregateRule) -> str:
 
     match_count = 0
     for item in source_data:
-        if isinstance(item, dict) and rule.field in item:
-            if str(item[rule.field]) == str(rule.match):
-                match_count += 1
+        if (
+            isinstance(item, dict)
+            and rule.field in item
+            and str(item[rule.field]) == str(rule.match)
+        ):
+            match_count += 1
         # Items without the field (failed branches) are treated as no_match
 
     if rule.strategy == "majority":

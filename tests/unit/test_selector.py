@@ -495,9 +495,11 @@ class TestSelectWorkflow:
             stderr="",
         )
 
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
-            with pytest.raises(ValueError, match="does not match any available"):
-                select_workflow("Build something", workflows, config)
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=mock_provider),
+            pytest.raises(ValueError, match="does not match any available"),
+        ):
+            select_workflow("Build something", workflows, config)
 
     def test_llm_response_without_yaml_extension_matches(self):
         workflows = [
@@ -552,9 +554,11 @@ class TestSelectWorkflow:
             stderr="",
         )
 
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
-            with pytest.raises(ValueError, match="does not match any available"):
-                select_workflow("Review code", workflows, config)
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=mock_provider),
+            pytest.raises(ValueError, match="does not match any available"),
+        ):
+            select_workflow("Review code", workflows, config)
 
     def test_ambiguous_filename_match_raises(self):
         """Regression: Strategy 4 must raise if multiple names appear in the response."""
@@ -571,9 +575,11 @@ class TestSelectWorkflow:
             stderr="",
         )
 
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
-            with pytest.raises(ValueError, match="does not match any available"):
-                select_workflow("Ambiguous task", workflows, config)
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=mock_provider),
+            pytest.raises(ValueError, match="does not match any available"),
+        ):
+            select_workflow("Ambiguous task", workflows, config)
 
     def test_stem_in_surrounding_text_matches(self):
         """Regression: display_name matching should still work when LLM wraps the
@@ -608,9 +614,11 @@ class TestSelectWorkflow:
             stderr="Provider error",
         )
 
-        with patch("fdsx.core.selector.get_provider", return_value=mock_provider):
-            with pytest.raises(RuntimeError, match="Workflow selector failed"):
-                select_workflow("Build something", workflows, config)
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=mock_provider),
+            pytest.raises(RuntimeError, match="Workflow selector failed"),
+        ):
+            select_workflow("Build something", workflows, config)
 
 
 class TestConfirmWorkflowSelection:

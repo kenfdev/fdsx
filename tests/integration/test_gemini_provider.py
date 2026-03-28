@@ -223,7 +223,7 @@ class TestGeminiWorkflowExecution:
             },
         }
         flow_path = tmp_path / "gemini_workflow.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         fake = ProviderResult(exit_code=0, stdout="gemini output", stderr="")
@@ -262,7 +262,7 @@ class TestGeminiWorkflowExecution:
             },
         }
         flow_path = tmp_path / "mixed_workflow.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         claude_fake = ProviderResult(exit_code=0, stdout="claude result", stderr="")
@@ -274,11 +274,13 @@ class TestGeminiWorkflowExecution:
             gemini_calls.append((args, kwargs))
             return gemini_fake
 
-        with patch("fdsx.providers.claude._run_subprocess", return_value=claude_fake):
-            with patch(
+        with (
+            patch("fdsx.providers.claude._run_subprocess", return_value=claude_fake),
+            patch(
                 "fdsx.providers.gemini._run_subprocess", side_effect=capture_gemini_call
-            ):
-                result = run_flow(flow_path, base_dir=tmp_path)
+            ),
+        ):
+            result = run_flow(flow_path, base_dir=tmp_path)
 
         assert "claude_output" in result
         assert "gemini_output" in result

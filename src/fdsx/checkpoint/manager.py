@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import re
@@ -69,10 +70,8 @@ class CheckpointManager:
         """
         db_path = self.checkpoints_dir / "checkpoints.db"
         conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        try:
-            os.chmod(str(db_path), 0o600)
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            db_path.chmod(0o600)
         return SqliteSaver(conn)
 
     def _get_lock_path(self, thread_id: str) -> Path:
@@ -123,7 +122,7 @@ class CheckpointManager:
 
         # Lock file already exists — check if the owning process is still alive
         try:
-            with open(lock_path) as f:
+            with lock_path.open() as f:
                 pid = int(f.read().strip())
             try:
                 os.kill(pid, 0)
@@ -166,7 +165,7 @@ class CheckpointManager:
             return False, None
 
         try:
-            with open(lock_path) as f:
+            with lock_path.open() as f:
                 pid = int(f.read().strip())
             try:
                 os.kill(pid, 0)
@@ -307,7 +306,7 @@ class CheckpointManager:
 
                         run_log_path = runs_dir / thread_id / RUN_FILENAME
                         if run_log_path.is_file():
-                            with open(run_log_path) as f:
+                            with run_log_path.open() as f:
                                 run_log = json.load(f)
                             if flow_name == thread_id:
                                 flow_name = run_log.get("flow_name", thread_id)

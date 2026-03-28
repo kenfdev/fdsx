@@ -110,7 +110,7 @@ class TestProfileFlowErrors:
             },
         }
         bad_path = tmp_path / "bad_profile.yaml"
-        with open(bad_path, "w") as f:
+        with bad_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         flow, errors = load_flow(bad_path)
@@ -141,7 +141,7 @@ class TestProfileFlowErrors:
             },
         }
         xor_path = tmp_path / "xor_profile.yaml"
-        with open(xor_path, "w") as f:
+        with xor_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         flow, errors = load_flow(xor_path)
@@ -175,7 +175,7 @@ class TestValidateFlowProfileErrors:
             },
         }
         xor_path = tmp_path / "xor_profile.yaml"
-        with open(xor_path, "w") as f:
+        with xor_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         is_valid, errors, _flow_name = validate_flow(xor_path)
@@ -203,7 +203,7 @@ class TestValidateFlowProfileErrors:
             },
         }
         bad_path = tmp_path / "bad_profile.yaml"
-        with open(bad_path, "w") as f:
+        with bad_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         is_valid, errors, _flow_name = validate_flow(bad_path)
@@ -233,7 +233,7 @@ class TestValidateFlowProfileErrors:
             },
         }
         flow_path = tmp_path / "missing_profile.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         is_valid, errors, _flow_name = validate_flow(flow_path)
@@ -318,7 +318,7 @@ class TestParallelProfileFlow:
             },
         }
         flow_path = tmp_path / "parallel_profile_run.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         result = run_flow(flow_path, base_dir=tmp_path)
@@ -414,7 +414,7 @@ class TestProfilesOptional:
             },
         }
         flow_path = tmp_path / "no_profiles_flow.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         with warnings.catch_warnings(record=True) as w:
@@ -461,7 +461,7 @@ class TestCascadingProfileOverrides:
             },
         }
         flow_path = tmp_path / "override_flow.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         config_profiles = {"smart_guy": {"provider": "claude", "model": "sonnet"}}
@@ -499,7 +499,7 @@ class TestCascadingProfileOverrides:
             },
         }
         flow_path = tmp_path / "config_only_flow.yaml"
-        with open(flow_path, "w") as f:
+        with flow_path.open("w") as f:
             yaml.dump(flow_dict, f)
 
         config_profiles = {"config_profile": {"provider": "claude", "model": "sonnet"}}

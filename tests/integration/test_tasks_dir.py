@@ -176,13 +176,13 @@ class TestRunTasksDir:
             tf2 = TaskFile(entries=[TaskEntry(description="task B")])
             save_task_file(tasks_dir / "002-b.yaml", tf2)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(results) == 2
             for r in results:
@@ -219,13 +219,11 @@ class TestRunTasksDir:
                 run_count[0] += 1
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert run_count[0] == 1
             skipped = [r for r in results if r["category"] == "skipped"]
@@ -251,13 +249,13 @@ class TestRunTasksDir:
             )
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(results) == 1
             assert results[0]["status"] == "completed"
@@ -284,13 +282,13 @@ class TestRunTasksDir:
             )
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(results) == 1
             assert results[0]["status"] == "completed"
@@ -316,13 +314,11 @@ class TestRunTasksDir:
                 call_count[0] += 1
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert call_count[0] == 3
             assert len(results) == 3
@@ -353,14 +349,12 @@ class TestRunTasksDir:
                     raise RuntimeError("Task 1 failed")
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.core.engine.tasks_dir.input", side_effect=["y"]),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.tasks_dir.input", side_effect=["y"]):
-                        results = engine.run_tasks_dir(
-                            flow_path, tasks_dir, auto_workflow=True
-                        )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(results) == 2
             assert results[0]["status"] == "failed"
@@ -391,14 +385,12 @@ class TestRunTasksDir:
                     raise RuntimeError("Task 1 failed")
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
-                        results = engine.run_tasks_dir(
-                            flow_path, tasks_dir, auto_workflow=True
-                        )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(results) == 1
             assert results[0]["status"] == "failed"
@@ -415,13 +407,13 @@ class TestRunTasksDir:
             )
             save_task_file(tasks_dir / "001-done.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
-            ) as mock_run:
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ) as mock_run,
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             mock_run.assert_not_called()
             assert len(results) == 1
@@ -442,13 +434,13 @@ class TestRunTasksDir:
             )
             save_task_file(tasks_dir / "001-done.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
-            ) as mock_run:
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ) as mock_run,
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             mock_run.assert_not_called()
             assert len(results) == 2
@@ -477,14 +469,12 @@ class TestRunTasksDir:
             def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 raise RuntimeError("Failed again")
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
-                        results = engine.run_tasks_dir(
-                            flow_path, tasks_dir, auto_workflow=True
-                        )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(results) == 1
             assert results[0]["status"] == "failed"
@@ -505,12 +495,12 @@ class TestRunTasksDir:
             def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
                 raise RuntimeError("Task failed")
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             loaded = load_task_file(tasks_dir / "001-test.yaml")
             assert loaded.entries[0].thread_id is not None
@@ -574,21 +564,21 @@ class TestTasksDirCli:
         tf = TaskFile(entries=[TaskEntry(description="cli task")])
         save_task_file(tasks_dir / "001-test.yaml", tf)
 
-        with patch(
-            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+        with (
+            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app,
-                    [
-                        "run",
-                        str(workflow_path),
-                        "--tasks-dir",
-                        str(tasks_dir),
-                        "--auto-workflow",
-                    ],
-                )
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    str(workflow_path),
+                    "--tasks-dir",
+                    str(tasks_dir),
+                    "--auto-workflow",
+                ],
+            )
 
         assert result.exit_code == 0, (
             f"exit_code={result.exit_code}, stderr={result.stderr}"
@@ -676,11 +666,13 @@ class TestMoveToCompletedOnRunTasksDir:
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert not (tasks_dir / "001-a.yaml").exists()
             assert (tasks_dir / "completed" / "001-a.yaml").exists()
@@ -693,12 +685,15 @@ class TestMoveToCompletedOnRunTasksDir:
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=RuntimeError("fail")
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    side_effect=RuntimeError("fail"),
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             # File with failed entry must remain in tasks_dir
             assert (tasks_dir / "001-a.yaml").exists()
@@ -726,12 +721,12 @@ class TestMoveToCompletedOnRunTasksDir:
                     raise RuntimeError("first fails")
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.core.engine.tasks_dir.input", side_effect=["y"]),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch("fdsx.core.engine.tasks_dir.input", side_effect=["y"]):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert (tasks_dir / "001-mixed.yaml").exists()
             assert not (tasks_dir / "completed" / "001-mixed.yaml").exists()
@@ -747,9 +742,11 @@ class TestMoveToCompletedOnRunTasksDir:
             )
             save_task_file(tasks_dir / "001-done.yaml", tf)
 
-            with patch("fdsx.core.engine.tasks_dir.run_flow") as mock_run:
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow") as mock_run,
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             mock_run.assert_not_called()
             assert not (tasks_dir / "001-done.yaml").exists()
@@ -763,17 +760,18 @@ class TestMoveToCompletedOnRunTasksDir:
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch(
+                    "fdsx.core.engine.tasks_dir.move_task_to_completed",
+                    side_effect=OSError("disk full"),
+                ),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.core.engine.tasks_dir.move_task_to_completed",
-                        side_effect=OSError("disk full"),
-                    ):
-                        results = engine.run_tasks_dir(
-                            flow_path, tasks_dir, auto_workflow=True
-                        )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             captured = capsys.readouterr()
             assert "Warning" in captured.err
@@ -795,13 +793,13 @@ class TestMoveToCompletedOnRunTasksDir:
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    results = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             captured = capsys.readouterr()
             assert "Warning" in captured.err
@@ -854,21 +852,24 @@ class TestBatchEditFlow:
         wf_path = workflows_dir / "plan.yaml"
         mock_assignments = {(0, 0): wf_path}
 
-        with patch("fdsx.core.selector.get_provider", return_value=MagicMock()):
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
-            ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.confirm_workflow_assignments_interactive",
-                        return_value=mock_assignments,
-                    ):
-                        results = engine.run_tasks_dir(
-                            None,
-                            tasks_dir,
-                            base_dir=project_root / ".fdsx",
-                            auto_workflow=False,
-                        )
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value={"result": "ok"},
+            ),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            patch(
+                "fdsx.display.terminal.confirm_workflow_assignments_interactive",
+                return_value=mock_assignments,
+            ),
+        ):
+            results = engine.run_tasks_dir(
+                None,
+                tasks_dir,
+                base_dir=project_root / ".fdsx",
+                auto_workflow=False,
+            )
 
         assert len([r for r in results if r["category"] == "new"]) == 1
 
@@ -886,18 +887,20 @@ class TestBatchEditFlow:
         tf = TaskFile(entries=[TaskEntry(description="do something")])
         save_task_file(tasks_dir / "001-test.yaml", tf)
 
-        with patch("fdsx.core.selector.get_provider", return_value=MagicMock()):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                with patch(
-                    "fdsx.display.terminal.confirm_workflow_assignments_interactive",
-                    return_value=None,
-                ):
-                    results = engine.run_tasks_dir(
-                        None,
-                        tasks_dir,
-                        base_dir=project_root / ".fdsx",
-                        auto_workflow=False,
-                    )
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            patch(
+                "fdsx.display.terminal.confirm_workflow_assignments_interactive",
+                return_value=None,
+            ),
+        ):
+            results = engine.run_tasks_dir(
+                None,
+                tasks_dir,
+                base_dir=project_root / ".fdsx",
+                auto_workflow=False,
+            )
 
         assert results == []
 
@@ -915,20 +918,23 @@ class TestBatchEditFlow:
         tf = TaskFile(entries=[TaskEntry(description="plan this feature")])
         save_task_file(tasks_dir / "001-test.yaml", tf)
 
-        with patch("fdsx.core.selector.get_provider", return_value=MagicMock()):
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
-            ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.confirm_workflow_assignments_interactive"
-                    ) as mock_cui:
-                        results = engine.run_tasks_dir(
-                            None,
-                            tasks_dir,
-                            base_dir=project_root / ".fdsx",
-                            auto_workflow=True,
-                        )
+        with (
+            patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value={"result": "ok"},
+            ),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            patch(
+                "fdsx.display.terminal.confirm_workflow_assignments_interactive"
+            ) as mock_cui,
+        ):
+            results = engine.run_tasks_dir(
+                None,
+                tasks_dir,
+                base_dir=project_root / ".fdsx",
+                auto_workflow=True,
+            )
 
         mock_cui.assert_not_called()
         assert len([r for r in results if r["category"] == "new"]) == 1
@@ -943,11 +949,13 @@ class TestRunTasksDirQuietFlagPropagation:
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
 
-            with patch("fdsx.core.engine.tasks_dir.run_flow") as mock_run_flow:
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True, quiet=True
-                    )
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow") as mock_run_flow,
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                engine.run_tasks_dir(
+                    flow_path, tasks_dir, auto_workflow=True, quiet=True
+                )
 
             assert mock_run_flow.called
             for call_args in mock_run_flow.call_args_list:
@@ -961,9 +969,11 @@ class TestRunTasksDirQuietFlagPropagation:
             tf = TaskFile(entries=[TaskEntry(description="task A")])
             save_task_file(tasks_dir / "001-a.yaml", tf)
 
-            with patch("fdsx.core.engine.tasks_dir.run_flow") as mock_run_flow:
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow") as mock_run_flow,
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert mock_run_flow.called
             for call_args in mock_run_flow.call_args_list:
@@ -988,11 +998,11 @@ class TestRunTasksDirSourceInjection:
                 captured_inputs.append(dict(inputs))
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(captured_inputs) == 1
             assert captured_inputs[0]["task"] == "task A"
@@ -1012,11 +1022,11 @@ class TestRunTasksDirSourceInjection:
                 captured_inputs.append(dict(inputs))
                 return {"result": "ok"}
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+            with (
+                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(captured_inputs) == 1
             assert captured_inputs[0]["task"] == "task B"

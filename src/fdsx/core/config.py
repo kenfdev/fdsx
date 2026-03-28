@@ -183,7 +183,7 @@ class FdsxConfig(BaseModel):
             return v
         if not isinstance(v, dict):
             raise ValueError(f"profiles must be a dict, got {type(v).__name__}")
-        for key in v.keys():
+        for key in v:
             validate_profile_name(key)
         return v
 
@@ -230,7 +230,7 @@ def _load_yaml(path: Path | None) -> dict[str, Any]:
     """Load YAML file, returning empty dict if file doesn't exist."""
     if path is None or not path.exists():
         return {}
-    with open(path, encoding="utf-8") as f:
+    with path.open(encoding="utf-8") as f:
         try:
             data = yaml.safe_load(f)
         except yaml.YAMLError as e:
@@ -247,10 +247,7 @@ def _load_yaml(path: Path | None) -> dict[str, Any]:
 def _resolve_xdg_config_dir() -> Path | None:
     """Resolve XDG_CONFIG_HOME or fallback to ~/.config."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        config_dir = Path(xdg)
-    else:
-        config_dir = Path.home() / ".config"
+    config_dir = Path(xdg) if xdg else Path.home() / ".config"
     fdsx_dir = config_dir / "fdsx"
     return fdsx_dir if fdsx_dir.exists() else None
 

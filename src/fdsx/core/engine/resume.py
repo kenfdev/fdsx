@@ -107,7 +107,7 @@ def resume_flow(
         if existing_log_path.exists():
             import json
 
-            with open(existing_log_path) as f:
+            with existing_log_path.open() as f:
                 existing_log = json.load(f)
             flow_name = existing_log.get("flow_name", flow.name)
             flow_version = existing_log.get("flow_version")

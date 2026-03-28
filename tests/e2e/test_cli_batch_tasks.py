@@ -33,21 +33,19 @@ class TestBatchCLIE2E:
                 return mock_task_result
 
         mock_config = FdsxConfig(task_splitter=TaskSplitterConfig())
-        with patch(
-            "fdsx.core.batch.get_provider",
-            return_value=MockTaskSplitterProvider(),
+        with (
+            patch(
+                "fdsx.core.batch.get_provider",
+                return_value=MockTaskSplitterProvider(),
+            ),
+            patch("fdsx.cli.main.load_config", return_value=mock_config),
+            patch("fdsx.core.engine.batch.load_config", return_value=mock_config),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
         ):
-            with patch("fdsx.cli.main.load_config", return_value=mock_config):
-                with patch(
-                    "fdsx.core.engine.batch.load_config", return_value=mock_config
-                ):
-                    with patch(
-                        "fdsx.core.engine.batch.display_task_list", return_value=True
-                    ):
-                        result = runner.invoke(
-                            app,
-                            ["run", flow_path, "--tasks", tasks_path],
-                        )
+            result = runner.invoke(
+                app,
+                ["run", flow_path, "--tasks", tasks_path],
+            )
 
         assert result.exit_code == 0, (
             f"output: {result.output}\nexception: {result.exception}"

@@ -9,6 +9,7 @@ Registers SIGINT and SIGTERM handlers during flow execution that:
 6. Exit with code 128 + signum
 """
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -100,10 +101,8 @@ class SignalHandler:
         # grandchild processes (e.g. "sleep" spawned by "sh -c") are cleaned up.
         for proc in procs:
             if proc.poll() is None:
-                try:
+                with contextlib.suppress(OSError):
                     os.killpg(proc.pid, signum)
-                except OSError:
-                    pass  # Already dead or no such group
 
         # Step 2: Wait up to _GRACEFUL_SHUTDOWN_TIMEOUT seconds for voluntary exit.
         deadline = time.monotonic() + _GRACEFUL_SHUTDOWN_TIMEOUT
@@ -112,29 +111,21 @@ class SignalHandler:
             if remaining <= 0:
                 break
             if proc.poll() is None:
-                try:
+                with contextlib.suppress(subprocess.TimeoutExpired):
                     proc.wait(timeout=max(0.05, remaining))
-                except subprocess.TimeoutExpired:
-                    pass
 
         # Step 3: SIGKILL any process groups still alive after the grace period.
         for proc in procs:
             if proc.poll() is None:
-                try:
+                with contextlib.suppress(OSError):
                     os.killpg(proc.pid, signal.SIGKILL)
-                except OSError:
-                    pass  # Already dead or no such group
-                try:
+                with contextlib.suppress(subprocess.TimeoutExpired):
                     proc.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    pass
 
         # Step 4: Release the checkpoint lock (idempotent).
         if self._checkpoint_manager is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._checkpoint_manager.release_lock(self._thread_id)
-            except Exception:
-                pass  # Best-effort; the finally block in run_flow handles cleanup
 
         # Step 5: Print interrupt message to stderr.
         print(_INTERRUPT_MESSAGE, file=sys.stderr)

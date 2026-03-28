@@ -133,12 +133,14 @@ class TestSplitCliIntegration:
         monkeypatch.chdir(tmp_path)
 
         # Config has no task_splitter — should fall back to built-in TaskSplitterConfig()
-        with patch(
-            "fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=None)
+        with (
+            patch(
+                "fdsx.cli.main.load_config", return_value=FdsxConfig(task_splitter=None)
+            ),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(app, ["split", str(task_file)])
+            runner = CliRunner()
+            result = runner.invoke(app, ["split", str(task_file)])
 
         assert result.exit_code == 0
         import json as _json
@@ -218,12 +220,14 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file), "--force"], catch_exceptions=False
-                )
+        with (
+            patch("fdsx.cli.main.load_config", side_effect=mock_load_config),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file), "--force"], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         assert not existing_file.exists()
@@ -290,12 +294,14 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file), "--force"], catch_exceptions=False
-                )
+        with (
+            patch("fdsx.cli.main.load_config", side_effect=mock_load_config),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file), "--force"], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         assert not (tasks_dir / "existing.yaml").exists()
@@ -323,12 +329,14 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file)], catch_exceptions=False
-                )
+        with (
+            patch("fdsx.cli.main.load_config", side_effect=mock_load_config),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file)], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         import json as _json
@@ -359,12 +367,14 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file)], catch_exceptions=False
-                )
+        with (
+            patch("fdsx.cli.main.load_config", side_effect=mock_load_config),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file)], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
 
@@ -405,15 +415,17 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch(
-            "fdsx.cli.main.load_config",
-            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        with (
+            patch(
+                "fdsx.cli.main.load_config",
+                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+            ),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file)], catch_exceptions=False
-                )
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file)], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         import json as _json
@@ -448,15 +460,17 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch(
-            "fdsx.cli.main.load_config",
-            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        with (
+            patch(
+                "fdsx.cli.main.load_config",
+                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+            ),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file)], catch_exceptions=False
-                )
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file)], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         assert completed_dir.exists()
@@ -494,15 +508,17 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch(
-            "fdsx.cli.main.load_config",
-            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        with (
+            patch(
+                "fdsx.cli.main.load_config",
+                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+            ),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file)], catch_exceptions=False
-                )
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file)], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         assert (tasks_dir / "003-third-task.yaml").exists()
@@ -609,15 +625,17 @@ class TestSplitCliIntegration:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch(
-            "fdsx.cli.main.load_config",
-            return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+        with (
+            patch(
+                "fdsx.cli.main.load_config",
+                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
+            ),
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
-            with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app, ["split", str(task_file), "--force"], catch_exceptions=False
-                )
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["split", str(task_file), "--force"], catch_exceptions=False
+            )
 
         assert result.exit_code == 0
         assert not pending_file.exists()

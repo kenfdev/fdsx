@@ -91,7 +91,7 @@ class TestScenario1LinearFlow:
 
         log_path = base_dir / RUNS_DIR_NAME / thread_id / RUN_FILENAME
         assert log_path.exists(), f"Run log not found at {log_path}"
-        with open(log_path) as f:
+        with log_path.open() as f:
             return json.load(f)
 
 
@@ -210,19 +210,21 @@ class TestScenario4CheckpointResume:
             thread_id = "test-scenario4"
             flow_path = FIXTURES_DIR / "checkpoint_flow.yaml"
 
-            with patch(
-                "fdsx.providers.system.SystemProvider.execute",
-                side_effect=[
-                    ProviderResult(exit_code=0, stdout="plan output", stderr=""),
-                    Exception("simulated crash on implement state"),
-                ],
+            with (
+                patch(
+                    "fdsx.providers.system.SystemProvider.execute",
+                    side_effect=[
+                        ProviderResult(exit_code=0, stdout="plan output", stderr=""),
+                        Exception("simulated crash on implement state"),
+                    ],
+                ),
+                pytest.raises(RuntimeError, match="Flow execution failed"),
             ):
-                with pytest.raises(RuntimeError, match="Flow execution failed"):
-                    engine.run_flow(
-                        flow_path,
-                        thread_id=thread_id,
-                        base_dir=base_dir,
-                    )
+                engine.run_flow(
+                    flow_path,
+                    thread_id=thread_id,
+                    base_dir=base_dir,
+                )
 
             manager = CheckpointManager(base_dir=base_dir)
             assert manager.verify_checkpoint(thread_id)
@@ -244,19 +246,21 @@ class TestScenario4CheckpointResume:
             thread_id = "test-scenario4-append"
             flow_path = FIXTURES_DIR / "checkpoint_flow.yaml"
 
-            with patch(
-                "fdsx.providers.system.SystemProvider.execute",
-                side_effect=[
-                    ProviderResult(exit_code=0, stdout="plan output", stderr=""),
-                    Exception("simulated crash"),
-                ],
+            with (
+                patch(
+                    "fdsx.providers.system.SystemProvider.execute",
+                    side_effect=[
+                        ProviderResult(exit_code=0, stdout="plan output", stderr=""),
+                        Exception("simulated crash"),
+                    ],
+                ),
+                pytest.raises(RuntimeError, match="simulated crash"),
             ):
-                with pytest.raises(RuntimeError, match="simulated crash"):
-                    engine.run_flow(
-                        flow_path,
-                        thread_id=thread_id,
-                        base_dir=base_dir,
-                    )
+                engine.run_flow(
+                    flow_path,
+                    thread_id=thread_id,
+                    base_dir=base_dir,
+                )
 
             initial_log = TestScenario1LinearFlow._read_run_log(base_dir, thread_id)
             initial_started_at = initial_log["started_at"]

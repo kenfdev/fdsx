@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -324,7 +323,7 @@ class TestWriteHookData:
             base_dir=tmp_path,
         )
 
-        with open(file_path) as f:
+        with file_path.open() as f:
             loaded = json.load(f)
         assert loaded == data
 
@@ -338,7 +337,7 @@ class TestWriteHookData:
             base_dir=tmp_path,
         )
 
-        file_mode = stat.S_IMODE(os.stat(file_path).st_mode)
+        file_mode = stat.S_IMODE(file_path.stat().st_mode)
         assert file_mode == 0o600
 
     def test_directory_permissions_are_0o700(self, tmp_path: Path) -> None:
@@ -352,7 +351,7 @@ class TestWriteHookData:
         )
 
         hooks_state_dir = tmp_path / RUNS_DIR_NAME / "t" / HOOKS_DIR_NAME / "MyState"
-        dir_mode = stat.S_IMODE(os.stat(hooks_state_dir).st_mode)
+        dir_mode = stat.S_IMODE(hooks_state_dir.stat().st_mode)
         assert dir_mode == 0o700
 
     def test_creates_intermediate_directories(self, tmp_path: Path) -> None:
@@ -388,7 +387,7 @@ class TestWriteHookData:
             base_dir=tmp_path,
         )
 
-        with open(file_path) as f:
+        with file_path.open() as f:
             loaded = json.load(f)
         assert loaded == second_data
 
