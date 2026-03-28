@@ -182,7 +182,7 @@ class TestRunRecorder:
             assert file_path == expected
             assert file_path.exists()
 
-            with open(file_path) as f:
+            with file_path.open() as f:
                 data = json.load(f)
 
             assert data["thread_id"] == "test-123"
@@ -233,7 +233,7 @@ class TestRunRecorder:
             }
 
             existing_file = thread_dir / RUN_FILENAME
-            with open(existing_file, "w") as f:
+            with existing_file.open("w") as f:
                 json.dump(existing_log, f)
 
             recorder = RunRecorder(
@@ -254,7 +254,7 @@ class TestRunRecorder:
 
             recorder.save(base_dir=Path(tmpdir))
 
-            with open(existing_file) as f:
+            with existing_file.open() as f:
                 data = json.load(f)
 
             assert len(data["states"]) == 2
@@ -267,7 +267,7 @@ class TestRunRecorder:
         import os
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_cwd = os.getcwd()
+            original_cwd = Path.cwd()
             try:
                 os.chdir(tmpdir)
                 recorder = RunRecorder(
@@ -393,9 +393,7 @@ class TestRunRecorderSecurity:
 
             file_path = recorder.save(base_dir=Path(tmpdir))
 
-            import os
-
-            stat_info = os.stat(file_path)
+            stat_info = file_path.stat()
             mode = stat_info.st_mode & 0o777
             assert mode == 0o600
 
@@ -411,24 +409,21 @@ class TestRunRecorderSecurity:
 
             runs_dir = Path(tmpdir) / "runs"
             thread_dir = runs_dir / "test-123"
-            import os
 
-            stat_info = os.stat(runs_dir)
+            stat_info = runs_dir.stat()
             mode = stat_info.st_mode & 0o777
             assert mode == 0o700
 
-            stat_info = os.stat(thread_dir)
+            stat_info = thread_dir.stat()
             mode = stat_info.st_mode & 0o777
             assert mode == 0o700
 
     def test_save_hardens_preexisting_directory(self):
         """Regression: existing runs/ dir with 0o755 must be tightened to 0o700."""
-        import os
-
         with tempfile.TemporaryDirectory() as tmpdir:
             runs_dir = Path(tmpdir) / "runs"
             runs_dir.mkdir(mode=0o755)
-            assert (os.stat(runs_dir).st_mode & 0o777) == 0o755
+            assert (runs_dir.stat().st_mode & 0o777) == 0o755
 
             recorder = RunRecorder(
                 thread_id="test-hardendir",
@@ -437,12 +432,12 @@ class TestRunRecorderSecurity:
             recorder.finalize({"key": "value"}, "completed")
             recorder.save(base_dir=Path(tmpdir))
 
-            stat_info = os.stat(runs_dir)
+            stat_info = runs_dir.stat()
             mode = stat_info.st_mode & 0o777
             assert mode == 0o700
 
             thread_dir = runs_dir / "test-hardendir"
-            stat_info = os.stat(thread_dir)
+            stat_info = thread_dir.stat()
             mode = stat_info.st_mode & 0o777
             assert mode == 0o700
 

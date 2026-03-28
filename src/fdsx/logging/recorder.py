@@ -141,21 +141,21 @@ class RunRecorder:
         else:
             runs_dir = (Path.cwd() / FDSX_DIR_NAME / RUNS_DIR_NAME).resolve()
 
-        os.makedirs(runs_dir, mode=0o700, exist_ok=True)
-        os.chmod(str(runs_dir), 0o700)
+        runs_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        runs_dir.chmod(0o700)
 
         thread_dir = (runs_dir / self.thread_id).resolve()
 
         if not str(thread_dir).startswith(str(runs_dir)):
             raise ValueError("Invalid thread_id: path resolved outside runs directory")
 
-        os.makedirs(thread_dir, mode=0o700, exist_ok=True)
-        os.chmod(str(thread_dir), 0o700)
+        thread_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        thread_dir.chmod(0o700)
 
         file_path = thread_dir / RUN_FILENAME
 
         if file_path.exists():
-            with open(file_path) as f:
+            with file_path.open() as f:
                 existing_log: dict[str, Any] = json.load(f)
 
             existing_states = existing_log.get("states", [])

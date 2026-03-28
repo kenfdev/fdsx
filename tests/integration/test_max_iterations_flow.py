@@ -94,15 +94,17 @@ class TestMaxIterationsResumeInteraction:
         """
         # First "retry" allows plan to run a 2nd time.
         # Second "retry" would route back to plan a 3rd time, triggering max_iterations.
-        with patch(
-            "fdsx.core.engine.interrupts.display_wait_prompt",
-            side_effect=["retry", "retry"],
-        ):
-            with pytest.raises(
+        with (
+            patch(
+                "fdsx.core.engine.interrupts.display_wait_prompt",
+                side_effect=["retry", "retry"],
+            ),
+            pytest.raises(
                 RuntimeError,
                 match="State 'plan' reached max_iterations limit \\(2\\)",
-            ):
-                run_flow(MAX_ITERATIONS_WAIT_FLOW, base_dir=tmp_path, quiet=True)
+            ),
+        ):
+            run_flow(MAX_ITERATIONS_WAIT_FLOW, base_dir=tmp_path, quiet=True)
 
     def test_max_iterations_wait_log_files_for_successful_iterations(self, tmp_path):
         """Log files plan_1.log and plan_2.log exist; plan_3.log does not (error on entry).
@@ -110,12 +112,14 @@ class TestMaxIterationsResumeInteraction:
         Verifies that log files are created for iterations that completed successfully
         before max_iterations was triggered.
         """
-        with patch(
-            "fdsx.core.engine.interrupts.display_wait_prompt",
-            side_effect=["retry", "retry"],
+        with (
+            patch(
+                "fdsx.core.engine.interrupts.display_wait_prompt",
+                side_effect=["retry", "retry"],
+            ),
+            pytest.raises(RuntimeError, match="max_iterations limit"),
         ):
-            with pytest.raises(RuntimeError, match="max_iterations limit"):
-                run_flow(MAX_ITERATIONS_WAIT_FLOW, base_dir=tmp_path, quiet=True)
+            run_flow(MAX_ITERATIONS_WAIT_FLOW, base_dir=tmp_path, quiet=True)
 
         runs_dir = tmp_path / "runs"
         run_dirs = list(runs_dir.iterdir())

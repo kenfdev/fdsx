@@ -76,12 +76,12 @@ class TestFullPipelineE2E:
                 raise RuntimeError("Simulated crash during feature B")
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                with patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]):
-                    results1 = engine.run_tasks_dir(
-                        flow_path, tasks_dir, auto_workflow=True
-                    )
+        with (
+            patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
+        ):
+            results1 = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
         assert len(results1) == 2
         assert run_count[0] == 2, "Both entries should have been attempted"
@@ -102,13 +102,13 @@ class TestFullPipelineE2E:
             run_count_after_resume[0] += 1
             return {"result": "ok"}
 
-        with patch(
-            "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume
+        with (
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow_resume
+            ),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                results2 = engine.run_tasks_dir(
-                    flow_path, tasks_dir, auto_workflow=True
-                )
+            results2 = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
         assert len(results2) == 2
         assert run_count_after_resume[0] == 1, (
@@ -153,21 +153,21 @@ class TestFullPipelineE2E:
             )
         created_files = write_task_files(result_groups, tasks_dir)
 
-        with patch(
-            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+        with (
+            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                runner = CliRunner()
-                result = runner.invoke(
-                    app,
-                    [
-                        "run",
-                        str(flow_path),
-                        "--tasks-dir",
-                        str(tasks_dir),
-                        "--auto-workflow",
-                    ],
-                )
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    str(flow_path),
+                    "--tasks-dir",
+                    str(tasks_dir),
+                    "--auto-workflow",
+                ],
+            )
 
         assert result.exit_code == 0, (
             f"Expected exit code 0, got {result.exit_code}: {result.stderr}"
@@ -273,23 +273,25 @@ class TestFullPipelineE2E:
             def update(self, msg):
                 auto_select_spinners.append(f"update:{msg}")
 
-        with patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_SpinnerCapture):
-            with patch(
-                "fdsx.core.selector.resolve_workflow_for_task", side_effect=mock_resolve
-            ):
-                with patch(
-                    "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
-                ):
-                    with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                        with patch(
-                            "fdsx.core.engine.tasks_dir.input", side_effect=["n"]
-                        ):
-                            engine.run_tasks_dir(
-                                None,
-                                tasks_dir,
-                                base_dir=project_root / ".fdsx",
-                                auto_workflow=True,
-                            )
+        with (
+            patch(
+                "fdsx.core.engine.tasks_dir.Spinner",
+                side_effect=_SpinnerCapture,
+            ),
+            patch(
+                "fdsx.core.selector.resolve_workflow_for_task",
+                side_effect=mock_resolve,
+            ),
+            patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
+        ):
+            engine.run_tasks_dir(
+                None,
+                tasks_dir,
+                base_dir=project_root / ".fdsx",
+                auto_workflow=True,
+            )
 
         assert resolve_count[0] == 2, "Both tasks should be auto-selected"
         assert run_count[0] == 2, "Both tasks should be attempted"
@@ -316,25 +318,28 @@ class TestFullPipelineE2E:
             run_count_rerun[0] += 1
             return {"result": "ok"}
 
-        with patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_SpinnerCapture):
-            with patch(
+        with (
+            patch(
+                "fdsx.core.engine.tasks_dir.Spinner",
+                side_effect=_SpinnerCapture,
+            ),
+            patch(
                 "fdsx.core.selector.resolve_workflow_for_task",
                 side_effect=mock_resolve_persist,
-            ):
-                with patch(
-                    "fdsx.core.engine.tasks_dir.run_flow",
-                    side_effect=mock_run_flow_rerun,
-                ):
-                    with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                        with patch(
-                            "fdsx.core.engine.tasks_dir.input", side_effect=["n"]
-                        ):
-                            results2 = engine.run_tasks_dir(
-                                None,
-                                tasks_dir,
-                                base_dir=project_root / ".fdsx",
-                                auto_workflow=True,
-                            )
+            ),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                side_effect=mock_run_flow_rerun,
+            ),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
+        ):
+            results2 = engine.run_tasks_dir(
+                None,
+                tasks_dir,
+                base_dir=project_root / ".fdsx",
+                auto_workflow=True,
+            )
 
         assert resolve_count_after_persist[0] == 0, (
             "Workflow already set; auto-selection should be skipped after persistence"

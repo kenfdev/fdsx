@@ -283,9 +283,11 @@ class TestExtraction:
             exit_code=0, stdout="bad output", stderr=""
         )
 
-        with patch("fdsx.core.compiler.execution.time"):
-            with patch("fdsx.core.compiler.execution.extract_value", return_value=None):
-                result = execute_with_retry(config)
+        with (
+            patch("fdsx.core.compiler.execution.time"),
+            patch("fdsx.core.compiler.execution.extract_value", return_value=None),
+        ):
+            result = execute_with_retry(config)
 
         # All 3 attempts tried, extraction still None
         assert result.extracted is None

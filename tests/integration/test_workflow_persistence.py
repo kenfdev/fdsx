@@ -21,16 +21,17 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.display.terminal.is_interactive", return_value=False),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.is_interactive", return_value=False
-                    ):
-                        results = engine.run_tasks_dir(
-                            flow_path, tasks_dir, auto_workflow=False
-                        )
+                results = engine.run_tasks_dir(
+                    flow_path, tasks_dir, auto_workflow=False
+                )
 
             # After all entries complete, the file is moved to completed/
             loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
@@ -46,20 +47,19 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch(
+                    "fdsx.display.terminal.confirm_workflow_assignments_interactive",
+                    return_value=None,
+                ),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.is_interactive", return_value=False
-                    ):
-                        with patch(
-                            "fdsx.display.terminal.confirm_workflow_assignments_interactive",
-                            return_value=None,
-                        ):
-                            engine.run_tasks_dir(
-                                flow_path, tasks_dir, auto_workflow=False
-                            )
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
             loaded = load_task_file(tasks_dir / "001-test.yaml")
             assert loaded.entries[0].workflow is None
@@ -88,15 +88,18 @@ class TestWorkflowPersistence:
                 )
                 return workflows_dir / "review.yaml"
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch(
+                    "fdsx.core.selector.resolve_workflow_for_task",
+                    side_effect=mock_resolve,
+                ),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.core.selector.resolve_workflow_for_task",
-                        side_effect=mock_resolve,
-                    ):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(resolve_calls) == 0, (
                 "resolve_workflow_for_task should not be called when "
@@ -120,15 +123,18 @@ class TestWorkflowPersistence:
                 selector_called.append(True)
                 return Path("review.yaml")
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch(
+                    "fdsx.core.selector.resolve_workflow_for_task",
+                    side_effect=track_selector,
+                ),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.core.selector.resolve_workflow_for_task",
-                        side_effect=track_selector,
-                    ):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
             assert len(selector_called) == 0, (
                 "Selector should not be called when workflow is already persisted"
@@ -148,20 +154,19 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch(
+                    "fdsx.display.terminal.confirm_workflow_assignments_interactive"
+                ) as mock_cui,
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.is_interactive", return_value=False
-                    ):
-                        with patch(
-                            "fdsx.display.terminal.confirm_workflow_assignments_interactive"
-                        ) as mock_cui:
-                            mock_cui.return_value = {(0, 0): Path("review.yaml")}
-                            engine.run_tasks_dir(
-                                flow_path, tasks_dir, auto_workflow=False
-                            )
+                mock_cui.return_value = {(0, 0): Path("review.yaml")}
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
             mock_cui.assert_called_once()
             # After all entries complete, the file is moved to completed/
@@ -177,14 +182,15 @@ class TestWorkflowPersistence:
             tf = TaskFile(entries=[TaskEntry(description="Fix the bug")])
             save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.display.terminal.is_interactive", return_value=False),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.is_interactive", return_value=False
-                    ):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
             # After all entries complete, the file is moved to completed/
             loaded = load_task_file(tasks_dir / "completed" / "001-test.yaml")
@@ -209,14 +215,15 @@ class TestWorkflowPersistence:
             )
             save_task_file(tasks_dir / "001-multi.yaml", tf)
 
-            with patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value={"result": "ok"},
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                patch("fdsx.display.terminal.is_interactive", return_value=False),
             ):
-                with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                    with patch(
-                        "fdsx.display.terminal.is_interactive", return_value=False
-                    ):
-                        engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
             loaded = load_task_file(tasks_dir / "completed" / "001-multi.yaml")
             for entry in loaded.entries:

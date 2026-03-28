@@ -1,5 +1,4 @@
 import importlib.resources
-import os
 from pathlib import Path
 
 CONFIG_TEMPLATE = """\
@@ -36,7 +35,7 @@ def scaffold(cwd: Path) -> list[str]:
     fdsx_dir = cwd / ".fdsx"
     workflows_dir = fdsx_dir / "workflows"
 
-    os.makedirs(workflows_dir, exist_ok=True)
+    workflows_dir.mkdir(parents=True, exist_ok=True)
 
     config_path = fdsx_dir / "config.yaml"
     config_path.write_text(CONFIG_TEMPLATE)
@@ -52,7 +51,7 @@ def scaffold(cwd: Path) -> list[str]:
 
         workflow_name = resource.name
         dest_workflow_dir = workflows_dir / workflow_name
-        os.makedirs(dest_workflow_dir, exist_ok=True)
+        dest_workflow_dir.mkdir(parents=True, exist_ok=True)
 
         for file_resource in resource.iterdir():
             if file_resource.name == "__init__.py":

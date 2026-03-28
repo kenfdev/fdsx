@@ -56,16 +56,16 @@ class TestBackwardCompat:
                 stderr="",
             )
 
-            with patch("fdsx.core.engine.batch.load_config", mock_load_config):
-                with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-                    with patch(
-                        "fdsx.core.engine.batch.display_task_list", return_value=True
-                    ):
-                        with patch(
-                            "fdsx.core.engine.batch.run_flow",
-                            return_value={"result": "ok"},
-                        ):
-                            engine.run_batch(workflow_path, tasks_file)
+            with (
+                patch("fdsx.core.engine.batch.load_config", mock_load_config),
+                patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+                patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+                patch(
+                    "fdsx.core.engine.batch.run_flow",
+                    return_value={"result": "ok"},
+                ),
+            ):
+                engine.run_batch(workflow_path, tasks_file)
 
             assert len(config_loaded) > 0, "load_config should have been called"
             assert "task_splitter" not in workflow_path.read_text().lower(), (

@@ -134,10 +134,7 @@ def write_hook_data(
     Returns:
         Path to the written JSON file.
     """
-    if base_dir is not None:
-        fdsx_dir = base_dir
-    else:
-        fdsx_dir = Path.cwd() / FDSX_DIR_NAME
+    fdsx_dir = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME
 
     base_runs_dir = (fdsx_dir / RUNS_DIR_NAME).resolve()
     expected_hooks_base = (base_runs_dir / thread_id / HOOKS_DIR_NAME).resolve()
@@ -154,8 +151,8 @@ def write_hook_data(
             "Invalid thread_id or state_name: path resolved outside runs directory"
         )
 
-    os.makedirs(hooks_dir, mode=0o700, exist_ok=True)
-    os.chmod(str(hooks_dir), 0o700)
+    hooks_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    hooks_dir.chmod(0o700)
 
     file_path = hooks_dir / filename
     json_bytes = json.dumps(data, indent=2).encode("utf-8")

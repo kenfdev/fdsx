@@ -12,7 +12,6 @@ Design notes:
   Line-level OS append writes are atomic for typical log line sizes.
 """
 
-import os
 import sys
 import threading
 from pathlib import Path
@@ -92,12 +91,12 @@ class StreamLogger:
             return
         with self._lock:
             if self._file is None:
-                os.makedirs(str(self.log_dir), mode=0o700, exist_ok=True)
+                self.log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
                 log_path = (
                     self.log_dir
                     / f"{self.state_name}_{self.iteration}{LOG_FILE_SUFFIX}"
                 )
-                self._file = open(log_path, "a", encoding="utf-8")
+                self._file = log_path.open("a", encoding="utf-8")
             self._file.write(line + "\n")
             self._file.flush()
 

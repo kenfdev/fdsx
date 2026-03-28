@@ -152,9 +152,11 @@ class TestSplitTasks:
             stderr="Provider error",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with pytest.raises(RuntimeError, match="Task splitter failed"):
-                split_tasks("test content", flow, task_splitter)
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            pytest.raises(RuntimeError, match="Task splitter failed"),
+        ):
+            split_tasks("test content", flow, task_splitter)
 
 
 class TestSplitTasksToGroups:
@@ -209,9 +211,11 @@ class TestSplitTasksToGroups:
             stderr="Provider error",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with pytest.raises(RuntimeError, match="Task splitter failed"):
-                split_tasks_to_groups("test content", task_splitter)
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            pytest.raises(RuntimeError, match="Task splitter failed"),
+        ):
+            split_tasks_to_groups("test content", task_splitter)
 
 
 class TestDisplayTaskList:

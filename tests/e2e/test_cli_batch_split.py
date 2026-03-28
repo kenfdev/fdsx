@@ -22,20 +22,18 @@ class TestBatchExecution:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=True
-                ):
-                    with patch(
-                        "fdsx.core.engine.batch.run_flow", return_value={"result": "ok"}
-                    ):
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            base_dir = Path(tmpdir)
-                            results = engine.run_batch(flow_path, tasks_file, base_dir)
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+            patch("fdsx.core.engine.batch.run_flow", return_value={"result": "ok"}),
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert len(results) == 3
         thread_ids = [r["thread_id"] for r in results]
@@ -58,17 +56,17 @@ class TestBatchExecution:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=False
-                ):
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        base_dir = Path(tmpdir)
-                        results = engine.run_batch(flow_path, tasks_file, base_dir)
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=False),
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert results == []
 
@@ -77,14 +75,16 @@ class TestBatchExecution:
         flow_path = FIXTURES_DIR / "batch_flow.yaml"
         tasks_file = FIXTURES_DIR / "sample_tasks.md"
 
-        with patch(
-            "fdsx.core.engine.batch.load_config",
-            return_value=FdsxConfig(task_splitter=None),
+        with (
+            patch(
+                "fdsx.core.engine.batch.load_config",
+                return_value=FdsxConfig(task_splitter=None),
+            ),
+            tempfile.TemporaryDirectory() as tmpdir,
         ):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                base_dir = Path(tmpdir)
-                with pytest.raises(engine.FlowValidationError, match="task_splitter"):
-                    engine.run_batch(flow_path, tasks_file, base_dir)
+            base_dir = Path(tmpdir)
+            with pytest.raises(engine.FlowValidationError, match="task_splitter"):
+                engine.run_batch(flow_path, tasks_file, base_dir)
 
     def test_mutual_exclusion_validation(self):
         result = run_fdsx(
@@ -122,25 +122,19 @@ class TestBatchIntegrationWithMockedInput:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=True
-                ):
-                    with patch(
-                        "fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow
-                    ):
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            base_dir = Path(tmpdir)
-                            with patch(
-                                "fdsx.core.engine.batch.input", side_effect=["y", "y"]
-                            ):
-                                results = engine.run_batch(
-                                    flow_path, tasks_file, base_dir
-                                )
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+            patch("fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow),
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            with patch("fdsx.core.engine.batch.input", side_effect=["y", "y"]):
+                results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert len(results) == 3
 
@@ -163,25 +157,19 @@ class TestBatchIntegrationWithMockedInput:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=True
-                ):
-                    with patch(
-                        "fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow
-                    ):
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            base_dir = Path(tmpdir)
-                            with patch(
-                                "fdsx.core.engine.batch.input", side_effect=["n"]
-                            ):
-                                results = engine.run_batch(
-                                    flow_path, tasks_file, base_dir
-                                )
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+            patch("fdsx.core.engine.batch.run_flow", side_effect=mock_run_flow),
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            with patch("fdsx.core.engine.batch.input", side_effect=["n"]):
+                results = engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert len(results) == 2
 
@@ -198,20 +186,18 @@ class TestBatchQuietFlagPropagation:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=True
-                ):
-                    with patch("fdsx.core.engine.batch.run_flow") as mock_run_flow:
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            base_dir = Path(tmpdir)
-                            engine.run_batch(
-                                flow_path, tasks_file, base_dir, quiet=True
-                            )
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+            patch("fdsx.core.engine.batch.run_flow") as mock_run_flow,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            engine.run_batch(flow_path, tasks_file, base_dir, quiet=True)
 
         assert mock_run_flow.called
         for call_args in mock_run_flow.call_args_list:
@@ -228,18 +214,18 @@ class TestBatchQuietFlagPropagation:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=True
-                ):
-                    with patch("fdsx.core.engine.batch.run_flow") as mock_run_flow:
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            base_dir = Path(tmpdir)
-                            engine.run_batch(flow_path, tasks_file, base_dir)
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+            patch("fdsx.core.engine.batch.run_flow") as mock_run_flow,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert mock_run_flow.called
         for call_args in mock_run_flow.call_args_list:
@@ -258,18 +244,18 @@ class TestBatchSourceInjection:
             stderr="",
         )
 
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            with patch(
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            patch(
                 "fdsx.core.engine.batch.load_config",
                 return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ):
-                with patch(
-                    "fdsx.core.engine.batch.display_task_list", return_value=True
-                ):
-                    with patch("fdsx.core.engine.batch.run_flow") as mock_run_flow:
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            base_dir = Path(tmpdir)
-                            engine.run_batch(flow_path, tasks_file, base_dir)
+            ),
+            patch("fdsx.core.engine.batch.display_task_list", return_value=True),
+            patch("fdsx.core.engine.batch.run_flow") as mock_run_flow,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            base_dir = Path(tmpdir)
+            engine.run_batch(flow_path, tasks_file, base_dir)
 
         assert mock_run_flow.called
         for call_args in mock_run_flow.call_args_list:

@@ -27,7 +27,7 @@ def load_flow(
         return None, [f"File not found: {path}"]
 
     try:
-        with open(path) as f:
+        with path.open() as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         return None, [f"Invalid YAML: {e}"]
@@ -135,7 +135,7 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
                     )
                     continue
                 try:
-                    with open(prompt_path) as f:
+                    with prompt_path.open() as f:
                         state_data["prompt_template"] = f.read()
                     del state_data["prompt_file"]
                 except Exception as e:
@@ -161,7 +161,7 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
                         )
                         continue
                     try:
-                        with open(prompt_path) as f:
+                        with prompt_path.open() as f:
                             branch["prompt_template"] = f.read()
                         del branch["prompt_file"]
                     except Exception as e:

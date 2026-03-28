@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import signal as signal_module
@@ -173,10 +174,8 @@ def _run_subprocess(
 
         def _killpg(sig: int) -> None:
             """Send *sig* to the subprocess's process group (best-effort)."""
-            try:
+            with contextlib.suppress(OSError):
                 os.killpg(process.pid, sig)
-            except OSError:
-                pass  # Already dead or no such group
 
         def _watchdog() -> None:
             nonlocal killed_by_timeout

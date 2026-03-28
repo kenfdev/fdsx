@@ -9,7 +9,7 @@ class TestProfileFixtures:
     def test_profile_flow_fixture_structure(self) -> None:
         """profile_flow.yaml: smart_guy profile defined, plan+review use it, implement uses system provider."""
         path = FIXTURES_DIR / "profile_flow.yaml"
-        with open(path) as f:
+        with path.open() as f:
             data = yaml.safe_load(f)
 
         assert "smart_guy" in data["profiles"]
@@ -30,7 +30,7 @@ class TestProfileFixtures:
     def test_profile_parallel_flow_fixture_structure(self) -> None:
         """profile_parallel_flow.yaml: reviewer + security_reviewer profiles, 2 branches each using a distinct profile."""
         path = FIXTURES_DIR / "profile_parallel_flow.yaml"
-        with open(path) as f:
+        with path.open() as f:
             data = yaml.safe_load(f)
 
         assert "reviewer" in data["profiles"]

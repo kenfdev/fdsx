@@ -16,8 +16,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: install ruff
-        run: pip install ruff
+      - name: install uv
+        uses: astral-sh/setup-uv@v6
+      - name: install dev deps
+        run: uv pip install --system -e ".[dev]"
       - name: ruff check
         run: ruff check .
       - name: ruff format check

@@ -56,11 +56,11 @@ class TestCheckpointManager:
 
     def test_acquire_lock_stale_lock_dead_pid(self, manager):
         lock_path = manager._get_lock_path("test-thread-3")
-        with open(lock_path, "w") as f:
+        with lock_path.open("w") as f:
             f.write("99999")
         result = manager.acquire_lock("test-thread-3")
         assert result is True
-        with open(lock_path) as f:
+        with lock_path.open() as f:
             pid = int(f.read().strip())
         assert pid == os.getpid()
 
@@ -83,7 +83,7 @@ class TestCheckpointManager:
 
     def test_is_locked_stale_lock(self, manager):
         lock_path = manager._get_lock_path("test-thread-6")
-        with open(lock_path, "w") as f:
+        with lock_path.open("w") as f:
             f.write("99999")
         is_locked, pid = manager.is_locked("test-thread-6")
         assert is_locked is False
@@ -240,7 +240,7 @@ class TestCheckpointManagerWithMock:
         with patch("os.kill") as mock_kill:
             mock_kill.side_effect = OSError("Process not found")
             lock_path = manager._get_lock_path("concurrent-thread")
-            with open(lock_path, "w") as f:
+            with lock_path.open("w") as f:
                 f.write("12345")
             result = manager.acquire_lock("concurrent-thread")
             assert result is True

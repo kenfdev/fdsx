@@ -131,12 +131,14 @@ class TestDisplayWaitPrompt:
         captured_stdout = StringIO()
         captured_stderr = StringIO()
 
-        with patch("sys.stdout", captured_stdout):
-            with patch("sys.stderr", captured_stderr):
-                with patch("builtins.input", return_value="1"):
-                    result = display_wait_prompt(
-                        "review", "Please review the plan.", ["approve", "reject"]
-                    )
+        with (
+            patch("sys.stdout", captured_stdout),
+            patch("sys.stderr", captured_stderr),
+            patch("builtins.input", return_value="1"),
+        ):
+            result = display_wait_prompt(
+                "review", "Please review the plan.", ["approve", "reject"]
+            )
 
         assert result == "approve"
         # stdout must be completely empty — no prompt text
@@ -149,9 +151,11 @@ class TestDisplayWaitPrompt:
         """Regression: prompt must be indented with exactly two spaces per CLI contract."""
         captured_stderr = StringIO()
 
-        with patch("sys.stderr", captured_stderr):
-            with patch("builtins.input", return_value="1"):
-                display_wait_prompt("review", "Approve?", ["yes", "no"])
+        with (
+            patch("sys.stderr", captured_stderr),
+            patch("builtins.input", return_value="1"),
+        ):
+            display_wait_prompt("review", "Approve?", ["yes", "no"])
 
         stderr_text = captured_stderr.getvalue()
         assert "  Select (1-2): " in stderr_text
@@ -169,9 +173,11 @@ class TestDisplayWaitPrompt:
         )
         captured_stderr = StringIO()
 
-        with patch("sys.stderr", captured_stderr):
-            with patch("builtins.input", return_value="1"):
-                display_wait_prompt("review", multi_line_message, ["approve", "reject"])
+        with (
+            patch("sys.stderr", captured_stderr),
+            patch("builtins.input", return_value="1"),
+        ):
+            display_wait_prompt("review", multi_line_message, ["approve", "reject"])
 
         stderr_text = captured_stderr.getvalue()
         lines = stderr_text.splitlines()
@@ -199,11 +205,11 @@ class TestDisplayWaitPrompt:
         ansi_message = "\x1b[31mDangerous\x1b[0m content\x1b]0;spoof title\x07"
         captured_stderr = StringIO()
 
-        with patch("sys.stderr", captured_stderr):
-            with patch("builtins.input", return_value="1"):
-                result = display_wait_prompt(
-                    "review", ansi_message, ["approve", "reject"]
-                )
+        with (
+            patch("sys.stderr", captured_stderr),
+            patch("builtins.input", return_value="1"),
+        ):
+            result = display_wait_prompt("review", ansi_message, ["approve", "reject"])
 
         assert result == "approve"
         stderr_text = captured_stderr.getvalue()
@@ -220,9 +226,11 @@ class TestDisplayWaitPrompt:
         ansi_choices = ["\x1b[32mapprove\x1b[0m", "reject"]
         captured_stderr = StringIO()
 
-        with patch("sys.stderr", captured_stderr):
-            with patch("builtins.input", return_value="1"):
-                result = display_wait_prompt("review", "Choose:", ansi_choices)
+        with (
+            patch("sys.stderr", captured_stderr),
+            patch("builtins.input", return_value="1"),
+        ):
+            result = display_wait_prompt("review", "Choose:", ansi_choices)
 
         assert result == "\x1b[32mapprove\x1b[0m"  # original choice string returned
         stderr_text = captured_stderr.getvalue()
@@ -236,11 +244,13 @@ class TestDisplayWaitPrompt:
         ansi_state_name = "\x1b[31mmalicious_state\x1b[0m"
         captured_stderr = StringIO()
 
-        with patch("sys.stderr", captured_stderr):
-            with patch("builtins.input", return_value="1"):
-                result = display_wait_prompt(
-                    ansi_state_name, "Choose:", ["approve", "reject"]
-                )
+        with (
+            patch("sys.stderr", captured_stderr),
+            patch("builtins.input", return_value="1"),
+        ):
+            result = display_wait_prompt(
+                ansi_state_name, "Choose:", ["approve", "reject"]
+            )
 
         assert result == "approve"
         stderr_text = captured_stderr.getvalue()

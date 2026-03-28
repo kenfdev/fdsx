@@ -37,11 +37,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         display_keys = [(0, 0), (1, 0)]
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="c"):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", return_value="c"),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result is not None
         assert result == assignments
@@ -58,11 +60,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         display_keys = [(0, 0), (1, 0)]
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="q"):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", return_value="q"),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result is None
 
@@ -73,11 +77,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         display_keys = [(0, 0)]
         workflows = self._make_workflows("review.yaml")
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=False):
-            with patch("builtins.input") as mock_input:
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=False),
+            patch("builtins.input") as mock_input,
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         mock_input.assert_not_called()
         assert result is not None
@@ -94,11 +100,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
         input_seq = ["1", "2", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result is not None
         assert result[(0, 0)] == new_wf
@@ -111,11 +119,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
         input_seq = ["1", "c", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result is not None
         assert result[(0, 0)] == Path("review.yaml")
@@ -129,11 +139,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         input_seq = ["0", "99", "abc", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         assert result is not None
         assert "Invalid number" in stream.getvalue()
@@ -147,11 +159,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         input_seq = ["1", "99", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         assert result is not None
         assert "Invalid number" in stream.getvalue()
@@ -165,11 +179,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         input_seq = ["1", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         assert result is not None
         assert "No alternative workflows" in stream.getvalue()
@@ -188,11 +204,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         input_seq = ["c", "2", "2", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         assert result is not None
         stderr_text = stream.getvalue()
@@ -211,11 +229,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml")
         stream = StringIO()
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="c"):
-                confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", return_value="c"),
+        ):
+            confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         stderr_text = stream.getvalue()
         assert "WORKFLOW ASSIGNMENTS" in stderr_text
@@ -237,11 +257,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
         input_seq = ["1", "2", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result[(0, 0)] == wf2
         assert assignments[(0, 0)] == wf1
@@ -254,11 +276,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         display_keys = [(0, 0), (1, 0)]
         workflows = self._make_workflows("review.yaml")
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="q"):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", return_value="q"),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result is None
         assert assignments[(0, 0)] == wf
@@ -282,11 +306,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml")
         stream = StringIO()
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="c"):
-                confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", return_value="c"),
+        ):
+            confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         stderr_text = stream.getvalue()
         assert "\x1b" not in stderr_text
@@ -302,11 +328,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml", "test.yaml")
 
         input_seq = ["1", "2", "1", "3", "c"]
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=input_seq):
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=input_seq),
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         assert result is not None
         assert result[(0, 0)] == wf3
@@ -319,11 +347,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         display_keys = [(0, 0)]
         workflows = self._make_workflows("review.yaml")
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input") as mock_input:
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input") as mock_input,
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows
+            )
 
         mock_input.assert_not_called()
         assert result is not None
@@ -337,11 +367,13 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml")
         stream = StringIO()
 
-        with patch("fdsx.display.terminal.is_interactive", return_value=True):
-            with patch("builtins.input", side_effect=["c", "q"]) as mock_input:
-                result = confirm_workflow_assignments_interactive(
-                    display_keys, assignments, task_files, workflows, stream=stream
-                )
+        with (
+            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=["c", "q"]) as mock_input,
+        ):
+            result = confirm_workflow_assignments_interactive(
+                display_keys, assignments, task_files, workflows, stream=stream
+            )
 
         mock_input.assert_called()
         assert "Cannot confirm" in stream.getvalue()

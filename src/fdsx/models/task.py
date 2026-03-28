@@ -200,7 +200,7 @@ def save_task_file(path: Path, task_file: TaskFile) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    os.chmod(str(path.parent), 0o700)  # tighten existing dirs too
+    path.parent.chmod(0o700)  # tighten existing dirs too
 
     if len(task_file.entries) == 1:
         data = task_file.entries[0].model_dump(exclude_none=True)

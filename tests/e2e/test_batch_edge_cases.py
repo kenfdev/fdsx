@@ -59,11 +59,13 @@ class TestEdgeCases:
         )
         save_task_file(tasks_dir / "002-file2.yaml", tf2)
 
-        with patch(
-            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
-        ) as mock_run:
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+        with (
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+            ) as mock_run,
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+        ):
+            results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
         mock_run.assert_not_called()
         assert len(results) == 4
@@ -80,11 +82,11 @@ class TestEdgeCases:
         tf = TaskFile(entries=[TaskEntry(description="single task")])
         save_task_file(tasks_dir / "001-single.yaml", tf)
 
-        with patch(
-            "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+        with (
+            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
-            with patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"):
-                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+            results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
 
         assert len(results) == 1
         assert results[0]["status"] == "completed"

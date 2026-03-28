@@ -309,22 +309,19 @@ def select_workflow(
     matches: list[Path] = []
     for wf_path, _description, display_name in workflows:
         pattern = r"(?:^|\s)" + re.escape(display_name) + r"(?:$|\s)"
-        if re.search(pattern, selected_name):
-            if wf_path not in matches:
-                matches.append(wf_path)
+        if re.search(pattern, selected_name) and wf_path not in matches:
+            matches.append(wf_path)
     if not matches:
         for wf_path, _description, _display_name in workflows:
             pattern = r"(?:^|\s)" + re.escape(wf_path.name) + r"(?:$|\s)"
-            if re.search(pattern, selected_name):
-                if wf_path not in matches:
-                    matches.append(wf_path)
+            if re.search(pattern, selected_name) and wf_path not in matches:
+                matches.append(wf_path)
     if not matches:
         # Fall back to word-split matching
         response_words = selected_name.split()
         for wf_path, _, display_name in workflows:
-            if display_name in response_words:
-                if wf_path not in matches:
-                    matches.append(wf_path)
+            if display_name in response_words and wf_path not in matches:
+                matches.append(wf_path)
     if len(matches) == 1:
         return matches[0]
 
@@ -365,9 +362,7 @@ def confirm_workflow_selection(
         response = input("Choice: ").strip().lower()
         if response == "y":
             return True
-        elif response == "n":
-            return False
-        elif response == "l":
+        elif response in ("n", "l"):
             return False
         else:
             print("Invalid choice. Enter 'y', 'n', or 'l'.", file=sys.stderr)

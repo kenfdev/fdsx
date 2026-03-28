@@ -68,9 +68,11 @@ class TestAutoInit:
         assert result == expected
 
     def test_scaffold_permission_error(self, tmp_path):
-        with patch("os.makedirs", side_effect=PermissionError("mocked")):
-            with patch("pathlib.Path.mkdir", side_effect=PermissionError("mocked")):
-                with patch("builtins.open", side_effect=PermissionError("mocked")):
-                    with patch("importlib.resources.files"):
-                        with pytest.raises(PermissionError):
-                            scaffold(tmp_path)
+        with (
+            patch("os.makedirs", side_effect=PermissionError("mocked")),
+            patch("pathlib.Path.mkdir", side_effect=PermissionError("mocked")),
+            patch("builtins.open", side_effect=PermissionError("mocked")),
+            patch("importlib.resources.files"),
+            pytest.raises(PermissionError),
+        ):
+            scaffold(tmp_path)

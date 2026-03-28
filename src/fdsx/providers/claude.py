@@ -220,9 +220,8 @@ class ClaudeProvider(ProviderBase):
 
         def get_result() -> str | None:
             result_text = final_result[0]
-            if result_text is not None:
-                if result_text or not text_parts:
-                    return result_text
+            if result_text is not None and (result_text or not text_parts):
+                return result_text
             # Fallback: reconstruct from accumulated text_delta content
             if text_parts:
                 return "".join(text_parts)

@@ -211,9 +211,11 @@ class TestSpinnerContextManager:
         buf = StringIO()
         spinner = Spinner("Loading", stream=buf)
 
-        with pytest.raises(ValueError):
-            with spinner:
-                raise ValueError("test error")
+        with (
+            pytest.raises(ValueError),
+            spinner,
+        ):
+            raise ValueError("test error")
 
         assert spinner._running is False
         assert spinner._thread is None
