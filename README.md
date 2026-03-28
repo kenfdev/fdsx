@@ -12,8 +12,12 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Declarative YAML-based workflow definition
 - Stateful execution with checkpoint/resume
 - Parallel execution with branch aggregation
-- Batch task processing
-- Multiple LLM provider support (Claude, OpenCode, and more)
+- Batch task processing (in-memory and persistent)
+- Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
+- Named profiles for reusable provider/model configuration
+- Lifecycle hooks at flow and state level
+- Output extraction with JSON, regex, keyword strategies and LLM fallback
+- Workflow auto-selection via LLM-based matching
 
 ## Installation
 
@@ -33,6 +37,7 @@ Create a simple YAML workflow file:
 
 ```yaml
 name: SimpleFlow
+description: "A simple greeting workflow"
 start_at: greet
 version: "1.0"
 
@@ -54,14 +59,14 @@ fdsx run simple_flow.yaml
 ## Feature Overview
 
 ### State Types
-- **task** — Execute LLM or CLI commands
-- **parallel** — Run multiple branches concurrently
+- **task** — Execute LLM or CLI commands with optional output extraction
+- **parallel** — Run multiple branches concurrently with `min_success` threshold
 - **choice** — Conditional routing based on variables
-- **wait** — Pause for human approval or webhook callback
-- **pass** — Pass-through state for data transformation
+- **wait** — Pause for human input via terminal prompt with selectable choices
+- **pass** — Pass-through state for data transformation and parallel result aggregation
 
 ### Parallel Execution
-Define parallel branches that execute simultaneously with aggregation strategies (majority vote, all, any).
+Define parallel branches that execute simultaneously. Use `min_success` to set how many branches must succeed. Aggregate results via a `pass` state with `aggregate` rules (majority, all, any).
 
 ### Checkpoint & Resume
 Flows automatically persist state. Resume from interruption with:
@@ -70,31 +75,136 @@ fdsx resume --thread-id <thread_id>
 ```
 
 ### Batch Tasks
-Process multiple tasks in batch mode:
+Process multiple tasks in batch mode (in-memory splitting):
 ```bash
 fdsx run workflow.yaml --tasks tasks.md
 ```
 
+Or use persistent batch execution with resume support:
+```bash
+fdsx split tasks.md
+fdsx run --tasks-dir .fdsx/tasks/
+```
+
+### Profiles
+Define named provider/model bundles in your workflow or config to avoid repetition:
+```yaml
+profiles:
+  fast:
+    provider: claude
+    model: claude-haiku-4-5-20251001
+  strong:
+    provider: claude
+    model: claude-sonnet-4-6
+
+states:
+  plan:
+    type: task
+    profile: fast
+    prompt_template: "Plan the task: {task}"
+    result_path: $.plan
+    next: implement
+```
+
+### Hooks
+Run shell commands before or after flow/state execution:
+```yaml
+hooks:
+  on_start:
+    - command: "echo 'Starting...'"
+      on_failure: warn
+  on_complete:
+    - command: "echo 'Done!'"
+```
+
+### Output Extraction
+Extract structured values from LLM output using `json`, `regex`, or `keyword` strategies with optional LLM classification fallback:
+```yaml
+extract:
+  strategy: [keyword, regex]
+  pattern: "APPROVED|REJECTED"
+  result_path: $.decision
+```
+
+### Workflow Auto-Selection
+When using `--tasks-dir` without specifying a workflow, fdsx discovers workflows from your workflows directory and uses an LLM to select the best match for each task.
+
 ### Structured Logging
-All execution details are logged to `runs/<thread_id>.json`.
+Execution details are logged under `.fdsx/runs/<thread_id>/logs/`.
 
 ### Provider Support
-Use any CLI-based LLM provider: Claude, Codex, OpenCode, or system commands.
+Use any CLI-based LLM provider: Claude, Codex, Gemini, OpenCode, or system commands. Providers can be configured globally in `.fdsx/config.yaml` or per-task via `provider_options`.
 
 ## CLI Reference
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--version` | Show version and exit |
+| `--ci` | Run in CI mode (non-interactive) |
+| `--interactive` | Force interactive mode |
+
+### Commands
 
 | Command | Description |
 |---------|-------------|
 | `fdsx run <workflow.yaml>` | Execute a workflow |
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
-| `fdsx resume --thread-id <thread_id>` | Resume from checkpoint |
+| `fdsx run <workflow.yaml> --tasks tasks.md` | In-memory batch execution |
+| `fdsx run --tasks-dir <dir>` | Persistent batch execution (workflow optional) |
+| `fdsx run ... --quiet` | Suppress stderr streaming output |
+| `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
+| `fdsx run ... --confirm-workflow` | Show workflow confirmation UI |
+| `fdsx resume --thread-id <id>` | Resume from checkpoint |
+| `fdsx resume --thread-id <id> --base-dir <dir>` | Resume with custom base directory |
 | `fdsx validate <workflow.yaml>` | Validate YAML syntax |
 | `fdsx list` | List recent runs |
+| `fdsx list --base-dir <dir>` | List runs from custom base directory |
+| `fdsx split <task_file>` | Split a task file into individual task files |
+| `fdsx split <task_file> --force` | Clear existing tasks directory before splitting |
+
+## Configuration
+
+fdsx loads configuration from two levels (later wins):
+1. Global: `~/.config/fdsx/config.yaml`
+2. Project: `.fdsx/config.yaml`
+
+```yaml
+# .fdsx/config.yaml
+profiles:
+  default:
+    provider: claude
+    model: claude-sonnet-4-6
+
+task_splitter:
+  provider: claude
+  model: claude-sonnet-4-6
+
+workflow_selector:
+  provider: claude
+  model: claude-sonnet-4-6
+
+workflows_dir: ".fdsx/workflows"
+auto_workflow: false
+
+providers:
+  claude:
+    permission_mode: auto
+  codex:
+    full_auto: true
+
+hooks:
+  on_start:
+    - command: "echo 'Flow starting'"
+      on_failure: warn
+```
 
 ## Example Workflow
 
 ```yaml
 name: Plan-Implement-Review Loop
+description: "Iterative plan-implement-review cycle with LLM-based approval gating"
 start_at: plan
 version: "1.0"
 max_loop: 3
