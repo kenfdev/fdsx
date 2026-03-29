@@ -219,12 +219,16 @@ class ClaudeProvider(ProviderBase):
             _flush_buffer()
 
         def get_result() -> str | None:
-            result_text = final_result[0]
-            if result_text is not None and (result_text or not text_parts):
-                return result_text
-            # Fallback: reconstruct from accumulated text_delta content
+            # Prefer accumulated text_delta content because the result event's
+            # "result" field only contains the *last* text block.  In agentic
+            # responses where text → tool_use → text, earlier text blocks
+            # (which may contain routing tags like [STEP:1]) are missing from
+            # the result field but present in text_parts.
             if text_parts:
                 return "".join(text_parts)
+            result_text = final_result[0]
+            if result_text is not None:
+                return result_text
             return None
 
         return stream_callback, get_result, flush
