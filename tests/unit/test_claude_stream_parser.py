@@ -235,15 +235,20 @@ class TestResultEvent:
 
         assert get_result() == "Final answer text"
 
-    def test_result_takes_precedence_over_fallback(self) -> None:
-        """result event text takes precedence over accumulated text_delta content."""
+    def test_text_parts_take_precedence_over_result(self) -> None:
+        """Accumulated text_delta content takes precedence over result event.
+
+        The result event's "result" field only contains the last text block,
+        so in agentic responses earlier text blocks (with routing tags) would
+        be lost if result took precedence.
+        """
         provider = _make_provider()
         cb, get_result, _ = provider._make_stream_callback(lambda _: None)
 
         cb(_build_text_delta_line("delta text"))
         cb(_build_result_line("canonical result"))
 
-        assert get_result() == "canonical result"
+        assert get_result() == "delta text"
 
     def test_result_with_error_subtype_still_captured(self) -> None:
         """result event with error subtype still captures text (exit_code conveys error)."""
@@ -525,7 +530,7 @@ class TestLineBuffering:
         cb(_build_result_line("final"))
 
         assert received == ["trailing text"]
-        assert get_result() == "final"
+        assert get_result() == "trailing text"
 
     def test_flush_is_idempotent(self) -> None:
         """Calling flush() multiple times does not duplicate output."""
