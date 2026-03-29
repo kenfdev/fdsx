@@ -53,7 +53,9 @@ class TestUniversalScaffoldTrigger:
         runner = CliRunner()
         result = runner.invoke(main.app, ["--ci", "--version"])
         assert result.exit_code == 0
-        assert not (tmp_path / ".fdsx").exists(), ".fdsx/ should NOT be created in CI mode"
+        assert not (tmp_path / ".fdsx").exists(), (
+            ".fdsx/ should NOT be created in CI mode"
+        )
 
     def test_existing_fdsx_no_scaffold_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

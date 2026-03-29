@@ -24,8 +24,6 @@ app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework
 _interactive_mode: bool | None = None
 
 
-
-
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -71,10 +69,16 @@ def main(
             err=True,
         )
         typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
-        rerun_cmd = f"fdsx {ctx.invoked_subcommand}" if ctx.invoked_subcommand else "fdsx"
+        rerun_cmd = (
+            f"fdsx {ctx.invoked_subcommand}" if ctx.invoked_subcommand else "fdsx"
+        )
         typer.echo(f"  3. Re-run your command: {rerun_cmd}", err=True)
         raise typer.Exit(code=0)
-    elif _interactive_mode and not needs_init(Path.cwd()) and not (Path.cwd() / ".fdsx" / ".gitignore").exists():
+    elif (
+        _interactive_mode
+        and not needs_init(Path.cwd())
+        and not (Path.cwd() / ".fdsx" / ".gitignore").exists()
+    ):
         ensure_gitignore(Path.cwd())
     if version:
         typer.echo(f"fdsx {__version__}")
