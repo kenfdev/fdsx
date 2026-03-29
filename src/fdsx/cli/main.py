@@ -15,7 +15,7 @@ from fdsx.core.batch import (
 )
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
-from fdsx.core.init import needs_init, scaffold
+from fdsx.core.init import ensure_gitignore, needs_init, scaffold
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 
@@ -77,6 +77,8 @@ def main(
         typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
         typer.echo(f"  3. Re-run your command: fdsx {ctx.invoked_subcommand}", err=True)
         raise typer.Exit(code=0)
+    elif _interactive_mode and not needs_init(Path.cwd()) and not (Path.cwd() / ".fdsx" / ".gitignore").exists():
+        ensure_gitignore(Path.cwd())
     if version:
         typer.echo(f"fdsx {__version__}")
         raise typer.Exit()

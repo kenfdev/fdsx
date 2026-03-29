@@ -1,6 +1,14 @@
 import importlib.resources
 from pathlib import Path
 
+GITIGNORE_TEMPLATE = """\
+# fdsx runtime directories
+runs/
+tasks/
+checkpoints/
+locks/
+"""
+
 CONFIG_TEMPLATE = """\
 # workflows_dir: .fdsx/workflows  # Directory containing workflow definitions
 # auto_workflow: false  # Automatically select workflow when only one exists
@@ -30,6 +38,13 @@ def needs_init(cwd: Path) -> bool:
     return not (cwd / ".fdsx").is_dir()
 
 
+def ensure_gitignore(cwd: Path) -> None:
+    """Create .fdsx/.gitignore if it doesn't exist."""
+    gitignore_path = Path(cwd) / ".fdsx" / ".gitignore"
+    if not gitignore_path.exists():
+        gitignore_path.write_text(GITIGNORE_TEMPLATE)
+
+
 def scaffold(cwd: Path) -> list[str]:
     cwd = Path(cwd)
     fdsx_dir = cwd / ".fdsx"
@@ -39,6 +54,8 @@ def scaffold(cwd: Path) -> list[str]:
 
     config_path = fdsx_dir / "config.yaml"
     config_path.write_text(CONFIG_TEMPLATE)
+
+    ensure_gitignore(cwd)
 
     examples_pkg = importlib.resources.files("fdsx.examples.workflows")
     created_paths: list[str] = []
