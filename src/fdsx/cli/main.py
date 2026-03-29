@@ -23,7 +23,7 @@ app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework
 
 _interactive_mode: bool | None = None
 
-OPERATIONAL_CMDS = frozenset({"run", "validate", "resume", "list", "split"})
+
 
 
 @app.callback(invoke_without_command=True)
@@ -58,11 +58,7 @@ def main(
         _interactive_mode = False
     else:
         _interactive_mode = sys.stdin.isatty()
-    if (
-        ctx.invoked_subcommand in OPERATIONAL_CMDS
-        and _interactive_mode
-        and needs_init(Path.cwd())
-    ):
+    if _interactive_mode and needs_init(Path.cwd()):
         created = scaffold(Path.cwd())
         typer.echo("Initialized .fdsx/ directory with example workflows.\n", err=True)
         typer.echo("Created:", err=True)
@@ -75,7 +71,8 @@ def main(
             err=True,
         )
         typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
-        typer.echo(f"  3. Re-run your command: fdsx {ctx.invoked_subcommand}", err=True)
+        rerun_cmd = f"fdsx {ctx.invoked_subcommand}" if ctx.invoked_subcommand else "fdsx"
+        typer.echo(f"  3. Re-run your command: {rerun_cmd}", err=True)
         raise typer.Exit(code=0)
     elif _interactive_mode and not needs_init(Path.cwd()) and not (Path.cwd() / ".fdsx" / ".gitignore").exists():
         ensure_gitignore(Path.cwd())
