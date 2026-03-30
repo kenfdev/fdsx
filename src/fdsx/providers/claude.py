@@ -39,9 +39,32 @@ _EVENT_RESULT = "result"
 # Delta type strings within content_block_delta events
 _DELTA_TYPE_TEXT = "text_delta"
 _DELTA_TYPE_THINKING = "thinking_delta"
+_DELTA_TYPE_INPUT_JSON = "input_json_delta"
 
 # Content block type for tool use
 _CONTENT_TYPE_TOOL_USE = "tool_use"
+
+_SUMMARY_KEY_PRIORITY = [
+    "command",
+    "file_path",
+    "description",
+    "query",
+    "pattern",
+    "url",
+    "skill",
+    "prompt",
+]
+_SUMMARY_MAX_LENGTH = 120
+
+
+def _format_tool_input_summary(tool_name: str, input_json: dict[str, object]) -> str:
+    for key in _SUMMARY_KEY_PRIORITY:
+        value = input_json.get(key)
+        if isinstance(value, str) and value:
+            if len(value) > _SUMMARY_MAX_LENGTH:
+                return value[:_SUMMARY_MAX_LENGTH] + "\u2026"
+            return value
+    return ""
 
 
 class ClaudeOptions(BaseModel):
@@ -117,6 +140,8 @@ class ClaudeProvider(ProviderBase):
         _buffer_type: list[str | None] = [None]
         # Tracks whether we are currently inside a tool_use block.
         _in_tool_use: list[bool] = [False]
+        _tool_name: list[str | None] = [None]
+        _tool_input_parts: list[str] = []
 
         def _flush_buffer() -> None:
             """Emit buffered content as complete lines via output_callback."""
@@ -181,12 +206,11 @@ class ClaudeProvider(ProviderBase):
                 content_block = event.get("content_block", {})
                 if content_block.get("type") == _CONTENT_TYPE_TOOL_USE:
                     _in_tool_use[0] = True
+                    _tool_name[0] = content_block.get("name", "unknown")
+                    _tool_input_parts.clear()
                     if on_tool_start is not None:
                         on_tool_start()
                     _flush_buffer()
-                    tool_name = content_block.get("name", "unknown")
-                    cb = summary_callback if summary_callback else output_callback
-                    cb(f"[tool: {tool_name}]")
 
             elif event_type == _EVENT_CONTENT_BLOCK_DELTA:
                 delta = event.get("delta", {})
@@ -200,9 +224,33 @@ class ClaudeProvider(ProviderBase):
                     thinking = delta.get("thinking", "")
                     if thinking:
                         _append_and_emit(thinking, "thinking")
+                elif delta_type == _DELTA_TYPE_INPUT_JSON:
+                    partial = delta.get("partial_json", "")
+                    if partial:
+                        _tool_input_parts.append(partial)
 
             elif event_type == _EVENT_CONTENT_BLOCK_STOP:
                 if _in_tool_use[0]:
+                    tool_name = _tool_name[0] or "unknown"
+                    cb = summary_callback if summary_callback else output_callback
+                    joined_input = "".join(_tool_input_parts)
+                    if joined_input:
+                        try:
+                            parsed = json.loads(joined_input)
+                            if not isinstance(parsed, dict):
+                                cb(f"[tool: {tool_name}]")
+                            else:
+                                summary = _format_tool_input_summary(tool_name, parsed)
+                                if summary:
+                                    cb(f"[{tool_name}] {summary}")
+                                else:
+                                    cb(f"[tool: {tool_name}]")
+                        except json.JSONDecodeError:
+                            cb(f"[tool: {tool_name}]")
+                    else:
+                        cb(f"[tool: {tool_name}]")
+                    _tool_name[0] = None
+                    _tool_input_parts.clear()
                     _in_tool_use[0] = False
                     if on_tool_end is not None:
                         on_tool_end()

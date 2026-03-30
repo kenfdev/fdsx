@@ -66,11 +66,21 @@ def _build_content_block_stop_line(index: int = 0) -> str:
     )
 
 
-class TestToolStartCallsSummaryCallback:
-    """T005: tool_use content_block_start routes [tool: X] to summary_callback."""
+def _build_input_json_delta_line(partial_json: str, index: int = 1) -> str:
+    return json.dumps(
+        {
+            "type": _EVENT_CONTENT_BLOCK_DELTA,
+            "index": index,
+            "delta": {"type": "input_json_delta", "partial_json": partial_json},
+        }
+    )
 
-    def test_tool_start_routes_to_summary_callback(self) -> None:
-        """When summary_callback is provided, [tool: X] goes to summary_callback only."""
+
+class TestToolStartCallsSummaryCallback:
+    """T005: tool_use content_block_stop routes [tool: X] or [X] summary to summary_callback."""
+
+    def test_tool_stop_routes_to_summary_callback(self) -> None:
+        """When summary_callback is provided, tool summary goes to summary_callback only on stop."""
         output_received: list[str] = []
         summary_received: list[str] = []
         provider = _make_provider()
@@ -79,19 +89,37 @@ class TestToolStartCallsSummaryCallback:
         )
 
         cb(_build_tool_use_start_line("Bash"))
+        cb(_build_content_block_stop_line())
 
         assert summary_received == ["[tool: Bash]"]
         assert output_received == []
 
-    def test_tool_start_routes_to_output_when_no_summary_callback(self) -> None:
-        """When summary_callback is None, [tool: X] falls back to output_callback."""
+    def test_tool_stop_routes_to_output_when_no_summary_callback(self) -> None:
+        """When summary_callback is None, tool summary falls back to output_callback on stop."""
         output_received: list[str] = []
         provider = _make_provider()
         cb, _, _ = provider._make_stream_callback(output_received.append)
 
         cb(_build_tool_use_start_line("Read"))
+        cb(_build_content_block_stop_line())
 
         assert output_received == ["[tool: Read]"]
+
+    def test_tool_stop_with_input_json_routes_formatted_to_summary(self) -> None:
+        """When input_json_delta is provided, formatted [Bash] ls goes to summary_callback."""
+        output_received: list[str] = []
+        summary_received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(
+            output_received.append, summary_callback=summary_received.append
+        )
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('{"command": "ls /workspace"}'))
+        cb(_build_content_block_stop_line())
+
+        assert summary_received == ["[Bash] ls /workspace"]
+        assert output_received == []
 
 
 class TestThinkingCallsSummaryCallback:
