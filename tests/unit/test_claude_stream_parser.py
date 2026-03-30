@@ -23,6 +23,7 @@ from fdsx.providers.claude import (
     _EVENT_CONTENT_BLOCK_STOP,
     _EVENT_RESULT,
     ClaudeProvider,
+    _format_tool_input_summary,
 )
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,16 @@ def _build_tool_use_start_line(tool_name: str, index: int = 1) -> str:
 
 def _build_content_block_stop_line(index: int = 0) -> str:
     return json.dumps({"type": _EVENT_CONTENT_BLOCK_STOP, "index": index})
+
+
+def _build_input_json_delta_line(partial_json: str, index: int = 1) -> str:
+    return json.dumps(
+        {
+            "type": _EVENT_CONTENT_BLOCK_DELTA,
+            "index": index,
+            "delta": {"type": "input_json_delta", "partial_json": partial_json},
+        }
+    )
 
 
 def _build_result_line(result_text: str) -> str:
@@ -176,15 +187,26 @@ class TestThinkingDelta:
 
 
 class TestToolUseContentBlockStart:
-    """tool_use content_block_start events dispatch a [tool: name] notification."""
+    """tool_use content_block_start events do not emit immediately; emission is deferred to content_block_stop."""
 
-    def test_tool_name_dispatched(self) -> None:
-        """Tool name is dispatched to output_callback as '[tool: <name>]'."""
+    def test_tool_start_emits_nothing(self) -> None:
+        """Tool start alone produces no callback output."""
         received: list[str] = []
         provider = _make_provider()
         cb, _, _ = provider._make_stream_callback(received.append)
 
         cb(_build_tool_use_start_line("Bash"))
+
+        assert received == []
+
+    def test_tool_stop_with_no_input_json_emits_fallback(self) -> None:
+        """content_block_stop with no input_json_delta emits [tool: <name>]."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_content_block_stop_line())
 
         assert received == ["[tool: Bash]"]
 
@@ -202,6 +224,7 @@ class TestToolUseContentBlockStart:
             }
         )
         cb(line)
+        cb(_build_content_block_stop_line())
 
         assert received == ["[tool: unknown]"]
 
@@ -510,14 +533,16 @@ class TestLineBuffering:
         assert received == ["some text", "[thinking] now thinking"]
 
     def test_tool_use_flushes_buffer(self) -> None:
-        """tool_use content_block_start flushes any buffered text first."""
+        """tool_use content_block_start flushes any buffered text first; tool line comes on stop."""
         received: list[str] = []
         provider = _make_provider()
         cb, _, _ = provider._make_stream_callback(received.append)
 
         cb(_build_text_delta_line("before tool"))
         cb(_build_tool_use_start_line("Read"))
+        assert received == ["before tool"]
 
+        cb(_build_content_block_stop_line())
         assert received == ["before tool", "[tool: Read]"]
 
     def test_result_flushes_buffer(self) -> None:
@@ -580,13 +605,15 @@ class TestStreamEventEnvelope:
         assert received == ["[thinking] reasoning..."]
 
     def test_tool_use_in_envelope(self) -> None:
-        """tool_use content_block_start inside stream_event envelope is dispatched."""
+        """tool_use content_block_start inside stream_event envelope emits on stop."""
         received: list[str] = []
         provider = _make_provider()
         cb, _, _ = provider._make_stream_callback(received.append)
 
         cb(_wrap_in_stream_event(_build_tool_use_start_line("Edit")))
+        assert received == []
 
+        cb(_wrap_in_stream_event(_build_content_block_stop_line()))
         assert received == ["[tool: Edit]"]
 
     def test_text_accumulated_from_envelope(self) -> None:
@@ -622,3 +649,194 @@ class TestStreamEventEnvelope:
         flush()
 
         assert received == []
+
+
+class TestFormatToolInputSummary:
+    """Unit tests for _format_tool_input_summary helper."""
+
+    def test_command_key_returns_command_value(self) -> None:
+        assert (
+            _format_tool_input_summary("Bash", {"command": "ls /workspace"})
+            == "ls /workspace"
+        )
+
+    def test_file_path_key_returns_file_path_value(self) -> None:
+        assert (
+            _format_tool_input_summary("Read", {"file_path": "/tmp/test.txt"})
+            == "/tmp/test.txt"
+        )
+
+    def test_description_key_returns_description_value(self) -> None:
+        assert (
+            _format_tool_input_summary("Edit", {"description": "update config"})
+            == "update config"
+        )
+
+    def test_query_key_returns_query_value(self) -> None:
+        assert (
+            _format_tool_input_summary("WebSearch", {"query": "python教程"})
+            == "python教程"
+        )
+
+    def test_pattern_key_returns_pattern_value(self) -> None:
+        assert _format_tool_input_summary("Grep", {"pattern": "def foo"}) == "def foo"
+
+    def test_url_key_returns_url_value(self) -> None:
+        assert (
+            _format_tool_input_summary("WebFetch", {"url": "https://example.com"})
+            == "https://example.com"
+        )
+
+    def test_skill_key_returns_skill_value(self) -> None:
+        assert (
+            _format_tool_input_summary("UseSkill", {"skill": "my-skill"}) == "my-skill"
+        )
+
+    def test_prompt_key_returns_prompt_value(self) -> None:
+        assert (
+            _format_tool_input_summary("Agent", {"prompt": "do something"})
+            == "do something"
+        )
+
+    def test_priority_order_command_first(self) -> None:
+        input_json = {"command": "ls", "file_path": "/tmp", "description": "desc"}
+        assert _format_tool_input_summary("Bash", input_json) == "ls"
+
+    def test_priority_order_file_path_second(self) -> None:
+        input_json = {"file_path": "/tmp", "description": "desc"}
+        assert _format_tool_input_summary("Read", input_json) == "/tmp"
+
+    def test_truncation_at_120_chars(self) -> None:
+        long_value = "x" * 200
+        result = _format_tool_input_summary("Bash", {"command": long_value})
+        assert len(result) == 121
+        assert result.endswith("\u2026")
+        assert result == "x" * 120 + "\u2026"
+
+    def test_120_chars_no_truncation(self) -> None:
+        value_120 = "x" * 120
+        result = _format_tool_input_summary("Bash", {"command": value_120})
+        assert result == value_120
+        assert not result.endswith("\u2026")
+
+    def test_empty_dict_returns_empty_string(self) -> None:
+        assert _format_tool_input_summary("Bash", {}) == ""
+
+    def test_non_string_values_skipped(self) -> None:
+        assert _format_tool_input_summary("Bash", {"command": 123}) == ""
+
+    def test_empty_string_value_skipped(self) -> None:
+        assert _format_tool_input_summary("Bash", {"command": ""}) == ""
+
+
+class TestInputJsonDeltaAccumulation:
+    """Tests for input_json_delta accumulation and formatted tool summary on content_block_stop."""
+
+    def test_full_cycle_with_command_summary(self) -> None:
+        """Full tool use cycle produces [Bash] ls /workspace on stop."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('{"command": "ls /workspace"}'))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[Bash] ls /workspace"]
+
+    def test_full_cycle_with_file_path_summary(self) -> None:
+        """Full tool use cycle with file_path produces [Read] /path/to/file on stop."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Read"))
+        cb(_build_input_json_delta_line('{"file_path": "/path/to/file.txt"}'))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[Read] /path/to/file.txt"]
+
+    def test_missing_input_json_falls_back_to_tool_format(self) -> None:
+        """No input_json_delta produces [tool: Bash] fallback on stop."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[tool: Bash]"]
+
+    def test_malformed_json_falls_back_to_tool_format(self) -> None:
+        """Malformed input_json produces [tool: Bash] fallback on stop."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('{"command": "ls'))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[tool: Bash]"]
+
+    def test_multiple_input_json_deltas_accumulated(self) -> None:
+        """Multiple input_json_delta fragments are joined before parsing."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('{"command": "ls '))
+        cb(_build_input_json_delta_line('/workspace"}'))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[Bash] ls /workspace"]
+
+    def test_input_json_not_in_result(self) -> None:
+        """input_json_delta content is NOT included in get_result() text_parts."""
+        provider = _make_provider()
+        cb, get_result, _ = provider._make_stream_callback(lambda _: None)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('{"command": "ls"}'))
+        cb(_build_text_delta_line("final output"))
+        cb(_build_content_block_stop_line())
+        cb(_build_result_line("result event"))
+
+        assert get_result() == "final output"
+
+    def test_non_dict_json_array_falls_back_to_tool_format(self) -> None:
+        """Valid JSON that is not a dict (e.g. []) falls back to [tool: Bash]."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line("[]"))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[tool: Bash]"]
+
+    def test_non_dict_json_string_falls_back_to_tool_format(self) -> None:
+        """Valid JSON that is a string falls back to [tool: Bash]."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('"just a string"'))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[tool: Bash]"]
+
+    def test_input_json_with_no_useful_keys_falls_back(self) -> None:
+        """input_json with no useful keys falls back to [tool: X] format."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, _, _ = provider._make_stream_callback(received.append)
+
+        cb(_build_tool_use_start_line("Bash"))
+        cb(_build_input_json_delta_line('{"other_key": "value"}'))
+        cb(_build_content_block_stop_line())
+
+        assert received == ["[tool: Bash]"]

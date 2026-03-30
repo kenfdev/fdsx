@@ -105,6 +105,7 @@ class TestQuietModeShowsSummarySuppressesRaw:
                     },
                 }
             ),
+            json.dumps({"type": "content_block_stop", "index": 1}),
             json.dumps({"type": "result", "result": "done"}),
         ]
 
@@ -143,6 +144,86 @@ class TestQuietModeShowsSummarySuppressesRaw:
         assert "hello world" not in stderr
 
 
+class TestQuietModeShowsFormattedToolSummary:
+    """Integration test for input_json_delta formatted tool summary."""
+
+    def test_quiet_mode_shows_formatted_tool_summary(self, capsys, tmp_path):
+        """In quiet mode, tool input summary appears as [ToolName] command."""
+        import json
+        from unittest.mock import patch
+
+        from fdsx.core.compiler.execution import ExecutionConfig, execute_with_retry
+        from fdsx.providers.base import ProviderResult, get_provider
+
+        events = [
+            json.dumps(
+                {
+                    "type": "content_block_start",
+                    "index": 1,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": "tu_001",
+                        "name": "Bash",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "content_block_delta",
+                    "index": 1,
+                    "delta": {
+                        "type": "input_json_delta",
+                        "partial_json": '{"com',
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "content_block_delta",
+                    "index": 1,
+                    "delta": {
+                        "type": "input_json_delta",
+                        "partial_json": 'mand": "ls /workspace"}',
+                    },
+                }
+            ),
+            json.dumps({"type": "content_block_stop", "index": 1}),
+            json.dumps({"type": "result", "result": "done"}),
+        ]
+
+        def fake_run_subprocess(**kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                for event in events:
+                    cb(event)
+            return ProviderResult(exit_code=0, stdout="file1\nfile2", stderr="")
+
+        provider = get_provider("claude", {})
+        stream_logger = StreamLogger("test", tmp_path, quiet=True)
+
+        exec_config = ExecutionConfig(
+            provider=provider,
+            provider_name="claude",
+            prompt="test prompt",
+            command="",
+            model=None,
+            timeout_seconds=None,
+            max_retries=0,
+            extract=None,
+            stream_logger=stream_logger,
+            summary_callback=stream_logger.on_summary,
+        )
+
+        with patch(
+            "fdsx.providers.claude._run_subprocess",
+            side_effect=fake_run_subprocess,
+        ):
+            execute_with_retry(exec_config)
+
+        stderr = capsys.readouterr().err
+        assert "[test] [Bash] ls /workspace" in stderr
+
+
 class TestNormalModeShowsBoth:
     """T009: Normal mode (quiet=False) shows both summary and output lines
     through the full execution pipeline.
@@ -175,6 +256,7 @@ class TestNormalModeShowsBoth:
                     "delta": {"type": "text_delta", "text": "output text"},
                 }
             ),
+            json.dumps({"type": "content_block_stop", "index": 1}),
             json.dumps({"type": "result", "result": "done"}),
         ]
 
@@ -242,6 +324,7 @@ class TestParallelBranchesOutputPrefixed:
                     "delta": {"type": "text_delta", "text": "branch output"},
                 }
             ),
+            json.dumps({"type": "content_block_stop", "index": 1}),
             json.dumps({"type": "result", "result": "done"}),
         ]
 
