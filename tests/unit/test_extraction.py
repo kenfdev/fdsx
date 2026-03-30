@@ -96,11 +96,11 @@ class TestKeywordStrategy:
         result = _keyword_strategy(output, "APPROVED|REJECTED")
         assert result == "REJECTED"
 
-    def test_first_keyword_wins(self):
-        """When multiple keywords appear, earliest in output wins."""
+    def test_last_keyword_wins(self):
+        """When multiple keywords appear, latest in output wins."""
         output = "both approved and rejected appear"
         result = _keyword_strategy(output, "APPROVED|REJECTED")
-        assert result == "APPROVED"  # "approved" appears first in output
+        assert result == "REJECTED"  # "rejected" appears last in output
 
     def test_no_match_returns_none(self):
         output = "The status is unknown"
@@ -136,16 +136,22 @@ class TestKeywordStrategy:
         assert result == "APPROVED"
 
     def test_output_order_not_pattern_order(self):
-        """Regression: keyword matching should return the earliest occurrence in output, not first in pattern list."""
+        """Regression: keyword matching should return the latest occurrence in output, not first in pattern list."""
         output = "first REJECTED then APPROVED"
         result = _keyword_strategy(output, "APPROVED|REJECTED")
-        assert result == "REJECTED"
+        assert result == "APPROVED"
 
     def test_output_order_multiple_keywords(self):
-        """When multiple keywords appear, return the one that appears first in output."""
+        """When multiple keywords appear, return the one that appears last in output."""
         output = "the decision is APPROVED, not REJECTED"
         result = _keyword_strategy(output, "MAYBE|APPROVED|REJECTED")
-        assert result == "APPROVED"
+        assert result == "REJECTED"
+
+    def test_keyword_in_prose_before_verdict_returns_verdict(self):
+        """Regression: keyword appearing in prose before the actual verdict should not be returned."""
+        output = "there is no pending implementation to reject so I will APPROVE"
+        result = _keyword_strategy(output, "APPROVE|REJECT")
+        assert result == "APPROVE"
 
 
 class TestExecuteStrategy:

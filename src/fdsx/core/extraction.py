@@ -168,7 +168,7 @@ def _keyword_strategy(output: str, pattern: str) -> str | None:
 
     Splits the pattern by '|' to get a list of keywords, then searches
     for each keyword case-insensitively using word boundaries in the output.
-    Returns the keyword whose occurrence appears earliest in the output
+    Returns the keyword whose occurrence appears latest in the output
     (with original case from pattern).
 
     Args:
@@ -181,18 +181,18 @@ def _keyword_strategy(output: str, pattern: str) -> str | None:
     keywords = pattern.split("|")
     output_lower = output.lower()
 
-    earliest_match = None
-    earliest_pos = len(output)
+    latest_match = None
+    latest_pos = -1
 
     for keyword in keywords:
         keyword_lower = keyword.lower()
         pattern_escaped = re.escape(keyword_lower)
-        match = re.search(r"\b" + pattern_escaped + r"\b", output_lower)
-        if match and match.start() < earliest_pos:
-            earliest_pos = match.start()
-            earliest_match = keyword
+        for match in re.finditer(r"\b" + pattern_escaped + r"\b", output_lower):
+            if match.start() > latest_pos:
+                latest_pos = match.start()
+                latest_match = keyword
 
-    return earliest_match
+    return latest_match
 
 
 def _execute_llm_fallback(

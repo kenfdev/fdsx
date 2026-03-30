@@ -22,6 +22,7 @@ from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
 from .interrupts import handle_interrupts
 from .results import (
     _calc_elapsed,
+    _detect_abort_status,
     _extract_results,
     _find_failed_state,
     _sanitize_state_for_log,
@@ -166,16 +167,34 @@ def run_flow(
                 last_state = final_state_info.values
 
         results = _extract_results(last_state, compiled.result_paths)
-        recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+        status, failed_state, error_msg = _detect_abort_status(recorder)
+        recorder.finalize(_sanitize_state_for_log(last_state), status)
         recorder.save(base_dir=base_dir)
-        display_completion_summary(flow.name, _calc_elapsed(recorder))
+        if failed_state is not None:
+            display_completion_summary(
+                flow.name,
+                _calc_elapsed(recorder),
+                failed_state,
+                error_msg or "workflow aborted",
+            )
+        else:
+            display_completion_summary(flow.name, _calc_elapsed(recorder))
         return results
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
-        recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+        status, failed_state, error_msg = _detect_abort_status(recorder)
+        recorder.finalize(_sanitize_state_for_log(last_state), status)
         recorder.save(base_dir=base_dir)
-        display_completion_summary(flow.name, _calc_elapsed(recorder))
+        if failed_state is not None:
+            display_completion_summary(
+                flow.name,
+                _calc_elapsed(recorder),
+                failed_state,
+                error_msg or "workflow aborted",
+            )
+        else:
+            display_completion_summary(flow.name, _calc_elapsed(recorder))
         return results
     except Exception as e:
         if checkpoint_manager is not None:

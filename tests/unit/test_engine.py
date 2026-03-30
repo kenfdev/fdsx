@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from fdsx.core.engine import (
     _calc_elapsed,
+    _detect_abort_status,
     _extract_results,
     _find_failed_state,
     _workflow_persist_id,
@@ -138,6 +139,43 @@ class TestFindFailedState:
         recorder = self._make_recorder()
         recorder.states = []
         assert _find_failed_state(recorder) is None
+
+
+class TestDetectAbortStatus:
+    """Tests for _detect_abort_status helper in engine."""
+
+    def _make_recorder(self) -> RunRecorder:
+        return RunRecorder(
+            thread_id="test-thread-id",
+            flow_name="TestFlow",
+        )
+
+    def test_abort_state_returns_aborted_status(self):
+        """Last state starting with 'abort_' returns aborted status."""
+        recorder = self._make_recorder()
+        recorder.states = [
+            {"name": "step1", "status": "completed"},
+            {"name": "abort_design_issues", "status": "completed"},
+        ]
+        result = _detect_abort_status(recorder)
+        assert result == ("aborted", "abort_design_issues", "workflow aborted")
+
+    def test_regular_state_returns_completed(self):
+        """Last state not starting with 'abort_' returns completed status."""
+        recorder = self._make_recorder()
+        recorder.states = [
+            {"name": "step1", "status": "completed"},
+            {"name": "step2", "status": "completed"},
+        ]
+        result = _detect_abort_status(recorder)
+        assert result == ("completed", None, None)
+
+    def test_empty_states_returns_completed(self):
+        """Empty recorder.states returns completed status."""
+        recorder = self._make_recorder()
+        recorder.states = []
+        result = _detect_abort_status(recorder)
+        assert result == ("completed", None, None)
 
 
 class TestErrorPathFallback:
