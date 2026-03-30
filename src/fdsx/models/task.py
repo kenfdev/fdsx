@@ -210,7 +210,9 @@ def save_task_file(path: Path, task_file: TaskFile) -> None:
     if task_file.source is not None:
         data["source"] = task_file.source
 
-    content = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+    content = yaml.safe_dump(
+        data, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
 
     if path.is_symlink():
         raise ValueError(f"Refusing to write: target is a symlink: {path}")
