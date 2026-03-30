@@ -72,3 +72,24 @@ def _find_failed_state(recorder: RunRecorder) -> tuple[str, str] | None:
         if state.get("status") == "error":
             return (str(state.get("name", "unknown")), str(state.get("error", "")))
     return None
+
+
+def _detect_abort_status(
+    recorder: RunRecorder,
+) -> tuple[str, str | None, str | None]:
+    """Detect if the workflow ended at an abort state.
+
+    Args:
+        recorder: The RunRecorder instance
+
+    Returns:
+        Tuple of (status, failed_state_name, error_message):
+        - If last state name starts with "abort_": ("aborted", state_name, "workflow aborted")
+        - Otherwise: ("completed", None, None)
+    """
+    if recorder.states:
+        last = recorder.states[-1]
+        name = last.get("name", "")
+        if isinstance(name, str) and name.startswith("abort_"):
+            return ("aborted", name, "workflow aborted")
+    return ("completed", None, None)

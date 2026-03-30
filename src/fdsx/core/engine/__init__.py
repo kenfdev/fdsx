@@ -8,6 +8,7 @@ to work without changes.
 from .batch import run_batch
 from .results import (
     _calc_elapsed,
+    _detect_abort_status,
     _extract_results,
     _find_failed_state,
     _sanitize_state_for_log,
@@ -26,6 +27,7 @@ from .validate import FlowValidationError, validate_flow
 __all__ = [
     "FlowValidationError",
     "_calc_elapsed",
+    "_detect_abort_status",
     "_extract_results",
     "_filter_actionable_entries",
     "_find_failed_state",
