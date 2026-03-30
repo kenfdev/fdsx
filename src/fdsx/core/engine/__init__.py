@@ -29,6 +29,7 @@ __all__ = [
     "_calc_elapsed",
     "_detect_abort_status",
     "_extract_results",
+    "_filter_actionable_entries",
     "_find_failed_state",
     "_sanitize_state_for_log",
     "_update_task_status",
