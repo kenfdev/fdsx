@@ -32,6 +32,9 @@ _GRACEFUL_SHUTDOWN_TIMEOUT = 5.0
 # Message printed to stderr when the signal handler fires.
 _INTERRUPT_MESSAGE = "\nWorkflow interrupted"
 
+# Message printed to stderr when force-quitting on second signal.
+_FORCE_QUIT_MESSAGE = "Force quitting..."
+
 
 class SignalHandler:
     """Context manager that installs SIGINT/SIGTERM handlers during flow execution.
@@ -70,6 +73,7 @@ class SignalHandler:
         self._thread_id = thread_id
         self._active_processes: set[subprocess.Popen[Any]] = set()
         self._processes_lock = threading.Lock()
+        self._interrupted = False
         # signal.signal() returns the previous handler, which may be a callable
         # or one of the signal.Handlers enum values (SIG_DFL, SIG_IGN).
         # Use Any to avoid complex typing for the stored previous handler.
@@ -92,6 +96,10 @@ class SignalHandler:
 
     def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: forward signal → wait → SIGKILL → cleanup → exit."""
+        if self._interrupted:
+            print(_FORCE_QUIT_MESSAGE, file=sys.stderr)
+            os._exit(_SIGNAL_EXIT_BASE + signum)
+        self._interrupted = True
         with self._processes_lock:
             procs = list(self._active_processes)
 

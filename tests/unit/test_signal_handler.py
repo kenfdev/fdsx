@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 from fdsx.core.engine.signals import (
+    _FORCE_QUIT_MESSAGE,
     _INTERRUPT_MESSAGE,
     _SIGNAL_EXIT_BASE,
     SignalHandler,
@@ -343,3 +344,46 @@ class TestHandleSignalExit:
             handler._handle_signal(signal.SIGINT, None)
 
         mock_exit.assert_called_once_with(_SIGNAL_EXIT_BASE + signal.SIGINT)
+
+
+# ---------------------------------------------------------------------------
+# _handle_signal — force quit on second signal
+# ---------------------------------------------------------------------------
+
+
+class TestForceQuit:
+    """Second Ctrl+C/SIGTERM triggers immediate force-exit via os._exit."""
+
+    def test_first_signal_sets_interrupted_flag(self) -> None:
+        """Calling _handle_signal once sets _interrupted to True."""
+        handler = _make_handler()
+
+        with patch("sys.exit"):
+            handler._handle_signal(signal.SIGINT, None)
+
+        assert handler._interrupted is True
+
+    def test_second_signal_force_exits(self) -> None:
+        """Second call to _handle_signal calls os._exit with code 130."""
+        handler = _make_handler()
+
+        with patch("sys.exit"):
+            handler._handle_signal(signal.SIGINT, None)
+
+        with patch("sys.exit"), patch("fdsx.core.engine.signals.os._exit") as mock_exit:
+            handler._handle_signal(signal.SIGINT, None)
+
+        mock_exit.assert_called_once_with(130)
+
+    def test_force_exit_prints_message(self, capsys: Any) -> None:
+        """Second signal causes _FORCE_QUIT_MESSAGE to be printed to stderr."""
+        handler = _make_handler()
+
+        with patch("sys.exit"):
+            handler._handle_signal(signal.SIGINT, None)
+
+        with patch("sys.exit"), patch("fdsx.core.engine.signals.os._exit"):
+            handler._handle_signal(signal.SIGINT, None)
+
+        captured = capsys.readouterr()
+        assert _FORCE_QUIT_MESSAGE.strip() in captured.err
