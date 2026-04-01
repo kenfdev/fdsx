@@ -1,5 +1,11 @@
 import importlib.resources
+import os
 from pathlib import Path
+from typing import Any
+
+import yaml
+
+from fdsx.models.init import ProviderSelection, TemplateInfo
 
 GITIGNORE_TEMPLATE = """\
 # fdsx runtime directories
@@ -91,3 +97,97 @@ def scaffold(cwd: Path) -> list[str]:
 
     created_paths.append(str(config_path.relative_to(cwd)))
     return sorted(created_paths)
+
+
+def _resolve_xdg_templates_dir() -> Path:
+    """Resolve the XDG config templates directory for user templates.
+
+    Returns the path even if it does not exist, since discover_templates
+    handles non-existence gracefully.
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    config_dir = Path(xdg) if xdg else Path.home() / ".config"
+    return config_dir / "fdsx" / "templates" / "workflows"
+
+
+def discover_templates() -> list[TemplateInfo]:
+    """Discover available workflow templates.
+
+    Returns builtin templates first (from the fdsx.examples.workflows package),
+    followed by user templates from the XDG config directory.
+    """
+    templates: list[TemplateInfo] = []
+
+    examples_pkg = importlib.resources.files("fdsx.examples.workflows")
+    builtin_dirs: list[tuple[str, Any]] = []
+    for resource in examples_pkg.iterdir():
+        if resource.name in ("__init__.py", "__pycache__"):
+            continue
+        if not resource.is_dir():
+            continue
+        if (resource / "workflow.yaml").is_file():
+            builtin_dirs.append((resource.name, resource))
+
+    for name, resource in builtin_dirs:
+        with importlib.resources.as_file(resource) as template_dir:
+            templates.append(
+                TemplateInfo(
+                    name=name,
+                    path=template_dir,
+                    source="builtin",
+                )
+            )
+
+    user_templates_dir = _resolve_xdg_templates_dir()
+    if user_templates_dir.exists():
+        for subdir in user_templates_dir.iterdir():
+            if not subdir.is_dir():
+                continue
+            if (subdir / "workflow.yaml").exists():
+                templates.append(
+                    TemplateInfo(
+                        name=subdir.name,
+                        path=subdir,
+                        source="user",
+                    )
+                )
+
+    return templates
+
+
+_MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
+    "claude": {"dangerously_skip_permissions": True},
+    "codex": {"dangerously_bypass_approvals_and_sandbox": True},
+    "gemini": {"yolo": True},
+    "opencode": {"permission": "auto-edit"},
+}
+
+
+def generate_config_yaml(providers: list[ProviderSelection]) -> str:
+    """Generate a config.yaml string with profiles and max-permission provider options.
+
+    Args:
+        providers: List of provider selections (provider + model).
+
+    Returns:
+        YAML string suitable for writing to .fdsx/config.yaml.
+    """
+    profiles: dict[str, dict[str, str]] = {}
+    provider_configs: dict[str, dict[str, Any]] = {}
+
+    for selection in providers:
+        profile_name = f"default-{selection.provider}"
+        profiles[profile_name] = {
+            "provider": selection.provider,
+            "model": selection.model,
+        }
+        if selection.provider in _MAX_PERMISSION_OPTIONS:
+            provider_configs[selection.provider] = _MAX_PERMISSION_OPTIONS[
+                selection.provider
+            ]
+
+    config_dict: dict[str, Any] = {"profiles": profiles}
+    if provider_configs:
+        config_dict["providers"] = provider_configs
+
+    return yaml.dump(config_dict, default_flow_style=False)
