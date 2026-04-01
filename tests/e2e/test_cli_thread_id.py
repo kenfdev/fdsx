@@ -18,6 +18,7 @@ def run_fdsx_run(cwd: str | Path) -> subprocess.CompletedProcess[str]:
         "run",
         fixture_path("simple_flow.yaml"),
     ]
+    Path(cwd, ".fdsx").mkdir(exist_ok=True)
     return subprocess.run(
         command,
         cwd=cwd,

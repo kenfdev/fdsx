@@ -153,9 +153,7 @@ class TestSelectModels:
             _patch_console(_mock_console()),
         ):
             result = select_models(["opencode"])
-        assert result == [
-            ProviderSelection(provider="opencode", model="my-model")
-        ]
+        assert result == [ProviderSelection(provider="opencode", model="my-model")]
 
     def test_multiple_providers_sequential_inputs(self):
         """Sequential inputs for each provider are correctly mapped."""

@@ -75,6 +75,7 @@ class TestBatchCLIE2E:
     def test_batch_missing_description(self):
         """Test --tasks with flow missing description → exit code 2 with actionable error."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / ".fdsx").mkdir()
             flow_path = Path(tmpdir) / "no_description_flow.yaml"
             flow_path.write_text(
                 "name: No Description Flow\n"

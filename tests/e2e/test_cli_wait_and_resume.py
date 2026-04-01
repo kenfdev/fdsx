@@ -23,9 +23,11 @@ class TestCLIE2EPhase3:
     def test_resume_interrupted_flow(self):
         """Test fdsx resume --thread-id with previously interrupted flow."""
         with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / ".fdsx").mkdir()
             flow_path = fixture_path("wait_approval.yaml")
             thread_id = "test-resume-interrupted"
-            base_dir = str(Path(tmp_dir) / ".fdsx")
+            base_dir = str(tmp_path / ".fdsx")
 
             first_run = run_fdsx(
                 ["run", flow_path, "--thread-id", thread_id],
@@ -79,7 +81,9 @@ class TestCLIE2EPhase3:
     def test_list_shows_threads(self):
         """Test fdsx list shows table output with known thread."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir) / ".fdsx"
+            tmp_path = Path(tmp_dir)
+            (tmp_path / ".fdsx").mkdir()
+            base_dir = tmp_path / ".fdsx"
             thread_id = "test-list-thread"
             flow_path = fixture_path("simple_flow.yaml")
 
@@ -115,7 +119,9 @@ class TestCLIE2EPhase3:
     def test_list_empty(self):
         """Test fdsx list with no threads shows empty message."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir) / ".fdsx"
+            tmp_path = Path(tmp_dir)
+            (tmp_path / ".fdsx").mkdir()
+            base_dir = tmp_path / ".fdsx"
 
             result = run_fdsx(
                 [
@@ -162,7 +168,9 @@ class TestCLIE2EPhase3:
     def test_prompt_file_missing_fails(self):
         """Test fdsx run with missing prompt_file fails with exit code 2 and clear error."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            flow_path = Path(tmp_dir) / "flow.yaml"
+            tmp_path = Path(tmp_dir)
+            (tmp_path / ".fdsx").mkdir()
+            flow_path = tmp_path / "flow.yaml"
             flow_path.write_text(
                 "name: Missing Prompt File Test\n"
                 "description: Test missing prompt file\n"

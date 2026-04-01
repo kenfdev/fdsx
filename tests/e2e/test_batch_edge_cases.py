@@ -15,6 +15,7 @@ class TestEdgeCases:
 
     def test_empty_tasks_dir_error_via_cli(self, tmp_path):
         """Empty tasks directory should produce a clear error via CLI."""
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
 
@@ -98,6 +99,7 @@ class TestEdgeCases:
 
     def test_mix_valid_and_invalid_yaml_files(self, tmp_path):
         """Mix of valid and invalid YAML files should error clearly."""
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
 

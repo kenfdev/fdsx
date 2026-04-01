@@ -122,6 +122,8 @@ def _run_fdsx_and_signal(
     flow_path = tmp_path / "sleep_flow.yaml"
     flow_path.write_text(_SLEEP_FLOW_YAML)
 
+    (tmp_path / ".fdsx").mkdir(exist_ok=True)
+
     proc = subprocess.Popen(
         [_fdsx_bin(), "run", str(flow_path), "--thread-id", _THREAD_ID],
         cwd=str(tmp_path),
