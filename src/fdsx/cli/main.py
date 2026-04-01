@@ -6,6 +6,13 @@ import typer
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
+from fdsx.cli.init_interactive import (
+    confirm_existing_project,
+    confirm_overwrite,
+    select_models,
+    select_providers,
+    select_templates,
+)
 from fdsx.core import engine
 from fdsx.core.batch import (
     COMPLETED_SUBDIR,
@@ -16,6 +23,7 @@ from fdsx.core.batch import (
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
 from fdsx.core.init import (
+    check_conflicts,
     discover_templates,
     ensure_gitignore,
     needs_init,
@@ -23,7 +31,7 @@ from fdsx.core.init import (
 )
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
-from fdsx.models.init import InitConfig, ProviderSelection
+from fdsx.models.init import InitConfig
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
@@ -62,28 +70,11 @@ def main(
         _interactive_mode = False
     else:
         _interactive_mode = sys.stdin.isatty()
-    if _interactive_mode and needs_init(Path.cwd()):
-        templates = discover_templates()
-        default_provider = ProviderSelection(
-            provider="claude", model="claude-sonnet-4-7"
-        )
-        config = InitConfig(providers=[default_provider], templates=templates)
-        result = scaffold(Path.cwd(), config)
-        typer.echo("Initialized .fdsx/ directory with example workflows.\n", err=True)
-        typer.echo("Created:", err=True)
-        for f in result.created:
-            typer.echo(f"  {f}", err=True)
-        typer.echo("", err=True)
-        typer.echo("Next steps:", err=True)
+    if ctx.invoked_subcommand != "init" and needs_init(Path.cwd()):
         typer.echo(
-            "  1. Edit .fdsx/config.yaml to configure profiles and provider settings",
+            "No .fdsx/ directory found. Run 'fdsx init' to set up your project.",
             err=True,
         )
-        typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
-        rerun_cmd = (
-            f"fdsx {ctx.invoked_subcommand}" if ctx.invoked_subcommand else "fdsx"
-        )
-        typer.echo(f"  3. Re-run your command: {rerun_cmd}", err=True)
         raise typer.Exit(code=0)
     elif (
         _interactive_mode
@@ -269,6 +260,61 @@ def _display_resume_on_error(
         display_resume_command(mode="tasks-dir", tasks_dir=tasks_dir)
     elif thread_id is not None:
         display_resume_command(mode="single-flow", thread_id=thread_id)
+
+
+@app.command()
+def init() -> None:
+    """Initialize a new fdsx project with interactive provider and template selection."""
+    if not sys.stdin.isatty():
+        typer.echo(
+            "Error: fdsx init requires an interactive terminal.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    try:
+        templates = discover_templates()
+        cwd = Path.cwd()
+
+        if not needs_init(cwd) and not confirm_existing_project():
+            raise typer.Exit(code=0)
+
+        providers = select_providers()
+        provider_selections = select_models(providers)
+        selected_templates = select_templates(templates)
+
+        allow_overwrite: set[str] = set()
+        if selected_templates:
+            conflicts = check_conflicts(cwd, selected_templates)
+            for conflict in conflicts:
+                if confirm_overwrite(conflict):
+                    allow_overwrite.add(conflict)
+
+        config = InitConfig(providers=provider_selections, templates=selected_templates)
+        result = scaffold(cwd, config, allow_overwrite)
+
+        typer.echo("Initialized .fdsx/ directory.\n", err=True)
+        typer.echo("Created:", err=True)
+        for f in result.created:
+            typer.echo(f"  {f}", err=True)
+        if result.skipped_config:
+            typer.echo("  .fdsx/config.yaml (preserved)", err=True)
+        if result.skipped_workflows:
+            typer.echo("\nSkipped (already exist):", err=True)
+            for w in result.skipped_workflows:
+                typer.echo(f"  .fdsx/workflows/{w}", err=True)
+        typer.echo("\nNext steps:", err=True)
+        typer.echo(
+            "  1. Edit .fdsx/config.yaml to configure profiles and provider settings",
+            err=True,
+        )
+        typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
+        typer.echo(
+            "  3. Run a workflow: fdsx run .fdsx/workflows/<name>/workflow.yaml",
+            err=True,
+        )
+    except KeyboardInterrupt:
+        raise typer.Exit(code=130) from None
 
 
 @app.command()

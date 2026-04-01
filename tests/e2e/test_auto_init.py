@@ -14,25 +14,12 @@ class TestAutoInit:
             assert result.stdout == ""
 
             fdsx_dir = tmp_path / ".fdsx"
-            assert fdsx_dir.is_dir()
+            assert not fdsx_dir.exists()
 
-            config_path = fdsx_dir / "config.yaml"
-            assert config_path.is_file()
-
-            workflows_dir = fdsx_dir / "workflows"
-            assert workflows_dir.is_dir()
-
-            workflow_dir = workflows_dir / "plan-implement-review"
-            assert workflow_dir.is_dir()
-            assert (workflow_dir / "workflow.yaml").is_file()
-            assert (workflow_dir / "plan-prompt.txt").is_file()
-            assert (workflow_dir / "implement-prompt.txt").is_file()
-
-            stderr = result.stderr
-            assert "Initialized .fdsx/" in stderr
-            assert "Created:" in stderr
-            assert "Next steps:" in stderr
-            assert "config.yaml" in stderr
+            assert "No .fdsx/ directory found" in result.stderr
+            assert "Run 'fdsx init'" in result.stderr
+            assert "Initialized .fdsx/" not in result.stderr
+            assert "Created:" not in result.stderr
 
     def test_noop_when_fdsx_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -55,6 +42,7 @@ class TestAutoInit:
             assert not (tmp_path / ".fdsx").exists()
 
             assert "Initialized .fdsx/" not in result.stderr
+            assert "No .fdsx/ directory found" in result.stderr
+            assert "Run 'fdsx init'" in result.stderr
 
-            assert result.returncode == 2
-            assert "Error: workflow argument is required" in result.stderr
+            assert result.returncode == 0
