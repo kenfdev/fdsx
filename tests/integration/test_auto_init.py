@@ -3,7 +3,14 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from fdsx.core.init import CONFIG_TEMPLATE, needs_init, scaffold
+from fdsx.core.init import (
+    check_conflicts,
+    discover_templates,
+    generate_config_yaml,
+    needs_init,
+    scaffold,
+)
+from fdsx.models.init import InitConfig, ProviderSelection
 
 
 class TestAutoInit:
@@ -21,32 +28,21 @@ class TestAutoInit:
         result = needs_init(tmp_path)
         assert result is False
 
-    def test_config_template_valid_yaml(self):
-        lines = CONFIG_TEMPLATE.splitlines()
-        uncommented = []
-        for line in lines:
-            if line.startswith("# "):
-                uncommented.append(line[2:])
-            elif line == "#":
-                uncommented.append("")
-            else:
-                uncommented.append(line)
-        uncommented_yaml = "\n".join(uncommented)
-        parsed = yaml.safe_load(uncommented_yaml)
+    def test_generate_config_yaml_valid(self):
+        providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
+        config_yaml = generate_config_yaml(providers)
+        parsed = yaml.safe_load(config_yaml)
         assert isinstance(parsed, dict)
-        expected_keys = {
-            "workflows_dir",
-            "auto_workflow",
-            "profiles",
-            "providers",
-            "task_splitter",
-            "workflow_selector",
-            "hooks",
-        }
-        assert expected_keys.issubset(parsed.keys())
+        assert "profiles" in parsed
+        assert "providers" in parsed
 
     def test_scaffold_creates_complete_structure(self, tmp_path):
-        scaffold(tmp_path)
+        templates = discover_templates()
+        config = InitConfig(
+            providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+            templates=templates,
+        )
+        scaffold(tmp_path, config)
         expected = [
             ".fdsx/config.yaml",
             ".fdsx/workflows/plan-implement-review/implement-prompt.txt",
@@ -57,8 +53,13 @@ class TestAutoInit:
             assert (tmp_path / path).exists(), f"Missing: {path}"
 
     def test_scaffold_returns_sorted_file_list(self, tmp_path):
-        result = scaffold(tmp_path)
-        assert result == sorted(result)
+        templates = discover_templates()
+        config = InitConfig(
+            providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+            templates=templates,
+        )
+        result = scaffold(tmp_path, config)
+        assert result.created == sorted(result.created)
         expected = [
             ".fdsx/config.yaml",
             ".fdsx/workflows/linear-basic/implement-prompt.txt",
@@ -71,14 +72,116 @@ class TestAutoInit:
             ".fdsx/workflows/plan-implement-review/plan-prompt.txt",
             ".fdsx/workflows/plan-implement-review/workflow.yaml",
         ]
-        assert result == expected
+        assert result.created == expected
 
     def test_scaffold_permission_error(self, tmp_path):
+        templates = discover_templates()
+        config = InitConfig(
+            providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+            templates=templates,
+        )
         with (
-            patch("os.makedirs", side_effect=PermissionError("mocked")),
-            patch("pathlib.Path.mkdir", side_effect=PermissionError("mocked")),
-            patch("builtins.open", side_effect=PermissionError("mocked")),
-            patch("importlib.resources.files"),
+            patch("os.rename", side_effect=PermissionError("mocked")),
+            patch("tempfile.mkdtemp", side_effect=PermissionError("mocked")),
             pytest.raises(PermissionError),
         ):
-            scaffold(tmp_path)
+            scaffold(tmp_path, config)
+
+    def test_fresh_scaffold_cleans_up_temp_dir_on_failure(self, tmp_path):
+        """If scaffold fails mid-creation, no partial temp dir remains."""
+        config = InitConfig(
+            providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+            templates=discover_templates(),
+        )
+        with (
+            patch(
+                "fdsx.core.init.Path.rename",
+                side_effect=OSError("mocked rename failure"),
+            ),
+            pytest.raises(OSError),
+        ):
+            scaffold(tmp_path, config)
+
+        # No .fdsx or .fdsx.tmp.* directories should remain
+        assert not (tmp_path / ".fdsx").exists()
+        leftover = [p for p in tmp_path.iterdir() if p.name.startswith(".fdsx.tmp.")]
+        assert leftover == []
+
+
+class TestCheckConflicts:
+    def test_no_conflicts_when_no_fdsx_dir(self, tmp_path):
+        templates = discover_templates()
+        conflicts = check_conflicts(tmp_path, templates)
+        assert conflicts == []
+
+    def test_no_conflicts_when_no_matching_workflows(self, tmp_path):
+        (tmp_path / ".fdsx" / "workflows").mkdir(parents=True)
+        templates = discover_templates()
+        conflicts = check_conflicts(tmp_path, templates)
+        assert conflicts == []
+
+    def test_detects_existing_workflow_conflict(self, tmp_path):
+        workflows_dir = tmp_path / ".fdsx" / "workflows" / "linear-basic"
+        workflows_dir.mkdir(parents=True)
+        templates = discover_templates()
+        conflicts = check_conflicts(tmp_path, templates)
+        assert "linear-basic" in conflicts
+
+
+class TestScaffoldExistingProtection:
+    def _make_config(self):
+        return InitConfig(
+            providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+            templates=discover_templates(),
+        )
+
+    def test_skips_config_yaml_when_present(self, tmp_path):
+        """scaffold() into existing .fdsx/ skips config.yaml if already present."""
+        fdsx_dir = tmp_path / ".fdsx"
+        fdsx_dir.mkdir()
+        config_path = fdsx_dir / "config.yaml"
+        config_path.write_text("original: true\n")
+
+        result = scaffold(tmp_path, self._make_config())
+
+        assert result.skipped_config is True
+        assert config_path.read_text() == "original: true\n"
+        assert ".fdsx/config.yaml" not in result.created
+
+    def test_creates_config_yaml_when_missing_in_existing(self, tmp_path):
+        """scaffold() into existing .fdsx/ creates config.yaml if not present."""
+        (tmp_path / ".fdsx").mkdir()
+
+        result = scaffold(tmp_path, self._make_config())
+
+        assert result.skipped_config is False
+        assert (tmp_path / ".fdsx" / "config.yaml").exists()
+        assert ".fdsx/config.yaml" in result.created
+
+    def test_skipped_workflows_lists_conflicts(self, tmp_path):
+        """scaffold() reports conflicting workflows in skipped_workflows."""
+        fdsx_dir = tmp_path / ".fdsx"
+        workflows_dir = fdsx_dir / "workflows" / "linear-basic"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "workflow.yaml").write_text("existing: true\n")
+
+        result = scaffold(tmp_path, self._make_config())
+
+        assert "linear-basic" in result.skipped_workflows
+        # Original file preserved
+        assert (workflows_dir / "workflow.yaml").read_text() == "existing: true\n"
+
+    def test_allow_overwrite_replaces_approved_workflow(self, tmp_path):
+        """scaffold() with allow_overwrite overwrites approved conflicting workflows."""
+        fdsx_dir = tmp_path / ".fdsx"
+        workflows_dir = fdsx_dir / "workflows" / "linear-basic"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "workflow.yaml").write_text("old: true\n")
+
+        result = scaffold(
+            tmp_path, self._make_config(), allow_overwrite={"linear-basic"}
+        )
+
+        assert "linear-basic" not in result.skipped_workflows
+        content = (workflows_dir / "workflow.yaml").read_text()
+        assert content != "old: true\n"  # overwritten with template content

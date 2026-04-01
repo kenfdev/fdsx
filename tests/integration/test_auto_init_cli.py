@@ -13,6 +13,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from fdsx.cli import main
+from fdsx.models.init import ScaffoldResult
 from fdsx.providers.base import ProviderResult
 
 
@@ -71,10 +72,14 @@ class TestInitGuard:
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml", ".fdsx/workflows/example/main.yaml"]
+        fake_result = ScaffoldResult(
+            created=[".fdsx/config.yaml", ".fdsx/workflows/example/main.yaml"],
+            skipped_config=False,
+            skipped_workflows=[],
+        )
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
+            patch("fdsx.cli.main.scaffold", return_value=fake_result),
             patch(
                 "fdsx.providers.claude._run_subprocess",
                 return_value=ProviderResult(exit_code=0, stdout="", stderr=""),
@@ -95,10 +100,14 @@ class TestInitGuard:
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml"]
+        fake_result = ScaffoldResult(
+            created=[".fdsx/config.yaml"],
+            skipped_config=False,
+            skipped_workflows=[],
+        )
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
+            patch("fdsx.cli.main.scaffold", return_value=fake_result),
         ):
             result = runner.invoke(
                 main.app,
@@ -116,10 +125,14 @@ class TestInitGuard:
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml"]
+        fake_result = ScaffoldResult(
+            created=[".fdsx/config.yaml"],
+            skipped_config=False,
+            skipped_workflows=[],
+        )
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
+            patch("fdsx.cli.main.scaffold", return_value=fake_result),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "list"], catch_exceptions=False
@@ -191,10 +204,14 @@ class TestInitGuard:
         monkeypatch.setattr("sys.stdin.isatty", lambda: False)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml"]
+        fake_result = ScaffoldResult(
+            created=[".fdsx/config.yaml"],
+            skipped_config=False,
+            skipped_workflows=[],
+        )
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
+            patch("fdsx.cli.main.scaffold", return_value=fake_result),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "run", "dummy.yaml"], catch_exceptions=False
@@ -215,9 +232,14 @@ class TestInitGuard:
             ".fdsx/workflows/example/main.yaml",
             ".fdsx/workflows/review/main.yaml",
         ]
+        fake_result = ScaffoldResult(
+            created=fake_created,
+            skipped_config=False,
+            skipped_workflows=[],
+        )
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
+            patch("fdsx.cli.main.scaffold", return_value=fake_result),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "run", "dummy.yaml"], catch_exceptions=False

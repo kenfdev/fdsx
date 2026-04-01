@@ -15,9 +15,15 @@ from fdsx.core.batch import (
 )
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
-from fdsx.core.init import ensure_gitignore, needs_init, scaffold
+from fdsx.core.init import (
+    discover_templates,
+    ensure_gitignore,
+    needs_init,
+    scaffold,
+)
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
+from fdsx.models.init import InitConfig, ProviderSelection
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
@@ -57,10 +63,15 @@ def main(
     else:
         _interactive_mode = sys.stdin.isatty()
     if _interactive_mode and needs_init(Path.cwd()):
-        created = scaffold(Path.cwd())
+        templates = discover_templates()
+        default_provider = ProviderSelection(
+            provider="claude", model="claude-sonnet-4-7"
+        )
+        config = InitConfig(providers=[default_provider], templates=templates)
+        result = scaffold(Path.cwd(), config)
         typer.echo("Initialized .fdsx/ directory with example workflows.\n", err=True)
         typer.echo("Created:", err=True)
-        for f in created:
+        for f in result.created:
             typer.echo(f"  {f}", err=True)
         typer.echo("", err=True)
         typer.echo("Next steps:", err=True)

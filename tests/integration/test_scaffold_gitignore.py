@@ -13,21 +13,36 @@ import pytest
 from typer.testing import CliRunner
 
 from fdsx.cli import main
-from fdsx.core.init import GITIGNORE_TEMPLATE, ensure_gitignore, scaffold
+from fdsx.core.init import (
+    GITIGNORE_TEMPLATE,
+    discover_templates,
+    ensure_gitignore,
+    scaffold,
+)
+from fdsx.models.init import InitConfig, ProviderSelection
+
+
+def _make_default_config() -> InitConfig:
+    return InitConfig(
+        providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+        templates=discover_templates(),
+    )
 
 
 class TestScaffoldCreatesGitignore:
     """Tests for .fdsx/.gitignore creation during scaffold()."""
 
     def test_scaffold_creates_gitignore(self, tmp_path: Path) -> None:
-        """scaffold(tmp_path) creates .fdsx/.gitignore file."""
-        scaffold(tmp_path)
+        """scaffold(tmp_path, config) creates .fdsx/.gitignore file."""
+        config = _make_default_config()
+        scaffold(tmp_path, config)
         gitignore_path = tmp_path / ".fdsx" / ".gitignore"
         assert gitignore_path.exists(), ".fdsx/.gitignore was not created by scaffold()"
 
     def test_gitignore_has_header_comment(self, tmp_path: Path) -> None:
         """The first line of .fdsx/.gitignore starts with #."""
-        scaffold(tmp_path)
+        config = _make_default_config()
+        scaffold(tmp_path, config)
         gitignore_path = tmp_path / ".fdsx" / ".gitignore"
         content = gitignore_path.read_text()
         first_line = content.splitlines()[0]
@@ -39,7 +54,8 @@ class TestScaffoldCreatesGitignore:
         self, tmp_path: Path
     ) -> None:
         """config.yaml and workflows/ are NOT in .gitignore patterns."""
-        scaffold(tmp_path)
+        config = _make_default_config()
+        scaffold(tmp_path, config)
         gitignore_path = tmp_path / ".fdsx" / ".gitignore"
         content = gitignore_path.read_text()
         assert "config.yaml" not in content, "config.yaml should not be in .gitignore"
@@ -64,7 +80,6 @@ class TestRetroactiveGitignore:
         assert gitignore_path.exists(), (
             ".fdsx/.gitignore should be created retroactively"
         )
-        # Verify silent creation — no gitignore-related message in stderr
         assert "gitignore" not in (result.stderr_bytes or b"").decode().lower()
 
     def test_retroactive_no_overwrite(

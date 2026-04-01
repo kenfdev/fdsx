@@ -37,3 +37,18 @@ class InitConfig(BaseModel):
     templates: list[TemplateInfo] = Field(
         default_factory=list, description="Available templates"
     )
+
+
+class ScaffoldResult(BaseModel):
+    """Result from scaffold() operation."""
+
+    created: list[str] = Field(
+        default_factory=list, description="Relative paths of created files"
+    )
+    skipped_config: bool = Field(
+        default=False, description="True if config.yaml was skipped (already existed)"
+    )
+    skipped_workflows: list[str] = Field(
+        default_factory=list,
+        description="Workflow names that were skipped (conflicted)",
+    )
