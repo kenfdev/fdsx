@@ -61,6 +61,12 @@ class TestAutoInit:
         assert result == sorted(result)
         expected = [
             ".fdsx/config.yaml",
+            ".fdsx/workflows/linear-basic/implement-prompt.txt",
+            ".fdsx/workflows/linear-basic/plan-prompt.txt",
+            ".fdsx/workflows/linear-basic/review-prompt.txt",
+            ".fdsx/workflows/linear-basic/workflow.yaml",
+            ".fdsx/workflows/parallel-basic/plan-prompt.txt",
+            ".fdsx/workflows/parallel-basic/workflow.yaml",
             ".fdsx/workflows/plan-implement-review/implement-prompt.txt",
             ".fdsx/workflows/plan-implement-review/plan-prompt.txt",
             ".fdsx/workflows/plan-implement-review/workflow.yaml",
