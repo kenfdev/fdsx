@@ -59,6 +59,22 @@ class TestInitHappyPath:
         assert "config.yaml" in result.output
         assert "Next steps" in result.output
 
+    def test_no_templates_selected(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with (
+            patch("fdsx.cli.main.sys") as mock_sys,
+            patch("fdsx.cli.main.discover_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.needs_init", return_value=True),
+            patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
+            patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
+            patch("fdsx.cli.main.select_templates", return_value=[]),
+            patch("fdsx.cli.main.scaffold", return_value=FAKE_RESULT) as mock_scaffold,
+        ):
+            mock_sys.stdin.isatty.return_value = True
+            result = runner.invoke(main.app, ["init"], catch_exceptions=False)
+        assert result.exit_code == 0
+        mock_scaffold.assert_called_once()
+
 
 class TestInitKeyboardInterrupt:
     def test_keyboard_interrupt_exits_130(self, tmp_path, monkeypatch):
@@ -126,3 +142,96 @@ class TestInitConflicts:
         assert result.exit_code == 0
         call_args = mock_scaffold.call_args
         assert "linear-basic" in call_args[0][2]  # allow_overwrite set
+
+    def test_conflicts_declined_skips_overwrite(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with (
+            patch("fdsx.cli.main.sys") as mock_sys,
+            patch("fdsx.cli.main.discover_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.needs_init", return_value=True),
+            patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
+            patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
+            patch("fdsx.cli.main.select_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.check_conflicts", return_value=["linear-basic"]),
+            patch("fdsx.cli.main.confirm_overwrite", return_value=False),
+            patch("fdsx.cli.main.scaffold", return_value=FAKE_RESULT) as mock_scaffold,
+        ):
+            mock_sys.stdin.isatty.return_value = True
+            result = runner.invoke(main.app, ["init"], catch_exceptions=False)
+        assert result.exit_code == 0
+        call_args = mock_scaffold.call_args
+        assert call_args[0][2] == set()  # allow_overwrite empty
+
+    def test_multiple_conflicts_mixed_decisions(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        extra_template = TemplateInfo(
+            name="parallel-basic", path=Path("/fake/parallel-basic"), source="builtin"
+        )
+        all_templates = [*FAKE_TEMPLATES, extra_template]
+        with (
+            patch("fdsx.cli.main.sys") as mock_sys,
+            patch("fdsx.cli.main.discover_templates", return_value=all_templates),
+            patch("fdsx.cli.main.needs_init", return_value=True),
+            patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
+            patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
+            patch("fdsx.cli.main.select_templates", return_value=all_templates),
+            patch(
+                "fdsx.cli.main.check_conflicts",
+                return_value=["linear-basic", "parallel-basic"],
+            ),
+            patch("fdsx.cli.main.confirm_overwrite", side_effect=[True, False]),
+            patch("fdsx.cli.main.scaffold", return_value=FAKE_RESULT) as mock_scaffold,
+        ):
+            mock_sys.stdin.isatty.return_value = True
+            result = runner.invoke(main.app, ["init"], catch_exceptions=False)
+        assert result.exit_code == 0
+        call_args = mock_scaffold.call_args
+        assert call_args[0][2] == {"linear-basic"}  # only first approved
+
+
+class TestInitOutputFormat:
+    def test_skipped_config_shown(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result_with_skip = ScaffoldResult(
+            created=[".fdsx/workflows/linear-basic/workflow.yaml"],
+            skipped_config=True,
+            skipped_workflows=[],
+        )
+        with (
+            patch("fdsx.cli.main.sys") as mock_sys,
+            patch("fdsx.cli.main.discover_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.needs_init", return_value=True),
+            patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
+            patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
+            patch("fdsx.cli.main.select_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.check_conflicts", return_value=[]),
+            patch("fdsx.cli.main.scaffold", return_value=result_with_skip),
+        ):
+            mock_sys.stdin.isatty.return_value = True
+            result = runner.invoke(main.app, ["init"], catch_exceptions=False)
+        assert result.exit_code == 0
+        assert "preserved" in result.output
+
+    def test_skipped_workflows_shown(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result_with_skipped = ScaffoldResult(
+            created=[".fdsx/config.yaml"],
+            skipped_config=False,
+            skipped_workflows=["linear-basic", "parallel-basic"],
+        )
+        with (
+            patch("fdsx.cli.main.sys") as mock_sys,
+            patch("fdsx.cli.main.discover_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.needs_init", return_value=True),
+            patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
+            patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
+            patch("fdsx.cli.main.select_templates", return_value=FAKE_TEMPLATES),
+            patch("fdsx.cli.main.check_conflicts", return_value=[]),
+            patch("fdsx.cli.main.scaffold", return_value=result_with_skipped),
+        ):
+            mock_sys.stdin.isatty.return_value = True
+            result = runner.invoke(main.app, ["init"], catch_exceptions=False)
+        assert result.exit_code == 0
+        assert "Skipped (already exist)" in result.output
+        assert "linear-basic" in result.output
+        assert "parallel-basic" in result.output
