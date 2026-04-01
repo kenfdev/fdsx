@@ -6,7 +6,11 @@ from fdsx.cli.main import app
 
 
 class TestCliVersion:
-    def test_version_flag_outputs_version_and_exits(self) -> None:
+    def test_version_flag_outputs_version_and_exits(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["--version"])
 

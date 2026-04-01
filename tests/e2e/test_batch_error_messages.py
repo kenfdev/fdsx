@@ -13,6 +13,7 @@ class TestErrorMessages:
 
     def test_invalid_yaml_task_file_via_cli(self, tmp_path):
         """Invalid YAML in task file should produce a clear error via CLI."""
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         (tasks_dir / "001-bad.yaml").write_text(": [broken yaml\n")

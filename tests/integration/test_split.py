@@ -131,6 +131,7 @@ class TestSplitCliIntegration:
         )
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         # Config has no task_splitter — should fall back to built-in TaskSplitterConfig()
         with (
@@ -155,6 +156,8 @@ class TestSplitCliIntegration:
         from typer.testing import CliRunner
 
         from fdsx.cli.main import app
+
+        (tmp_path / ".fdsx").mkdir()
 
         with patch(
             "fdsx.cli.main.load_config",
@@ -184,6 +187,7 @@ class TestSplitCliIntegration:
             return FdsxConfig(task_splitter=TaskSplitterConfig())
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
             runner = CliRunner()
@@ -254,6 +258,7 @@ class TestSplitCliIntegration:
         task_file.write_text("Task 1")
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with patch(
             "fdsx.cli.main.load_config",
@@ -328,6 +333,7 @@ class TestSplitCliIntegration:
             return FdsxConfig(task_splitter=TaskSplitterConfig())
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch("fdsx.cli.main.load_config", side_effect=mock_load_config),
@@ -366,6 +372,7 @@ class TestSplitCliIntegration:
             return FdsxConfig(task_splitter=TaskSplitterConfig())
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch("fdsx.cli.main.load_config", side_effect=mock_load_config),
@@ -414,6 +421,7 @@ class TestSplitCliIntegration:
         )
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch(
@@ -507,6 +515,7 @@ class TestSplitCliIntegration:
         )
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch(
@@ -543,6 +552,7 @@ class TestSplitCliIntegration:
         task_file.write_text("New feature")
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with patch(
             "fdsx.cli.main.load_config",
@@ -624,6 +634,7 @@ class TestSplitCliIntegration:
         )
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch(

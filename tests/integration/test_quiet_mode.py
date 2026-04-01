@@ -23,6 +23,7 @@ class TestQuietModeE2E:
             Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
         )
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
 
         result = runner.invoke(app, ["run", flow_path, "--quiet"])
@@ -41,6 +42,7 @@ class TestQuietModeE2E:
             Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
         )
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
 
         result = runner.invoke(app, ["run", flow_path, "--quiet"])
@@ -57,6 +59,7 @@ class TestQuietModeE2E:
             Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"
         )
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
 
         result = runner.invoke(app, ["run", flow_path])
@@ -74,6 +77,7 @@ class TestQuietModeE2E:
     def test_quiet_log_files_still_written(self, tmp_path, monkeypatch):
         """--quiet still writes per-state log files (FR-5.3)."""
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
 
         src_fixture = (
             Path(__file__).resolve().parent.parent / "fixtures" / "simple_flow.yaml"

@@ -13,7 +13,6 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from fdsx.cli import main
-from fdsx.providers.base import ProviderResult
 
 
 class TestCiInteractiveFlags:
@@ -67,18 +66,12 @@ class TestInitGuard:
     """T019-T022: Init guard tests for operational subcommands."""
 
     def test_init_triggers_on_run_without_fdsx(self, tmp_path, monkeypatch):
-        """Init triggers when running 'run' without .fdsx/ directory."""
+        """Guide message shown when running 'run' without .fdsx/ directory."""
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml", ".fdsx/workflows/example/main.yaml"]
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
-            patch(
-                "fdsx.providers.claude._run_subprocess",
-                return_value=ProviderResult(exit_code=0, stdout="", stderr=""),
-            ),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "run", "dummy.yaml"], catch_exceptions=False
@@ -87,18 +80,16 @@ class TestInitGuard:
         assert result.exit_code == 0, (
             f"Expected exit 0, got {result.exit_code}. output: {result.output}"
         )
-        assert "Initialized .fdsx/" in result.output
-        assert ".fdsx/config.yaml" in result.output
+        assert "No .fdsx/ directory found" in result.output
+        assert "Run 'fdsx init'" in result.output
 
     def test_init_triggers_on_validate_without_fdsx(self, tmp_path, monkeypatch):
-        """Init triggers when running 'validate' without .fdsx/ directory."""
+        """Guide message shown when running 'validate' without .fdsx/ directory."""
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml"]
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
         ):
             result = runner.invoke(
                 main.app,
@@ -109,17 +100,16 @@ class TestInitGuard:
         assert result.exit_code == 0, (
             f"Expected exit 0, got {result.exit_code}. output: {result.output}"
         )
-        assert "Initialized .fdsx/" in result.output
+        assert "No .fdsx/ directory found" in result.output
+        assert "Run 'fdsx init'" in result.output
 
     def test_init_triggers_on_list_without_fdsx(self, tmp_path, monkeypatch):
-        """Init triggers when running 'list' without .fdsx/ directory."""
+        """Guide message shown when running 'list' without .fdsx/ directory."""
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml"]
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "list"], catch_exceptions=False
@@ -128,8 +118,8 @@ class TestInitGuard:
         assert result.exit_code == 0, (
             f"Expected exit 0, got {result.exit_code}. output: {result.output}"
         )
-        assert "Initialized .fdsx/" in result.output
-        assert ".fdsx/config.yaml" in result.output
+        assert "No .fdsx/ directory found" in result.output
+        assert "Run 'fdsx init'" in result.output
 
     def test_init_skipped_when_fdsx_exists(self, tmp_path, monkeypatch):
         """Init is skipped when .fdsx/ directory already exists."""
@@ -185,16 +175,14 @@ class TestInitGuard:
 
         mock_scaffold.assert_not_called()
 
-    def test_interactive_flag_forces_init_in_non_tty(self, tmp_path, monkeypatch):
-        """--interactive forces init even in non-TTY environment."""
+    def test_interactive_flag_shows_guide_in_non_tty(self, tmp_path, monkeypatch):
+        """--interactive shows guide message even in non-TTY environment."""
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("sys.stdin.isatty", lambda: False)
         runner = CliRunner()
 
-        fake_created = [".fdsx/config.yaml"]
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "run", "dummy.yaml"], catch_exceptions=False
@@ -203,33 +191,21 @@ class TestInitGuard:
         assert result.exit_code == 0, (
             f"Expected exit 0, got {result.exit_code}. output: {result.output}"
         )
-        assert "Initialized .fdsx/" in result.output
+        assert "No .fdsx/ directory found" in result.output
+        assert "Run 'fdsx init'" in result.output
 
-    def test_stderr_output_format(self, tmp_path, monkeypatch):
-        """Init guard stderr output contains header, file list, and next steps sections."""
+    def test_guide_message_format(self, tmp_path, monkeypatch):
+        """Guide message is displayed correctly when .fdsx/ is missing."""
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        fake_created = [
-            ".fdsx/config.yaml",
-            ".fdsx/workflows/example/main.yaml",
-            ".fdsx/workflows/review/main.yaml",
-        ]
         with (
             patch("fdsx.cli.main.needs_init", return_value=True),
-            patch("fdsx.cli.main.scaffold", return_value=fake_created),
         ):
             result = runner.invoke(
                 main.app, ["--interactive", "run", "dummy.yaml"], catch_exceptions=False
             )
 
         assert result.exit_code == 0
-
-        assert "Initialized .fdsx/" in result.output
-        assert "Created:" in result.output
-        for f in fake_created:
-            assert f"  {f}" in result.output
-        assert "Next steps:" in result.output
-        assert "1. Edit .fdsx/config.yaml" in result.output
-        assert "2. Customize workflows in .fdsx/workflows/" in result.output
-        assert "3. Re-run your command: fdsx run" in result.output
+        assert "No .fdsx/ directory found" in result.output
+        assert "Run 'fdsx init' to set up your project" in result.output

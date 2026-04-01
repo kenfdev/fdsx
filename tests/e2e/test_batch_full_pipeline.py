@@ -365,8 +365,9 @@ class TestFullPipelineE2E:
 class TestHelpText:
     """Verify help text is descriptive (T41/T27)."""
 
-    def test_run_command_help_includes_batch_modes(self):
+    def test_run_command_help_includes_batch_modes(self, tmp_path):
         """Verify run command help mentions batch and tasks-dir modes."""
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["run", "--help"])
 
@@ -374,8 +375,9 @@ class TestHelpText:
         assert "in-memory batch" in result.stdout
         assert "persistent batch" in result.stdout
 
-    def test_tasks_option_help_is_descriptive(self):
+    def test_tasks_option_help_is_descriptive(self, tmp_path):
         """Verify --tasks option help is descriptive."""
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["run", "--help"])
 
@@ -383,8 +385,9 @@ class TestHelpText:
         assert "in-memory splitting and" in result.stdout
         assert "execution" in result.stdout
 
-    def test_tasks_dir_option_help_mentions_resume(self):
+    def test_tasks_dir_option_help_mentions_resume(self, tmp_path):
         """Verify --tasks-dir option help mentions resume capability."""
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["run", "--help"])
 
@@ -392,8 +395,9 @@ class TestHelpText:
         assert "persistent" in result.stdout
         assert "resume support" in result.stdout
 
-    def test_run_help_mentions_spinner_and_cui(self):
+    def test_run_help_mentions_spinner_and_cui(self, tmp_path):
         """Verify run command help mentions spinner, CUI, and non-TTY behavior (T027)."""
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["run", "--help"])
 
@@ -405,8 +409,9 @@ class TestHelpText:
             or "noninteractive" in result.stdout.lower()
         )
 
-    def test_run_help_mentions_auto_workflow_and_cui(self):
+    def test_run_help_mentions_auto_workflow_and_cui(self, tmp_path):
         """Verify --auto-workflow and --confirm-workflow mention CUI behavior (T027)."""
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["run", "--help"])
 
@@ -415,8 +420,9 @@ class TestHelpText:
         assert "skip" in help_lower and "confirmation" in help_lower
         assert "interactive" in help_lower or "workflow" in help_lower
 
-    def test_split_help_mentions_spinner(self):
+    def test_split_help_mentions_spinner(self, tmp_path):
         """Verify split command help mentions spinner and non-TTY fallback (T027)."""
+        (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
         result = runner.invoke(app, ["split", "--help"])
 
@@ -436,6 +442,7 @@ class TestSecuritySanitization:
         to the terminal.  A crafted .yaml filename with embedded escape bytes was the
         reported attack vector (security finding - unsanitized validation errors).
         """
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         # Create a YAML file with broken content so load_tasks_dir raises FlowValidationError

@@ -32,6 +32,7 @@ def run_fdsx(
         )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
+        Path(tmp_dir, ".fdsx").mkdir()
         return subprocess.run(
             command,
             cwd=tmp_dir,

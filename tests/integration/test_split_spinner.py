@@ -52,6 +52,7 @@ class TestSplitSpinner:
         )
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch(
@@ -82,6 +83,7 @@ class TestSplitSpinner:
         )
 
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir(exist_ok=True)
 
         with (
             patch(

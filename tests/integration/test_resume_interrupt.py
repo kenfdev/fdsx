@@ -12,6 +12,7 @@ class TestResumeCommandOnError:
     def test_runtime_error_displays_resume_command(self, tmp_path, monkeypatch):
         """RuntimeError from engine displays resume command with correct thread_id."""
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
 
         workflow_yaml = yaml.dump(
             {
@@ -45,6 +46,7 @@ class TestResumeCommandOnError:
     def test_exception_displays_resume_command(self, tmp_path, monkeypatch):
         """Generic Exception from engine displays resume command."""
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
 
         workflow_yaml = yaml.dump(
             {
@@ -81,6 +83,7 @@ class TestResumeCommandOnKeyboardInterrupt:
     def test_keyboard_interrupt_displays_resume_command(self, tmp_path, monkeypatch):
         """KeyboardInterrupt from engine displays resume command."""
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
 
         workflow_yaml = yaml.dump(
             {
@@ -240,6 +243,7 @@ class TestResumeCommandWithThreadId:
     def test_explicit_thread_id_in_resume_command(self, tmp_path, monkeypatch):
         """When --thread-id is provided, it appears in the resume command."""
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
 
         workflow_yaml = yaml.dump(
             {

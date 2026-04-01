@@ -585,6 +585,7 @@ class TestTasksDirCli:
         )
 
     def test_run_tasks_dir_mutual_exclusion(self, tmp_path):
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         (tasks_dir / "001-test.yaml").write_text("description: dummy\n")
@@ -605,6 +606,7 @@ class TestTasksDirCli:
         assert "mutually exclusive" in result.stderr.lower()
 
     def test_run_tasks_dir_without_workflow_requires_auto_workflow(self, tmp_path):
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         (tasks_dir / "001-test.yaml").write_text("description: dummy\n")
@@ -618,6 +620,7 @@ class TestTasksDirCli:
         assert "No workflows found" in result.stderr
 
     def test_run_tasks_dir_rejects_symlink_dir(self, tmp_path):
+        (tmp_path / ".fdsx").mkdir()
         real_dir = tmp_path / "real"
         real_dir.mkdir()
         save_task_file(
@@ -636,6 +639,7 @@ class TestTasksDirCli:
         assert "symlink" in result.stderr.lower()
 
     def test_auto_and_confirm_workflow_mutually_exclusive(self, tmp_path):
+        (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         (tasks_dir / "001-test.yaml").write_text("description: dummy\n")
