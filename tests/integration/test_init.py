@@ -214,6 +214,25 @@ class TestConfigTemplateScaffold:
         assert "Prefer fewer, larger tasks" in config_yaml
         assert "shared/ directory" in config_yaml
 
+    def test_scaffold_generates_config_with_extra_instructions_examples(
+        self, tmp_path: Path
+    ):
+        """scaffold() produces config.yaml on disk with extra_instructions examples."""
+        config = InitConfig(
+            providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+            templates=[],
+        )
+        scaffold(tmp_path, config)
+
+        config_path = tmp_path / ".fdsx" / "config.yaml"
+        assert config_path.is_file(), "scaffold() must create .fdsx/config.yaml"
+        content = config_path.read_text()
+
+        assert "extra_instructions" in content
+        assert "Split into smaller tasks" in content
+        assert "Prefer fewer, larger tasks" in content
+        assert "shared/ directory" in content
+
 
 # ---------------------------------------------------------------------------
 # TestSelectiveTemplateCopy
