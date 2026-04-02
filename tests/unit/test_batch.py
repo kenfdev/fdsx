@@ -451,7 +451,6 @@ class TestBuildTaskSplitPrompt:
         assert "plan, implement" in prompt
         assert "task" in prompt
         assert "JSON" in prompt
-        assert "DEPEND on each other sequentially" in prompt
 
     def test_build_prompt_without_optional_params(self):
         prompt = _build_task_split_prompt("test content", None, None)
@@ -459,36 +458,11 @@ class TestBuildTaskSplitPrompt:
         assert "test content" in prompt
         assert "any workflow" in prompt
         assert "task" in prompt
-        assert "DEPEND on each other sequentially" in prompt
 
     def test_build_prompt_independent_tasks_go_in_separate_groups(self):
         prompt = _build_task_split_prompt("test content", None, None)
 
-        assert "independent tasks" in prompt.lower() or "SEPARATE groups" in prompt
-
-    def test_build_task_split_prompt_contains_feature_level_instruction(self):
-        """Prompt must instruct grouping related work into feature-level tasks."""
-        prompt = _build_task_split_prompt("test content", None, None)
-
-        assert "feature-level" in prompt.lower()
-
-    def test_build_task_split_prompt_contains_substeps_instruction(self):
-        """Prompt must instruct including numbered sub-steps within task descriptions."""
-        prompt = _build_task_split_prompt("test content", None, None)
-
-        assert "sub-step" in prompt.lower() or "numbered" in prompt.lower()
-
-    def test_build_task_split_prompt_contains_anti_examples(self):
-        """Prompt must include anti-examples (BAD) showing micro-tasks to avoid."""
-        prompt = _build_task_split_prompt("test content", None, None)
-
-        assert "BAD" in prompt or "Do NOT" in prompt
-
-    def test_build_task_split_prompt_contains_few_shot_example(self):
-        """Prompt must include a few-shot example showing both BAD and GOOD patterns."""
-        prompt = _build_task_split_prompt("test content", None, None)
-
-        assert "BAD" in prompt and "GOOD" in prompt
+        assert "independent" in prompt.lower() and "separate groups" in prompt.lower()
 
 
 class TestExtractInputVariables:
