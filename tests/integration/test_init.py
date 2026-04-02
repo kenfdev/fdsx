@@ -192,6 +192,30 @@ class TestConfigYamlContent:
 
 
 # ---------------------------------------------------------------------------
+# TestConfigTemplateScaffold
+# ---------------------------------------------------------------------------
+
+
+class TestConfigTemplateScaffold:
+    """Verify generated config.yaml contains the task_splitter scaffold block."""
+
+    def test_generated_config_contains_task_splitter_block(self):
+        config_yaml = generate_config_yaml(
+            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
+        )
+        assert "# task_splitter:" in config_yaml
+
+    def test_generated_config_contains_extra_instructions_examples(self):
+        config_yaml = generate_config_yaml(
+            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
+        )
+        assert "extra_instructions" in config_yaml
+        assert "Split into smaller tasks" in config_yaml
+        assert "Prefer fewer, larger tasks" in config_yaml
+        assert "shared/ directory" in config_yaml
+
+
+# ---------------------------------------------------------------------------
 # TestSelectiveTemplateCopy
 # ---------------------------------------------------------------------------
 

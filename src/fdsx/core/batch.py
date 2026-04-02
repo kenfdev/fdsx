@@ -138,7 +138,7 @@ def _build_task_split_prompt(
         else ""
     )
 
-    prompt = f"""You are a task splitter. Given a batch of work, group related work into feature-level tasks and organize them into file groups.
+    prompt = f"""You are a dependency-aware task splitter. Given a batch of work, analyze dependencies and group related changes into feature-level tasks.
 
 The workflow has these states: {states_desc}
 The workflow accepts these input variables: {input_vars_desc}
@@ -146,16 +146,18 @@ The workflow accepts these input variables: {input_vars_desc}
 TASK CONTENT:
 {task_content}
 
-INSTRUCTIONS:
-1. Analyze the task content above
-2. Group related work into feature-level tasks — do NOT create tasks for single file operations, single commands, or trivially small changes
-3. Each task description should include numbered sub-steps (e.g., "Implement X\\n1. Do A\\n2. Do B\\n3. Do C")
-4. Group tasks that DEPEND on each other sequentially into the same group (they will be executed in order within one file)
-5. Place independent tasks (no dependencies between them) in SEPARATE groups (each becomes its own file)
-6. Within each group, order tasks by their sequential dependency (first task executed first)
-7. Output ONLY valid JSON in the format described below
+DEPENDENCY RULES:
+1. Same-file grouping: changes touching the same files → same group (e.g., model + tests for that model)
+2. Import/dependency grouping: changes sharing imports or dependencies → same group (e.g., shared types used by multiple features)
+3. Foundational-first: shared, foundational work ordered first within its group (e.g., define shared types before using them)
+4. Independent-separate: truly independent features → separate groups for parallel execution
 
-EXAMPLE:
+INSTRUCTIONS:
+- Create feature-level tasks with numbered sub-steps (e.g., "Implement user authentication\\n1. Add user model\\n2. Add login endpoint\\n3. Write tests")
+- Avoid micro-tasks (single file operations, one-off commands, trivially small changes)
+- Output ONLY valid JSON in the format described below
+
+EXAMPLES:
 BAD (micro-tasks — too granular):
 [
   [{{"description": "Create models/user.py"}}],
@@ -165,7 +167,13 @@ BAD (micro-tasks — too granular):
   [{{"description": "Write tests for User model"}}]
 ]
 
-GOOD (feature-level tasks with numbered sub-steps):
+BAD (incorrectly split dependent work — model and routes in separate groups when they share files):
+[
+  [{{"description": "Define User model with id, name, email fields"}}],
+  [{{"description": "Implement user routes\\n1. Add GET /users\\n2. Add POST /users"}}]
+]
+
+GOOD (feature-level with sub-steps):
 [
   [
     {{
@@ -175,6 +183,25 @@ GOOD (feature-level tasks with numbered sub-steps):
   [
     {{
       "description": "Implement user API endpoints\\n1. Create routes/user.py\\n2. Add GET /users endpoint\\n3. Add POST /users endpoint\\n4. Write tests for all endpoints"
+    }}
+  ]
+]
+
+GOOD (dependency-aware with foundational task first — shared types → then consumers):
+[
+  [
+    {{
+      "description": "Define shared types\\n1. Create shared/types.py\\n2. Define User, Product, Order types\\n3. Export from __init__.py"
+    }}
+  ],
+  [
+    {{
+      "description": "Implement user feature\\n1. Create models/user.py using shared types\\n2. Create routes/user.py\\n3. Write tests"
+    }}
+  ],
+  [
+    {{
+      "description": "Implement product feature\\n1. Create models/product.py using shared types\\n2. Create routes/product.py\\n3. Write tests"
     }}
   ]
 ]

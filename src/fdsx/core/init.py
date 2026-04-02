@@ -43,7 +43,12 @@ CONFIG_TEMPLATE = """\
 #   claude: null
 #   codex: null
 #   opencode: null
-# task_splitter: null  # Task splitting configuration
+# task_splitter:  # Task splitting configuration
+#   extra_instructions: null  # Additional instructions appended to the default splitting prompt
+#   # Examples:
+#   #   extra_instructions: "Split into smaller tasks suitable for incremental PRs of 1-3 files each"
+#   #   extra_instructions: "Prefer fewer, larger tasks — only split when features are completely unrelated"
+#   #   extra_instructions: "Changes to the shared/ directory must always be in their own task group"
 # workflow_selector:  # Workflow auto-selection settings
 #   provider: claude
 #   model: claude-sonnet-4-7
@@ -303,4 +308,5 @@ def generate_config_yaml(providers: list[ProviderSelection]) -> str:
     if provider_configs:
         config_dict["providers"] = provider_configs
 
-    return yaml.dump(config_dict, default_flow_style=False)
+    generated = yaml.dump(config_dict, default_flow_style=False)
+    return generated + "\n" + CONFIG_TEMPLATE
