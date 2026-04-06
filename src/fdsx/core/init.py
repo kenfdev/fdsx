@@ -21,22 +21,13 @@ CONFIG_TEMPLATE = """\
 # workflows_dir: .fdsx/workflows  # Directory containing workflow definitions
 # auto_workflow: false  # Automatically select workflow when only one exists
 # profiles:
-#   smarty:  # Profile for planning and analysis tasks (plan-implement-review)
+#   full-impl:  # Profile for full-implementation workflow (full-impl)
 #     provider: claude
 #     model: claude-sonnet-4-7
-#   specialist:  # Profile for review tasks (plan-implement-review)
+#   simple-impl:  # Profile for simple-implementation workflow (simple-impl)
 #     provider: claude
 #     model: claude-sonnet-4-7
-#   doer:  # Profile for quick execution tasks (plan-implement-review)
-#     provider: opencode
-#     model: opencode
-#   planner:  # Profile for planning tasks (linear-basic, parallel-basic)
-#     provider: claude
-#     model: claude-sonnet-4-7
-#   coder:  # Profile for implementation tasks (linear-basic, parallel-basic)
-#     provider: claude
-#     model: claude-sonnet-4-7
-#   reviewer:  # Profile for review tasks (linear-basic, parallel-basic)
+#   self-improve:  # Profile for self-improvement workflow (self-improve)
 #     provider: claude
 #     model: claude-sonnet-4-7
 # providers:  # Provider binary overrides (null uses defaults)

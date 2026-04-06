@@ -175,14 +175,12 @@ class TestSelectTemplates:
     @pytest.fixture
     def template_fixtures(self, tmp_path: Path) -> list[TemplateInfo]:
         return [
+            TemplateInfo(name="full-impl", path=tmp_path / "full", source="builtin"),
             TemplateInfo(
-                name="linear-basic", path=tmp_path / "linear", source="builtin"
+                name="simple-impl", path=tmp_path / "simple", source="builtin"
             ),
             TemplateInfo(
-                name="parallel-basic", path=tmp_path / "parallel", source="builtin"
-            ),
-            TemplateInfo(
-                name="plan-implement-review", path=tmp_path / "pir", source="builtin"
+                name="self-improve", path=tmp_path / "improve", source="builtin"
             ),
         ]
 

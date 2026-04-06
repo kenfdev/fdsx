@@ -26,7 +26,7 @@ from fdsx.models.init import InitConfig, ProviderSelection
 
 
 def _known_builtin_template_names() -> set[str]:
-    return {"linear-basic", "parallel-basic", "plan-implement-review"}
+    return {"full-impl", "simple-impl", "self-improve"}
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ class TestSelectiveTemplateCopy:
     def test_only_selected_templates_copied(self, tmp_path: Path):
         """Only the templates passed to InitConfig are created in .fdsx/workflows/."""
         all_templates = discover_templates()
-        selected = [t for t in all_templates if t.name == "linear-basic"]
+        selected = [t for t in all_templates if t.name == "full-impl"]
 
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
@@ -253,7 +253,7 @@ class TestSelectiveTemplateCopy:
 
         workflows_dir = tmp_path / ".fdsx" / "workflows"
         created_workflow_names = {d.name for d in workflows_dir.iterdir() if d.is_dir()}
-        assert created_workflow_names == {"linear-basic"}
+        assert created_workflow_names == {"full-impl"}
 
     def test_no_templates_creates_empty_workflows_dir(self, tmp_path: Path):
         """Empty templates list still creates workflows/ and config.yaml."""
@@ -271,8 +271,8 @@ class TestSelectiveTemplateCopy:
     def test_template_files_content_matches_source(self, tmp_path: Path):
         """Files copied from a selected template have identical content to source."""
         all_templates = discover_templates()
-        selected = [t for t in all_templates if t.name == "linear-basic"]
-        assert selected, "linear-basic must be available as a builtin template"
+        selected = [t for t in all_templates if t.name == "full-impl"]
+        assert selected, "full-impl must be available as a builtin template"
 
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
@@ -281,7 +281,7 @@ class TestSelectiveTemplateCopy:
         scaffold(tmp_path, config)
 
         source_dir = selected[0].path
-        dest_dir = tmp_path / ".fdsx" / "workflows" / "linear-basic"
+        dest_dir = tmp_path / ".fdsx" / "workflows" / "full-impl"
 
         for source_file in source_dir.iterdir():
             if source_file.name == "__init__.py" or not source_file.is_file():

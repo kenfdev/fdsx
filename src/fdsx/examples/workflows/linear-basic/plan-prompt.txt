@@ -1,5 +1,0 @@
-You are a planning agent. Break down the following task into clear,
-actionable implementation steps. Be specific about which files to
-create, what functions to implement, and what types to define.
-
-Task: {task}
