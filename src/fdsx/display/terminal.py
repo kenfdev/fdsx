@@ -493,10 +493,6 @@ def confirm_workflow_assignments_interactive(
     if not is_interactive():
         return dict(workflow_assignments)
 
-    unassigned = [k for k in display_keys if k not in workflow_assignments]
-    if len(display_keys) == 1 and not unassigned:
-        return dict(workflow_assignments)
-
     wf_display_map = {
         wf_path: display_name
         for wf_path, _, display_name in (available_workflows or [])
