@@ -12,6 +12,29 @@ MODEL_PRESETS: dict[str, list[str]] = {
     "gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
 }
 
+PROVIDER_DOCS: dict[str, str] = {
+    "claude": "https://docs.anthropic.com/en/docs/about-claude/models",
+    "codex": "https://platform.openai.com/docs/models",
+    "gemini": "https://ai.google.dev/gemini-api/docs/models",
+    "opencode": "https://opencode.ai/docs",
+}
+
+PROFILE_ROLES: dict[str, str] = {
+    "smarty": "Deep reasoning and analysis",
+    "doer": "Fast execution",
+    "specialist": "Domain-focused tasks",
+    "generalist": "Broad capability tasks",
+    "behemoth": "Heavy/large-scale tasks",
+}
+
+_PROFILE_ORDER: list[str] = [
+    "smarty",
+    "doer",
+    "specialist",
+    "generalist",
+    "behemoth",
+]
+
 _console = Console(stderr=True)
 
 
@@ -61,6 +84,10 @@ def select_providers() -> list[str]:
             _console.print("Enter numbers separated by commas (e.g. 1,3): ", end="")
             continue
         selected = [providers[idx - 1] for idx in indices]
+        for provider in selected:
+            docs_url = PROVIDER_DOCS.get(provider)
+            if docs_url:
+                _console.print(f"  {provider}: {docs_url}")
         return selected
 
 
@@ -121,6 +148,63 @@ def select_models(providers: list[str]) -> list[ProviderSelection]:
                 results.append(ProviderSelection(provider=provider, model=user_input))
                 break
     return results
+
+
+def assign_profiles(
+    selections: list[ProviderSelection],
+) -> dict[str, ProviderSelection]:
+    """Assign provider+model selections to named profiles.
+
+    If a single provider is selected, auto-fill all profiles with that selection
+    (no prompts). If multiple providers are selected, prompt for each profile.
+
+    Args:
+        selections: List of ProviderSelection from select_models().
+
+    Returns:
+        Dict mapping profile name -> ProviderSelection.
+    """
+    if len(selections) == 1:
+        single = selections[0]
+        return {profile: single for profile in _PROFILE_ORDER}
+
+    result: dict[str, ProviderSelection] = {}
+    for profile in _PROFILE_ORDER:
+        role_desc = PROFILE_ROLES.get(profile, "")
+        _console.print(f"\n[bold]{profile}[/bold]: {role_desc}")
+
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Provider")
+        table.add_column("Model")
+
+        for i, sel in enumerate(selections, start=1):
+            table.add_row(str(i), sel.provider, sel.model)
+
+        _console.print(table)
+        _console.print("Enter number: ", end="")
+
+        while True:
+            user_input = _input("").strip()
+            if not user_input:
+                _console.print("Please enter a selection.", style="red")
+                _console.print("Enter number: ", end="")
+                continue
+            try:
+                idx = int(user_input)
+                if 1 <= idx <= len(selections):
+                    result[profile] = selections[idx - 1]
+                    break
+                _console.print(
+                    f"Invalid number. Enter between 1 and {len(selections)}.",
+                    style="red",
+                )
+                _console.print("Enter number: ", end="")
+            except ValueError:
+                _console.print("Invalid input. Enter a number.", style="red")
+                _console.print("Enter number: ", end="")
+
+    return result
 
 
 def select_templates(available: list[TemplateInfo]) -> list[TemplateInfo]:
