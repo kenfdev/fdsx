@@ -15,14 +15,12 @@ from fdsx.models.init import (
 runner = CliRunner()
 
 FAKE_TEMPLATES = [
-    TemplateInfo(
-        name="linear-basic", path=Path("/fake/linear-basic"), source="builtin"
-    ),
+    TemplateInfo(name="full-impl", path=Path("/fake/full-impl"), source="builtin"),
 ]
 FAKE_PROVIDERS = ["claude"]
 FAKE_SELECTIONS = [ProviderSelection(provider="claude", model="sonnet")]
 FAKE_RESULT = ScaffoldResult(
-    created=[".fdsx/config.yaml", ".fdsx/workflows/linear-basic/workflow.yaml"],
+    created=[".fdsx/config.yaml", ".fdsx/workflows/full-impl/workflow.yaml"],
     skipped_config=False,
     skipped_workflows=[],
 )
@@ -133,7 +131,7 @@ class TestInitConflicts:
             patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
             patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
             patch("fdsx.cli.main.select_templates", return_value=FAKE_TEMPLATES),
-            patch("fdsx.cli.main.check_conflicts", return_value=["linear-basic"]),
+            patch("fdsx.cli.main.check_conflicts", return_value=["full-impl"]),
             patch("fdsx.cli.main.confirm_overwrite", return_value=True),
             patch("fdsx.cli.main.scaffold", return_value=FAKE_RESULT) as mock_scaffold,
         ):
@@ -141,7 +139,7 @@ class TestInitConflicts:
             result = runner.invoke(main.app, ["init"], catch_exceptions=False)
         assert result.exit_code == 0
         call_args = mock_scaffold.call_args
-        assert "linear-basic" in call_args[0][2]  # allow_overwrite set
+        assert "full-impl" in call_args[0][2]  # allow_overwrite set
 
     def test_conflicts_declined_skips_overwrite(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -152,7 +150,7 @@ class TestInitConflicts:
             patch("fdsx.cli.main.select_providers", return_value=FAKE_PROVIDERS),
             patch("fdsx.cli.main.select_models", return_value=FAKE_SELECTIONS),
             patch("fdsx.cli.main.select_templates", return_value=FAKE_TEMPLATES),
-            patch("fdsx.cli.main.check_conflicts", return_value=["linear-basic"]),
+            patch("fdsx.cli.main.check_conflicts", return_value=["full-impl"]),
             patch("fdsx.cli.main.confirm_overwrite", return_value=False),
             patch("fdsx.cli.main.scaffold", return_value=FAKE_RESULT) as mock_scaffold,
         ):
@@ -165,7 +163,7 @@ class TestInitConflicts:
     def test_multiple_conflicts_mixed_decisions(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         extra_template = TemplateInfo(
-            name="parallel-basic", path=Path("/fake/parallel-basic"), source="builtin"
+            name="simple-impl", path=Path("/fake/simple-impl"), source="builtin"
         )
         all_templates = [*FAKE_TEMPLATES, extra_template]
         with (
@@ -177,7 +175,7 @@ class TestInitConflicts:
             patch("fdsx.cli.main.select_templates", return_value=all_templates),
             patch(
                 "fdsx.cli.main.check_conflicts",
-                return_value=["linear-basic", "parallel-basic"],
+                return_value=["full-impl", "simple-impl"],
             ),
             patch("fdsx.cli.main.confirm_overwrite", side_effect=[True, False]),
             patch("fdsx.cli.main.scaffold", return_value=FAKE_RESULT) as mock_scaffold,
@@ -186,14 +184,14 @@ class TestInitConflicts:
             result = runner.invoke(main.app, ["init"], catch_exceptions=False)
         assert result.exit_code == 0
         call_args = mock_scaffold.call_args
-        assert call_args[0][2] == {"linear-basic"}  # only first approved
+        assert call_args[0][2] == {"full-impl"}  # only first approved
 
 
 class TestInitOutputFormat:
     def test_skipped_config_shown(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result_with_skip = ScaffoldResult(
-            created=[".fdsx/workflows/linear-basic/workflow.yaml"],
+            created=[".fdsx/workflows/full-impl/workflow.yaml"],
             skipped_config=True,
             skipped_workflows=[],
         )
@@ -217,7 +215,7 @@ class TestInitOutputFormat:
         result_with_skipped = ScaffoldResult(
             created=[".fdsx/config.yaml"],
             skipped_config=False,
-            skipped_workflows=["linear-basic", "parallel-basic"],
+            skipped_workflows=["full-impl", "simple-impl"],
         )
         with (
             patch("fdsx.cli.main.sys") as mock_sys,
@@ -233,5 +231,5 @@ class TestInitOutputFormat:
             result = runner.invoke(main.app, ["init"], catch_exceptions=False)
         assert result.exit_code == 0
         assert "Skipped (already exist)" in result.output
-        assert "linear-basic" in result.output
-        assert "parallel-basic" in result.output
+        assert "full-impl" in result.output
+        assert "simple-impl" in result.output

@@ -2,12 +2,14 @@ import importlib.resources
 import os
 import shutil
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from fdsx.models.init import InitConfig, ProviderSelection, ScaffoldResult, TemplateInfo
+
+SKILL_PACKAGE = "fdsx.data.skills.fdsx"
 
 GITIGNORE_TEMPLATE = """\
 # fdsx runtime directories
@@ -18,41 +20,39 @@ locks/
 """
 
 CONFIG_TEMPLATE = """\
-# workflows_dir: .fdsx/workflows  # Directory containing workflow definitions
-# auto_workflow: false  # Automatically select workflow when only one exists
+# --- Commented Reference ---
 # profiles:
-#   smarty:  # Profile for planning and analysis tasks (plan-implement-review)
+#   # Deep reasoning and analysis
+#   smarty:
 #     provider: claude
-#     model: claude-sonnet-4-7
-#   specialist:  # Profile for review tasks (plan-implement-review)
+#     model: claude-opus-4-6
+#   # Fast execution
+#   doer:
 #     provider: claude
-#     model: claude-sonnet-4-7
-#   doer:  # Profile for quick execution tasks (plan-implement-review)
-#     provider: opencode
-#     model: opencode
-#   planner:  # Profile for planning tasks (linear-basic, parallel-basic)
+#     model: claude-sonnet-4-6
+#   # Domain-focused tasks
+#   specialist:
 #     provider: claude
-#     model: claude-sonnet-4-7
-#   coder:  # Profile for implementation tasks (linear-basic, parallel-basic)
+#     model: claude-sonnet-4-6
+#   # Broad capability tasks
+#   generalist:
 #     provider: claude
-#     model: claude-sonnet-4-7
-#   reviewer:  # Profile for review tasks (linear-basic, parallel-basic)
+#     model: claude-sonnet-4-6
+#   # Heavy/large-scale tasks
+#   behemoth:
 #     provider: claude
-#     model: claude-sonnet-4-7
-# providers:  # Provider binary overrides (null uses defaults)
-#   claude: null
-#   codex: null
-#   opencode: null
-# task_splitter:  # Task splitting configuration
-#   extra_instructions: null  # Additional instructions appended to the default splitting prompt
-#   # Examples:
-#   #   extra_instructions: "Split into smaller tasks suitable for incremental PRs of 1-3 files each"
-#   #   extra_instructions: "Prefer fewer, larger tasks — only split when features are completely unrelated"
-#   #   extra_instructions: "Changes to the shared/ directory must always be in their own task group"
-# workflow_selector:  # Workflow auto-selection settings
-#   provider: claude
-#   model: claude-sonnet-4-7
-# hooks: null  # Lifecycle hooks configuration
+#     model: claude-opus-4-6
+# task_splitter:
+#   profile: generalist
+# workflow_selector:
+#   profile: generalist
+#
+# extra_instructions:
+#   task_splitter:
+#     - "Split into smaller tasks when complexity is high"
+#     - "Prefer fewer, larger tasks for simple changes"
+#   workflow_selector:
+#     - "Place shared utilities in the shared/ directory"
 """
 
 
@@ -120,7 +120,7 @@ def _scaffold_fresh(
         tmp_workflows_dir = tmp_dir / "workflows"
         tmp_workflows_dir.mkdir(parents=True)
 
-        config_yaml = generate_config_yaml(config.providers)
+        config_yaml = generate_config_yaml(config.profile_assignments, config.providers)
         config_path = tmp_dir / "config.yaml"
         config_path.write_text(config_yaml)
 
@@ -172,7 +172,7 @@ def _scaffold_existing(
     if config_path.exists():
         skipped_config = True
     else:
-        config_yaml = generate_config_yaml(config.providers)
+        config_yaml = generate_config_yaml(config.profile_assignments, config.providers)
         config_path.write_text(config_yaml)
         created.append(str(config_path.relative_to(cwd)))
 
@@ -273,6 +273,73 @@ def discover_templates() -> list[TemplateInfo]:
     return templates
 
 
+@contextmanager
+def get_bundled_skill_path() -> Iterator[Path]:
+    """Yield path to bundled skill files using importlib.resources.
+
+    This is a context manager that yields a real filesystem path.
+    For directory resources, as_file() cannot be used directly, so we
+    resolve each child individually when needed.
+
+    Raises:
+        FileNotFoundError: If the bundled skill path does not exist.
+
+    Yields:
+        Path to the bundled skill directory.
+    """
+    pkg = importlib.resources.files(SKILL_PACKAGE)
+    # as_file() only works on single-file resources, not directories.
+    # Resolve the directory path via a known sentinel file.
+    sentinel = pkg.joinpath("SKILL.md")
+    with importlib.resources.as_file(sentinel) as sentinel_path:
+        path = sentinel_path.parent
+        if not path.exists():
+            raise FileNotFoundError(f"Bundled skill path not found: {path}")
+        yield path
+
+
+def install_skill(target_dir: Path, overwrite: bool = False) -> list[str]:
+    """Copy bundled skill files to target_dir/fdsx/.
+
+    Args:
+        target_dir: Parent directory for skill installation (skill goes into target_dir/fdsx/).
+        overwrite: If True, remove existing target_dir/fdsx/ before copying.
+
+    Returns:
+        List of relative paths of created files.
+
+    Raises:
+        FileExistsError: If target_dir/fdsx/ exists and overwrite is False.
+        ValueError: If the resolved destination is outside target_dir.
+    """
+    target_dir = Path(target_dir).resolve()
+    skill_dest = target_dir / "fdsx"
+    resolved_dest = skill_dest.resolve()
+
+    if not resolved_dest.is_relative_to(target_dir):
+        raise ValueError(
+            f"Destination path {resolved_dest} is outside the target directory {target_dir}"
+        )
+
+    if skill_dest.exists():
+        if not overwrite:
+            raise FileExistsError(f"Skill already exists at {skill_dest}")
+        shutil.rmtree(skill_dest)
+
+    skill_dest.mkdir(parents=True, exist_ok=True)
+
+    created: list[str] = []
+    with get_bundled_skill_path() as skill_src_path:
+        for item in skill_src_path.rglob("*.md"):
+            rel_path = item.relative_to(skill_src_path)
+            dest_file = skill_dest / rel_path
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, dest_file)
+            created.append(str(dest_file.relative_to(target_dir)))
+
+    return created
+
+
 _MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
     "claude": {"dangerously_skip_permissions": True},
     "codex": {"dangerously_bypass_approvals_and_sandbox": True},
@@ -280,33 +347,64 @@ _MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
     "opencode": {"permission": "auto-edit"},
 }
 
+_PROFILE_ROLE_COMMENTS: dict[str, str] = {
+    "smarty": "# Deep reasoning and analysis",
+    "doer": "# Fast execution",
+    "specialist": "# Domain-focused tasks",
+    "generalist": "# Broad capability tasks",
+    "behemoth": "# Heavy/large-scale tasks",
+}
 
-def generate_config_yaml(providers: list[ProviderSelection]) -> str:
+_PROFILE_ORDER = ["smarty", "doer", "specialist", "generalist", "behemoth"]
+
+
+def generate_config_yaml(
+    profile_assignments: dict[str, ProviderSelection],
+    providers: list[ProviderSelection],
+) -> str:
     """Generate a config.yaml string with profiles and max-permission provider options.
 
     Args:
+        profile_assignments: Mapping of profile names to provider selections.
         providers: List of provider selections (provider + model).
 
     Returns:
         YAML string suitable for writing to .fdsx/config.yaml.
     """
-    profiles: dict[str, dict[str, str]] = {}
-    provider_configs: dict[str, dict[str, Any]] = {}
+    lines: list[str] = []
 
+    lines.append("profiles:")
+    for profile_name in _PROFILE_ORDER:
+        if profile_name in profile_assignments:
+            selection = profile_assignments[profile_name]
+            comment = _PROFILE_ROLE_COMMENTS.get(profile_name, "")
+            if comment:
+                lines.append(f"  {comment}")
+            lines.append(f"  {profile_name}:")
+            lines.append(f"    provider: {selection.provider}")
+            lines.append(f"    model: {selection.model}")
+
+    provider_configs: dict[str, dict[str, Any]] = {}
     for selection in providers:
-        profile_name = f"default-{selection.provider}"
-        profiles[profile_name] = {
-            "provider": selection.provider,
-            "model": selection.model,
-        }
         if selection.provider in _MAX_PERMISSION_OPTIONS:
             provider_configs[selection.provider] = _MAX_PERMISSION_OPTIONS[
                 selection.provider
             ]
 
-    config_dict: dict[str, Any] = {"profiles": profiles}
     if provider_configs:
-        config_dict["providers"] = provider_configs
+        lines.append("providers:")
+        for provider_name, provider_config in provider_configs.items():
+            lines.append(f"  {provider_name}:")
+            for key, value in provider_config.items():
+                lines.append(f"    {key}: {value}")
 
-    generated = yaml.dump(config_dict, default_flow_style=False)
-    return generated + "\n" + CONFIG_TEMPLATE
+    lines.append("task_splitter:")
+    lines.append("  profile: generalist")
+
+    lines.append("workflow_selector:")
+    lines.append("  profile: generalist")
+
+    lines.append("")
+    lines.append(CONFIG_TEMPLATE)
+
+    return "\n".join(lines)

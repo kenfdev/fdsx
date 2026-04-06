@@ -1,5 +1,0 @@
-You are an implementation agent. Follow this plan exactly and write the code.
-Output ALL files with their full paths and content.
-
-Plan:
-{plan}

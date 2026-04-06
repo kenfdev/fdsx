@@ -2,13 +2,17 @@ import json
 import sys
 from pathlib import Path
 
+import click
 import typer
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.cli.init_interactive import (
+    assign_profiles,
     confirm_existing_project,
     confirm_overwrite,
+    confirm_skill_overwrite,
+    prompt_skill_install,
     select_models,
     select_providers,
     select_templates,
@@ -26,6 +30,7 @@ from fdsx.core.init import (
     check_conflicts,
     discover_templates,
     ensure_gitignore,
+    install_skill,
     needs_init,
     scaffold,
 )
@@ -263,7 +268,13 @@ def _display_resume_on_error(
 
 
 @app.command()
-def init() -> None:
+def init(
+    skill: bool = typer.Option(
+        False,
+        "--skill",
+        help="Install the /fdsx Claude Code skill only (skip .fdsx/ scaffold).",
+    ),
+) -> None:
     """Initialize a new fdsx project with interactive provider and template selection."""
     if not sys.stdin.isatty():
         typer.echo(
@@ -273,6 +284,10 @@ def init() -> None:
         raise typer.Exit(code=2)
 
     try:
+        if skill:
+            _run_skill_only_install()
+            raise typer.Exit(code=0)
+
         templates = discover_templates()
         cwd = Path.cwd()
 
@@ -281,6 +296,7 @@ def init() -> None:
 
         providers = select_providers()
         provider_selections = select_models(providers)
+        profile_assignments = assign_profiles(provider_selections)
         selected_templates = select_templates(templates)
 
         allow_overwrite: set[str] = set()
@@ -289,8 +305,13 @@ def init() -> None:
             for conflict in conflicts:
                 if confirm_overwrite(conflict):
                     allow_overwrite.add(conflict)
+        _prompt_and_install_skill(cwd)
 
-        config = InitConfig(providers=provider_selections, templates=selected_templates)
+        config = InitConfig(
+            providers=provider_selections,
+            templates=selected_templates,
+            profile_assignments=profile_assignments,
+        )
         result = scaffold(cwd, config, allow_overwrite)
 
         typer.echo("Initialized .fdsx/ directory.\n", err=True)
@@ -303,9 +324,10 @@ def init() -> None:
             typer.echo("\nSkipped (already exist):", err=True)
             for w in result.skipped_workflows:
                 typer.echo(f"  .fdsx/workflows/{w}", err=True)
+
         typer.echo("\nNext steps:", err=True)
         typer.echo(
-            "  1. Edit .fdsx/config.yaml to configure profiles and provider settings",
+            "  1. Customize model assignments per profile in .fdsx/config.yaml (smarty, doer, specialist, generalist, behemoth)",
             err=True,
         )
         typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)
@@ -315,6 +337,62 @@ def init() -> None:
         )
     except KeyboardInterrupt:
         raise typer.Exit(code=130) from None
+
+
+def _run_skill_only_install() -> None:
+    """Handle --skill flag: install skill only, no scaffold."""
+    target_path = prompt_skill_install()
+    if target_path is None:
+        typer.echo("Skill installation skipped.", err=True)
+        return
+
+    skill_dir = target_path / "fdsx"
+    overwrite = False
+    if skill_dir.exists():
+        overwrite = confirm_skill_overwrite(target_path)
+        if not overwrite:
+            typer.echo("Skill installation skipped.", err=True)
+            return
+
+    created = install_skill(target_path, overwrite=overwrite)
+    typer.echo("Skill installed successfully!\n", err=True)
+    typer.echo("Installed:", err=True)
+    for f in created:
+        typer.echo(f"  {f}", err=True)
+
+
+def _prompt_and_install_skill(cwd: Path) -> None:
+    """Prompt for skill install after scaffold completes. Handles decline gracefully."""
+    if not _interactive_mode:
+        return
+
+    try:
+        target_path = prompt_skill_install()
+    except (EOFError, RuntimeError, click.exceptions.Abort):
+        return
+    if target_path is None:
+        return
+
+    skill_dir = target_path / "fdsx"
+    overwrite = False
+    if skill_dir.exists():
+        try:
+            overwrite = confirm_skill_overwrite(target_path)
+        except (EOFError, RuntimeError, click.exceptions.Abort):
+            return
+        if not overwrite:
+            return
+
+    try:
+        created = install_skill(target_path, overwrite=overwrite)
+        typer.echo("\nSkill installed:", err=True)
+        for f in created:
+            typer.echo(f"  {f}", err=True)
+    except FileExistsError:
+        typer.echo(
+            "\nSkill already exists. Use --skill flag to reinstall.",
+            err=True,
+        )
 
 
 @app.command()

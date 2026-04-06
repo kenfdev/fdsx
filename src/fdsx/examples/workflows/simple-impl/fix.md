@@ -24,11 +24,10 @@ You are a fixer. Your sole job is to apply the fixes described in the fix plan.
 
 ## Development Environment
 
-**Python commands — always use `uv run`:**
-- Tests: `uv run pytest tests/ -v`
-- Type check: `uv run mypy src/`
-- Lint: `uv run ruff check src/ tests/`
-- Never use bare `python`, `python3`, or `.venv/bin/python`
+Read AGENTS.md / CLAUDE.md for project conventions, including:
+- How to run tests
+- How to run the build / type check
+- Package manager and task runner commands
 
 ---
 

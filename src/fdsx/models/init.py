@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from fdsx.models.validators import validate_llm_provider
 
+PROFILE_NAMES = frozenset({"smarty", "doer", "specialist", "generalist", "behemoth"})
+
 
 class TemplateInfo(BaseModel):
     """Template information for init discovery."""
@@ -37,6 +39,27 @@ class InitConfig(BaseModel):
     templates: list[TemplateInfo] = Field(
         default_factory=list, description="Available templates"
     )
+    profile_assignments: dict[str, ProviderSelection] = Field(
+        ...,
+        description="Mapping of profile names to provider selections",
+    )
+
+    @model_validator(mode="after")
+    def validate_profile_assignments(self) -> "InitConfig":
+        assignment_keys = frozenset(self.profile_assignments.keys())
+        if assignment_keys == PROFILE_NAMES:
+            return self
+        missing = PROFILE_NAMES - assignment_keys
+        extra = assignment_keys - PROFILE_NAMES
+        parts = []
+        if missing:
+            parts.append(f"missing: {missing}")
+        if extra:
+            parts.append(f"invalid: {extra}")
+        raise ValueError(
+            f"profile_assignments must contain exactly {PROFILE_NAMES}. "
+            + ", ".join(parts)
+        )
 
 
 class ScaffoldResult(BaseModel):

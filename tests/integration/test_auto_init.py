@@ -13,6 +13,13 @@ from fdsx.core.init import (
 from fdsx.models.init import InitConfig, ProviderSelection
 
 
+def _make_profile_assignments():
+    return {
+        name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+        for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+    }
+
+
 class TestAutoInit:
     def test_needs_init_true_when_missing(self, tmp_path):
         result = needs_init(tmp_path)
@@ -29,8 +36,9 @@ class TestAutoInit:
         assert result is False
 
     def test_generate_config_yaml_valid(self):
+        profile_assignments = _make_profile_assignments()
         providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
         assert isinstance(parsed, dict)
         assert "profiles" in parsed
@@ -41,13 +49,12 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_make_profile_assignments(),
         )
         scaffold(tmp_path, config)
         expected = [
             ".fdsx/config.yaml",
-            ".fdsx/workflows/plan-implement-review/implement-prompt.txt",
-            ".fdsx/workflows/plan-implement-review/plan-prompt.txt",
-            ".fdsx/workflows/plan-implement-review/workflow.yaml",
+            ".fdsx/workflows/full-impl/workflow.yaml",
         ]
         for path in expected:
             assert (tmp_path / path).exists(), f"Missing: {path}"
@@ -57,20 +64,33 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_make_profile_assignments(),
         )
         result = scaffold(tmp_path, config)
         assert result.created == sorted(result.created)
         expected = [
             ".fdsx/config.yaml",
-            ".fdsx/workflows/linear-basic/implement-prompt.txt",
-            ".fdsx/workflows/linear-basic/plan-prompt.txt",
-            ".fdsx/workflows/linear-basic/review-prompt.txt",
-            ".fdsx/workflows/linear-basic/workflow.yaml",
-            ".fdsx/workflows/parallel-basic/plan-prompt.txt",
-            ".fdsx/workflows/parallel-basic/workflow.yaml",
-            ".fdsx/workflows/plan-implement-review/implement-prompt.txt",
-            ".fdsx/workflows/plan-implement-review/plan-prompt.txt",
-            ".fdsx/workflows/plan-implement-review/workflow.yaml",
+            ".fdsx/workflows/full-impl/finalize.md",
+            ".fdsx/workflows/full-impl/fix.md",
+            ".fdsx/workflows/full-impl/implement.md",
+            ".fdsx/workflows/full-impl/plan.md",
+            ".fdsx/workflows/full-impl/replan.md",
+            ".fdsx/workflows/full-impl/review-code-quality.md",
+            ".fdsx/workflows/full-impl/review-security.md",
+            ".fdsx/workflows/full-impl/workflow.yaml",
+            ".fdsx/workflows/self-improve/README.md",
+            ".fdsx/workflows/self-improve/analyze.md",
+            ".fdsx/workflows/self-improve/collect_data.sh",
+            ".fdsx/workflows/self-improve/research.md",
+            ".fdsx/workflows/self-improve/workflow.yaml",
+            ".fdsx/workflows/self-improve/write_lessons.md",
+            ".fdsx/workflows/simple-impl/finalize.md",
+            ".fdsx/workflows/simple-impl/fix.md",
+            ".fdsx/workflows/simple-impl/implement.md",
+            ".fdsx/workflows/simple-impl/plan.md",
+            ".fdsx/workflows/simple-impl/replan.md",
+            ".fdsx/workflows/simple-impl/review-general.md",
+            ".fdsx/workflows/simple-impl/workflow.yaml",
         ]
         assert result.created == expected
 
@@ -79,6 +99,7 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_make_profile_assignments(),
         )
         with (
             patch("os.rename", side_effect=PermissionError("mocked")),
@@ -92,6 +113,7 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=discover_templates(),
+            profile_assignments=_make_profile_assignments(),
         )
         with (
             patch(
@@ -121,11 +143,11 @@ class TestCheckConflicts:
         assert conflicts == []
 
     def test_detects_existing_workflow_conflict(self, tmp_path):
-        workflows_dir = tmp_path / ".fdsx" / "workflows" / "linear-basic"
+        workflows_dir = tmp_path / ".fdsx" / "workflows" / "full-impl"
         workflows_dir.mkdir(parents=True)
         templates = discover_templates()
         conflicts = check_conflicts(tmp_path, templates)
-        assert "linear-basic" in conflicts
+        assert "full-impl" in conflicts
 
 
 class TestScaffoldExistingProtection:
@@ -133,6 +155,7 @@ class TestScaffoldExistingProtection:
         return InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=discover_templates(),
+            profile_assignments=_make_profile_assignments(),
         )
 
     def test_skips_config_yaml_when_present(self, tmp_path):
@@ -161,27 +184,25 @@ class TestScaffoldExistingProtection:
     def test_skipped_workflows_lists_conflicts(self, tmp_path):
         """scaffold() reports conflicting workflows in skipped_workflows."""
         fdsx_dir = tmp_path / ".fdsx"
-        workflows_dir = fdsx_dir / "workflows" / "linear-basic"
+        workflows_dir = fdsx_dir / "workflows" / "full-impl"
         workflows_dir.mkdir(parents=True)
         (workflows_dir / "workflow.yaml").write_text("existing: true\n")
 
         result = scaffold(tmp_path, self._make_config())
 
-        assert "linear-basic" in result.skipped_workflows
+        assert "full-impl" in result.skipped_workflows
         # Original file preserved
         assert (workflows_dir / "workflow.yaml").read_text() == "existing: true\n"
 
     def test_allow_overwrite_replaces_approved_workflow(self, tmp_path):
         """scaffold() with allow_overwrite overwrites approved conflicting workflows."""
         fdsx_dir = tmp_path / ".fdsx"
-        workflows_dir = fdsx_dir / "workflows" / "linear-basic"
+        workflows_dir = fdsx_dir / "workflows" / "full-impl"
         workflows_dir.mkdir(parents=True)
         (workflows_dir / "workflow.yaml").write_text("old: true\n")
 
-        result = scaffold(
-            tmp_path, self._make_config(), allow_overwrite={"linear-basic"}
-        )
+        result = scaffold(tmp_path, self._make_config(), allow_overwrite={"full-impl"})
 
-        assert "linear-basic" not in result.skipped_workflows
+        assert "full-impl" not in result.skipped_workflows
         content = (workflows_dir / "workflow.yaml").read_text()
         assert content != "old: true\n"  # overwritten with template content

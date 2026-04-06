@@ -26,7 +26,7 @@ from fdsx.models.init import InitConfig, ProviderSelection
 
 
 def _known_builtin_template_names() -> set[str]:
-    return {"linear-basic", "parallel-basic", "plan-implement-review"}
+    return {"full-impl", "simple-impl", "self-improve"}
 
 
 # ---------------------------------------------------------------------------
@@ -128,43 +128,59 @@ class TestDiscoverTemplates:
 
 
 class TestConfigYamlContent:
+    def _make_profile_assignments(self):
+        return {
+            name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+            for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+        }
+
     def test_single_provider_profiles_and_options(self):
-        """claude-only config: correct profile name, model, and dangerously_skip_permissions."""
+        """claude-only config: all 5 profiles use claude provider and model."""
+        profile_assignments = self._make_profile_assignments()
         providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
 
-        assert parsed["profiles"] == {
-            "default-claude": {
-                "provider": "claude",
-                "model": "claude-sonnet-4-7",
-            }
-        }
+        for profile_name in ["smarty", "doer", "specialist", "generalist", "behemoth"]:
+            assert profile_name in parsed["profiles"]
+            assert parsed["profiles"][profile_name]["provider"] == "claude"
+            assert parsed["profiles"][profile_name]["model"] == "claude-sonnet-4-7"
         assert parsed["providers"]["claude"]["dangerously_skip_permissions"] is True
 
     def test_multiple_providers_all_profiles(self):
-        """claude + codex: both profiles present and both providers sections."""
+        """claude + codex: both providers sections present."""
+        profile_assignments = {
+            "smarty": ProviderSelection(provider="claude", model="claude-sonnet-4-7"),
+            "doer": ProviderSelection(provider="codex", model="codex-model"),
+            "specialist": ProviderSelection(provider="claude", model="claude-opus-4"),
+            "generalist": ProviderSelection(
+                provider="claude", model="claude-sonnet-4-7"
+            ),
+            "behemoth": ProviderSelection(provider="claude", model="claude-sonnet-4-7"),
+        }
         providers = [
             ProviderSelection(provider="claude", model="claude-sonnet-4-7"),
             ProviderSelection(provider="codex", model="codex-model"),
         ]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
 
-        assert "default-claude" in parsed["profiles"]
-        assert "default-codex" in parsed["profiles"]
         assert "claude" in parsed["providers"]
         assert "codex" in parsed["providers"]
 
     def test_all_providers_max_permissions(self):
         """All four providers get their respective max-permission keys."""
+        profile_assignments = {
+            name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+            for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+        }
         providers = [
             ProviderSelection(provider="claude", model="claude-sonnet-4-7"),
             ProviderSelection(provider="codex", model="codex-model"),
             ProviderSelection(provider="gemini", model="gemini-model"),
             ProviderSelection(provider="opencode", model="opencode-model"),
         ]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
 
         assert parsed["providers"]["claude"]["dangerously_skip_permissions"] is True
@@ -177,16 +193,18 @@ class TestConfigYamlContent:
 
     def test_generated_yaml_is_parseable(self):
         """Round-trip: generate -> yaml.safe_load returns a valid dict."""
+        profile_assignments = self._make_profile_assignments()
         providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
         assert isinstance(parsed, dict)
         assert "profiles" in parsed
 
     def test_no_extra_providers_in_output(self):
         """Only selected providers appear in the providers section."""
+        profile_assignments = self._make_profile_assignments()
         providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
         assert set(parsed["providers"].keys()) == {"claude"}
 
@@ -199,15 +217,24 @@ class TestConfigYamlContent:
 class TestConfigTemplateScaffold:
     """Verify generated config.yaml contains the task_splitter scaffold block."""
 
+    def _make_profile_assignments(self):
+        return {
+            name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+            for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+        }
+
     def test_generated_config_contains_task_splitter_block(self):
         config_yaml = generate_config_yaml(
-            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
+            self._make_profile_assignments(),
+            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
         )
-        assert "# task_splitter:" in config_yaml
+        assert "task_splitter:" in config_yaml
+        assert "  profile: generalist" in config_yaml
 
     def test_generated_config_contains_extra_instructions_examples(self):
         config_yaml = generate_config_yaml(
-            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
+            self._make_profile_assignments(),
+            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
         )
         assert "extra_instructions" in config_yaml
         assert "Split into smaller tasks" in config_yaml
@@ -221,6 +248,7 @@ class TestConfigTemplateScaffold:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=[],
+            profile_assignments=self._make_profile_assignments(),
         )
         scaffold(tmp_path, config)
 
@@ -240,26 +268,34 @@ class TestConfigTemplateScaffold:
 
 
 class TestSelectiveTemplateCopy:
+    def _make_profile_assignments(self):
+        return {
+            name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+            for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+        }
+
     def test_only_selected_templates_copied(self, tmp_path: Path):
         """Only the templates passed to InitConfig are created in .fdsx/workflows/."""
         all_templates = discover_templates()
-        selected = [t for t in all_templates if t.name == "linear-basic"]
+        selected = [t for t in all_templates if t.name == "full-impl"]
 
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=selected,
+            profile_assignments=self._make_profile_assignments(),
         )
         scaffold(tmp_path, config)
 
         workflows_dir = tmp_path / ".fdsx" / "workflows"
         created_workflow_names = {d.name for d in workflows_dir.iterdir() if d.is_dir()}
-        assert created_workflow_names == {"linear-basic"}
+        assert created_workflow_names == {"full-impl"}
 
     def test_no_templates_creates_empty_workflows_dir(self, tmp_path: Path):
         """Empty templates list still creates workflows/ and config.yaml."""
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=[],
+            profile_assignments=self._make_profile_assignments(),
         )
         result = scaffold(tmp_path, config)
 
@@ -271,17 +307,18 @@ class TestSelectiveTemplateCopy:
     def test_template_files_content_matches_source(self, tmp_path: Path):
         """Files copied from a selected template have identical content to source."""
         all_templates = discover_templates()
-        selected = [t for t in all_templates if t.name == "linear-basic"]
-        assert selected, "linear-basic must be available as a builtin template"
+        selected = [t for t in all_templates if t.name == "full-impl"]
+        assert selected, "full-impl must be available as a builtin template"
 
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=selected,
+            profile_assignments=self._make_profile_assignments(),
         )
         scaffold(tmp_path, config)
 
         source_dir = selected[0].path
-        dest_dir = tmp_path / ".fdsx" / "workflows" / "linear-basic"
+        dest_dir = tmp_path / ".fdsx" / "workflows" / "full-impl"
 
         for source_file in source_dir.iterdir():
             if source_file.name == "__init__.py" or not source_file.is_file():
@@ -298,12 +335,19 @@ class TestSelectiveTemplateCopy:
 
 
 class TestAtomicGeneration:
+    def _make_profile_assignments(self):
+        return {
+            name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+            for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+        }
+
     def test_no_partial_fdsx_on_write_failure(self, tmp_path: Path):
         """If Path.write_text fails mid-template-copy, no .fdsx/ dir remains."""
         all_templates = discover_templates()
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=all_templates,
+            profile_assignments=self._make_profile_assignments(),
         )
 
         original_write = Path.write_text
@@ -325,6 +369,7 @@ class TestAtomicGeneration:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=discover_templates(),
+            profile_assignments=self._make_profile_assignments(),
         )
         scaffold(tmp_path, config)
 
@@ -338,6 +383,7 @@ class TestAtomicGeneration:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=[],
+            profile_assignments=self._make_profile_assignments(),
         )
 
         with patch(
