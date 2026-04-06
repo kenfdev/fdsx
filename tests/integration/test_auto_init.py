@@ -13,6 +13,13 @@ from fdsx.core.init import (
 from fdsx.models.init import InitConfig, ProviderSelection
 
 
+def _make_profile_assignments():
+    return {
+        name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+        for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+    }
+
+
 class TestAutoInit:
     def test_needs_init_true_when_missing(self, tmp_path):
         result = needs_init(tmp_path)
@@ -29,8 +36,9 @@ class TestAutoInit:
         assert result is False
 
     def test_generate_config_yaml_valid(self):
+        profile_assignments = _make_profile_assignments()
         providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
-        config_yaml = generate_config_yaml(providers)
+        config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
         assert isinstance(parsed, dict)
         assert "profiles" in parsed
@@ -41,6 +49,7 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_make_profile_assignments(),
         )
         scaffold(tmp_path, config)
         expected = [
@@ -55,6 +64,7 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_make_profile_assignments(),
         )
         result = scaffold(tmp_path, config)
         assert result.created == sorted(result.created)
@@ -89,6 +99,7 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_make_profile_assignments(),
         )
         with (
             patch("os.rename", side_effect=PermissionError("mocked")),
@@ -102,6 +113,7 @@ class TestAutoInit:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=discover_templates(),
+            profile_assignments=_make_profile_assignments(),
         )
         with (
             patch(
@@ -143,6 +155,7 @@ class TestScaffoldExistingProtection:
         return InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=discover_templates(),
+            profile_assignments=_make_profile_assignments(),
         )
 
     def test_skips_config_yaml_when_present(self, tmp_path):

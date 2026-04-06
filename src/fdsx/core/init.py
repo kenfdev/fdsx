@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from fdsx.models.init import InitConfig, ProviderSelection, ScaffoldResult, TemplateInfo
 
 GITIGNORE_TEMPLATE = """\
@@ -20,16 +18,6 @@ locks/
 CONFIG_TEMPLATE = """\
 # workflows_dir: .fdsx/workflows  # Directory containing workflow definitions
 # auto_workflow: false  # Automatically select workflow when only one exists
-# profiles:
-#   full-impl:  # Profile for full-implementation workflow (full-impl)
-#     provider: claude
-#     model: claude-sonnet-4-7
-#   simple-impl:  # Profile for simple-implementation workflow (simple-impl)
-#     provider: claude
-#     model: claude-sonnet-4-7
-#   self-improve:  # Profile for self-improvement workflow (self-improve)
-#     provider: claude
-#     model: claude-sonnet-4-7
 # providers:  # Provider binary overrides (null uses defaults)
 #   claude: null
 #   codex: null
@@ -111,7 +99,7 @@ def _scaffold_fresh(
         tmp_workflows_dir = tmp_dir / "workflows"
         tmp_workflows_dir.mkdir(parents=True)
 
-        config_yaml = generate_config_yaml(config.providers)
+        config_yaml = generate_config_yaml(config.profile_assignments, config.providers)
         config_path = tmp_dir / "config.yaml"
         config_path.write_text(config_yaml)
 
@@ -163,7 +151,7 @@ def _scaffold_existing(
     if config_path.exists():
         skipped_config = True
     else:
-        config_yaml = generate_config_yaml(config.providers)
+        config_yaml = generate_config_yaml(config.profile_assignments, config.providers)
         config_path.write_text(config_yaml)
         created.append(str(config_path.relative_to(cwd)))
 
@@ -271,33 +259,64 @@ _MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
     "opencode": {"permission": "auto-edit"},
 }
 
+_PROFILE_ROLE_COMMENTS: dict[str, str] = {
+    "smarty": "# Deep reasoning and analysis",
+    "doer": "# Fast execution",
+    "specialist": "# Domain-focused tasks",
+    "generalist": "# Broad capability tasks",
+    "behemoth": "# Heavy/large-scale tasks",
+}
 
-def generate_config_yaml(providers: list[ProviderSelection]) -> str:
+_PROFILE_ORDER = ["smarty", "doer", "specialist", "generalist", "behemoth"]
+
+
+def generate_config_yaml(
+    profile_assignments: dict[str, ProviderSelection],
+    providers: list[ProviderSelection],
+) -> str:
     """Generate a config.yaml string with profiles and max-permission provider options.
 
     Args:
+        profile_assignments: Mapping of profile names to provider selections.
         providers: List of provider selections (provider + model).
 
     Returns:
         YAML string suitable for writing to .fdsx/config.yaml.
     """
-    profiles: dict[str, dict[str, str]] = {}
-    provider_configs: dict[str, dict[str, Any]] = {}
+    lines: list[str] = []
 
+    lines.append("profiles:")
+    for profile_name in _PROFILE_ORDER:
+        if profile_name in profile_assignments:
+            selection = profile_assignments[profile_name]
+            comment = _PROFILE_ROLE_COMMENTS.get(profile_name, "")
+            if comment:
+                lines.append(f"  {comment}")
+            lines.append(f"  {profile_name}:")
+            lines.append(f"    provider: {selection.provider}")
+            lines.append(f"    model: {selection.model}")
+
+    provider_configs: dict[str, dict[str, Any]] = {}
     for selection in providers:
-        profile_name = f"default-{selection.provider}"
-        profiles[profile_name] = {
-            "provider": selection.provider,
-            "model": selection.model,
-        }
         if selection.provider in _MAX_PERMISSION_OPTIONS:
             provider_configs[selection.provider] = _MAX_PERMISSION_OPTIONS[
                 selection.provider
             ]
 
-    config_dict: dict[str, Any] = {"profiles": profiles}
     if provider_configs:
-        config_dict["providers"] = provider_configs
+        lines.append("providers:")
+        for provider_name, provider_config in provider_configs.items():
+            lines.append(f"  {provider_name}:")
+            for key, value in provider_config.items():
+                lines.append(f"    {key}: {value}")
 
-    generated = yaml.dump(config_dict, default_flow_style=False)
-    return generated + "\n" + CONFIG_TEMPLATE
+    lines.append("task_splitter:")
+    lines.append("  profile: generalist")
+
+    lines.append("workflow_selector:")
+    lines.append("  profile: generalist")
+
+    lines.append("")
+    lines.append(CONFIG_TEMPLATE)
+
+    return "\n".join(lines)

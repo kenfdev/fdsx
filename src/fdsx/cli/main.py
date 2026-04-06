@@ -31,7 +31,7 @@ from fdsx.core.init import (
 )
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
-from fdsx.models.init import InitConfig
+from fdsx.models.init import PROFILE_NAMES, InitConfig
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
@@ -290,7 +290,12 @@ def init() -> None:
                 if confirm_overwrite(conflict):
                     allow_overwrite.add(conflict)
 
-        config = InitConfig(providers=provider_selections, templates=selected_templates)
+        default_assignments = {name: provider_selections[0] for name in PROFILE_NAMES}
+        config = InitConfig(
+            providers=provider_selections,
+            templates=selected_templates,
+            profile_assignments=default_assignments,
+        )
         result = scaffold(cwd, config, allow_overwrite)
 
         typer.echo("Initialized .fdsx/ directory.\n", err=True)
