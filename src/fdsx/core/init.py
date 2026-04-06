@@ -277,8 +277,9 @@ def discover_templates() -> list[TemplateInfo]:
 def get_bundled_skill_path() -> Iterator[Path]:
     """Yield path to bundled skill files using importlib.resources.
 
-    This is a context manager that yields a real filesystem path since
-    resources may be in a zip archive. Must be used with 'with'.
+    This is a context manager that yields a real filesystem path.
+    For directory resources, as_file() cannot be used directly, so we
+    resolve each child individually when needed.
 
     Raises:
         FileNotFoundError: If the bundled skill path does not exist.
@@ -287,10 +288,14 @@ def get_bundled_skill_path() -> Iterator[Path]:
         Path to the bundled skill directory.
     """
     pkg = importlib.resources.files(SKILL_PACKAGE)
-    with importlib.resources.as_file(pkg) as path:
+    # as_file() only works on single-file resources, not directories.
+    # Resolve the directory path via a known sentinel file.
+    sentinel = pkg.joinpath("SKILL.md")
+    with importlib.resources.as_file(sentinel) as sentinel_path:
+        path = sentinel_path.parent
         if not path.exists():
             raise FileNotFoundError(f"Bundled skill path not found: {path}")
-        yield Path(path)
+        yield path
 
 
 def install_skill(target_dir: Path, overwrite: bool = False) -> list[str]:
