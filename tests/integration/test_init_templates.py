@@ -10,6 +10,11 @@ from fdsx.models.init import InitConfig, ProviderSelection
 
 _KNOWN_TEMPLATE_NAMES = {"full-impl", "simple-impl", "self-improve"}
 
+_DEFAULT_PROFILE_ASSIGNMENTS = {
+    name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+    for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+}
+
 
 class TestDiscoverBuiltinTemplates:
     def test_returns_exactly_three_builtin_templates(self):
@@ -87,6 +92,7 @@ class TestScaffoldWithNewTemplates:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=full_impl,
+            profile_assignments=_DEFAULT_PROFILE_ASSIGNMENTS,
         )
         result = scaffold(tmp_path, config)
 
@@ -107,6 +113,7 @@ class TestScaffoldWithNewTemplates:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=simple_impl,
+            profile_assignments=_DEFAULT_PROFILE_ASSIGNMENTS,
         )
         result = scaffold(tmp_path, config)
 
@@ -127,6 +134,7 @@ class TestScaffoldWithNewTemplates:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=self_improve,
+            profile_assignments=_DEFAULT_PROFILE_ASSIGNMENTS,
         )
         result = scaffold(tmp_path, config)
 
@@ -146,6 +154,7 @@ class TestScaffoldWithNewTemplates:
         config = InitConfig(
             providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
             templates=templates,
+            profile_assignments=_DEFAULT_PROFILE_ASSIGNMENTS,
         )
         result = scaffold(tmp_path, config)
 

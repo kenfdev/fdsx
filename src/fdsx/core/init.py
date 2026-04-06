@@ -20,22 +20,39 @@ locks/
 """
 
 CONFIG_TEMPLATE = """\
-# workflows_dir: .fdsx/workflows  # Directory containing workflow definitions
-# auto_workflow: false  # Automatically select workflow when only one exists
-# providers:  # Provider binary overrides (null uses defaults)
-#   claude: null
-#   codex: null
-#   opencode: null
-# task_splitter:  # Task splitting configuration
-#   extra_instructions: null  # Additional instructions appended to the default splitting prompt
-#   # Examples:
-#   #   extra_instructions: "Split into smaller tasks suitable for incremental PRs of 1-3 files each"
-#   #   extra_instructions: "Prefer fewer, larger tasks — only split when features are completely unrelated"
-#   #   extra_instructions: "Changes to the shared/ directory must always be in their own task group"
-# workflow_selector:  # Workflow auto-selection settings
-#   provider: claude
-#   model: claude-sonnet-4-7
-# hooks: null  # Lifecycle hooks configuration
+# --- Commented Reference ---
+# profiles:
+#   # Deep reasoning and analysis
+#   smarty:
+#     provider: claude
+#     model: claude-opus-4-6
+#   # Fast execution
+#   doer:
+#     provider: claude
+#     model: claude-sonnet-4-6
+#   # Domain-focused tasks
+#   specialist:
+#     provider: claude
+#     model: claude-sonnet-4-6
+#   # Broad capability tasks
+#   generalist:
+#     provider: claude
+#     model: claude-sonnet-4-6
+#   # Heavy/large-scale tasks
+#   behemoth:
+#     provider: claude
+#     model: claude-opus-4-6
+# task_splitter:
+#   profile: generalist
+# workflow_selector:
+#   profile: generalist
+#
+# extra_instructions:
+#   task_splitter:
+#     - "Split into smaller tasks when complexity is high"
+#     - "Prefer fewer, larger tasks for simple changes"
+#   workflow_selector:
+#     - "Place shared utilities in the shared/ directory"
 """
 
 

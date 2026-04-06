@@ -339,23 +339,29 @@ class TestConfirmWorkflowAssignmentsInteractive:
         assert result is not None
         assert result[(0, 0)] == wf3
 
-    def test_single_task_auto_confirm_no_input_called(self):
-        """A single assigned task auto-confirms without calling input (T028 edge case)."""
+    def test_single_task_assigned_shows_cui_and_confirms(self):
+        """A single assigned task still shows the confirmation CUI and can confirm."""
         task_files = self._make_task_files("Fix the bug")
         wf = Path("review.yaml")
         assignments = {(0, 0): wf}
         display_keys = [(0, 0)]
         workflows = self._make_workflows("review.yaml")
+        stream = StringIO()
 
         with (
             patch("fdsx.display.terminal.is_interactive", return_value=True),
-            patch("builtins.input") as mock_input,
+            patch("builtins.input", return_value="c") as mock_input,
         ):
             result = confirm_workflow_assignments_interactive(
-                display_keys, assignments, task_files, workflows
+                display_keys,
+                assignments,
+                task_files,
+                workflows,
+                stream=stream,
             )
 
-        mock_input.assert_not_called()
+        mock_input.assert_called_once()
+        assert "WORKFLOW ASSIGNMENTS" in stream.getvalue()
         assert result is not None
         assert result == assignments
 

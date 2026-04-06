@@ -8,6 +8,7 @@ import typer
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.cli.init_interactive import (
+    assign_profiles,
     confirm_existing_project,
     confirm_overwrite,
     confirm_skill_overwrite,
@@ -35,7 +36,7 @@ from fdsx.core.init import (
 )
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
-from fdsx.models.init import PROFILE_NAMES, InitConfig
+from fdsx.models.init import InitConfig
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
@@ -295,6 +296,7 @@ def init(
 
         providers = select_providers()
         provider_selections = select_models(providers)
+        profile_assignments = assign_profiles(provider_selections)
         selected_templates = select_templates(templates)
 
         allow_overwrite: set[str] = set()
@@ -303,12 +305,12 @@ def init(
             for conflict in conflicts:
                 if confirm_overwrite(conflict):
                     allow_overwrite.add(conflict)
+        _prompt_and_install_skill(cwd)
 
-        default_assignments = {name: provider_selections[0] for name in PROFILE_NAMES}
         config = InitConfig(
             providers=provider_selections,
             templates=selected_templates,
-            profile_assignments=default_assignments,
+            profile_assignments=profile_assignments,
         )
         result = scaffold(cwd, config, allow_overwrite)
 
@@ -323,11 +325,9 @@ def init(
             for w in result.skipped_workflows:
                 typer.echo(f"  .fdsx/workflows/{w}", err=True)
 
-        _prompt_and_install_skill(cwd)
-
         typer.echo("\nNext steps:", err=True)
         typer.echo(
-            "  1. Edit .fdsx/config.yaml to configure profiles and provider settings",
+            "  1. Customize model assignments per profile in .fdsx/config.yaml (smarty, doer, specialist, generalist, behemoth)",
             err=True,
         )
         typer.echo("  2. Customize workflows in .fdsx/workflows/", err=True)

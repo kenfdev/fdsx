@@ -23,9 +23,14 @@ from fdsx.models.init import InitConfig, ProviderSelection
 
 
 def _make_default_config() -> InitConfig:
+    profile_assignments = {
+        name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
+        for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
+    }
     return InitConfig(
         providers=[ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
         templates=discover_templates(),
+        profile_assignments=profile_assignments,
     )
 
 
