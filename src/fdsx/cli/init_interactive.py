@@ -1,5 +1,7 @@
 """Interactive UI functions for fdsx init using Rich/Typer patterns."""
 
+from pathlib import Path
+
 from rich.console import Console
 from rich.table import Table
 
@@ -289,3 +291,51 @@ def confirm_overwrite(workflow_name: str) -> bool:
             return False
         _console.print("Please enter 'y' or 'n'.", style="red")
         _console.print(f"Overwrite '{workflow_name}'? (y/n): ", end="")
+
+
+def prompt_skill_install() -> Path | None:
+    """Ask user whether to install skill; if yes, ask for location.
+
+    Returns:
+        Chosen target Path for skill installation, or None if declined.
+    """
+    _console.print("Install the /fdsx Claude Code skill? (Y/n): ", end="")
+    while True:
+        user_input = _input("").strip().lower()
+        if user_input in ("n", "no"):
+            return None
+        if user_input in ("y", "yes", ""):
+            break
+        _console.print("Please enter Y or n: ", end="")
+
+    _console.print("\nSelect skill installation location:")
+    _console.print("  1. ~/.agents/skills (default)")
+    _console.print("  2. .agents/skills (project-local)")
+    _console.print("  3. Custom path")
+    _console.print("Enter number (or press Enter for default): ", end="")
+
+    while True:
+        user_input = _input("").strip()
+        if not user_input or user_input == "1":
+            return Path("~/.agents/skills").expanduser()
+        if user_input == "2":
+            return Path(".agents/skills")
+        if user_input == "3":
+            _console.print("Enter custom path: ", end="")
+            custom = _input("").strip()
+            if custom:
+                return Path(custom)
+        _console.print("Invalid selection. Enter 1, 2, or 3: ", end="")
+
+
+def confirm_skill_overwrite(path: Path) -> bool:
+    """Ask user to confirm overwriting existing skill files."""
+    _console.print(f"Skill already exists at {path}/fdsx/. Overwrite? (y/n): ", end="")
+    while True:
+        user_input = _input("").strip().lower()
+        if user_input in ("y", "yes"):
+            return True
+        if user_input in ("n", "no"):
+            return False
+        _console.print("Please enter 'y' or 'n'.", style="red")
+        _console.print(f"Overwrite {path}/fdsx/? (y/n): ", end="")

@@ -2,10 +2,14 @@ import importlib.resources
 import os
 import shutil
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from fdsx.models.init import InitConfig, ProviderSelection, ScaffoldResult, TemplateInfo
+
+SKILL_PACKAGE = "fdsx.data.skills.fdsx"
 
 GITIGNORE_TEMPLATE = """\
 # fdsx runtime directories
@@ -250,6 +254,68 @@ def discover_templates() -> list[TemplateInfo]:
                 )
 
     return templates
+
+
+@contextmanager
+def get_bundled_skill_path() -> Iterator[Path]:
+    """Yield path to bundled skill files using importlib.resources.
+
+    This is a context manager that yields a real filesystem path since
+    resources may be in a zip archive. Must be used with 'with'.
+
+    Raises:
+        FileNotFoundError: If the bundled skill path does not exist.
+
+    Yields:
+        Path to the bundled skill directory.
+    """
+    pkg = importlib.resources.files(SKILL_PACKAGE)
+    with importlib.resources.as_file(pkg) as path:
+        if not path.exists():
+            raise FileNotFoundError(f"Bundled skill path not found: {path}")
+        yield Path(path)
+
+
+def install_skill(target_dir: Path, overwrite: bool = False) -> list[str]:
+    """Copy bundled skill files to target_dir/fdsx/.
+
+    Args:
+        target_dir: Parent directory for skill installation (skill goes into target_dir/fdsx/).
+        overwrite: If True, remove existing target_dir/fdsx/ before copying.
+
+    Returns:
+        List of relative paths of created files.
+
+    Raises:
+        FileExistsError: If target_dir/fdsx/ exists and overwrite is False.
+        ValueError: If the resolved destination is outside target_dir.
+    """
+    target_dir = Path(target_dir).resolve()
+    skill_dest = target_dir / "fdsx"
+    resolved_dest = skill_dest.resolve()
+
+    if not resolved_dest.is_relative_to(target_dir):
+        raise ValueError(
+            f"Destination path {resolved_dest} is outside the target directory {target_dir}"
+        )
+
+    if skill_dest.exists():
+        if not overwrite:
+            raise FileExistsError(f"Skill already exists at {skill_dest}")
+        shutil.rmtree(skill_dest)
+
+    skill_dest.mkdir(parents=True, exist_ok=True)
+
+    created: list[str] = []
+    with get_bundled_skill_path() as skill_src_path:
+        for item in skill_src_path.rglob("*.md"):
+            rel_path = item.relative_to(skill_src_path)
+            dest_file = skill_dest / rel_path
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, dest_file)
+            created.append(str(dest_file.relative_to(target_dir)))
+
+    return created
 
 
 _MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
