@@ -1,4 +1,3 @@
-import json
 import sys
 from pathlib import Path
 
@@ -473,22 +472,28 @@ def list_flows(
 
 
 @app.command()
-def split(
-    task_file: Path = typer.Argument(..., help="Path to the task file to split"),
+def add(
+    task_file: Path = typer.Argument(..., help="Path to the task file"),
+    split: bool = typer.Option(
+        False, "--split", help="Split the task file into multiple task files"
+    ),
     force: bool = typer.Option(
-        False, "--force", help="Clear existing tasks directory before splitting"
+        False, "--force", help="Clear existing tasks directory before writing"
     ),
 ) -> None:
-    """Split a task file into individual task files for persistent batch execution.
+    """Add a task file to the batch execution queue.
 
-    Reads task_splitter configuration from .fdsx/config.yaml (or defaults).
-    Writes numbered task files to .fdsx/tasks/ directory.
+    When --split is specified, reads task_splitter configuration from .fdsx/config.yaml
+    (or defaults) and splits the task file into individual task files in .fdsx/tasks/.
     Shows an animated spinner during LLM splitting. In non-interactive (non-TTY) terminals,
     prints plain log lines instead of animation.
     """
     if not task_file.exists():
         typer.echo(f"Error: Task file not found: {task_file}", err=True)
         raise typer.Exit(code=2)
+
+    if not split:
+        raise NotImplementedError("Single-task add is not yet implemented")
 
     config = load_config()
     task_splitter = config.task_splitter or TaskSplitterConfig()
@@ -523,7 +528,6 @@ def split(
 
             if not groups:
                 typer.echo("No tasks were generated from the input file.", err=True)
-                typer.echo(json.dumps([]))
                 return
 
             spinner.update(f"Writing {len(groups)} task file(s)...")
@@ -534,7 +538,6 @@ def split(
         )
         for f in created_files:
             typer.echo(f"  {f}", err=True)
-        typer.echo(json.dumps([str(f) for f in created_files]))
 
     except RuntimeError as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)

@@ -141,14 +141,10 @@ class TestSplitCliIntegration:
             patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
             runner = CliRunner()
-            result = runner.invoke(app, ["split", str(task_file)])
+            result = runner.invoke(app, ["add", "--split", str(task_file)])
 
         assert result.exit_code == 0
-        import json as _json
-
-        paths = _json.loads(result.stdout)
-        assert isinstance(paths, list)
-        assert len(paths) == 2
+        assert result.stdout == ""
         assert "Created 2 task file" in result.stderr
 
     def test_split_command_missing_task_file(self, tmp_path):
@@ -164,7 +160,9 @@ class TestSplitCliIntegration:
             return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
         ):
             runner = CliRunner()
-            result = runner.invoke(app, ["split", str(tmp_path / "nonexistent.md")])
+            result = runner.invoke(
+                app, ["add", "--split", str(tmp_path / "nonexistent.md")]
+            )
 
             assert result.exit_code == 2
             assert "not found" in result.stderr
@@ -192,7 +190,7 @@ class TestSplitCliIntegration:
         with patch("fdsx.cli.main.load_config", side_effect=mock_load_config):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
             assert result.exit_code == 2
@@ -230,7 +228,9 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file), "--force"], catch_exceptions=False
+                app,
+                ["add", "--split", str(task_file), "--force"],
+                catch_exceptions=False,
             )
 
         assert result.exit_code == 0
@@ -266,7 +266,9 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file), "--force"], catch_exceptions=False
+                app,
+                ["add", "--split", str(task_file), "--force"],
+                catch_exceptions=False,
             )
 
         assert result.exit_code == 2
@@ -305,7 +307,9 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file), "--force"], catch_exceptions=False
+                app,
+                ["add", "--split", str(task_file), "--force"],
+                catch_exceptions=False,
             )
 
         assert result.exit_code == 0
@@ -341,15 +345,11 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
         assert result.exit_code == 0
-        import json as _json
-
-        paths = _json.loads(result.stdout)
-        assert isinstance(paths, list)
-        assert len(paths) == 1
+        assert result.stdout == ""
         assert "Created 1 task file" in result.stderr
 
     def test_split_command_records_source_path(self, tmp_path, monkeypatch):
@@ -380,7 +380,7 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
         assert result.exit_code == 0
@@ -432,14 +432,12 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
         assert result.exit_code == 0
-        import json as _json
-
-        paths = _json.loads(result.stdout)
-        assert len(paths) == 1
+        assert result.stdout == ""
+        assert "Created 1 task file" in result.stderr
 
     # T001: Completed/ dir and its contents are preserved after a normal split
     def test_split_command_preserves_completed_dir_on_normal_split(
@@ -477,7 +475,7 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
         assert result.exit_code == 0
@@ -526,7 +524,7 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
         assert result.exit_code == 0
@@ -560,7 +558,7 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file)], catch_exceptions=False
+                app, ["add", "--split", str(task_file)], catch_exceptions=False
             )
 
         assert result.exit_code == 2
@@ -645,7 +643,9 @@ class TestSplitCliIntegration:
         ):
             runner = CliRunner()
             result = runner.invoke(
-                app, ["split", str(task_file), "--force"], catch_exceptions=False
+                app,
+                ["add", "--split", str(task_file), "--force"],
+                catch_exceptions=False,
             )
 
         assert result.exit_code == 0
