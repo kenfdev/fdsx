@@ -42,6 +42,27 @@ app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework
 _interactive_mode: bool | None = None
 
 
+def _validate_tasks_dir(tasks_dir: Path) -> None:
+    if not tasks_dir.exists():
+        typer.echo(
+            f"Error: Tasks directory not found: {tasks_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if tasks_dir.is_symlink():
+        typer.echo(
+            f"Error: --tasks-dir must not be a symlink: {tasks_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if not tasks_dir.is_dir():
+        typer.echo(
+            f"Error: --tasks-dir must be a directory: {tasks_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -133,6 +154,7 @@ def run(
     Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
     Use --auto-workflow to skip the confirmation UI.
     In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
+    config = load_config()
     if tasks_dir is not None:
         if input_vars is not None or tasks_file is not None:
             typer.echo(
@@ -140,24 +162,7 @@ def run(
                 err=True,
             )
             raise typer.Exit(code=2)
-        if not tasks_dir.exists():
-            typer.echo(
-                f"Error: Tasks directory not found: {tasks_dir}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        if tasks_dir.is_symlink():
-            typer.echo(
-                f"Error: --tasks-dir must not be a symlink: {tasks_dir}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        if not tasks_dir.is_dir():
-            typer.echo(
-                f"Error: --tasks-dir must be a directory: {tasks_dir}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
+        _validate_tasks_dir(tasks_dir)
     elif input_vars and tasks_file is not None:
         typer.echo(
             "Error: --input and --tasks are mutually exclusive",
@@ -170,12 +175,14 @@ def run(
             err=True,
         )
         raise typer.Exit(code=2)
-    elif workflow is None and tasks_dir is None:
-        typer.echo(
-            "Error: workflow argument is required when not using --tasks-dir",
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    elif (
+        workflow is None and tasks_dir is None and tasks_file is None and not input_vars
+    ):
+        resolved_tasks_dir = Path(
+            config.default_tasks_dir if config.default_tasks_dir else ".fdsx/tasks/"
+        ).expanduser()
+        _validate_tasks_dir(resolved_tasks_dir)
+        tasks_dir = resolved_tasks_dir
 
     if auto_workflow is not None and confirm_workflow is not None:
         typer.echo(
@@ -198,7 +205,6 @@ def run(
             inputs[key] = value
 
     base_dir = Path(".fdsx")
-    config = load_config()
 
     effective_auto_workflow = (
         auto_workflow if auto_workflow is not None else config.auto_workflow
