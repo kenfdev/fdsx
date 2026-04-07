@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from fdsx.core.config import TaskSplitterConfig
 from fdsx.display.terminal import _sanitize_output
 from fdsx.models.flow import Flow
@@ -15,6 +17,8 @@ from fdsx.models.task import (
     save_task_file,
 )
 from fdsx.providers.base import get_provider
+
+logger = structlog.get_logger(__name__)
 
 TASKS_DIR = ".fdsx/tasks"
 COMPLETED_SUBDIR = "completed"
@@ -77,6 +81,7 @@ def split_tasks_to_groups(
     task_splitter: TaskSplitterConfig,
     state_names: list[str] | None = None,
     input_vars: set[str] | None = None,
+    single_task: bool = False,
 ) -> list[list[TaskEntry]]:
     """Invoke the task_splitter LLM to split task content into file groups.
 
@@ -88,6 +93,9 @@ def split_tasks_to_groups(
         task_splitter: The task splitter configuration
         state_names: Optional list of state names for context
         input_vars: Optional set of input variables for context
+        single_task: If True, the LLM is directed to return exactly one group
+            containing exactly one task. If the result exceeds this, it is coalesced
+            into a single entry with a warning logged.
 
     Returns:
         List of file groups. Each group contains sequentially-dependent
@@ -104,6 +112,7 @@ def split_tasks_to_groups(
         state_names,
         input_vars,
         extra_instructions=task_splitter.extra_instructions,
+        single_task=single_task,
     )
 
     result = provider.execute(
@@ -114,7 +123,23 @@ def split_tasks_to_groups(
     if result.exit_code != 0:
         raise RuntimeError(f"Task splitter failed: {result.stderr}")
 
-    return _parse_structured_tasks(result.stdout)
+    groups = _parse_structured_tasks(result.stdout)
+
+    if single_task:
+        total_entries = sum(len(group) for group in groups)
+        if len(groups) > 1 or total_entries > 1:
+            logger.warning(
+                "splitter_over_split",
+                groups=len(groups),
+                total_entries=total_entries,
+            )
+            all_descriptions = [
+                entry.description for group in groups for entry in group
+            ]
+            coalesced_description = "\n\n".join(all_descriptions)
+            return [[TaskEntry(description=coalesced_description)]]
+
+    return groups
 
 
 def _build_task_split_prompt(
@@ -122,6 +147,7 @@ def _build_task_split_prompt(
     state_names: list[str] | None,
     input_vars: set[str] | None,
     extra_instructions: str | None = None,
+    single_task: bool = False,
 ) -> str:
     """Build the prompt for the task splitter LLM.
 
@@ -129,6 +155,9 @@ def _build_task_split_prompt(
         task_content: The content of the task file
         state_names: List of state names in the workflow (optional for standalone split)
         input_vars: Set of input variable names (optional for standalone split)
+        extra_instructions: Additional instructions to append to the prompt
+        single_task: If True, prepend a CRITICAL directive requiring exactly one group
+            containing exactly one task object.
     """
     states_desc = ", ".join(state_names) if state_names else "any workflow"
     input_vars_desc = ", ".join(input_vars) if input_vars else "task"
@@ -138,8 +167,16 @@ def _build_task_split_prompt(
         else ""
     )
 
-    prompt = f"""You are a dependency-aware task splitter. Given a batch of work, analyze dependencies and group related changes into feature-level tasks.
+    single_task_directive = (
+        "CRITICAL: You MUST return exactly ONE group containing exactly ONE task object.\n"
+        "Combine all work into a single comprehensive task description with numbered sub-steps.\n"
+        "Do NOT split into multiple groups or multiple tasks.\n\n"
+        if single_task
+        else ""
+    )
 
+    prompt = f"""You are a dependency-aware task splitter. Given a batch of work, analyze dependencies and group related changes into feature-level tasks.
+{single_task_directive}
 The workflow has these states: {states_desc}
 The workflow accepts these input variables: {input_vars_desc}
 

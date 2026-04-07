@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
+import structlog
+
 from fdsx.core.config import _deep_merge
 from fdsx.models.flow import (
     Flow,
@@ -13,6 +15,8 @@ from fdsx.models.flow import (
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
+
+logger = structlog.get_logger(__name__)
 
 
 def _top_level_key(path: str) -> str | None:
@@ -42,6 +46,7 @@ def _merge_provider_options(
     flow: Flow,
     provider_name: str,
     task_options: dict[str, Any] | None,
+    state_name: str = "",
 ) -> dict[str, Any] | None:
     """Merge provider options from three levels: config → workflow → task/branch.
 
@@ -50,6 +55,7 @@ def _merge_provider_options(
         flow: The flow definition carrying workflow-level provider options (level 2).
         provider_name: Provider name (e.g. 'claude', 'codex', 'opencode').
         task_options: Per-task or per-branch provider_options dict (level 3).
+        state_name: Name of the state being merged (for error messages).
 
     Returns:
         Merged options dict, or None if no options were set at any level.
@@ -73,6 +79,32 @@ def _merge_provider_options(
     # Level 3: Task/Branch-level options.
     if task_options is not None:
         merged = _deep_merge(merged, task_options)
+
+    if not merged:
+        return None
+
+    # Claude-specific: enforce mutual exclusion between system_prompt and append_system_prompt
+    if provider_name == "claude":
+        has_system_prompt = bool(merged.get("system_prompt"))
+        has_append = bool(merged.get("append_system_prompt"))
+        if has_system_prompt and has_append:
+            from fdsx.core.engine.validate import FlowValidationError
+
+            raise FlowValidationError(
+                f"State '{state_name}': 'system_prompt' and 'append_system_prompt' "
+                f"are mutually exclusive. Both cannot be set."
+            )
+    else:
+        # Non-Claude providers: warn once and strip the fields
+        for field in ("system_prompt", "append_system_prompt"):
+            if field in merged:
+                logger.warning(
+                    "provider_option_unsupported",
+                    state=state_name,
+                    provider=provider_name,
+                    field=field,
+                )
+                del merged[field]
 
     return merged if merged else None
 

@@ -147,6 +147,10 @@ class FdsxConfig(BaseModel):
         default=".fdsx/workflows",
         description="Directory to discover workflow files",
     )
+    default_tasks_dir: str | None = Field(
+        default=None,
+        description="Default tasks directory for no-arg fdsx run",
+    )
     auto_workflow: bool = Field(
         default=False,
         description="Skip confirmation for auto-selected workflows",

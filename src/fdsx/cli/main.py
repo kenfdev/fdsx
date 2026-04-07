@@ -1,4 +1,3 @@
-import json
 import sys
 from pathlib import Path
 
@@ -41,6 +40,27 @@ from fdsx.models.init import InitConfig
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
 
 _interactive_mode: bool | None = None
+
+
+def _validate_tasks_dir(tasks_dir: Path) -> None:
+    if not tasks_dir.exists():
+        typer.echo(
+            f"Error: Tasks directory not found: {tasks_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if tasks_dir.is_symlink():
+        typer.echo(
+            f"Error: --tasks-dir must not be a symlink: {tasks_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if not tasks_dir.is_dir():
+        typer.echo(
+            f"Error: --tasks-dir must be a directory: {tasks_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
 
 @app.callback(invoke_without_command=True)
@@ -134,6 +154,7 @@ def run(
     Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
     Use --auto-workflow to skip the confirmation UI.
     In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
+    config = load_config()
     if tasks_dir is not None:
         if input_vars is not None or tasks_file is not None:
             typer.echo(
@@ -141,24 +162,7 @@ def run(
                 err=True,
             )
             raise typer.Exit(code=2)
-        if not tasks_dir.exists():
-            typer.echo(
-                f"Error: Tasks directory not found: {tasks_dir}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        if tasks_dir.is_symlink():
-            typer.echo(
-                f"Error: --tasks-dir must not be a symlink: {tasks_dir}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        if not tasks_dir.is_dir():
-            typer.echo(
-                f"Error: --tasks-dir must be a directory: {tasks_dir}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
+        _validate_tasks_dir(tasks_dir)
     elif input_vars and tasks_file is not None:
         typer.echo(
             "Error: --input and --tasks are mutually exclusive",
@@ -171,12 +175,14 @@ def run(
             err=True,
         )
         raise typer.Exit(code=2)
-    elif workflow is None and tasks_dir is None:
-        typer.echo(
-            "Error: workflow argument is required when not using --tasks-dir",
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    elif (
+        workflow is None and tasks_dir is None and tasks_file is None and not input_vars
+    ):
+        resolved_tasks_dir = Path(
+            config.default_tasks_dir if config.default_tasks_dir else ".fdsx/tasks/"
+        ).expanduser()
+        _validate_tasks_dir(resolved_tasks_dir)
+        tasks_dir = resolved_tasks_dir
 
     if auto_workflow is not None and confirm_workflow is not None:
         typer.echo(
@@ -199,7 +205,6 @@ def run(
             inputs[key] = value
 
     base_dir = Path(".fdsx")
-    config = load_config()
 
     effective_auto_workflow = (
         auto_workflow if auto_workflow is not None else config.auto_workflow
@@ -473,16 +478,19 @@ def list_flows(
 
 
 @app.command()
-def split(
-    task_file: Path = typer.Argument(..., help="Path to the task file to split"),
+def add(
+    task_file: Path = typer.Argument(..., help="Path to the task file"),
+    split: bool = typer.Option(
+        False, "--split", help="Split the task file into multiple task files"
+    ),
     force: bool = typer.Option(
-        False, "--force", help="Clear existing tasks directory before splitting"
+        False, "--force", help="Clear existing tasks directory before writing"
     ),
 ) -> None:
-    """Split a task file into individual task files for persistent batch execution.
+    """Add a task file to the batch execution queue.
 
-    Reads task_splitter configuration from .fdsx/config.yaml (or defaults).
-    Writes numbered task files to .fdsx/tasks/ directory.
+    When --split is specified, reads task_splitter configuration from .fdsx/config.yaml
+    (or defaults) and splits the task file into individual task files in .fdsx/tasks/.
     Shows an animated spinner during LLM splitting. In non-interactive (non-TTY) terminals,
     prints plain log lines instead of animation.
     """
@@ -515,15 +523,18 @@ def split(
             f.unlink()
         typer.echo(f"Cleared existing task files in {TASKS_DIR}/", err=True)
 
+    single_task = not split
+
     try:
         task_content = task_file.read_text()
 
         with Spinner("Splitting tasks...") as spinner:
-            groups = split_tasks_to_groups(task_content, task_splitter)
+            groups = split_tasks_to_groups(
+                task_content, task_splitter, single_task=single_task
+            )
 
             if not groups:
                 typer.echo("No tasks were generated from the input file.", err=True)
-                typer.echo(json.dumps([]))
                 return
 
             spinner.update(f"Writing {len(groups)} task file(s)...")
@@ -534,7 +545,6 @@ def split(
         )
         for f in created_files:
             typer.echo(f"  {f}", err=True)
-        typer.echo(json.dumps([str(f) for f in created_files]))
 
     except RuntimeError as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)

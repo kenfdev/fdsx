@@ -47,7 +47,7 @@ def _create_task_node(
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
     merged_options = _merge_provider_options(
-        config, flow, state.provider, state.provider_options
+        config, flow, state.provider, state.provider_options, state_name=state_name
     )
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -68,7 +68,14 @@ def _create_task_node(
         resolved_prompt = resolve_template(state.prompt_template or "", state_dict)
         resolved_command = resolve_template_shell_safe(state.command or "", state_dict)
 
-        provider = get_provider(state.provider, merged_options)
+        effective_options = dict(merged_options) if merged_options else None
+        if effective_options:
+            for key in ("system_prompt", "append_system_prompt"):
+                if effective_options.get(key):
+                    effective_options[key] = resolve_template(
+                        effective_options[key], state_dict
+                    )
+        provider = get_provider(state.provider, effective_options)
 
         max_retries = state.retry if state.retry is not None else 3
 

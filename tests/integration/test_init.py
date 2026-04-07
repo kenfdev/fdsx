@@ -231,6 +231,13 @@ class TestConfigTemplateScaffold:
         assert "task_splitter:" in config_yaml
         assert "  profile: generalist" in config_yaml
 
+    def test_generated_config_contains_default_tasks_dir_comment(self):
+        config_yaml = generate_config_yaml(
+            self._make_profile_assignments(),
+            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
+        )
+        assert "default_tasks_dir" in config_yaml
+
     def test_generated_config_contains_extra_instructions_examples(self):
         config_yaml = generate_config_yaml(
             self._make_profile_assignments(),

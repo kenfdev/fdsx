@@ -424,7 +424,7 @@ class TestHelpText:
         """Verify split command help mentions spinner and non-TTY fallback (T027)."""
         (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
-        result = runner.invoke(app, ["split", "--help"])
+        result = runner.invoke(app, ["add", "--split", "--help"])
 
         assert result.exit_code == 0
         assert "spinner" in result.stdout.lower() or "animated" in result.stdout.lower()

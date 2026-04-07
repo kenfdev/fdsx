@@ -62,7 +62,7 @@ class TestSplitSpinner:
             patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
             runner = CliRunner()
-            result = runner.invoke(app, ["split", str(task_file)])
+            result = runner.invoke(app, ["add", "--split", str(task_file)])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
         assert "Splitting tasks..." in result.stderr
@@ -93,7 +93,7 @@ class TestSplitSpinner:
             patch("fdsx.core.batch.get_provider", return_value=mock_provider),
         ):
             runner = CliRunner()
-            result = runner.invoke(app, ["split", str(task_file)])
+            result = runner.invoke(app, ["add", "--split", str(task_file)])
 
         assert result.exit_code == 0
         assert "No tasks were generated" in result.stderr

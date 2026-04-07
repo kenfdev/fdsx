@@ -82,6 +82,8 @@ class ClaudeOptions(BaseModel):
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
     inactivity_timeout: int | None = None
+    system_prompt: str | None = None
+    append_system_prompt: str | None = None
 
     def to_cli_flags(self) -> list[str]:
         """Translate options to Claude CLI flags."""
@@ -94,6 +96,10 @@ class ClaudeOptions(BaseModel):
             flags.extend(["--allowedTools", tool])
         for tool in self.disallowed_tools:
             flags.extend(["--disallowedTools", tool])
+        if self.system_prompt is not None:
+            flags.extend(["--system-prompt", self.system_prompt])
+        if self.append_system_prompt is not None:
+            flags.extend(["--append-system-prompt", self.append_system_prompt])
         return flags
 
 
