@@ -269,8 +269,12 @@ provider_options:
   dangerously_skip_permissions?: bool   # default: false
   allowed_tools?: [string]
   disallowed_tools?: [string]
+  system_prompt?: string                # mutually exclusive with append_system_prompt
+  append_system_prompt?: string         # mutually exclusive with system_prompt
   inactivity_timeout?: int              # default: 300
 ```
+
+**Mutual exclusion:** `system_prompt` and `append_system_prompt` cannot both be set on the same state (including after config-level merge). Setting both raises `FlowValidationError`.
 
 ### Codex
 
@@ -327,6 +331,7 @@ workflow_selector?:
 
 workflows_dir?: string          # default: .fdsx/workflows — relative, no ".."
 auto_workflow?: bool            # default: false
+default_tasks_dir?: string      # default: .fdsx/tasks/ — precedence: project → global → fallback
 
 providers?:
   claude?: ClaudeOptions

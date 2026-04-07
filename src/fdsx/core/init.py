@@ -47,6 +47,8 @@ CONFIG_TEMPLATE = """\
 # workflow_selector:
 #   profile: generalist
 #
+# default_tasks_dir: .fdsx/tasks/
+#
 # extra_instructions:
 #   task_splitter:
 #     - "Split into smaller tasks when complexity is high"
