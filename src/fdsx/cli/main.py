@@ -492,9 +492,6 @@ def add(
         typer.echo(f"Error: Task file not found: {task_file}", err=True)
         raise typer.Exit(code=2)
 
-    if not split:
-        raise NotImplementedError("Single-task add is not yet implemented")
-
     config = load_config()
     task_splitter = config.task_splitter or TaskSplitterConfig()
 
@@ -520,11 +517,15 @@ def add(
             f.unlink()
         typer.echo(f"Cleared existing task files in {TASKS_DIR}/", err=True)
 
+    single_task = not split
+
     try:
         task_content = task_file.read_text()
 
         with Spinner("Splitting tasks...") as spinner:
-            groups = split_tasks_to_groups(task_content, task_splitter)
+            groups = split_tasks_to_groups(
+                task_content, task_splitter, single_task=single_task
+            )
 
             if not groups:
                 typer.echo("No tasks were generated from the input file.", err=True)
