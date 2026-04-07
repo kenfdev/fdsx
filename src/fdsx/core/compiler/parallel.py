@@ -88,9 +88,20 @@ def _create_branch_executor(
         resolved_command = resolve_template_shell_safe(branch.command or "", state_dict)
 
         merged_options = _merge_provider_options(
-            config, flow, branch.provider, branch.provider_options
+            config,
+            flow,
+            branch.provider,
+            branch.provider_options,
+            state_name=state_name,
         )
-        provider = get_provider(branch.provider, merged_options)
+        effective_options = dict(merged_options) if merged_options else None
+        if effective_options:
+            for key in ("system_prompt", "append_system_prompt"):
+                if effective_options.get(key):
+                    effective_options[key] = resolve_template(
+                        effective_options[key], state_dict
+                    )
+        provider = get_provider(branch.provider, effective_options)
 
         max_retries = branch.retry if branch.retry is not None else 3
 

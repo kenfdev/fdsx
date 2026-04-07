@@ -154,7 +154,9 @@ class TestConfigWorkflowMerge:
             )
         )
         flow = _make_single_task_flow()
-        merged = _merge_provider_options(config, flow, "claude", None)
+        merged = _merge_provider_options(
+            config, flow, "claude", None, state_name="step1"
+        )
 
         assert merged is not None
         provider = get_provider("claude", merged)
@@ -171,7 +173,9 @@ class TestConfigWorkflowMerge:
         flow = _make_single_task_flow(
             flow_providers={"claude": {"permission_mode": "bypassPermissions"}}
         )
-        merged = _merge_provider_options(config, flow, "claude", None)
+        merged = _merge_provider_options(
+            config, flow, "claude", None, state_name="step1"
+        )
 
         assert merged is not None
         provider = get_provider("claude", merged)
@@ -189,7 +193,9 @@ class TestConfigWorkflowMerge:
         flow = _make_single_task_flow(
             flow_providers={"claude": {"dangerously_skip_permissions": True}}
         )
-        merged = _merge_provider_options(config, flow, "claude", None)
+        merged = _merge_provider_options(
+            config, flow, "claude", None, state_name="step1"
+        )
 
         assert merged is not None
         # permission_mode from config, dangerously_skip from workflow
@@ -204,7 +210,9 @@ class TestConfigWorkflowMerge:
             )
         )
         flow = _make_single_task_flow(provider="gemini")
-        merged = _merge_provider_options(config, flow, "gemini", None)
+        merged = _merge_provider_options(
+            config, flow, "gemini", None, state_name="step1"
+        )
 
         assert merged is not None
         provider = get_provider("gemini", merged)
@@ -232,7 +240,11 @@ class TestTaskLevelOverride:
             task_provider_options={"permission_mode": "bypassPermissions"},
         )
         merged = _merge_provider_options(
-            config, flow, "claude", flow.states["step1"].provider_options
+            config,
+            flow,
+            "claude",
+            flow.states["step1"].provider_options,
+            state_name="step1",
         )  # type: ignore[union-attr]
 
         assert merged is not None
@@ -258,7 +270,9 @@ class TestUnchangedWorkflowsWithoutOptions:
         config = FdsxConfig()  # no providers
         flow = _make_single_task_flow()
 
-        merged = _merge_provider_options(config, flow, "claude", None)
+        merged = _merge_provider_options(
+            config, flow, "claude", None, state_name="step1"
+        )
 
         assert merged is None
 
@@ -362,8 +376,12 @@ class TestParallelBranchesWithMixedProviders:
         )
         flow = _make_single_task_flow()
 
-        claude_result = _merge_provider_options(config, flow, "claude", None)
-        codex_result = _merge_provider_options(config, flow, "codex", None)
+        claude_result = _merge_provider_options(
+            config, flow, "claude", None, state_name="step1"
+        )
+        codex_result = _merge_provider_options(
+            config, flow, "codex", None, state_name="step1"
+        )
 
         assert claude_result is not None
         assert claude_result.get("permission_mode") == "acceptEdits"
