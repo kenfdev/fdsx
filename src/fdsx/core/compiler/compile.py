@@ -19,6 +19,7 @@ from fdsx.models.flow import (
     ChoiceState,
     Flow,
     HookEntry,
+    MapState,
     ParallelState,
     TaskState,
     WaitState,
@@ -29,6 +30,7 @@ from .helpers import (
     _extract_result_paths,
     _get_next_state,
 )
+from .map_iteration import _create_map_node
 from .nodes import (
     _create_choice_node,
     _create_pass_node,
@@ -356,6 +358,29 @@ def compile_flow(
                 ),
             )  # type: ignore[call-overload]
             graph.add_edge(state_name, f"_{state_name}_int")
+        elif isinstance(state, MapState):
+            on_start, on_complete = _collect_state_hooks(state)
+            node = _create_map_node(
+                state_name,
+                state,
+                flow,
+                recorder,
+                config,
+                log_dir,
+                quiet,
+                on_process_start=on_process_start,
+            )
+            graph.add_node(
+                state_name,
+                _wrap_with_hooks(
+                    node,
+                    state_name,
+                    on_start,
+                    on_complete,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
+            )  # type: ignore[call-overload]
 
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):

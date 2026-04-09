@@ -1,0 +1,246 @@
+"""Map state iteration node factory for the compiler package."""
+
+import subprocess
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from fdsx.core.variables import (
+    resolve_jsonpath,
+    resolve_template,
+    resolve_template_shell_safe,
+    set_jsonpath,
+)
+from fdsx.display.terminal import _sanitize_output
+from fdsx.models.flow import (
+    Flow,
+    MapState,
+)
+from fdsx.providers.base import get_provider
+
+from .helpers import (
+    _check_max_iterations,
+    _merge_provider_options,
+    _set_next_state_meta,
+)
+
+if TYPE_CHECKING:
+    from fdsx.core.config import FdsxConfig
+
+
+def _create_map_node(
+    state_name: str,
+    state: MapState,
+    flow: Flow,
+    recorder: Any = None,
+    config: "FdsxConfig | None" = None,
+    log_dir: Path | None = None,
+    quiet: bool = False,
+    on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Create a LangGraph node function for a Map state.
+
+    Iterates over an array resolved via items_path, executing the sub-workflow
+    for each item with ${item} scoping. Results are collected in order at result_path.
+    """
+
+    def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        from fdsx.core.compiler.execution import ExecutionConfig, execute_with_retry
+        from fdsx.logging.stream_logger import StreamLogger
+
+        start_time = time.time()
+        from fdsx.display import terminal
+
+        terminal.display_state_start(
+            state_name=state_name,
+            state_type="map",
+            provider="",
+            model=None,
+        )
+
+        if recorder is not None:
+            recorder.record_state_start(state_name, "map")
+
+        items = resolve_jsonpath(state.items_path, state_dict)
+        if items is None:
+            raise RuntimeError(
+                f"Map state '{state_name}': items_path '{state.items_path}' did not resolve to a value"
+            )
+        if not isinstance(items, list):
+            raise RuntimeError(
+                f"Map state '{state_name}': items_path resolved to {type(items).__name__}, expected list"
+            )
+
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+
+        if len(items) == 0:
+            new_state = set_jsonpath(state.result_path, state_dict, [])
+            new_state = _set_next_state_meta(new_state, state)
+            new_state["_state_iterations"] = iters
+            duration = time.time() - start_time
+            terminal.display_state_complete(state_name, duration)
+            if recorder is not None:
+                recorder.record_state_complete(
+                    state_name,
+                    "success",
+                    "",
+                    [state.result_path],
+                )
+            return new_state
+
+        results: list[Any] = []
+        n_failed = 0
+
+        for idx, item in enumerate(items):
+            iter_context = {**state_dict, "item": item}
+            iter_steps: dict[str, Any] = {}
+
+            for iter_state in state.iterator.states:
+                merged_options = _merge_provider_options(
+                    config,
+                    flow,
+                    iter_state.provider,
+                    iter_state.provider_options,
+                    state_name=f"{state_name}.{iter_state.name}",
+                )
+
+                resolved_prompt = resolve_template(
+                    iter_state.prompt_template or "", iter_context
+                )
+                resolved_command = resolve_template_shell_safe(
+                    iter_state.command or "", iter_context
+                )
+
+                effective_options = dict(merged_options) if merged_options else None
+                if effective_options:
+                    for key in ("system_prompt", "append_system_prompt"):
+                        if effective_options.get(key):
+                            effective_options[key] = resolve_template(
+                                effective_options[key], iter_context
+                            )
+                provider = get_provider(iter_state.provider, effective_options)
+
+                max_retries = iter_state.retry if iter_state.retry is not None else 3
+
+                stream_logger = StreamLogger(
+                    f"{state_name}.{iter_state.name}",
+                    log_dir,
+                    quiet=quiet,
+                    iteration=iteration,
+                )
+                exec_config = ExecutionConfig(
+                    provider=provider,
+                    provider_name=iter_state.provider,
+                    prompt=resolved_prompt,
+                    command=resolved_command,
+                    model=iter_state.model,
+                    timeout_seconds=iter_state.timeout_seconds,
+                    max_retries=max_retries,
+                    extract=iter_state.extract,
+                    stream_logger=stream_logger,
+                    on_process_start=on_process_start,
+                    summary_callback=stream_logger.on_summary,
+                )
+                exec_result = execute_with_retry(exec_config)
+                result = exec_result.result
+                extracted = exec_result.extracted
+                last_error = exec_result.last_error
+
+                if result.exit_code != 0:
+                    stream_logger.close()
+                    if state.fail_fast:
+                        terminal.display_state_error(
+                            state_name,
+                            f"iteration {idx} failed: {_sanitize_output(last_error)}",
+                        )
+                        if recorder is not None:
+                            recorder.record_state_error(
+                                state_name,
+                                f"iteration {idx} failed: {_sanitize_output(last_error)}",
+                            )
+                        raise RuntimeError(
+                            f"Map state '{state_name}': iteration {idx} failed: {_sanitize_output(last_error)}"
+                        )
+                    else:
+                        results.append(None)
+                        n_failed += 1
+                        break
+
+                if iter_state.extract:
+                    if extracted is None:
+                        stream_logger.close()
+                        if state.fail_fast:
+                            terminal.display_state_error(
+                                state_name,
+                                f"iteration {idx} extraction failed",
+                            )
+                            if recorder is not None:
+                                recorder.record_state_error(
+                                    state_name,
+                                    f"iteration {idx} extraction failed",
+                                )
+                            raise RuntimeError(
+                                f"Map state '{state_name}': iteration {idx} extraction failed"
+                            )
+                        else:
+                            results.append(None)
+                            n_failed += 1
+                            break
+                    iter_result = extracted
+                    iter_context = set_jsonpath(
+                        iter_state.extract.result_path, iter_context, extracted
+                    )
+                    iter_context = set_jsonpath(
+                        iter_state.result_path, iter_context, result.stdout.strip()
+                    )
+                else:
+                    iter_result = result.stdout.strip()
+                    iter_context = set_jsonpath(
+                        iter_state.result_path, iter_context, iter_result
+                    )
+
+                iter_steps[iter_state.name] = {"results": iter_result}
+
+            else:
+                last_iter_state = state.iterator.states[-1]
+                if last_iter_state.extract:
+                    last_result = resolve_jsonpath(
+                        last_iter_state.extract.result_path, iter_context
+                    )
+                    if last_result is None:
+                        last_result = resolve_jsonpath(
+                            last_iter_state.result_path, iter_context
+                        )
+                else:
+                    last_result = resolve_jsonpath(
+                        last_iter_state.result_path, iter_context
+                    )
+                results.append(last_result)
+
+        new_state = set_jsonpath(state.result_path, state_dict, results)
+        new_state = _set_next_state_meta(new_state, state)
+        new_state["_state_iterations"] = iters
+
+        duration = time.time() - start_time
+        terminal.display_state_complete(state_name, duration)
+
+        if recorder is not None:
+            recorder.record_state_complete(
+                state_name,
+                "success",
+                "",
+                [state.result_path],
+            )
+
+        if n_failed > 0:
+            raise RuntimeError(
+                f"Map state '{state_name}': {n_failed} of {len(items)} iterations failed"
+            )
+
+        return new_state
+
+    return node

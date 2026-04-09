@@ -1,0 +1,40 @@
+name: Map Inside Parallel Flow
+description: Map state used after parallel state - tests no interference between parallel and map
+start_at: setup_items
+version: '1.0'
+
+states:
+  setup_items:
+    type: pass
+    parameters:
+      $.items:
+        - x
+        - y
+    next: parallel_state
+
+  parallel_state:
+    type: parallel
+    branches:
+      - provider: system
+        command: echo "alpha"
+        retry: 0
+      - provider: system
+        command: echo "beta"
+        retry: 0
+    result_path: $.parallel_results
+    next: map_state
+
+  map_state:
+    type: map
+    items_path: $.items
+    iterator:
+      states:
+        - name: process
+          type: task
+          provider: system
+          command: echo "mapped-{item}"
+          result_path: $.iter.process
+          retry: 0
+    result_path: $.map_results
+    fail_fast: true
+    end: true

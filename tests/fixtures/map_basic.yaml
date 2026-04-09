@@ -1,0 +1,42 @@
+name: Map Basic Flow
+description: Basic map state with 3 items and 2-state iterator
+start_at: setup_items
+version: '1.0'
+
+states:
+  setup_items:
+    type: pass
+    parameters:
+      $.items:
+        - item1
+        - item2
+        - item3
+    next: map_state
+
+  map_state:
+    type: map
+    items_path: $.items
+    iterator:
+      states:
+        - name: step1
+          type: task
+          provider: system
+          command: echo "step1-{item}"
+          result_path: $.iter.step1
+          retry: 0
+        - name: step2
+          type: task
+          provider: system
+          command: echo "step2-{item}"
+          result_path: $.iter.step2
+          retry: 0
+    result_path: $.map_results
+    fail_fast: true
+    next: after_map
+
+  after_map:
+    type: task
+    provider: system
+    command: echo "done"
+    result_path: $.after_result
+    end: true
