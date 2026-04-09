@@ -405,7 +405,9 @@ def analyze_variable_references(
                     if var_path.startswith("$."):
                         var_path = var_path[2:]
                     iter_prompt_vars.add(var_path)
-            iter_prompt_vars = {v for v in iter_prompt_vars if v != "item" and not v.startswith("item.")}
+            iter_prompt_vars = {
+                v for v in iter_prompt_vars if v != "item" and not v.startswith("item.")
+            }
             prompt_vars = iter_prompt_vars
             items_path = state.items_path
             if items_path.startswith("$."):

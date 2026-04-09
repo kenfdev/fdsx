@@ -331,7 +331,9 @@ def _create_map_node(
                     )
                 results.append(last_result)
                 _write_map_progress(run_dir, state_name, idx + 1, results)
-                display_map_iteration_complete(state_name, idx, len(items), duration=time.time() - iter_start_time)
+                display_map_iteration_complete(
+                    state_name, idx, len(items), duration=time.time() - iter_start_time
+                )
                 if recorder is not None:
                     recorder.record_map_iteration_complete(
                         state_name,

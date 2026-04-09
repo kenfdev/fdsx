@@ -111,7 +111,7 @@ class TestMapPromptFile:
                 "  produce:\n"
                 "    type: task\n"
                 "    provider: system\n"
-                "    command: echo '[\"a\",\"b\"]'\n"
+                '    command: echo \'["a","b"]\'\n'
                 "    result_path: '$.items'\n"
                 "    next: mapper\n"
                 "  mapper:\n"
@@ -149,7 +149,7 @@ class TestMapPromptFile:
                 "  produce:\n"
                 "    type: task\n"
                 "    provider: system\n"
-                "    command: echo '[\"a\",\"b\"]'\n"
+                '    command: echo \'["a","b"]\'\n'
                 "    result_path: '$.items'\n"
                 "    next: mapper\n"
                 "  mapper:\n"
