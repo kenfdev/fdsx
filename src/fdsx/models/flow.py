@@ -416,8 +416,140 @@ class WaitState(BaseModel):
         return self
 
 
+class IteratorTaskState(BaseModel):
+    """Task state for use inside iterator definitions."""
+
+    type: Literal["task"] = "task"
+    name: str = Field(..., description="State name within the iterator")
+    provider: str = Field(..., description="Provider: claude|opencode|codex|system")
+    model: str | None = Field(default=None, description="Model name")
+    prompt_template: str | None = Field(
+        default=None, description="Prompt template (exclusive with prompt_file)"
+    )
+    prompt_file: str | None = Field(
+        default=None, description="Prompt file path (exclusive with prompt_template)"
+    )
+    command: str | None = Field(default=None, description="Command for system provider")
+    result_path: str = Field(..., description="JSONPath for result")
+    result_file: str | None = Field(
+        default=None,
+        description="Top-level JSONPath variable to store the absolute path of a result file",
+    )
+    extract: ExtractRule | None = Field(default=None, description="Output extraction")
+    retry: int = Field(default=3, description="Retry count")
+    timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
+    provider_options: dict[str, Any] | None = Field(
+        default=None, description="Per-task provider option overrides"
+    )
+
+    @field_validator("result_file")
+    @classmethod
+    def validate_result_file(cls, v: str | None) -> str | None:
+        return _validate_result_file(v)
+
+    @model_validator(mode="after")
+    def validate_provider_fields(self) -> "IteratorTaskState":
+        _validate_provider_fields(
+            self.provider,
+            self.prompt_template,
+            self.prompt_file,
+            self.command,
+            self.model,
+        )
+        return self
+
+    @model_validator(mode="after")
+    def validate_prompt_exclusive(self) -> "IteratorTaskState":
+        if self.prompt_template is not None and self.prompt_file is not None:
+            raise ValueError("prompt_template and prompt_file are mutually exclusive")
+        return self
+
+    @model_validator(mode="after")
+    def validate_extract_path_no_overlap(self) -> "IteratorTaskState":
+        if self.extract is None:
+            return self
+        rp = self.result_path
+        if rp.startswith("$."):
+            rp = rp[2:]
+        ep = self.extract.result_path
+        if ep.startswith("$."):
+            ep = ep[2:]
+        rp_parts = parse_jsonpath(rp)
+        ep_parts = parse_jsonpath(ep)
+        min_len = min(len(rp_parts), len(ep_parts))
+        if rp_parts[:min_len] == ep_parts[:min_len]:
+            raise ValueError(
+                f"result_path '{self.result_path}' and extract.result_path "
+                f"'{self.extract.result_path}' must not overlap"
+            )
+        return self
+
+
+class IteratorDef(BaseModel):
+    """Iterator sub-workflow definition for Map state."""
+
+    states: list[IteratorTaskState] = Field(
+        ..., min_length=1, description="Ordered list of iterator states"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_non_task_types(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        states = values.get("states", [])
+        if not isinstance(states, list):
+            return values
+        for idx, state in enumerate(states):
+            if isinstance(state, dict):
+                state_type = state.get("type")
+                if state_type is not None and state_type != "task":
+                    raise ValueError(
+                        f"iterator states must have type 'task', "
+                        f"got type '{state_type}' at position {idx}"
+                    )
+        return values
+
+    @model_validator(mode="after")
+    def validate_unique_names(self) -> "IteratorDef":
+        names = [s.name for s in self.states]
+        if len(names) != len(set(names)):
+            seen: set[str] = set()
+            for name in names:
+                if name in seen:
+                    raise ValueError(f"duplicate iterator state name '{name}'")
+                seen.add(name)
+        return self
+
+
+class MapState(BaseModel):
+    """Map state - iterates over an array and executes a sub-workflow for each item."""
+
+    type: Literal["map"] = "map"
+    items_path: str = Field(..., description="JSONPath to input array")
+    iterator: IteratorDef = Field(
+        ..., description="Sub-workflow to execute for each item"
+    )
+    result_path: str = Field(..., description="JSONPath for results array")
+    fail_fast: bool = Field(default=True, description="Stop on first failure")
+    max_iterations: int | None = Field(
+        default=None, ge=1, description="Max times this state can be entered"
+    )
+    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
+    next: str | None = Field(
+        default=None, description="Next state (exclusive with end)"
+    )
+    end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @model_validator(mode="after")
+    def validate_next_end_exclusive(self) -> "MapState":
+        if self.next is not None and self.end is not None:
+            raise ValueError("next and end are mutually exclusive")
+        return self
+
+
 State = Annotated[
-    TaskState | ChoiceState | ParallelState | PassState | WaitState,
+    TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState,
     Field(discriminator="type"),
 ]
 

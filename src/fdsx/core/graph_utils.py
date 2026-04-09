@@ -1,5 +1,6 @@
 from fdsx.models.flow import (
     ChoiceState,
+    MapState,
     ParallelState,
     PassState,
     State,
@@ -33,7 +34,7 @@ def get_next_states(state: State, include_end_sentinel: bool = False) -> set[str
             result.add(state.default)
         if include_end_sentinel and state.default is None:
             result.add(END_SENTINEL)
-    elif isinstance(state, (ParallelState, PassState, WaitState)):
+    elif isinstance(state, (ParallelState, PassState, WaitState, MapState)):
         if state.next:
             result.add(state.next)
         if include_end_sentinel and state.end:
