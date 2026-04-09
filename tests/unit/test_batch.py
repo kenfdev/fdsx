@@ -217,6 +217,96 @@ class TestSplitTasksToGroups:
         ):
             split_tasks_to_groups("test content", task_splitter)
 
+    def test_retry_success_on_invalid_json(self):
+        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.side_effect = [
+            MagicMock(exit_code=0, stdout="not valid json", stderr=""),
+            MagicMock(
+                exit_code=0,
+                stdout='[[{"description": "Task A"}, {"description": "Task B"}]]',
+                stderr="",
+            ),
+        ]
+
+        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+            groups = split_tasks_to_groups("test content", task_splitter)
+
+        assert len(groups) == 1
+        assert len(groups[0]) == 2
+        assert groups[0][0].description == "Task A"
+        assert groups[0][1].description == "Task B"
+        assert mock_provider.execute.call_count == 2
+
+    def test_retry_fail_raises_both_errors(self):
+        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.side_effect = [
+            MagicMock(exit_code=0, stdout="first invalid json", stderr=""),
+            MagicMock(exit_code=0, stdout="second invalid json", stderr=""),
+        ]
+
+        with (
+            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
+            pytest.raises(ValueError, match="Attempt 1") as exc_info,
+        ):
+            split_tasks_to_groups("test content", task_splitter)
+
+        assert "Attempt 2" in str(exc_info.value)
+        assert mock_provider.execute.call_count == 2
+
+    def test_progress_callback_messages(self):
+        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.return_value = MagicMock(
+            exit_code=0,
+            stdout='[[{"description": "Task A"}]]',
+            stderr="",
+        )
+
+        progress_messages = []
+        progress_callback = progress_messages.append
+
+        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+            groups = split_tasks_to_groups(
+                "test content",
+                task_splitter,
+                progress=progress_callback,
+            )
+
+        assert "Calling task splitter" in progress_messages[0]
+        assert f"Splitter produced {len(groups)} task group(s)" in progress_messages[-1]
+        assert mock_provider.execute.call_count == 1
+
+    def test_progress_callback_retry_messages(self):
+        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
+
+        mock_provider = MagicMock()
+        mock_provider.execute.side_effect = [
+            MagicMock(exit_code=0, stdout="invalid json", stderr=""),
+            MagicMock(
+                exit_code=0,
+                stdout='[[{"description": "Task A"}]]',
+                stderr="",
+            ),
+        ]
+
+        progress_messages = []
+        progress_callback = progress_messages.append
+
+        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
+            split_tasks_to_groups(
+                "test content",
+                task_splitter,
+                progress=progress_callback,
+            )
+
+        assert any("retrying" in msg.lower() for msg in progress_messages)
+        assert mock_provider.execute.call_count == 2
+
 
 class TestDisplayTaskList:
     def test_display_task_list_approve(self):

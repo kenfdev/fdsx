@@ -2,6 +2,7 @@ import json
 import re as _re
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ from fdsx.models.task import (
     _ensure_no_symlink_ancestors,
     save_task_file,
 )
-from fdsx.providers.base import get_provider
+from fdsx.providers.base import ProviderBase, get_provider
 
 logger = structlog.get_logger(__name__)
 
@@ -76,12 +77,52 @@ def split_tasks(
         return _parse_task_list(result.stdout)
 
 
+def _invoke_splitter_and_parse(
+    provider: "ProviderBase", prompt: str, model: str | None
+) -> tuple[list[list[TaskEntry]], str]:
+    """Invoke the task splitter and parse its JSON response.
+
+    Args:
+        provider: The provider instance to use for execution
+        prompt: The prompt to send to the provider
+        model: Optional model override
+
+    Returns:
+        Tuple of (parsed groups, raw stdout) for logging purposes
+
+    Raises:
+        RuntimeError: If the provider call fails
+        ValueError: If the JSON parsing fails (raised with response_preview attached)
+    """
+    result = provider.execute(prompt=prompt, model=model)
+    if result.exit_code != 0:
+        raise RuntimeError(f"Task splitter failed: {result.stderr}")
+    try:
+        groups = _parse_structured_tasks(result.stdout)
+        return groups, result.stdout
+    except ValueError as e:
+        e.response_preview = result.stdout[:500]  # type: ignore[attr-defined]
+        raise
+
+
+def _build_corrective_suffix(first_err: ValueError, response_preview: str) -> str:
+    """Build a corrective prompt suffix for retry on parse failure."""
+    return f"""---
+CORRECTION REQUIRED
+Your previous response could not be parsed as valid JSON.
+Parse error: {first_err}
+Previous response preview: {response_preview}
+Please output ONLY a valid JSON array of file groups with no additional text or explanations.
+"""
+
+
 def split_tasks_to_groups(
     task_content: str,
     task_splitter: TaskSplitterConfig,
     state_names: list[str] | None = None,
     input_vars: set[str] | None = None,
     single_task: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> list[list[TaskEntry]]:
     """Invoke the task_splitter LLM to split task content into file groups.
 
@@ -96,6 +137,7 @@ def split_tasks_to_groups(
         single_task: If True, the LLM is directed to return exactly one group
             containing exactly one task. If the result exceeds this, it is coalesced
             into a single entry with a warning logged.
+        progress: Optional callback for progress messages
 
     Returns:
         List of file groups. Each group contains sequentially-dependent
@@ -115,15 +157,39 @@ def split_tasks_to_groups(
         single_task=single_task,
     )
 
-    result = provider.execute(
-        prompt=prompt,
-        model=task_splitter.model,
-    )
+    if progress:
+        progress("Calling task splitter (this may take a while)...")
 
-    if result.exit_code != 0:
-        raise RuntimeError(f"Task splitter failed: {result.stderr}")
+    try:
+        groups, _raw_stdout = _invoke_splitter_and_parse(
+            provider, prompt, task_splitter.model
+        )
+    except ValueError as first_err:
+        response_preview = getattr(first_err, "response_preview", "")
+        logger.warning(
+            "task_splitter_invalid_json",
+            error=str(first_err),
+            response_preview=response_preview,
+        )
+        if progress:
+            progress(
+                "Splitter returned invalid JSON, retrying with corrective prompt..."
+            )
 
-    groups = _parse_structured_tasks(result.stdout)
+        corrective_prompt = (
+            prompt + "\n\n" + _build_corrective_suffix(first_err, response_preview)
+        )
+        try:
+            groups, _raw_stdout = _invoke_splitter_and_parse(
+                provider, corrective_prompt, task_splitter.model
+            )
+        except ValueError as second_err:
+            raise ValueError(
+                f"Attempt 1: {first_err} | Attempt 2: {second_err}"
+            ) from second_err
+
+    if progress:
+        progress("Parsing splitter response...")
 
     if single_task:
         total_entries = sum(len(group) for group in groups)
@@ -138,6 +204,9 @@ def split_tasks_to_groups(
             ]
             coalesced_description = "\n\n".join(all_descriptions)
             return [[TaskEntry(description=coalesced_description)]]
+
+    if progress:
+        progress(f"Splitter produced {len(groups)} task group(s)")
 
     return groups
 
@@ -243,6 +312,12 @@ GOOD (dependency-aware with foundational task first — shared types → then co
   ]
 ]
 {extra_section}
+JSON HYGIENE:
+- Escape special characters: use \\" for quotes, \\\\ for backslashes, \\n for newlines
+- Keep code snippets short and single-line; avoid multi-line blocks that can break JSON
+- Prefer concise prose + step bullets over reproducing code verbatim
+- Always output valid JSON (arrays and objects only, no trailing commas)
+
 OUTPUT FORMAT:
 Return a JSON array of file groups. Each group is an array of task objects that belong in the same file.
 ```json
