@@ -530,7 +530,10 @@ def add(
 
         with Spinner("Splitting tasks...") as spinner:
             groups = split_tasks_to_groups(
-                task_content, task_splitter, single_task=single_task
+                task_content,
+                task_splitter,
+                single_task=single_task,
+                progress=spinner.update,
             )
 
             if not groups:
