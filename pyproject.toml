@@ -112,6 +112,9 @@ constraint-dependencies = [
 
 [dependency-groups]
 dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.6",
     "types-pyyaml>=6.0.12.20250915",
 ]
 
