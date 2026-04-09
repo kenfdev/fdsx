@@ -1,5 +1,7 @@
 """Map state iteration node factory for the compiler package."""
 
+import json
+import os
 import subprocess
 import time
 from collections.abc import Callable
@@ -27,6 +29,57 @@ from .helpers import (
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
+
+_MAP_PROGRESS_FILENAME = "progress.json"
+
+
+def _safe_progress_dir(run_dir: str, state_name: str) -> Path | None:
+    """Return the progress directory, or None if the path escapes run_dir."""
+    if not run_dir:
+        return None
+    base = Path(run_dir).resolve()
+    candidate = (base / state_name).resolve()
+    if not str(candidate).startswith(str(base) + "/") and candidate != base:
+        return None
+    return candidate
+
+
+def _read_map_progress(run_dir: str, state_name: str) -> dict[str, Any] | None:
+    """Read map progress from checkpoint file.
+
+    Returns None if no progress file exists or reading fails.
+    """
+    progress_dir = _safe_progress_dir(run_dir, state_name)
+    if progress_dir is None:
+        return None
+    progress_file = progress_dir / _MAP_PROGRESS_FILENAME
+    try:
+        with progress_file.open() as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            return None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_map_progress(
+    run_dir: str, state_name: str, completed_iterations: int, results: list[Any]
+) -> None:
+    """Write map progress to checkpoint file atomically."""
+    progress_dir = _safe_progress_dir(run_dir, state_name)
+    if progress_dir is None:
+        return
+    progress_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temp_file = progress_dir / f"{_MAP_PROGRESS_FILENAME}.tmp"
+    progress_data = {
+        "completed_iterations": completed_iterations,
+        "results": results,
+    }
+    fd = os.open(str(temp_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(progress_data, f)
+    temp_file.replace(progress_dir / _MAP_PROGRESS_FILENAME)
 
 
 def _create_map_node(
@@ -95,7 +148,18 @@ def _create_map_node(
         results: list[Any] = []
         n_failed = 0
 
+        run_dir = state_dict.get("_meta", {}).get("run_dir", "") or ""
+        progress = _read_map_progress(run_dir, state_name)
+        if progress and len(progress.get("results", [])) <= len(items):
+            start_idx = progress["completed_iterations"]
+            results = list(progress["results"])
+        else:
+            start_idx = 0
+            results = []
+
         for idx, item in enumerate(items):
+            if idx < start_idx:
+                continue
             iter_context = {**state_dict, "item": item}
             iter_steps: dict[str, Any] = {}
 
@@ -168,6 +232,7 @@ def _create_map_node(
                     else:
                         results.append(None)
                         n_failed += 1
+                        _write_map_progress(run_dir, state_name, idx + 1, results)
                         break
 
                 if iter_state.extract:
@@ -189,6 +254,7 @@ def _create_map_node(
                         else:
                             results.append(None)
                             n_failed += 1
+                            _write_map_progress(run_dir, state_name, idx + 1, results)
                             break
                     iter_result = extracted
                     iter_context = set_jsonpath(
@@ -220,6 +286,7 @@ def _create_map_node(
                         last_iter_state.result_path, iter_context
                     )
                 results.append(last_result)
+                _write_map_progress(run_dir, state_name, idx + 1, results)
 
         new_state = set_jsonpath(state.result_path, state_dict, results)
         new_state = _set_next_state_meta(new_state, state)
