@@ -101,7 +101,7 @@ def _invoke_splitter_and_parse(
         groups = _parse_structured_tasks(result.stdout)
         return groups, result.stdout
     except ValueError as e:
-        setattr(e, "response_preview", result.stdout[:500])
+        e.response_preview = result.stdout[:500]  # type: ignore[attr-defined]
         raise
 
 
