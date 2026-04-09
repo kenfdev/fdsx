@@ -57,7 +57,7 @@ states:
     type: task
     provider: system
     command: |
-      SKILL_DIR="$HOME/.claude/skills/fdsx"
+      SKILL_DIR="src/fdsx/data/skills/fdsx"
       cp "{skill_file}" "$SKILL_DIR/SKILL.md"
       echo "Updated SKILL.md from {skill_file}"
       cp "{schema_file}" "$SKILL_DIR/references/yaml-schema.md"

@@ -4,10 +4,11 @@ description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
   configuring fdsx providers (claude, codex, opencode, gemini), setting up
-  profiles, adding hooks, using choice/parallel/loop/wait/pass states, running
+  profiles, adding hooks, using choice/parallel/loop/wait/pass/map states, running
   fdsx CLI commands, debugging workflow validation errors, or asking about fdsx
   YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative agent
-  workflow", "multi-step AI pipeline", "provider options", "checkpoint resume".
+  workflow", "multi-step AI pipeline", "provider options", "checkpoint resume",
+  "map state", "iterator".
 ---
 
 # fdsx Workflow Authoring Guide
@@ -56,6 +57,7 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 | `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `result_file`, `min_success` |
 | `pass` | Data transformation / aggregation | `parameters`, `aggregate` |
 | `wait` | Human input via terminal prompt | `mode: prompt`, `message`, `choices`, `result_path` |
+| `map` | Iterate over an array, execute sub-workflow per item | `items_path`, `iterator`, `result_path`, `fail_fast` |
 
 Every state except `choice` supports `next` (go to state) or `end: true` (terminate flow). These are mutually exclusive.
 
@@ -97,7 +99,7 @@ states:
 
 `profile` and explicit `provider`/`model` are mutually exclusive (XOR). Profiles can also be defined in `.fdsx/config.yaml` and are merged (workflow-level overrides config-level).
 
-Profile shorthand is supported on task states, parallel branches, and extract fallback configurations.
+Profile shorthand is supported on task states, parallel branches, and extract fallback configurations. Note: profile shorthand is **not** supported on map iterator task states.
 
 ## Variable Substitution
 
@@ -131,16 +133,23 @@ extract:
 ## CLI Commands
 
 ```
-fdsx run <workflow.yaml> [--input KEY=VALUE] [--tasks <file>] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow]
+fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks <file>] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow]
 fdsx validate <workflow.yaml>
 fdsx resume --thread-id <id> [--base-dir <path>]
 fdsx list [--base-dir <path>]
-fdsx split <task-file> [--force]
+fdsx add <task-file> [--split] [--force]
+fdsx init [--skill]
 fdsx --version
 fdsx --ci | --interactive        # global flags (mutually exclusive)
 ```
 
 `--auto-workflow` and `--confirm-workflow` are mutually exclusive. `--auto-workflow` skips interactive workflow confirmation; `--confirm-workflow` forces the confirmation UI.
+
+When `fdsx run` is invoked with no workflow, no `--tasks-dir`, no `--tasks`, and no `--input`, it falls back to the `default_tasks_dir` config value (default: `.fdsx/tasks/`) and runs in tasks-dir mode.
+
+`fdsx add <task-file>` adds a task file to the batch execution queue. Use `--split` to invoke the LLM task splitter to break the file into multiple task files in `.fdsx/tasks/`. Use `--force` to clear existing tasks before writing.
+
+`fdsx init` initializes a new fdsx project with interactive provider and template selection. Use `--skill` to install only the Claude Code skill without scaffolding `.fdsx/`.
 
 ## Hooks
 
@@ -169,6 +178,7 @@ Hook data files are written to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.
 ```yaml
 auto_workflow: false            # skip workflow confirmation UI (default: false)
 workflows_dir: .fdsx/workflows  # directory for workflow discovery
+default_tasks_dir: .fdsx/tasks/ # default tasks directory for no-arg fdsx run
 workflow_selector:
   provider: claude              # LLM for auto-selecting workflows
   model: claude-sonnet-4-6
@@ -192,6 +202,36 @@ Use `parallel` → `pass` (with `aggregate`) → `choice` to fan out reviews, ag
 **Human gate:**
 Use `wait` state with `mode: prompt` to pause for user input, then route with `choice`.
 
+**Map over items (e.g., process each file):**
+Use a preceding state to produce an array, then `map` to iterate over it with a sub-workflow per item:
+
+```yaml
+states:
+  collect:
+    type: task
+    provider: system
+    command: "echo '[{\"path\":\"a.py\"},{\"path\":\"b.py\"}]'"
+    result_path: $.files
+    next: process_each
+
+  process_each:
+    type: map
+    items_path: $.files
+    iterator:
+      states:
+        - type: task
+          name: review
+          provider: claude
+          model: claude-sonnet-4-6
+          prompt_template: "Review file: {item.path}"
+          result_path: $.review
+    result_path: $.reviews
+    fail_fast: true
+    end: true
+```
+
+Inside iterator states, `{item}` refers to the current array element. Use `{item.field}` for nested access.
+
 ## Validation Rules
 
 - `start_at` must reference an existing state name
@@ -201,3 +241,4 @@ Use `wait` state with `mode: prompt` to pause for user input, then route with `c
 - `next` and `end` are mutually exclusive
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
+- Map iterator states must all have `type: task` and unique `name` fields

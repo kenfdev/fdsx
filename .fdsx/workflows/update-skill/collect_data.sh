@@ -3,7 +3,7 @@
 # Outputs a structured dump that an LLM can compare against the skill docs.
 set -euo pipefail
 
-SKILL_DIR="$HOME/.claude/skills/fdsx"
+SKILL_DIR="src/fdsx/data/skills/fdsx"
 SRC_DIR="src/fdsx"
 
 echo "===== CURRENT SKILL.md ====="
