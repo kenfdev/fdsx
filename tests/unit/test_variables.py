@@ -6,7 +6,15 @@ from fdsx.core.variables import (
     resolve_template_shell_safe,
     set_jsonpath,
 )
-from fdsx.models.flow import Branch, Flow, ParallelState, TaskState
+from fdsx.models.flow import (
+    Branch,
+    Flow,
+    IteratorDef,
+    IteratorTaskState,
+    MapState,
+    ParallelState,
+    TaskState,
+)
 
 
 class TestResolveTemplate:
@@ -787,3 +795,189 @@ class TestGlobalTaskVarsRecognition:
         errors = analyze_variable_references(flow)
         assert len(errors) == 1
         assert "unknown_var" in errors[0]
+
+
+class TestMapVariableAnalysis:
+    def test_map_result_path_satisfies_downstream(self):
+        """T017: A MapState with result_path should satisfy a downstream state."""
+        flow = Flow(
+            name="Map Result Path Flow",
+            description="Test flow for MapState result_path satisfaction",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.items",
+                    next="process",
+                ),
+                "process": MapState(
+                    type="map",
+                    items_path="$.items",
+                    iterator=IteratorDef(
+                        states=[
+                            IteratorTaskState(
+                                name="item_task",
+                                provider="system",
+                                command="echo processing {item}",
+                                result_path="$.item_result",
+                            ),
+                        ],
+                    ),
+                    result_path="$.map_results",
+                    next="consume",
+                ),
+                "consume": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo {map_results}",
+                    result_path="$.final",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_item_not_flagged_as_missing(self):
+        """T017: ${item} or ${item.name} in iterator prompts must NOT be flagged."""
+        flow = Flow(
+            name="Item Variable Flow",
+            description="Test that item references are not flagged as missing",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.items",
+                    next="process",
+                ),
+                "process": MapState(
+                    type="map",
+                    items_path="$.items",
+                    iterator=IteratorDef(
+                        states=[
+                            IteratorTaskState(
+                                name="item_task",
+                                provider="system",
+                                command="echo {item.name}",
+                                result_path="$.item_result",
+                            ),
+                        ],
+                    ),
+                    result_path="$.map_results",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_unreachable_items_path_detected(self):
+        """T017: A MapState whose items_path references an undefined variable must be flagged."""
+        flow = Flow(
+            name="Unreachable Items Flow",
+            description="Test that undefined items_path is flagged",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.other",
+                    next="process",
+                ),
+                "process": MapState(
+                    type="map",
+                    items_path="$.undefined_items",
+                    iterator=IteratorDef(
+                        states=[
+                            IteratorTaskState(
+                                name="item_task",
+                                provider="system",
+                                command="echo {item}",
+                                result_path="$.item_result",
+                            ),
+                        ],
+                    ),
+                    result_path="$.map_results",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "undefined_items" in errors[0]
+
+    def test_map_items_path_satisfied_by_predecessor(self):
+        """T017: A MapState whose items_path is satisfied by a preceding state must pass."""
+        flow = Flow(
+            name="Satisfied Items Flow",
+            description="Test that items_path satisfied by predecessor is not flagged",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.available_items",
+                    next="process",
+                ),
+                "process": MapState(
+                    type="map",
+                    items_path="$.available_items",
+                    iterator=IteratorDef(
+                        states=[
+                            IteratorTaskState(
+                                name="item_task",
+                                provider="system",
+                                command="echo {item.name}",
+                                result_path="$.item_result",
+                            ),
+                        ],
+                    ),
+                    result_path="$.map_results",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+    def test_iterator_other_var_still_flagged(self):
+        """T017: Non-item variables in iterator prompts that are undefined must still be flagged."""
+        flow = Flow(
+            name="Iterator Undefined Var Flow",
+            description="Test that undefined non-item vars in iterator are flagged",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.items",
+                    next="process",
+                ),
+                "process": MapState(
+                    type="map",
+                    items_path="$.items",
+                    iterator=IteratorDef(
+                        states=[
+                            IteratorTaskState(
+                                name="item_task",
+                                provider="system",
+                                command="echo {item} {undefined_var}",
+                                result_path="$.item_result",
+                            ),
+                        ],
+                    ),
+                    result_path="$.map_results",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 1
+        assert "undefined_var" in errors[0]

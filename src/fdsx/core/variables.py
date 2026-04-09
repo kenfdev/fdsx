@@ -238,7 +238,7 @@ def analyze_variable_references(
 
     def get_prompt_variables(state: State | Branch) -> set[str]:
         variables: set[str] = set()
-        from fdsx.models.flow import Branch, PassState, TaskState
+        from fdsx.models.flow import Branch, MapState, PassState, TaskState
 
         if isinstance(state, (TaskState, Branch)):
             prompt = state.prompt_template or ""
@@ -251,6 +251,18 @@ def analyze_variable_references(
                     if isinstance(val, str):
                         parts.append(val)
             prompt = " ".join(parts)
+        elif isinstance(state, MapState):
+            for iter_state in state.iterator.states:
+                iter_prompt = iter_state.prompt_template or ""
+                iter_command = iter_state.command or ""
+                prompt = iter_prompt + " " + iter_command
+                pattern = re.compile(r"\{([^}]+)\}")
+                for match in pattern.finditer(prompt):
+                    var_path = match.group(1)
+                    if var_path.startswith("$."):
+                        var_path = var_path[2:]
+                    variables.add(var_path)
+            return variables
         else:
             return variables
 
@@ -266,7 +278,7 @@ def analyze_variable_references(
 
     def get_result_paths(state: State) -> set[str]:
         result_paths: set[str] = set()
-        from fdsx.models.flow import ParallelState, PassState, TaskState
+        from fdsx.models.flow import MapState, ParallelState, PassState, TaskState
 
         if isinstance(state, TaskState):
             if state.result_path:
@@ -306,6 +318,12 @@ def analyze_variable_references(
                     result_paths.add(path)
             if state.aggregate and state.aggregate.result_path:
                 path = state.aggregate.result_path
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
+        elif isinstance(state, MapState):
+            if state.result_path:
+                path = state.result_path
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)
@@ -372,6 +390,34 @@ def analyze_variable_references(
         if isinstance(state, ParallelState):
             for branch in state.branches:
                 prompt_vars.update(get_prompt_variables(branch))
+
+        from fdsx.models.flow import MapState
+
+        if isinstance(state, MapState):
+            iter_prompt_vars: set[str] = set()
+            iter_pattern = re.compile(r"\{([^}]+)\}")
+            for iter_state in state.iterator.states:
+                iter_prompt = iter_state.prompt_template or ""
+                iter_command = iter_state.command or ""
+                iter_text = iter_prompt + " " + iter_command
+                for match in iter_pattern.finditer(iter_text):
+                    var_path = match.group(1)
+                    if var_path.startswith("$."):
+                        var_path = var_path[2:]
+                    iter_prompt_vars.add(var_path)
+            iter_prompt_vars = {v for v in iter_prompt_vars if v != "item" and not v.startswith("item.")}
+            prompt_vars = iter_prompt_vars
+            items_path = state.items_path
+            if items_path.startswith("$."):
+                items_path = items_path[2:]
+            items_root = items_path.split("[")[0].split(".")[0]
+            if items_root and not _is_var_satisfied(
+                items_root, available_vars.get(state_name, set())
+            ):
+                errors.append(
+                    f"State '{state_name}' references variable '{items_root}' "
+                    f"in items_path but no preceding state sets a result_path for it"
+                )
 
         for var in prompt_vars:
             if (
