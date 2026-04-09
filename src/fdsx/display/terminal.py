@@ -209,6 +209,95 @@ def display_branch_failed(
     print(line, file=sys.stderr)
 
 
+def display_map_start(state_name: str, item_count: int) -> None:
+    """Display map state start in terminal.
+
+    Args:
+        state_name: Name of the map state
+        item_count: Number of items to iterate over
+    """
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{timestamp}] ▶ {state_name} (map, {item_count} items)"
+    print(line, file=sys.stderr)
+
+
+def display_map_iteration(
+    state_name: str,
+    index: int,
+    total: int,
+) -> None:
+    """Display map iteration start in terminal.
+
+    Args:
+        state_name: Name of the parent map state
+        index: Index of the iteration (0-based)
+        total: Total number of iterations
+    """
+    display_index = index + 1
+    line = f"  [iter-{display_index}/{total}] ⏳ running..."
+    print(line, file=sys.stderr)
+
+
+def display_map_iteration_complete(
+    state_name: str,
+    index: int,
+    total: int,
+    duration: float | None = None,
+) -> None:
+    """Display map iteration completion in terminal.
+
+    Args:
+        state_name: Name of the parent map state
+        index: Index of the iteration (0-based)
+        total: Total number of iterations
+        duration: Duration in seconds (optional, for display)
+    """
+    display_index = index + 1
+    duration_info = f" ({int(duration)}s)" if duration is not None else ""
+    line = f"  [iter-{display_index}/{total}] ✓ completed{duration_info}"
+    print(line, file=sys.stderr)
+
+
+def display_map_iteration_failed(
+    state_name: str,
+    index: int,
+    total: int,
+    error: str,
+) -> None:
+    """Display map iteration failure in terminal.
+
+    Args:
+        state_name: Name of the parent map state
+        index: Index of the iteration (0-based)
+        total: Total number of iterations
+        error: Error message
+    """
+    display_index = index + 1
+    sanitized_error = _sanitize_output(error)
+    line = f"  [iter-{display_index}/{total}] ✗ failed"
+    print(line, file=sys.stderr)
+    print(f"  Error: {sanitized_error}", file=sys.stderr)
+
+
+def display_map_complete(
+    state_name: str,
+    total: int,
+    failed: int,
+    duration: float,
+) -> None:
+    """Display map state completion in terminal.
+
+    Args:
+        state_name: Name of the map state
+        total: Total number of items
+        failed: Number of failed iterations
+        duration: Duration of execution in seconds
+    """
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{timestamp}] ✓ {state_name} completed ({total} items, {failed} failed, {int(duration)}s)"
+    print(line, file=sys.stderr)
+
+
 def display_parallel_results(
     state_name: str,
     branch_results: list[dict[str, Any]],

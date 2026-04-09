@@ -28,7 +28,7 @@ class TestTasksDirLoader:
     def test_load_tasks_dir_empty_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            with pytest.raises(ValueError, match=r"No .yaml files"):
+            with pytest.raises(ValueError, match=r"No .yaml or .yml files"):
                 engine.load_tasks_dir(tasks_dir)
 
     def test_load_tasks_dir_nonexistent_dir(self):
@@ -71,6 +71,68 @@ class TestTasksDirLoader:
             symlink_file.symlink_to(real_file)
 
             with pytest.raises(ValueError, match="must be a regular file"):
+                engine.load_tasks_dir(tasks_dir)
+
+    def test_load_tasks_dir_ignores_subdirectory_yaml(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            (tasks_dir / "direct-task.yaml").write_text("description: direct task\n")
+            subdir = tasks_dir / "subdir"
+            subdir.mkdir()
+            (subdir / "nested-task.yaml").write_text("description: nested task\n")
+
+            files = engine.load_tasks_dir(tasks_dir)
+
+            assert len(files) == 1
+            assert files[0][0].name == "direct-task.yaml"
+
+    def test_load_tasks_dir_discovers_yml_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            (tasks_dir / "a-task.yml").write_text("description: yml task\n")
+            (tasks_dir / "b-task.yml").write_text("description: another yml task\n")
+
+            files = engine.load_tasks_dir(tasks_dir)
+
+            assert len(files) == 2
+            names = [f.name for f, _ in files]
+            assert names == ["a-task.yml", "b-task.yml"]
+
+    def test_load_tasks_dir_discovers_mixed_yaml_and_yml(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            (tasks_dir / "b-task.yaml").write_text("description: yaml task\n")
+            (tasks_dir / "a-task.yml").write_text("description: yml task\n")
+            (tasks_dir / "c-task.yaml").write_text("description: another yaml task\n")
+
+            files = engine.load_tasks_dir(tasks_dir)
+
+            assert len(files) == 3
+            names = [f.name for f, _ in files]
+            assert names == ["a-task.yml", "b-task.yaml", "c-task.yaml"]
+
+    def test_load_tasks_dir_ignores_arbitrary_subdirectory_names(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            (tasks_dir / "001-task.yaml").write_text("description: task\n")
+            for subdir_name in ["_parked", "done", "archive", "backup", "nested"]:
+                subdir = tasks_dir / subdir_name
+                subdir.mkdir()
+                (subdir / "task.yaml").write_text("description: should be ignored\n")
+
+            files = engine.load_tasks_dir(tasks_dir)
+
+            assert len(files) == 1
+            assert files[0][0].name == "001-task.yaml"
+
+    def test_load_tasks_dir_empty_dir_with_only_subdirectory_yaml(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            subdir = tasks_dir / "some_subdir"
+            subdir.mkdir()
+            (subdir / "task.yaml").write_text("description: hidden task\n")
+
+            with pytest.raises(ValueError, match=r"No .yaml or .yml files"):
                 engine.load_tasks_dir(tasks_dir)
 
 

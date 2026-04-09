@@ -1,0 +1,38 @@
+name: Map Fail Fast False Flow
+description: Map state with fail_fast false to test partial failure handling
+start_at: setup_items
+version: '1.0'
+
+states:
+  setup_items:
+    type: pass
+    parameters:
+      $.items:
+        - ok1
+        - fail
+        - ok2
+    next: map_state
+
+  map_state:
+    type: map
+    items_path: $.items
+    iterator:
+      states:
+        - name: step1
+          type: task
+          provider: system
+          command: >
+            if [ "{item}" = "fail" ]; then exit 1; fi
+            echo "ok-{item}"
+          result_path: $.iter.step1
+          retry: 0
+    result_path: $.map_results
+    fail_fast: false
+    next: after_map
+
+  after_map:
+    type: task
+    provider: system
+    command: echo "done"
+    result_path: $.after_result
+    end: true

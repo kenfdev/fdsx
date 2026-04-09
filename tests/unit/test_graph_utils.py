@@ -2,6 +2,9 @@ from fdsx.core.graph_utils import END_SENTINEL, get_next_states
 from fdsx.models.flow import (
     ChoiceRule,
     ChoiceState,
+    IteratorDef,
+    IteratorTaskState,
+    MapState,
     ParallelState,
     PassState,
     TaskState,
@@ -156,3 +159,46 @@ class TestGetNextStatesWaitState:
     def test_end_true_with_sentinel(self):
         state = make_wait_state(end=True)
         assert get_next_states(state, include_end_sentinel=True) == {END_SENTINEL}
+
+
+def make_map_state(next: str | None = None, end: bool | None = None) -> MapState:
+    return MapState(
+        items_path="$.items",
+        iterator=IteratorDef(
+            states=[
+                IteratorTaskState(
+                    name="step1",
+                    provider="claude",
+                    model="claude-3-5-sonnet-20241022",
+                    prompt_template="hello",
+                    result_path="$.out",
+                )
+            ]
+        ),
+        result_path="$.results",
+        next=next,
+        end=end,
+    )
+
+
+class TestGetNextStatesMapState:
+    def test_next_only(self):
+        state = make_map_state(next="Done")
+        assert get_next_states(state) == {"Done"}
+
+    def test_end_true_without_sentinel(self):
+        state = make_map_state(end=True)
+        assert get_next_states(state) == set()
+
+    def test_end_true_with_sentinel(self):
+        state = make_map_state(end=True)
+        assert get_next_states(state, include_end_sentinel=True) == {END_SENTINEL}
+
+    def test_next_with_sentinel_no_end(self):
+        state = make_map_state(next="Cleanup")
+        assert get_next_states(state, include_end_sentinel=True) == {"Cleanup"}
+
+    def test_no_next_no_end(self):
+        state = make_map_state()
+        assert get_next_states(state) == set()
+        assert get_next_states(state, include_end_sentinel=True) == set()

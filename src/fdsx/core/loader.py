@@ -168,6 +168,34 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
                         errors.append(
                             f"Parallel branch {branch_idx}: failed to read prompt_file: {e}"
                         )
+        elif state_data.get("type") == "map":
+            for iter_state in state_data.get("iterator", {}).get("states", []):
+                if iter_state.get("prompt_file"):
+                    prompt_path = (yaml_dir / iter_state["prompt_file"]).resolve()
+                    path_error = _validate_prompt_file_path(
+                        iter_state["prompt_file"],
+                        prompt_path,
+                        yaml_dir,
+                        f"Map '{state_name}' iterator state '{iter_state['name']}'",
+                    )
+                    if path_error:
+                        errors.append(path_error)
+                        continue
+                    if not prompt_path.exists():
+                        errors.append(
+                            f"Map '{state_name}' iterator state '{iter_state['name']}': "
+                            f"prompt_file not found: {iter_state['prompt_file']}"
+                        )
+                        continue
+                    try:
+                        with prompt_path.open() as f:
+                            iter_state["prompt_template"] = f.read()
+                        del iter_state["prompt_file"]
+                    except Exception as e:
+                        errors.append(
+                            f"Map '{state_name}' iterator state '{iter_state['name']}': "
+                            f"failed to read prompt_file: {e}"
+                        )
 
     if errors:
         return flow, errors

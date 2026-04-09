@@ -31,16 +31,16 @@ def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
 
     Raises:
         FileNotFoundError: If the tasks directory does not exist.
-        ValueError: If no .yaml files are found.
+        ValueError: If no .yaml or .yml files are found.
     """
     if not tasks_dir.exists():
         raise FileNotFoundError(f"Tasks directory not found: {tasks_dir}")
     if tasks_dir.is_symlink():
         raise ValueError(f"Tasks directory must not be a symlink: {tasks_dir}")
 
-    yaml_files = sorted(tasks_dir.glob("*.yaml"))
+    yaml_files = sorted([*tasks_dir.glob("*.yaml"), *tasks_dir.glob("*.yml")])
     if not yaml_files:
-        raise ValueError(f"No .yaml files found in {tasks_dir}")
+        raise ValueError(f"No .yaml or .yml files found in {tasks_dir}")
 
     result: list[tuple[Path, TaskFile]] = []
     for fp in yaml_files:

@@ -7,6 +7,7 @@ import structlog
 from fdsx.core.config import _deep_merge
 from fdsx.models.flow import (
     Flow,
+    MapState,
     ParallelState,
     PassState,
     TaskState,
@@ -125,7 +126,7 @@ def _extract_result_paths(flow: Flow) -> list[str]:
                 paths.append(state.result_file)
         elif isinstance(state, PassState) and state.aggregate:
             paths.append(state.aggregate.result_path)
-        elif isinstance(state, WaitState) and state.result_path:
+        elif isinstance(state, (WaitState, MapState)) and state.result_path:
             paths.append(state.result_path)
     return paths
 
@@ -233,7 +234,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
                     k = _top_level_key(str(target))
                     if k:
                         annotations.setdefault(k, Any)
-        elif isinstance(state, WaitState) and state.result_path:
+        elif isinstance(state, (WaitState, MapState)) and state.result_path:
             k = _top_level_key(state.result_path)
             if k:
                 annotations.setdefault(k, Any)

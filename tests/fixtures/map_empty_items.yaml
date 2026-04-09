@@ -1,0 +1,33 @@
+name: Map Empty Items Flow
+description: Map state with empty items array - should continue to next state
+start_at: setup_items
+version: '1.0'
+
+states:
+  setup_items:
+    type: pass
+    parameters:
+      $.items: []
+    next: map_state
+
+  map_state:
+    type: map
+    items_path: $.items
+    iterator:
+      states:
+        - name: step1
+          type: task
+          provider: system
+          command: echo "should-not-run"
+          result_path: $.iter.step1
+          retry: 0
+    result_path: $.map_results
+    fail_fast: true
+    next: after_map
+
+  after_map:
+    type: task
+    provider: system
+    command: echo "map-completed"
+    result_path: $.after_result
+    end: true

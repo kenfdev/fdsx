@@ -226,6 +226,33 @@ states:
     # end: true
 
   # ----------------------------------------------------------
+  # map — iterate over a list, executing an iterator sub-graph
+  # ----------------------------------------------------------
+  process_items:
+    type: map                            # (REQUIRED) literal "map"
+    items_path: $.items                  # (string, REQUIRED) JSONPath to the array to iterate over
+    iterator:                            # (map, REQUIRED) sub-graph run once per item
+      states:                           # (list, REQUIRED) ordered list of states in the iterator
+        - name: step1
+          type: task
+          provider: system
+          command: "echo {item}"         # {item} references the current array element
+          result_path: $.iter.step1
+          retry: 0
+        - name: step2
+          type: task
+          provider: system
+          command: "echo {item}"
+          result_path: $.iter.step2
+          retry: 0
+    fail_fast: true                     # (bool, default: true) stop all iterations on first failure
+    result_path: $.map_results           # (string, optional) JSONPath for the results array
+    max_iterations: 10                  # (int, optional) max times this state can be re-entered
+    hooks:                              # (optional)
+    next: after_map                     # next / end — same rules as task
+    # end: true
+
+  # ----------------------------------------------------------
   # pass — data transformation / aggregation (no execution)
   # ----------------------------------------------------------
   aggregate_reviews:
@@ -340,6 +367,16 @@ choices:
     operator: equals
     value: "approved"
     next: done
+
+# Map iteration — {item} and {item.field} reference the current element
+# {item} is the raw array element; {item.field} accesses a field on it
+iterator:
+  states:
+    - name: step1
+      type: task
+      command: "echo {item}"      # current item from the items array
+      prompt_template: |
+        Process this record: {item.name}
 ```
 
 ## Project Configuration (`.fdsx/config.yaml`)
