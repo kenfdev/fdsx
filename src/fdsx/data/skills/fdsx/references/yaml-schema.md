@@ -10,6 +10,9 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [ParallelState](#parallelstate)
 - [PassState](#passstate)
 - [WaitState](#waitstate)
+- [MapState](#mapstate)
+- [IteratorDef](#iteratordef)
+- [IteratorTaskState](#iteratortaskstate)
 - [Branch (parallel)](#branch)
 - [ExtractRule](#extractrule)
 - [ChoiceRule](#choicerule)
@@ -34,6 +37,8 @@ providers?: {name: {k: v}}      # optional — workflow-level provider configs
 hooks?: HookConfig              # optional — flow-level hooks
 profiles?: {name: {k: v}}       # optional — raw provider/model/extras dicts
 ```
+
+**State** is a discriminated union on the `type` field: `TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState`.
 
 **Profiles at workflow level** are raw YAML dicts (`{provider, model, ...extras}`), not validated `ProfileConfig` objects. Profile resolution happens pre-validation: `profile` references in tasks/branches are expanded into `provider`/`model`/`provider_options` fields before Pydantic validation runs. Workflow-level profiles override config-level profiles (full replacement per name, not deep merge).
 
@@ -145,6 +150,77 @@ notify:
     url: string                 # required — HTTPS (HTTP only for localhost)
     template: string            # required — message template with {variable} refs
 ```
+
+---
+
+## MapState
+
+```yaml
+type: "map"                     # literal discriminator
+items_path: string              # required — JSONPath to input array
+iterator: IteratorDef           # required — sub-workflow to execute for each item
+result_path: string             # required — JSONPath for results array
+fail_fast?: bool                # default: true — stop on first failure
+max_iterations?: int            # optional — >=1, max times this state can be entered
+hooks?: HookConfig              # optional — per-state hooks
+next?: string                   # XOR with end — target state
+end?: bool                      # XOR with next — terminate flow
+```
+
+**Variable context inside iterator:** Each iterator state receives the current array element as `{item}`. References like `{item.field}` access nested fields of the current element. Variables from preceding states in the outer flow are also available.
+
+**Validation:**
+- `next` and `end` are mutually exclusive
+- `items_path` must reference a variable set by a preceding state
+- Iterator states must all have `type: "task"` (no nested choice/parallel/pass/wait/map)
+- Iterator state names must be unique within the iterator
+
+---
+
+## IteratorDef
+
+Used inside `MapState.iterator`:
+
+```yaml
+iterator:
+  states: [IteratorTaskState]   # required — min 1 item, ordered list of task states
+```
+
+**Validation:**
+- All states must have `type: "task"` (non-task types are rejected)
+- State names must be unique within the iterator
+
+---
+
+## IteratorTaskState
+
+Used inside `IteratorDef.states`:
+
+```yaml
+type: "task"                    # literal discriminator (only "task" allowed)
+name: string                    # required — state name within the iterator
+provider: string                # required — claude|codex|opencode|gemini|system
+model?: string                  # required for LLM providers, forbidden for system
+prompt_template?: string        # XOR with prompt_file; required for LLM providers
+prompt_file?: string            # XOR with prompt_template; relative path
+command?: string                # required for system, forbidden for LLM providers
+result_path: string             # required — JSONPath for result
+result_file?: string            # optional — top-level $.varname only (no nesting)
+extract?: ExtractRule           # optional — output extraction
+retry?: int                     # default: 3
+timeout_seconds?: int           # optional — per-state timeout override
+provider_options?: {k: v}       # optional — per-task provider option overrides
+```
+
+**Differences from TaskState:** Has a required `name` field. Does not support `max_iterations`, `hooks`, `next`, or `end` (iteration order is determined by list position).
+
+**Note:** Profile shorthand (`profile: <name>`) is not currently supported on iterator task states. Use explicit `provider`/`model` fields.
+
+**Validation:**
+- `prompt_template` and `prompt_file` are mutually exclusive
+- `result_path` and `extract.result_path` must not overlap
+- `result_file` must match `$.varname` (no dots or brackets after `$.`)
+- Same provider field validation rules as TaskState
 
 ---
 

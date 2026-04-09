@@ -10,8 +10,10 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 
 **Key features:**
 - Declarative YAML-based workflow definition
+- Interactive project initialization and scaffolding
 - Stateful execution with checkpoint/resume
 - Parallel execution with branch aggregation
+- Map state for iterating over arrays with sub-workflows
 - Batch task processing (in-memory and persistent)
 - Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
@@ -33,6 +35,14 @@ uv tool install fdsx
 ```
 
 ## Quick Start
+
+Initialize a new project:
+
+```bash
+fdsx init
+```
+
+This interactively scaffolds a `.fdsx/` directory with configuration and example workflows.
 
 Create a simple YAML workflow file:
 
@@ -246,7 +256,7 @@ states:
           result_path: $.iter.step2
           retry: 0
     fail_fast: true                     # (bool, default: true) stop all iterations on first failure
-    result_path: $.map_results           # (string, optional) JSONPath for the results array
+    result_path: $.map_results           # (string, REQUIRED) JSONPath for the results array
     max_iterations: 10                  # (int, optional) max times this state can be re-entered
     hooks:                              # (optional)
     next: after_map                     # next / end — same rules as task
@@ -406,6 +416,10 @@ workflows_dir: .fdsx/workflows    # (string, default: ".fdsx/workflows")
                                   #   must be relative, no ".." components
                                   #   where `fdsx run --tasks-dir` discovers workflows
 
+# --- Default tasks directory ---
+default_tasks_dir: .fdsx/tasks    # (string, optional) default directory for bare `fdsx run`
+                                  #   when no workflow, --tasks, or --tasks-dir is given
+
 # --- Auto-workflow selection ---
 auto_workflow: false              # (bool, default: false) skip interactive confirmation UI
 
@@ -417,7 +431,7 @@ workflow_selector:
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.
 
-# --- Task splitter: LLM used by `fdsx split` ---
+# --- Task splitter: LLM used by `fdsx add --split` ---
 task_splitter:
   profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
   # provider: claude              # (string, default: "claude")
@@ -437,6 +451,8 @@ providers:
     dangerously_skip_permissions: true   # (bool, default: false)
     allowed_tools: []                    # (list of strings, default: []) tool allowlist
     disallowed_tools: []                 # (list of strings, default: []) tool denylist
+    system_prompt: "Custom system prompt"  # (string, optional) override the default system prompt
+    append_system_prompt: "Extra instructions"  # (string, optional) append to the default system prompt
     inactivity_timeout: 600              # (int, optional) seconds before killing inactive subprocess
 
   codex:
@@ -486,6 +502,9 @@ hooks:
 
 | Command | Description |
 |---------|-------------|
+| `fdsx init` | Initialize a new fdsx project with interactive setup |
+| `fdsx init --skill` | Install the /fdsx Claude Code skill only (skip scaffold) |
+| `fdsx run` | Execute tasks from default tasks directory (`default_tasks_dir` or `.fdsx/tasks/`) |
 | `fdsx run <workflow.yaml>` | Execute a workflow |
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
 | `fdsx run <workflow.yaml> --tasks tasks.yaml` | In-memory batch execution |
@@ -498,8 +517,9 @@ hooks:
 | `fdsx validate <workflow.yaml>` | Validate YAML syntax |
 | `fdsx list` | List recent runs |
 | `fdsx list --base-dir <dir>` | List runs from custom base directory |
-| `fdsx split <task_file>` | Split a task file into individual task files |
-| `fdsx split <task_file> --force` | Clear existing tasks directory before splitting |
+| `fdsx add <task_file>` | Add a task file to the batch execution queue (single task) |
+| `fdsx add <task_file> --split` | Split a task file into individual task files |
+| `fdsx add <task_file> --split --force` | Clear existing tasks directory before splitting |
 
 ## Example Workflow
 
@@ -570,8 +590,8 @@ states:
 
 Run this example:
 ```bash
-# First run in a new directory scaffolds .fdsx/ with example workflows:
-fdsx run
+# Initialize the project (creates .fdsx/ with config and example workflows):
+fdsx init
 
 # Then run the scaffolded example workflow:
 fdsx run .fdsx/workflows/plan-implement-review/workflow.yaml --input task="Build a web calculator"
