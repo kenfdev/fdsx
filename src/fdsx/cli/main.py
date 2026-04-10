@@ -146,6 +146,11 @@ def run(
         "--quiet",
         help="Suppress stderr streaming output from providers. Log files are still written and completion summary is still shown.",
     ),
+    continue_on_error: bool = typer.Option(
+        False,
+        "--continue-on-error",
+        help="Continue processing remaining entries when an error occurs in tasks-dir mode.",
+    ),
 ) -> None:
     """Run a workflow. Supports single execution and persistent batch (--tasks-dir) modes.
 
@@ -213,6 +218,7 @@ def run(
                 base_dir,
                 auto_workflow=effective_auto_workflow,
                 quiet=quiet,
+                continue_on_error=continue_on_error,
             )
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:

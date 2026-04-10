@@ -418,18 +418,24 @@ def run_tasks_dir(
                         display_tasks_dir_summary(results)
                         return results
                 else:
-                    while True:
-                        response = (
-                            input("Continue with remaining entries? (y/n): ")
-                            .strip()
-                            .lower()
+                    if continue_on_error:
+                        print(
+                            f"[interactive] Continuing after error (entry {entry_idx}, file {file_path.name})",
+                            file=sys.stderr,
                         )
-                        if response == "y":
-                            break
-                        elif response == "n":
-                            print("Stopping tasks-dir execution.", file=sys.stderr)
-                            display_tasks_dir_summary(results)
-                            return results
+                    else:
+                        while True:
+                            response = (
+                                input("Continue with remaining entries? (y/n): ")
+                                .strip()
+                                .lower()
+                            )
+                            if response == "y":
+                                break
+                            elif response == "n":
+                                print("Stopping tasks-dir execution.", file=sys.stderr)
+                                display_tasks_dir_summary(results)
+                                return results
 
         # Move the file to completed/ if all entries finished successfully
         if all(entry.status == "completed" for entry in task_file.entries):

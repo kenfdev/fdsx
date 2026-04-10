@@ -4,6 +4,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+from typer.testing import CliRunner
+
+from fdsx.cli.main import app
 from fdsx.core.engine.tasks_dir import run_tasks_dir
 from fdsx.core.mode import get_interactive_mode, is_interactive, set_interactive_mode
 from fdsx.core.selector import confirm_workflow_selection, pick_workflow_manually
@@ -179,3 +182,111 @@ class TestCIModeGuards:
                 mock_input.assert_not_called()
         finally:
             set_interactive_mode(None)
+
+    def test_continue_on_error_skips_prompt_interactive(self):
+        """In interactive mode with continue_on_error=True, the prompt is skipped and execution continues."""
+        set_interactive_mode(True)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tasks_dir = Path(tmpdir)
+                flow_path = FIXTURES_DIR / "batch_flow.yaml"
+
+                tf1 = TaskFile(entries=[TaskEntry(description="task A")])
+                save_task_file(tasks_dir / "001-a.yaml", tf1)
+                tf2 = TaskFile(entries=[TaskEntry(description="task B")])
+                save_task_file(tasks_dir / "002-b.yaml", tf2)
+
+                run_count = [0]
+
+                def mock_run_flow_err(*args, **kwargs):
+                    run_count[0] += 1
+                    if run_count[0] == 1:
+                        raise RuntimeError("intentional error")
+                    return {"result": "ok"}
+
+                with (
+                    patch(
+                        "fdsx.core.engine.tasks_dir.run_flow",
+                        side_effect=mock_run_flow_err,
+                    ),
+                    patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                    patch("builtins.input") as mock_input,
+                ):
+                    results = run_tasks_dir(
+                        flow_path,
+                        tasks_dir,
+                        auto_workflow=True,
+                        continue_on_error=True,
+                    )
+
+                assert len(results) == 2
+                assert results[0]["status"] == "failed"
+                assert results[1]["status"] == "completed"
+                mock_input.assert_not_called()
+        finally:
+            set_interactive_mode(None)
+
+    def test_continue_on_error_continues_in_ci(self):
+        """In CI mode with continue_on_error=True, tasks dir continues after error with proper message."""
+        set_interactive_mode(False)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tasks_dir = Path(tmpdir)
+                flow_path = FIXTURES_DIR / "batch_flow.yaml"
+
+                tf1 = TaskFile(entries=[TaskEntry(description="task A")])
+                save_task_file(tasks_dir / "001-a.yaml", tf1)
+                tf2 = TaskFile(entries=[TaskEntry(description="task B")])
+                save_task_file(tasks_dir / "002-b.yaml", tf2)
+
+                run_count = [0]
+
+                def mock_run_flow_err(*args, **kwargs):
+                    run_count[0] += 1
+                    if run_count[0] == 1:
+                        raise RuntimeError("intentional error")
+                    return {"result": "ok"}
+
+                with (
+                    patch(
+                        "fdsx.core.engine.tasks_dir.run_flow",
+                        side_effect=mock_run_flow_err,
+                    ),
+                    patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                    patch("builtins.input") as mock_input,
+                ):
+                    results = run_tasks_dir(
+                        flow_path,
+                        tasks_dir,
+                        auto_workflow=True,
+                        continue_on_error=True,
+                    )
+
+                assert len(results) == 2
+                assert results[0]["status"] == "failed"
+                assert results[1]["status"] == "completed"
+                mock_input.assert_not_called()
+        finally:
+            set_interactive_mode(None)
+
+    def test_continue_on_error_ignored_single_workflow(self, tmp_path, monkeypatch):
+        """The --continue-on-error flag is accepted but silently ignored for single workflow execution."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+        runner = CliRunner()
+
+        with patch("fdsx.core.engine.run_flow") as mock_run_flow:
+            mock_run_flow.return_value = {"result": "ok"}
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    str(FIXTURES_DIR / "simple_flow.yaml"),
+                    "--continue-on-error",
+                ],
+            )
+
+            assert result.exit_code == 0
+            mock_run_flow.assert_called_once()
+            call_kwargs = mock_run_flow.call_args.kwargs
+            assert "continue_on_error" not in call_kwargs
