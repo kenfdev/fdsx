@@ -1,0 +1,38 @@
+name: Choice Workflow
+start_at: start
+states:
+  start:
+    type: task
+    provider: system
+    command: echo start
+    result_path: $.result
+  check:
+    type: choice
+    choices:
+      - variable: $.status
+        operator: equals
+        value: success
+        next: success
+      - variable: $.status
+        operator: equals
+        value: failure
+        next: failure
+    default: unknown
+  success:
+    type: task
+    provider: system
+    command: echo success
+    result_path: $.result
+    end: true
+  failure:
+    type: task
+    provider: system
+    command: echo failure
+    result_path: $.result
+    end: true
+  unknown:
+    type: task
+    provider: system
+    command: echo unknown
+    result_path: $.result
+    end: true

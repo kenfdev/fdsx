@@ -194,4 +194,5 @@ export type GraphNode = Node<NodeData>;
 export type GraphEdge = Edge & {
   label?: string | null;
   edgeType?: 'normal' | 'choice' | 'parallel' | 'loop';
+  points?: Array<{ x: number; y: number }>;
 };

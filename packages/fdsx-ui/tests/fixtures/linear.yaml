@@ -1,0 +1,20 @@
+name: Linear Workflow
+start_at: first
+states:
+  first:
+    type: task
+    provider: system
+    command: echo first
+    result_path: $.result
+  second:
+    type: task
+    provider: system
+    command: echo second
+    result_path: $.result
+    next: third
+  third:
+    type: task
+    provider: system
+    command: echo third
+    result_path: $.result
+    end: true
