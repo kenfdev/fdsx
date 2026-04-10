@@ -34,12 +34,22 @@ async function main(): Promise<void> {
 
       const app = createApp(resolvedPath);
 
-      const server = app.listen(port, '127.0.0.1', () => {
+      const server = app.listen(port, '127.0.0.1');
+
+      server.on('listening', () => {
         const url = `http://localhost:${port}`;
         console.error(`fdsx-ui server running at ${url}`);
         if (shouldOpen) {
           void open(url);
         }
+      });
+
+      server.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`Error: Port ${port} is already in use. Use --port to specify a different port.`);
+          process.exit(1);
+        }
+        throw err;
       });
 
       const shutdown = (): void => {

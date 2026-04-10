@@ -111,6 +111,14 @@ export function GraphView({ workflowPath }: GraphViewProps) {
     );
   }
 
+  if (nodes.length === 0) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.message}>This workflow has no states defined.</div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container}>
       <div className={styles.toolbar}>
