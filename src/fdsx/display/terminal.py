@@ -4,7 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, TextIO
 
+import structlog
+
 import fdsx.core.mode
+
+logger = structlog.get_logger(__name__)
 
 
 def _sanitize_output(text: str) -> str:
@@ -394,6 +398,13 @@ def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> st
     """
     if not choices:
         raise ValueError("choices must not be empty")
+
+    if not fdsx.core.mode.is_interactive():
+        print(
+            f"[CI] Auto-selecting first choice for wait state '{state_name}': {choices[0]}",
+            file=sys.stderr,
+        )
+        return choices[0]
 
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(

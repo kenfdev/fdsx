@@ -4,6 +4,9 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import structlog
+
+import fdsx.core.mode
 from fdsx.core.batch import (
     display_tasks_dir_summary,
     move_task_to_completed,
@@ -18,6 +21,8 @@ from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
 from .run import run_flow
 from .validate import FlowValidationError
+
+logger = structlog.get_logger(__name__)
 
 
 def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
@@ -116,6 +121,7 @@ def run_tasks_dir(
     base_dir: Path | None = None,
     auto_workflow: bool = False,
     quiet: bool = False,
+    continue_on_error: bool = False,
 ) -> list[dict[str, Any]]:
     """Execute tasks from a directory of YAML task files with crash-resilient persistence.
 
@@ -126,6 +132,8 @@ def run_tasks_dir(
         base_dir: Optional base directory for checkpoints (.fdsx/).
         auto_workflow: If True, skip workflow confirmation prompts and auto-select.
         quiet: If True, suppress streaming output during execution.
+        continue_on_error: If True, continue processing remaining entries when an error
+            occurs. If False (default), stop execution on first error in CI mode.
 
     Returns:
         List of result dicts with file_index, file_name, entry_index,
@@ -396,18 +404,32 @@ def run_tasks_dir(
                     f"  Entry {entry_idx + 1} failed: {_sanitize_output(str(e))}",
                     file=sys.stderr,
                 )
-                while True:
-                    response = (
-                        input("Continue with remaining entries? (y/n): ")
-                        .strip()
-                        .lower()
-                    )
-                    if response == "y":
-                        break
-                    elif response == "n":
-                        print("Stopping tasks-dir execution.", file=sys.stderr)
+                if not fdsx.core.mode.is_interactive():
+                    if continue_on_error:
+                        print(
+                            f"[CI] Continuing after error (entry {entry_idx}, file {file_path.name})",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(
+                            f"[CI] Failing fast (entry {entry_idx}, file {file_path.name})",
+                            file=sys.stderr,
+                        )
                         display_tasks_dir_summary(results)
                         return results
+                else:
+                    while True:
+                        response = (
+                            input("Continue with remaining entries? (y/n): ")
+                            .strip()
+                            .lower()
+                        )
+                        if response == "y":
+                            break
+                        elif response == "n":
+                            print("Stopping tasks-dir execution.", file=sys.stderr)
+                            display_tasks_dir_summary(results)
+                            return results
 
         # Move the file to completed/ if all entries finished successfully
         if all(entry.status == "completed" for entry in task_file.entries):

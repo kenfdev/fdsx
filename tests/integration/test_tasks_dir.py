@@ -391,71 +391,91 @@ class TestRunTasksDir:
                 assert entry.status == "completed"
 
     def test_continues_after_failure(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tasks_dir = Path(tmpdir)
-            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        from fdsx.core.mode import set_interactive_mode
 
-            tf = TaskFile(
-                entries=[
-                    TaskEntry(description="task 1"),
-                    TaskEntry(description="task 2"),
-                ]
-            )
-            save_task_file(tasks_dir / "001-test.yaml", tf)
+        set_interactive_mode(True)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tasks_dir = Path(tmpdir)
+                flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
-            call_count = [0]
+                tf = TaskFile(
+                    entries=[
+                        TaskEntry(description="task 1"),
+                        TaskEntry(description="task 2"),
+                    ]
+                )
+                save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    raise RuntimeError("Task 1 failed")
-                return {"result": "ok"}
+                call_count = [0]
 
-            with (
-                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
-                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.core.engine.tasks_dir.input", side_effect=["y"]),
-            ):
-                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
+                    call_count[0] += 1
+                    if call_count[0] == 1:
+                        raise RuntimeError("Task 1 failed")
+                    return {"result": "ok"}
 
-            assert len(results) == 2
-            assert results[0]["status"] == "failed"
-            assert results[1]["status"] == "completed"
+                with (
+                    patch(
+                        "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+                    ),
+                    patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                    patch("fdsx.core.engine.tasks_dir.input", side_effect=["y"]),
+                ):
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
 
-            loaded = load_task_file(tasks_dir / "001-test.yaml")
-            assert loaded.entries[0].status == "failed"
-            assert loaded.entries[1].status == "completed"
+                assert len(results) == 2
+                assert results[0]["status"] == "failed"
+                assert results[1]["status"] == "completed"
+
+                loaded = load_task_file(tasks_dir / "001-test.yaml")
+                assert loaded.entries[0].status == "failed"
+                assert loaded.entries[1].status == "completed"
+        finally:
+            set_interactive_mode(None)
 
     def test_stops_on_user_n(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tasks_dir = Path(tmpdir)
-            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+        from fdsx.core.mode import set_interactive_mode
 
-            tf = TaskFile(
-                entries=[
-                    TaskEntry(description="task 1"),
-                    TaskEntry(description="task 2"),
-                ]
-            )
-            save_task_file(tasks_dir / "001-test.yaml", tf)
+        set_interactive_mode(True)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tasks_dir = Path(tmpdir)
+                flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
-            call_count = [0]
+                tf = TaskFile(
+                    entries=[
+                        TaskEntry(description="task 1"),
+                        TaskEntry(description="task 2"),
+                    ]
+                )
+                save_task_file(tasks_dir / "001-test.yaml", tf)
 
-            def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    raise RuntimeError("Task 1 failed")
-                return {"result": "ok"}
+                call_count = [0]
 
-            with (
-                patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
-                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
-            ):
-                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+                def mock_run_flow(flow_path, inputs, thread_id, base_dir, **kwargs):
+                    call_count[0] += 1
+                    if call_count[0] == 1:
+                        raise RuntimeError("Task 1 failed")
+                    return {"result": "ok"}
 
-            assert len(results) == 1
-            assert results[0]["status"] == "failed"
+                with (
+                    patch(
+                        "fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow
+                    ),
+                    patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+                    patch("fdsx.core.engine.tasks_dir.input", side_effect=["n"]),
+                ):
+                    results = engine.run_tasks_dir(
+                        flow_path, tasks_dir, auto_workflow=True
+                    )
+
+                assert len(results) == 1
+                assert results[0]["status"] == "failed"
+        finally:
+            set_interactive_mode(None)
 
     def test_skips_file_when_all_completed(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -14,10 +14,15 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import structlog
+
+import fdsx.core.mode
 from fdsx.core.config import WorkflowSelectorConfig
 from fdsx.core.loader import load_flow
 from fdsx.display.terminal import _sanitize_output
 from fdsx.providers.base import get_provider
+
+logger = structlog.get_logger(__name__)
 
 
 def discover_workflows(
@@ -348,6 +353,14 @@ def confirm_workflow_selection(
         True if the user approves, False if they reject.
     """
     name = _sanitize_output(display_name or workflow_path.name)
+
+    if not fdsx.core.mode.is_interactive():
+        print(
+            f"[CI] Auto-approving workflow: {name}",
+            file=sys.stderr,
+        )
+        return True
+
     print(f"\nSelected workflow: {name}", file=sys.stderr)
     print(
         f"  Task: {task_description[:60]}{'...' if len(task_description) > 60 else ''}",
@@ -379,6 +392,13 @@ def pick_workflow_manually(
     Returns:
         The selected workflow path, or None if the user cancels.
     """
+    if not fdsx.core.mode.is_interactive():
+        print(
+            f"[CI] Auto-picking first workflow: {workflows[0][2] if workflows else None}",
+            file=sys.stderr,
+        )
+        return workflows[0][0] if workflows else None
+
     print("\nAvailable workflows:", file=sys.stderr)
     print("-" * 60, file=sys.stderr)
     for i, (_wf_path, description, display_name) in enumerate(workflows, 1):

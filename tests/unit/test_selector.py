@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from fdsx.core.config import WorkflowSelectorConfig
+from fdsx.core.mode import set_interactive_mode
 from fdsx.core.selector import (
     _build_workflow_selection_prompt,
     _parse_workflow_selection,
@@ -623,63 +624,91 @@ class TestSelectWorkflow:
 
 class TestConfirmWorkflowSelection:
     def test_approve_returns_true(self):
-        with patch("builtins.input", return_value="y"):
-            result = confirm_workflow_selection(
-                Path("plan.yaml"), "Implement a feature"
-            )
-        assert result is True
+        set_interactive_mode(True)
+        try:
+            with patch("builtins.input", return_value="y"):
+                result = confirm_workflow_selection(
+                    Path("plan.yaml"), "Implement a feature"
+                )
+            assert result is True
+        finally:
+            set_interactive_mode(None)
 
     def test_reject_returns_false(self):
-        with patch("builtins.input", return_value="n"):
-            result = confirm_workflow_selection(
-                Path("plan.yaml"), "Implement a feature"
-            )
-        assert result is False
+        set_interactive_mode(True)
+        try:
+            with patch("builtins.input", return_value="n"):
+                result = confirm_workflow_selection(
+                    Path("plan.yaml"), "Implement a feature"
+                )
+            assert result is False
+        finally:
+            set_interactive_mode(None)
 
     def test_list_returns_false(self):
-        with patch("builtins.input", return_value="l"):
-            result = confirm_workflow_selection(
-                Path("plan.yaml"), "Implement a feature"
-            )
-        assert result is False
+        set_interactive_mode(True)
+        try:
+            with patch("builtins.input", return_value="l"):
+                result = confirm_workflow_selection(
+                    Path("plan.yaml"), "Implement a feature"
+                )
+            assert result is False
+        finally:
+            set_interactive_mode(None)
 
     def test_invalid_then_approve(self):
-        inputs = iter(["invalid", "y"])
-        with patch("builtins.input", lambda x: next(inputs)):
-            result = confirm_workflow_selection(
-                Path("plan.yaml"), "Implement a feature"
-            )
-        assert result is True
+        set_interactive_mode(True)
+        try:
+            inputs = iter(["invalid", "y"])
+            with patch("builtins.input", lambda x: next(inputs)):
+                result = confirm_workflow_selection(
+                    Path("plan.yaml"), "Implement a feature"
+                )
+            assert result is True
+        finally:
+            set_interactive_mode(None)
 
 
 class TestPickWorkflowManually:
     def test_pick_valid_number(self):
-        workflows = [
-            (Path("plan.yaml"), "Planning", "plan"),
-            (Path("implement.yaml"), "Implementation", "implement"),
-        ]
+        set_interactive_mode(True)
+        try:
+            workflows = [
+                (Path("plan.yaml"), "Planning", "plan"),
+                (Path("implement.yaml"), "Implementation", "implement"),
+            ]
 
-        with patch("builtins.input", return_value="1"):
-            result = pick_workflow_manually(workflows)
+            with patch("builtins.input", return_value="1"):
+                result = pick_workflow_manually(workflows)
 
-        assert result == Path("plan.yaml")
+            assert result == Path("plan.yaml")
+        finally:
+            set_interactive_mode(None)
 
     def test_cancel_returns_none(self):
-        workflows = [(Path("plan.yaml"), "Planning", "plan")]
+        set_interactive_mode(True)
+        try:
+            workflows = [(Path("plan.yaml"), "Planning", "plan")]
 
-        with patch("builtins.input", return_value="c"):
-            result = pick_workflow_manually(workflows)
+            with patch("builtins.input", return_value="c"):
+                result = pick_workflow_manually(workflows)
 
-        assert result is None
+            assert result is None
+        finally:
+            set_interactive_mode(None)
 
     def test_invalid_number_prompts_again(self):
-        workflows = [(Path("plan.yaml"), "Planning", "plan")]
+        set_interactive_mode(True)
+        try:
+            workflows = [(Path("plan.yaml"), "Planning", "plan")]
 
-        inputs = iter(["0", "1"])
-        with patch("builtins.input", lambda x: next(inputs)):
-            result = pick_workflow_manually(workflows)
+            inputs = iter(["0", "1"])
+            with patch("builtins.input", lambda x: next(inputs)):
+                result = pick_workflow_manually(workflows)
 
-        assert result == Path("plan.yaml")
+            assert result == Path("plan.yaml")
+        finally:
+            set_interactive_mode(None)
 
 
 class TestResolveWorkflowForTask:
@@ -920,24 +949,32 @@ class TestConfirmWorkflowSelectionDisplayName:
 
     def test_directory_workflow_shows_display_name(self, capsys):
         """confirm_workflow_selection should show display_name, not 'workflow.yaml'."""
-        with patch("builtins.input", return_value="y"):
-            confirm_workflow_selection(
-                Path("review/workflow.yaml"),
-                "Review the code",
-                display_name="review",
-            )
+        set_interactive_mode(True)
+        try:
+            with patch("builtins.input", return_value="y"):
+                confirm_workflow_selection(
+                    Path("review/workflow.yaml"),
+                    "Review the code",
+                    display_name="review",
+                )
 
-        captured = capsys.readouterr()
-        assert "review" in captured.err
-        assert "workflow.yaml" not in captured.err
+            captured = capsys.readouterr()
+            assert "review" in captured.err
+            assert "workflow.yaml" not in captured.err
+        finally:
+            set_interactive_mode(None)
 
     def test_flat_workflow_falls_back_to_filename(self, capsys):
         """Without display_name, confirm_workflow_selection shows filename."""
-        with patch("builtins.input", return_value="y"):
-            confirm_workflow_selection(
-                Path("plan.yaml"),
-                "Plan the work",
-            )
+        set_interactive_mode(True)
+        try:
+            with patch("builtins.input", return_value="y"):
+                confirm_workflow_selection(
+                    Path("plan.yaml"),
+                    "Plan the work",
+                )
 
-        captured = capsys.readouterr()
-        assert "plan.yaml" in captured.err
+            captured = capsys.readouterr()
+            assert "plan.yaml" in captured.err
+        finally:
+            set_interactive_mode(None)

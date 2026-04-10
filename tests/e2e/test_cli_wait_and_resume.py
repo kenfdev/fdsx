@@ -10,7 +10,7 @@ class TestCLIE2EPhase3:
     def test_wait_state_flow_with_stdin_selection(self):
         """Test fdsx run with Wait state flow - provide input via stdin."""
         result = run_fdsx(
-            ["run", fixture_path("wait_approval.yaml")],
+            ["--interactive", "run", fixture_path("wait_approval.yaml")],
             input="1\n",
             timeout=30,
         )
@@ -30,7 +30,7 @@ class TestCLIE2EPhase3:
             base_dir = str(tmp_path / ".fdsx")
 
             first_run = run_fdsx(
-                ["run", flow_path, "--thread-id", thread_id],
+                ["--interactive", "run", flow_path, "--thread-id", thread_id],
                 input="",
                 cwd=tmp_dir,
                 timeout=30,
@@ -42,6 +42,7 @@ class TestCLIE2EPhase3:
 
             resume_result = run_fdsx(
                 [
+                    "--interactive",
                     "resume",
                     "--thread-id",
                     thread_id,
