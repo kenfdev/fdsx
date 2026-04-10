@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -92,7 +93,12 @@ def main(
     elif ci:
         set_interactive_mode(False)
     else:
-        set_interactive_mode(sys.stdin.isatty())
+        ci_env = os.environ.get("CI", "").lower() in ("true", "1", "yes")
+        gh_actions = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        if ci_env or gh_actions:
+            set_interactive_mode(False)
+        else:
+            set_interactive_mode(sys.stdin.isatty())
     if ctx.invoked_subcommand != "init" and needs_init(Path.cwd()):
         typer.echo(
             "No .fdsx/ directory found. Run 'fdsx init' to set up your project.",
