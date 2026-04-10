@@ -39,7 +39,7 @@ class TestSingleTaskConfirmation:
         stream = io.StringIO()
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("fdsx.display.terminal.input", return_value="c"),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -137,7 +137,7 @@ class TestSingleTaskConfirmation:
         stream = io.StringIO()
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("fdsx.display.terminal.input", return_value="c"),
         ):
             result = confirm_workflow_assignments_interactive(

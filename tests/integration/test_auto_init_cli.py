@@ -13,6 +13,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from fdsx.cli import main
+from fdsx.core.mode import get_interactive_mode, set_interactive_mode
 
 
 class TestCiInteractiveFlags:
@@ -36,30 +37,36 @@ class TestCiInteractiveFlags:
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        main._interactive_mode = None
-        result = runner.invoke(main.app, ["--ci", "--version"])
+        set_interactive_mode(None)
+        try:
+            result = runner.invoke(main.app, ["--ci", "--version"])
 
-        assert result.exit_code == 0, (
-            f"Expected exit 0, got {result.exit_code}. output: {result.output}"
-        )
-        assert main._interactive_mode is False, (
-            f"Expected _interactive_mode to be False, got {main._interactive_mode}"
-        )
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}. output: {result.output}"
+            )
+            assert get_interactive_mode() is False, (
+                f"Expected _interactive_mode to be False, got {get_interactive_mode()}"
+            )
+        finally:
+            set_interactive_mode(None)
 
     def test_interactive_flag_parsed(self, tmp_path, monkeypatch):
         """--interactive flag is accepted and sets _interactive_mode to True."""
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
-        main._interactive_mode = None
-        result = runner.invoke(main.app, ["--interactive", "--version"])
+        set_interactive_mode(None)
+        try:
+            result = runner.invoke(main.app, ["--interactive", "--version"])
 
-        assert result.exit_code == 0, (
-            f"Expected exit 0, got {result.exit_code}. output: {result.output}"
-        )
-        assert main._interactive_mode is True, (
-            f"Expected _interactive_mode to be True, got {main._interactive_mode}"
-        )
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}. output: {result.output}"
+            )
+            assert get_interactive_mode() is True, (
+                f"Expected _interactive_mode to be True, got {get_interactive_mode()}"
+            )
+        finally:
+            set_interactive_mode(None)
 
 
 class TestInitGuard:

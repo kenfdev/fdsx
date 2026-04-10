@@ -4,33 +4,40 @@ from unittest.mock import patch
 
 import pytest
 
-from fdsx.display.terminal import Spinner, is_interactive
+from fdsx.core.mode import is_interactive, set_interactive_mode
+from fdsx.display.terminal import Spinner
 
 
 class TestIsInteractive:
     """Tests for is_interactive function."""
 
-    def test_returns_true_when_stderr_is_tty(self):
-        """When stderr is a TTY, is_interactive returns True."""
-        with patch("sys.stderr") as mock_stderr:
-            mock_stderr.isatty.return_value = True
-            result = is_interactive()
+    def test_returns_true_when_stdin_is_tty(self):
+        """When stdin is a TTY, is_interactive returns True."""
+        set_interactive_mode(None)
+        try:
+            with patch("sys.stdin.isatty", return_value=True):
+                result = is_interactive()
 
-        assert result is True
+            assert result is True
+        finally:
+            set_interactive_mode(None)
 
-    def test_returns_false_when_stderr_is_not_tty(self):
-        """When stderr is not a TTY (piped/redirected), is_interactive returns False."""
-        with patch("sys.stderr") as mock_stderr:
-            mock_stderr.isatty.return_value = False
-            result = is_interactive()
+    def test_returns_false_when_stdin_is_not_tty(self):
+        """When stdin is not a TTY (piped/redirected), is_interactive returns False."""
+        set_interactive_mode(None)
+        try:
+            with patch("sys.stdin.isatty", return_value=False):
+                result = is_interactive()
 
-        assert result is False
+            assert result is False
+        finally:
+            set_interactive_mode(None)
 
 
 class TestSpinnerTTYMode:
     """Tests for Spinner in TTY mode."""
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_start_creates_daemon_thread(self, _mock):
         """start() spawns a daemon thread in TTY mode."""
         buf = StringIO()
@@ -42,7 +49,7 @@ class TestSpinnerTTYMode:
         assert spinner._running is True
         spinner.stop()
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_start_returns_self(self, _mock):
         """start() returns the Spinner instance itself."""
         buf = StringIO()
@@ -52,7 +59,7 @@ class TestSpinnerTTYMode:
         assert result is spinner
         spinner.stop()
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_stop_joins_thread(self, _mock):
         """stop() joins the thread and sets _running to False."""
         buf = StringIO()
@@ -63,7 +70,7 @@ class TestSpinnerTTYMode:
         assert spinner._thread is None
         assert spinner._running is False
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_update_changes_message(self, _mock):
         """update() changes the internal message in TTY mode."""
         buf = StringIO()
@@ -74,7 +81,7 @@ class TestSpinnerTTYMode:
         assert spinner._message == "Updated message"
         spinner.stop()
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_double_start_no_concurrent_threads(self, _mock):
         """Calling start() twice does not create concurrent threads."""
         buf = StringIO()
@@ -93,7 +100,7 @@ class TestSpinnerTTYMode:
         spinner.stop()
         assert spinner._thread is None
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_writes_frames_to_stream(self, _mock):
         """Spinner writes braille frame characters to the stream in TTY mode."""
         buf = StringIO()
@@ -107,7 +114,7 @@ class TestSpinnerTTYMode:
         # At least one braille character should appear
         assert any(ch in output for ch in Spinner._FRAMES)
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_stop_with_final_message(self, _mock):
         """stop(final_message) prints the message after clearing the line."""
         buf = StringIO()
@@ -118,7 +125,7 @@ class TestSpinnerTTYMode:
         output = buf.getvalue()
         assert "Done!" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_stop_clears_line(self, _mock):
         """stop() writes carriage-return + erase-line sequence in TTY mode."""
         buf = StringIO()
@@ -133,7 +140,7 @@ class TestSpinnerTTYMode:
 class TestSpinnerNonTTYMode:
     """Tests for Spinner in non-TTY mode."""
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_start_prints_message_no_thread(self, _mock):
         """start() prints message once and spawns no thread in non-TTY mode."""
         buf = StringIO()
@@ -144,7 +151,7 @@ class TestSpinnerNonTTYMode:
         assert "Processing\n" in output
         assert spinner._thread is None
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_update_prints_new_line(self, _mock):
         """update() prints the new message as a newline in non-TTY mode."""
         buf = StringIO()
@@ -156,7 +163,7 @@ class TestSpinnerNonTTYMode:
         assert "Step 1\n" in output
         assert "Step 2\n" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_stop_with_final_message(self, _mock):
         """stop(final_message) prints the message in non-TTY mode."""
         buf = StringIO()
@@ -167,7 +174,7 @@ class TestSpinnerNonTTYMode:
         output = buf.getvalue()
         assert "Complete\n" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_no_carriage_return(self, _mock):
         """Spinner does not write \\r in non-TTY mode (CI/log compatible)."""
         buf = StringIO()
@@ -179,7 +186,7 @@ class TestSpinnerNonTTYMode:
         output = buf.getvalue()
         assert "\r" not in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_only_prints_once_on_start(self, _mock):
         """start() prints the message exactly once in non-TTY mode."""
         buf = StringIO()
@@ -193,7 +200,7 @@ class TestSpinnerNonTTYMode:
 class TestSpinnerContextManager:
     """Tests for Spinner used as a context manager."""
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_context_manager_starts_and_stops(self, _mock):
         """Context manager starts and stops the spinner automatically."""
         buf = StringIO()
@@ -205,7 +212,7 @@ class TestSpinnerContextManager:
 
         assert spinner._running is False
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_context_manager_stops_on_exception(self, _mock):
         """Context manager stops the spinner even when an exception is raised."""
         buf = StringIO()
@@ -220,7 +227,7 @@ class TestSpinnerContextManager:
         assert spinner._running is False
         assert spinner._thread is None
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_context_manager_non_tty(self, _mock):
         """Context manager works correctly in non-TTY mode."""
         buf = StringIO()
@@ -234,7 +241,7 @@ class TestSpinnerContextManager:
 class TestSpinnerSecurity:
     """Tests that spinner messages are sanitized to prevent ANSI injection."""
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=True)
+    @patch("fdsx.core.mode.is_interactive", return_value=True)
     def test_ansi_escapes_sanitized_in_tty_mode(self, _mock):
         """ANSI escape sequences in messages are stripped in TTY mode."""
         buf = StringIO()
@@ -248,7 +255,7 @@ class TestSpinnerSecurity:
         assert "\x1b" not in output_sanitized
         assert "evil" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_ansi_escapes_sanitized_in_non_tty_mode(self, _mock):
         """ANSI escape sequences in messages are stripped in non-TTY mode."""
         buf = StringIO()
@@ -259,7 +266,7 @@ class TestSpinnerSecurity:
         assert "\x1b" not in output
         assert "evil" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_ansi_in_final_message_sanitized(self, _mock):
         """ANSI escape sequences in stop(final_message) are stripped."""
         buf = StringIO()
@@ -271,7 +278,7 @@ class TestSpinnerSecurity:
         assert "\x1b" not in output
         assert "Done" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_ansi_in_update_sanitized(self, _mock):
         """ANSI escape sequences in update() messages are stripped."""
         buf = StringIO()
@@ -283,7 +290,7 @@ class TestSpinnerSecurity:
         assert "\x1b" not in output
         assert "step 2" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_newline_in_message_sanitized(self, _mock):
         """Newlines in messages are replaced to prevent log injection."""
         buf = StringIO()
@@ -296,7 +303,7 @@ class TestSpinnerSecurity:
         assert "syncing" in output
         assert "deploy complete" in output
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_newline_in_update_sanitized(self, _mock):
         """Newlines in update() messages are replaced."""
         buf = StringIO()
@@ -315,14 +322,14 @@ class TestSpinnerEdgeCases:
 
     def test_defaults_to_stderr(self):
         """Spinner uses sys.stderr by default when no stream provided."""
-        with patch("fdsx.display.terminal.is_interactive", return_value=False):
+        with patch("fdsx.core.mode.is_interactive", return_value=False):
             spinner = Spinner()
         assert spinner._stream is sys.stderr
 
     def test_custom_stream(self):
         """Spinner uses provided custom stream."""
         buf = StringIO()
-        with patch("fdsx.display.terminal.is_interactive", return_value=False):
+        with patch("fdsx.core.mode.is_interactive", return_value=False):
             spinner = Spinner(stream=buf)
         assert spinner._stream is buf
 
@@ -333,7 +340,7 @@ class TestSpinnerEdgeCases:
             assert len(frame) == 1
             assert ord(frame) >= 0x2800
 
-    @patch("fdsx.display.terminal.is_interactive", return_value=False)
+    @patch("fdsx.core.mode.is_interactive", return_value=False)
     def test_default_message_empty(self, _mock):
         """Spinner initializes with an empty message by default."""
         buf = StringIO()

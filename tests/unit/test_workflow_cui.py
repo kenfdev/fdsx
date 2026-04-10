@@ -38,7 +38,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", return_value="c"),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -61,7 +61,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml", "implement.yaml")
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", return_value="q"),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -78,7 +78,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml")
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=False),
+            patch("fdsx.core.mode.is_interactive", return_value=False),
             patch("builtins.input") as mock_input,
         ):
             result = confirm_workflow_assignments_interactive(
@@ -101,7 +101,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["1", "2", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -120,7 +120,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["1", "c", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -140,7 +140,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["0", "99", "abc", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -160,7 +160,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["1", "99", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -180,7 +180,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["1", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -205,7 +205,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["c", "2", "2", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -230,7 +230,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", return_value="c"),
         ):
             confirm_workflow_assignments_interactive(
@@ -258,7 +258,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["1", "2", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -277,7 +277,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         workflows = self._make_workflows("review.yaml")
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", return_value="q"),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -307,7 +307,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", return_value="c"),
         ):
             confirm_workflow_assignments_interactive(
@@ -329,7 +329,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
 
         input_seq = ["1", "2", "1", "3", "c"]
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=input_seq),
         ):
             result = confirm_workflow_assignments_interactive(
@@ -349,7 +349,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", return_value="c") as mock_input,
         ):
             result = confirm_workflow_assignments_interactive(
@@ -374,7 +374,7 @@ class TestConfirmWorkflowAssignmentsInteractive:
         stream = StringIO()
 
         with (
-            patch("fdsx.display.terminal.is_interactive", return_value=True),
+            patch("fdsx.core.mode.is_interactive", return_value=True),
             patch("builtins.input", side_effect=["c", "q"]) as mock_input,
         ):
             result = confirm_workflow_assignments_interactive(

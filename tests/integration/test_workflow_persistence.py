@@ -27,7 +27,7 @@ class TestWorkflowPersistence:
                     return_value={"result": "ok"},
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch("fdsx.core.mode.is_interactive", return_value=False),
             ):
                 results = engine.run_tasks_dir(
                     flow_path, tasks_dir, auto_workflow=False
@@ -53,7 +53,7 @@ class TestWorkflowPersistence:
                     return_value={"result": "ok"},
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch("fdsx.core.mode.is_interactive", return_value=False),
                 patch(
                     "fdsx.display.terminal.confirm_workflow_assignments_interactive",
                     return_value=None,
@@ -160,7 +160,7 @@ class TestWorkflowPersistence:
                     return_value={"result": "ok"},
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch("fdsx.core.mode.is_interactive", return_value=False),
                 patch(
                     "fdsx.display.terminal.confirm_workflow_assignments_interactive"
                 ) as mock_cui,
@@ -188,7 +188,7 @@ class TestWorkflowPersistence:
                     return_value={"result": "ok"},
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch("fdsx.core.mode.is_interactive", return_value=False),
             ):
                 engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 
@@ -221,7 +221,7 @@ class TestWorkflowPersistence:
                     return_value={"result": "ok"},
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
-                patch("fdsx.display.terminal.is_interactive", return_value=False),
+                patch("fdsx.core.mode.is_interactive", return_value=False),
             ):
                 engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=False)
 

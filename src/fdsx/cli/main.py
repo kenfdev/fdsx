@@ -33,13 +33,12 @@ from fdsx.core.init import (
     needs_init,
     scaffold,
 )
+from fdsx.core.mode import is_interactive, set_interactive_mode
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 from fdsx.models.init import InitConfig
 
 app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
-
-_interactive_mode: bool | None = None
 
 
 def _validate_tasks_dir(tasks_dir: Path) -> None:
@@ -82,7 +81,6 @@ def main(
         help="Run in interactive mode (enables TTY detection if not explicitly set).",
     ),
 ) -> None:
-    global _interactive_mode
     if ci and interactive:
         typer.echo(
             "Error: --ci and --interactive are mutually exclusive",
@@ -90,11 +88,11 @@ def main(
         )
         raise typer.Exit(code=2)
     if interactive:
-        _interactive_mode = True
+        set_interactive_mode(True)
     elif ci:
-        _interactive_mode = False
+        set_interactive_mode(False)
     else:
-        _interactive_mode = sys.stdin.isatty()
+        set_interactive_mode(sys.stdin.isatty())
     if ctx.invoked_subcommand != "init" and needs_init(Path.cwd()):
         typer.echo(
             "No .fdsx/ directory found. Run 'fdsx init' to set up your project.",
@@ -102,7 +100,7 @@ def main(
         )
         raise typer.Exit(code=0)
     elif (
-        _interactive_mode
+        is_interactive()
         and not needs_init(Path.cwd())
         and not (Path.cwd() / ".fdsx" / ".gitignore").exists()
     ):
@@ -347,7 +345,7 @@ def _run_skill_only_install() -> None:
 
 def _prompt_and_install_skill(cwd: Path) -> None:
     """Prompt for skill install after scaffold completes. Handles decline gracefully."""
-    if not _interactive_mode:
+    if not is_interactive():
         return
 
     try:

@@ -4,14 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, TextIO
 
-
-def is_interactive() -> bool:
-    """Check if stderr is connected to an interactive terminal.
-
-    Returns:
-        True if stderr is a TTY, False otherwise.
-    """
-    return sys.stderr.isatty()
+import fdsx.core.mode
 
 
 def _sanitize_output(text: str) -> str:
@@ -466,7 +459,7 @@ class Spinner:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._running = False
-        self._interactive = is_interactive()
+        self._interactive = fdsx.core.mode.is_interactive()
 
     def start(self) -> "Spinner":
         """Start the spinner.
@@ -579,7 +572,7 @@ def confirm_workflow_assignments_interactive(
     if stream is None:
         stream = sys.stderr
 
-    if not is_interactive():
+    if not fdsx.core.mode.is_interactive():
         return dict(workflow_assignments)
 
     wf_display_map = {
