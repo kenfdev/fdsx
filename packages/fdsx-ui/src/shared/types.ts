@@ -35,6 +35,7 @@ export interface HookEntry {
 export interface HookConfig {
   onStart: HookEntry[];
   onComplete: HookEntry[];
+  onFailure: HookEntry[];
 }
 
 export interface ChoiceRule {
@@ -119,7 +120,7 @@ export interface PassState {
 
 export interface WaitState {
   type: 'wait';
-  mode: 'prompt';
+  mode: string;
   message: string;
   choices: string[];
   resultPath: string;
