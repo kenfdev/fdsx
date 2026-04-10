@@ -61,8 +61,8 @@ echo "===== SOURCE: core/engine/run.py ====="
 cat "$SRC_DIR/core/engine/run.py"
 
 echo ""
-echo "===== SOURCE: core/engine/batch.py ====="
-cat "$SRC_DIR/core/engine/batch.py"
+echo "===== SOURCE: core/batch.py ====="
+cat "$SRC_DIR/core/batch.py"
 
 echo ""
 echo "===== SOURCE: core/engine/tasks_dir.py ====="

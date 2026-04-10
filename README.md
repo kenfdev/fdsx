@@ -14,7 +14,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Stateful execution with checkpoint/resume
 - Parallel execution with branch aggregation
 - Map state for iterating over arrays with sub-workflows
-- Batch task processing (in-memory and persistent)
+- Persistent batch task processing with crash-resilient resume
 - Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
@@ -154,6 +154,8 @@ states:
         type: llm_classify              # (literal, REQUIRED) only "llm_classify" supported
         provider: claude                # (string, REQUIRED) LLM provider for classification
         prompt: "Classify as APPROVED or NEEDS_FIX"  # (string, REQUIRED)
+        # Alternatively, use a profile reference (mutually exclusive with provider):
+        # profile: smarty
 
     # --- Execution control ---
     retry: 3                            # (int, default: 3) retry attempts on failure
@@ -204,8 +206,10 @@ states:
   parallel_review:
     type: parallel                      # (REQUIRED) literal "parallel"
     branches:                           # (list, REQUIRED) each branch is an independent execution
-      - provider: claude                # same provider rules as task (or use profile:)
+      - provider: claude                # same provider rules as task
         model: claude-sonnet-4-6
+        # Alternatively, use a profile reference (mutually exclusive with provider/model):
+        # profile: smarty
         prompt_template: |
           Review code quality: {implementation}
         # prompt_file: review.md        # alternative to prompt_template
@@ -495,8 +499,8 @@ hooks:
 | Flag | Description |
 |------|-------------|
 | `--version` | Show version and exit |
-| `--ci` | Run in CI mode (non-interactive) |
-| `--interactive` | Force interactive mode |
+| `--ci` | Run in CI mode (non-interactive, mutually exclusive with `--interactive`). Also auto-detected from `CI` and `GITHUB_ACTIONS` environment variables |
+| `--interactive` | Force interactive mode (mutually exclusive with `--ci`) |
 
 ### Commands
 
@@ -507,11 +511,11 @@ hooks:
 | `fdsx run` | Execute tasks from default tasks directory (`default_tasks_dir` or `.fdsx/tasks/`) |
 | `fdsx run <workflow.yaml>` | Execute a workflow |
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
-| `fdsx run <workflow.yaml> --tasks tasks.yaml` | In-memory batch execution |
 | `fdsx run --tasks-dir <dir>` | Persistent batch execution (workflow optional) |
 | `fdsx run ... --quiet` | Suppress stderr streaming output |
 | `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
-| `fdsx run ... --confirm-workflow` | Show workflow confirmation UI |
+| `fdsx run ... --confirm-workflow` | Show workflow confirmation UI (requires interactive mode) |
+| `fdsx run ... --continue-on-error` | Continue processing remaining entries on error in tasks-dir mode |
 | `fdsx resume --thread-id <id>` | Resume from checkpoint |
 | `fdsx resume --thread-id <id> --base-dir <dir>` | Resume with custom base directory |
 | `fdsx validate <workflow.yaml>` | Validate YAML syntax |
