@@ -5,7 +5,6 @@ existing imports like ``from fdsx.core.engine import run_flow`` continue
 to work without changes.
 """
 
-from .batch import run_batch
 from .results import (
     _calc_elapsed,
     _detect_abort_status,
@@ -36,7 +35,6 @@ __all__ = [
     "_workflow_persist_id",
     "load_tasks_dir",
     "resume_flow",
-    "run_batch",
     "run_flow",
     "run_tasks_dir",
     "validate_flow",

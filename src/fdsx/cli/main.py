@@ -122,11 +122,6 @@ def run(
     input_vars: list[str] | None = typer.Option(
         None, "--input", help="Input variable as KEY=VALUE"
     ),
-    tasks_file: Path | None = typer.Option(
-        None,
-        "--tasks",
-        help="Batch task file for in-memory splitting and execution (requires workflow argument)",
-    ),
     tasks_dir: Path | None = typer.Option(
         None,
         "--tasks-dir",
@@ -148,7 +143,7 @@ def run(
         help="Suppress stderr streaming output from providers. Log files are still written and completion summary is still shown.",
     ),
 ) -> None:
-    """Run a workflow. Supports single execution, in-memory batch (--tasks), and persistent batch (--tasks-dir) modes.
+    """Run a workflow. Supports single execution and persistent batch (--tasks-dir) modes.
 
     Shows an animated spinner during workflow auto-selection for tasks-dir mode.
     Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
@@ -156,28 +151,20 @@ def run(
     In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
     config = load_config()
     if tasks_dir is not None:
-        if input_vars is not None or tasks_file is not None:
+        if input_vars is not None:
             typer.echo(
-                "Error: --tasks-dir is mutually exclusive with --input and --tasks",
+                "Error: --tasks-dir is mutually exclusive with --input",
                 err=True,
             )
             raise typer.Exit(code=2)
         _validate_tasks_dir(tasks_dir)
-    elif input_vars and tasks_file is not None:
+    elif input_vars is not None and workflow is None:
         typer.echo(
-            "Error: --input and --tasks are mutually exclusive",
+            "Error: workflow argument is required when using --input",
             err=True,
         )
         raise typer.Exit(code=2)
-    elif tasks_file is not None and workflow is None:
-        typer.echo(
-            "Error: workflow argument is required when using --tasks",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-    elif (
-        workflow is None and tasks_dir is None and tasks_file is None and not input_vars
-    ):
+    elif workflow is None and tasks_dir is None and not input_vars:
         resolved_tasks_dir = Path(
             config.default_tasks_dir if config.default_tasks_dir else ".fdsx/tasks/"
         ).expanduser()
@@ -223,14 +210,6 @@ def run(
                 auto_workflow=effective_auto_workflow,
                 quiet=quiet,
             )
-            has_failure = any(r.get("status") == "failed" for r in results)
-            if has_failure:
-                raise typer.Exit(code=1)
-            else:
-                raise typer.Exit(code=0)
-        elif tasks_file is not None:
-            assert workflow is not None
-            results = engine.run_batch(workflow, tasks_file, base_dir, quiet=quiet)
             has_failure = any(r.get("status") == "failed" for r in results)
             if has_failure:
                 raise typer.Exit(code=1)

@@ -372,18 +372,7 @@ class TestHelpText:
         result = runner.invoke(app, ["run", "--help"])
 
         assert result.exit_code == 0
-        assert "in-memory batch" in result.stdout
         assert "persistent batch" in result.stdout
-
-    def test_tasks_option_help_is_descriptive(self, tmp_path):
-        """Verify --tasks option help is descriptive."""
-        (tmp_path / ".fdsx").mkdir()
-        runner = CliRunner()
-        result = runner.invoke(app, ["run", "--help"])
-
-        assert result.exit_code == 0
-        assert "in-memory splitting and" in result.stdout
-        assert "execution" in result.stdout
 
     def test_tasks_dir_option_help_mentions_resume(self, tmp_path):
         """Verify --tasks-dir option help mentions resume capability."""
