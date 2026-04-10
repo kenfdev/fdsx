@@ -5,9 +5,10 @@ import styles from '../styles/WorkflowList.module.css';
 interface WorkflowListProps {
   selectedWorkflow: WorkflowFile | null;
   onSelect: (workflow: WorkflowFile) => void;
+  onWorkflowsLoaded?: (count: number) => void;
 }
 
-export function WorkflowList({ selectedWorkflow, onSelect }: WorkflowListProps) {
+export function WorkflowList({ selectedWorkflow, onSelect, onWorkflowsLoaded }: WorkflowListProps) {
   const [workflows, setWorkflows] = useState<WorkflowFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +23,7 @@ export function WorkflowList({ selectedWorkflow, onSelect }: WorkflowListProps) 
         const data: WorkflowFile[] = await res.json();
         const sorted = [...data].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
         setWorkflows(sorted);
+        onWorkflowsLoaded?.(sorted.length);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {

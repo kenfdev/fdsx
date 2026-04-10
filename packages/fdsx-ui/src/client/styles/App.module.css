@@ -15,7 +15,9 @@
 
 .main {
   flex: 1;
-  overflow: auto;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
   background-color: #ffffff;
 }
 

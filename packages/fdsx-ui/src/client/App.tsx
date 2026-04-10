@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { WorkflowList } from './components/WorkflowList.js';
+import { GraphView } from './components/GraphView.js';
+import { EmptyState } from './components/EmptyState.js';
 import type { WorkflowFile } from '../shared/types.js';
 import styles from './styles/App.module.css';
 
@@ -21,6 +23,11 @@ export function App() {
       return initial ? { name: '', filePath: '', relativePath: initial } : null;
     },
   );
+  const [workflowCount, setWorkflowCount] = useState<number | null>(null);
+
+  const handleWorkflowsLoaded = useCallback((count: number) => {
+    setWorkflowCount(count);
+  }, []);
 
   const handleSelectWorkflow = useCallback((workflow: WorkflowFile) => {
     writeSelectedWorkflow(workflow.relativePath);
@@ -43,17 +50,19 @@ export function App() {
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
-        <WorkflowList selectedWorkflow={selectedWorkflow} onSelect={handleSelectWorkflow} />
+        <WorkflowList
+          selectedWorkflow={selectedWorkflow}
+          onSelect={handleSelectWorkflow}
+          onWorkflowsLoaded={handleWorkflowsLoaded}
+        />
       </aside>
       <main className={styles.main}>
         {selectedWorkflow ? (
-          <div className={styles.graphArea}>
-            <p>Workflow: {selectedWorkflow.relativePath}</p>
-          </div>
+          <GraphView workflowPath={selectedWorkflow.relativePath} />
+        ) : workflowCount === 0 ? (
+          <EmptyState type="no-workflows" />
         ) : (
-          <div className={styles.placeholder}>
-            <p>Select a workflow from the sidebar</p>
-          </div>
+          <EmptyState type="no-selection" />
         )}
       </main>
     </div>
