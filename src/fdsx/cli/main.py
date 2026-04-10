@@ -187,6 +187,13 @@ def run(
         )
         raise typer.Exit(code=2)
 
+    if confirm_workflow and not is_interactive():
+        typer.echo(
+            "Error: --confirm-workflow requires interactive mode and cannot be used with --ci or in CI environments",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
     inputs = None
     if input_vars:
         inputs = {}
