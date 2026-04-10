@@ -5,7 +5,13 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
-    environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    environment: 'jsdom',
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+    css: {
+      modules: {
+        classNameStrategy: 'non-scoped',
+      },
+    },
+    setupFiles: ['./tests/setup.ts'],
   },
 });
