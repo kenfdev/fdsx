@@ -346,6 +346,26 @@ class TestExtraction:
         _, call_kwargs = mock_ev.call_args
         assert call_kwargs.get("source_provider") == "system"
 
+    def test_system_provider_extraction_failure_no_retry(self):
+        """When provider_name == 'system' and extraction fails, provider is called exactly once."""
+        from fdsx.core.compiler.execution import execute_with_retry
+
+        extract_rule = self._make_extract_rule()
+        config, mock_provider, _ = _make_config(
+            provider_name="system",
+            max_retries=2,
+            extract=extract_rule,
+        )
+        mock_provider.execute.return_value = ProviderResult(
+            exit_code=0, stdout="bad output", stderr=""
+        )
+
+        with patch("fdsx.core.compiler.execution.extract_value", return_value=None):
+            result = execute_with_retry(config)
+
+        assert result.extracted is None
+        assert mock_provider.execute.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # stream_logger lifecycle

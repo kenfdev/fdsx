@@ -160,6 +160,8 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                     if extracted is not None:
                         break
                     last_error = "Extraction failed: all strategies returned None"
+                    if config.provider_name == "system":
+                        break
                 else:
                     break
             else:
