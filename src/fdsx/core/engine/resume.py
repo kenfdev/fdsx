@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
@@ -18,6 +18,7 @@ from fdsx.display.terminal import (
 )
 from fdsx.logging import RunRecorder
 from fdsx.logging.recorder import LOGS_DIR_NAME
+from fdsx.models.task import load_task_file, save_task_file
 
 from .interrupts import handle_interrupts
 from .results import (
@@ -222,6 +223,30 @@ def resume_flow(
                 )
             else:
                 display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
+
+        # Best-effort: update task YAML entry if stored in _meta
+        _meta = last_state.get("_meta", {})
+        _task_file_path_str = _meta.get("task_file_path")
+        _task_entry_index = _meta.get("task_entry_index")
+        if _task_file_path_str is not None and _task_entry_index is not None:
+            try:
+                _task_file_path = Path(_task_file_path_str)
+                _task_file = load_task_file(_task_file_path)
+                _entry = _task_file.entries[_task_entry_index]
+                _new_status = "failed" if status == "aborted" else "completed"
+                _entry.status = cast(
+                    Literal["pending", "running", "completed", "failed"], _new_status
+                )
+                _entry.thread_id = thread_id
+                _entry.error = (
+                    f"workflow aborted at state '{failed_state}'"
+                    if status == "aborted"
+                    else None
+                )
+                save_task_file(_task_file_path, _task_file)
+            except (FileNotFoundError, IndexError, ValueError):
+                pass  # best-effort: do not raise if file is missing or index is invalid
+
         return FlowResult(results=results, status=status, abort_state=failed_state)
     except GraphRecursionError:
         if flow is not None:

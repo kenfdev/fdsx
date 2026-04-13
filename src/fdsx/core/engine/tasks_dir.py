@@ -362,11 +362,18 @@ def run_tasks_dir(
                     thread_id=thread_id,
                     base_dir=base_dir,
                     quiet=quiet,
+                    task_file_path=file_path,
+                    task_entry_index=entry_idx,
                 )
                 if flow_result.status == "aborted":
                     error_msg = f"workflow aborted at state '{flow_result.abort_state}'"
                     _update_task_status(
-                        file_path, task_file, entry_idx, "failed", thread_id=thread_id, error=error_msg
+                        file_path,
+                        task_file,
+                        entry_idx,
+                        "failed",
+                        thread_id=thread_id,
+                        error=error_msg,
                     )
                     results.append(
                         {
@@ -382,7 +389,11 @@ def run_tasks_dir(
                     )
                 else:
                     _update_task_status(
-                        file_path, task_file, entry_idx, "completed", thread_id=thread_id
+                        file_path,
+                        task_file,
+                        entry_idx,
+                        "completed",
+                        thread_id=thread_id,
                     )
                     results.append(
                         {
