@@ -32,9 +32,11 @@ class TestWaitFlow:
         path = FIXTURES_DIR / "wait_approval.yaml"
 
         # Patch is_interactive to force the interactive prompt path in CI
-        with patch("fdsx.core.mode.is_interactive", return_value=True):
-            with patch("builtins.input", return_value="2"):
-                result = run_flow(path, base_dir=tmp_path)
+        with (
+            patch("fdsx.core.mode.is_interactive", return_value=True),
+            patch("builtins.input", return_value="2"),
+        ):
+            result = run_flow(path, base_dir=tmp_path)
 
         assert "plan_output" in result.results
         assert "approval_decision" in result.results

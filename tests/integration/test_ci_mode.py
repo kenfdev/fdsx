@@ -7,6 +7,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from fdsx.cli.main import app
+from fdsx.core.engine import FlowResult
 from fdsx.core.engine.tasks_dir import run_tasks_dir
 from fdsx.core.mode import get_interactive_mode, is_interactive, set_interactive_mode
 from fdsx.core.selector import confirm_workflow_selection, pick_workflow_manually
@@ -162,7 +163,7 @@ class TestCIModeGuards:
                     run_count[0] += 1
                     if run_count[0] == 1:
                         raise RuntimeError("intentional error")
-                    return {"result": "ok"}
+                    return FlowResult(results={"result": "ok"}, status="completed")
 
                 with (
                     patch(
@@ -202,7 +203,7 @@ class TestCIModeGuards:
                     run_count[0] += 1
                     if run_count[0] == 1:
                         raise RuntimeError("intentional error")
-                    return {"result": "ok"}
+                    return FlowResult(results={"result": "ok"}, status="completed")
 
                 with (
                     patch(
@@ -245,7 +246,7 @@ class TestCIModeGuards:
                     run_count[0] += 1
                     if run_count[0] == 1:
                         raise RuntimeError("intentional error")
-                    return {"result": "ok"}
+                    return FlowResult(results={"result": "ok"}, status="completed")
 
                 with (
                     patch(
@@ -276,7 +277,9 @@ class TestCIModeGuards:
         runner = CliRunner()
 
         with patch("fdsx.core.engine.run_flow") as mock_run_flow:
-            mock_run_flow.return_value = {"result": "ok"}
+            mock_run_flow.return_value = FlowResult(
+                results={"result": "ok"}, status="completed"
+            )
             result = runner.invoke(
                 app,
                 [

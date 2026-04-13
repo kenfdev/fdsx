@@ -7,9 +7,9 @@ from typer.testing import CliRunner
 
 from fdsx.cli.main import app
 from fdsx.core import engine
-from fdsx.core.engine import FlowResult
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import TaskSplitterConfig
+from fdsx.core.engine import FlowResult
 from fdsx.models.task import load_task_file, save_task_file
 from tests import FIXTURES_DIR
 

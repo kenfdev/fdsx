@@ -737,6 +737,92 @@ class TestTasksDirCli:
             f"exit_code={result.exit_code}, stderr={result.stderr}"
         )
 
+    def test_run_tasks_dir_exit_code_one_on_failed(self, tmp_path):
+        project_root = Path(__file__).resolve().parent.parent.parent
+        workflow_path = project_root / "tests/fixtures/batch_flow.yaml"
+
+        (tmp_path / ".fdsx").mkdir()
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        tf = TaskFile(entries=[TaskEntry(description="cli task")])
+        save_task_file(tasks_dir / "001-test.yaml", tf)
+
+        failed_results = [
+            {
+                "file_index": 0,
+                "file_name": "001-test.yaml",
+                "entry_index": 0,
+                "entry_description": "cli task",
+                "thread_id": "thread-1",
+                "status": "failed",
+                "error": "something went wrong",
+                "category": "new",
+            },
+        ]
+
+        with (
+            patch("fdsx.cli.main.engine.run_tasks_dir", return_value=failed_results),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    str(workflow_path),
+                    "--tasks-dir",
+                    str(tasks_dir),
+                    "--auto-workflow",
+                ],
+            )
+
+        assert result.exit_code == 1, (
+            f"exit_code={result.exit_code}, output={result.output}"
+        )
+
+    def test_run_tasks_dir_exit_code_zero_on_success(self, tmp_path):
+        project_root = Path(__file__).resolve().parent.parent.parent
+        workflow_path = project_root / "tests/fixtures/batch_flow.yaml"
+
+        (tmp_path / ".fdsx").mkdir()
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        tf = TaskFile(entries=[TaskEntry(description="cli task")])
+        save_task_file(tasks_dir / "001-test.yaml", tf)
+
+        success_results = [
+            {
+                "file_index": 0,
+                "file_name": "001-test.yaml",
+                "entry_index": 0,
+                "entry_description": "cli task",
+                "thread_id": "thread-1",
+                "status": "completed",
+                "error": None,
+                "category": "new",
+            },
+        ]
+
+        with (
+            patch("fdsx.cli.main.engine.run_tasks_dir", return_value=success_results),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    str(workflow_path),
+                    "--tasks-dir",
+                    str(tasks_dir),
+                    "--auto-workflow",
+                ],
+            )
+
+        assert result.exit_code == 0, (
+            f"exit_code={result.exit_code}, output={result.output}"
+        )
+
     def test_run_tasks_dir_mutual_exclusion(self, tmp_path):
         (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"

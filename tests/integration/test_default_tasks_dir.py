@@ -7,6 +7,7 @@ import yaml
 from typer.testing import CliRunner
 
 from fdsx.cli.main import app
+from fdsx.core.engine import FlowResult
 from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 
 
@@ -64,7 +65,10 @@ class TestDefaultTasksDirResolution:
 
         with (
             patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
@@ -89,7 +93,10 @@ class TestDefaultTasksDirResolution:
 
         with (
             patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
@@ -114,7 +121,10 @@ class TestDefaultTasksDirResolution:
 
         with (
             patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
@@ -148,7 +158,10 @@ class TestDefaultTasksDirResolution:
 
         with (
             patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
@@ -178,7 +191,10 @@ class TestDefaultTasksDirResolution:
 
         with (
             patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
@@ -203,7 +219,10 @@ class TestDefaultTasksDirResolution:
 
         with (
             patch("fdsx.core.selector.get_provider", return_value=MagicMock()),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
