@@ -1,22 +1,26 @@
 profiles:
   smarty:
     provider: claude
-    model: claude-opus-4-6
+    model: claude-sonnet-4-6
+#    provider: claude
+#    model: claude-opus-4-6
   doer:
-    provider: opencode
-    model: opencode-go/minimax-m2.7
+    provider: claude
+    model: claude-sonnet-4-6
   specialist:
     provider: codex
     model: gpt-5.4
   generalist:
-    provider: claude
-    model: claude-sonnet-4-6
+    provider: opencode
+    model: opencode-go/minimax-m2.7
   behemoth:
-    provider: gemini
-    model: gemini-2.5-flash
+    provider: claude
+    model: claude-haiku-4-5
+#    provider: gemini
+#    model: gemini-2.5-flash
 
 task_splitter:
-  profile: generalist
+  profile: smarty
 workflow_selector:
   profile: generalist
 workflows_dir: .fdsx/workflows

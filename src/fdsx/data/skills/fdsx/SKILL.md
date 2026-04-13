@@ -65,7 +65,7 @@ Every state except `choice` supports `next` (go to state) or `end: true` (termin
 
 | Provider | CLI Command | Requires | Options Key |
 |----------|------------|----------|-------------|
-| `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools` |
+| `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools`, `system_prompt`, `append_system_prompt` |
 | `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
 | `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
@@ -99,7 +99,7 @@ states:
 
 `profile` and explicit `provider`/`model` are mutually exclusive (XOR). Profiles can also be defined in `.fdsx/config.yaml` and are merged (workflow-level overrides config-level).
 
-Profile shorthand is supported on task states, parallel branches, and extract fallback configurations. Note: profile shorthand is **not** supported on map iterator task states.
+Profile shorthand is supported on task states, parallel branches, map iterator task states, and extract fallback configurations.
 
 ## Variable Substitution
 
@@ -133,7 +133,7 @@ extract:
 ## CLI Commands
 
 ```
-fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks <file>] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow]
+fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow] [--continue-on-error]
 fdsx validate <workflow.yaml>
 fdsx resume --thread-id <id> [--base-dir <path>]
 fdsx list [--base-dir <path>]
@@ -145,7 +145,9 @@ fdsx --ci | --interactive        # global flags (mutually exclusive)
 
 `--auto-workflow` and `--confirm-workflow` are mutually exclusive. `--auto-workflow` skips interactive workflow confirmation; `--confirm-workflow` forces the confirmation UI.
 
-When `fdsx run` is invoked with no workflow, no `--tasks-dir`, no `--tasks`, and no `--input`, it falls back to the `default_tasks_dir` config value (default: `.fdsx/tasks/`) and runs in tasks-dir mode.
+`--continue-on-error` (tasks-dir mode only): continue processing remaining entries when an error occurs instead of stopping.
+
+When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`, it falls back to the `default_tasks_dir` config value (default: `.fdsx/tasks/`) and runs in tasks-dir mode.
 
 `fdsx add <task-file>` adds a task file to the batch execution queue. Use `--split` to invoke the LLM task splitter to break the file into multiple task files in `.fdsx/tasks/`. Use `--force` to clear existing tasks before writing.
 
