@@ -212,9 +212,13 @@ def resolve_profiles_in_flow(
                         continue
                     iter_name = iter_state.get("name", "<unnamed>")
                     iter_label = f"State '{state_name}', iterator state '{iter_name}'"
-                    iter_errors = _resolve_profile_on_dict(iter_state, iter_label, merged_profiles)
+                    iter_errors = _resolve_profile_on_dict(
+                        iter_state, iter_label, merged_profiles
+                    )
                     errors.extend(iter_errors)
-                    fallback_errors = _resolve_fallback_profile(iter_state, iter_label, merged_profiles)
+                    fallback_errors = _resolve_fallback_profile(
+                        iter_state, iter_label, merged_profiles
+                    )
                     errors.extend(fallback_errors)
 
     return data, errors

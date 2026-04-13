@@ -38,7 +38,9 @@ def extract_value(
         failures.append(
             {
                 "strategy": strategy_name,
-                "reason": _get_failure_reason(strategy_name, output, extract_rule.pattern),
+                "reason": _get_failure_reason(
+                    strategy_name, output, extract_rule.pattern
+                ),
             }
         )
 

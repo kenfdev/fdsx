@@ -1,5 +1,5 @@
-import structlog.testing
 import pytest
+import structlog.testing
 
 from fdsx.core.extraction import (
     _execute_llm_fallback,
@@ -82,7 +82,7 @@ class TestJsonStrategy:
         assert result is None
 
     def test_returns_list(self):
-        output = '[1, 2, 3]'
+        output = "[1, 2, 3]"
         result = _json_strategy(output, ".")
         assert result == [1, 2, 3]
         assert isinstance(result, list)

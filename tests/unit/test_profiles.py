@@ -767,7 +767,9 @@ class TestMapIteratorProfileResolution(TestResolveProfilesInFlow):
         data, errors = resolve_profiles_in_flow(data)
 
         assert errors == []
-        fallback = data["states"]["process"]["iterator"]["states"][0]["extract"]["fallback"]
+        fallback = data["states"]["process"]["iterator"]["states"][0]["extract"][
+            "fallback"
+        ]
         assert fallback["provider"] == "claude"
         assert "profile" not in fallback
         assert "step1" in repr(data)  # iter state name present in structure

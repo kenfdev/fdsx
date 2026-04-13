@@ -425,7 +425,7 @@ def compile_flow(
             graph.add_conditional_edges(
                 state_name,
                 _create_routing_function(state),
-                {choice.next: choice.next for choice in choices} | {default: default},
+                {choice.next: choice.next for choice in choices} | {default: default},  # type: ignore[arg-type]
             )
 
     graph.set_entry_point(flow.start_at)
