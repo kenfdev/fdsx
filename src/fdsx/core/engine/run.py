@@ -21,6 +21,7 @@ from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
 
 from .interrupts import handle_interrupts
 from .results import (
+    FlowResult,
     _calc_elapsed,
     _detect_abort_status,
     _extract_results,
@@ -37,7 +38,9 @@ def run_flow(
     thread_id: str | None = None,
     base_dir: Path | None = None,
     quiet: bool = False,
-) -> dict[str, Any]:
+    task_file_path: Path | None = None,
+    task_entry_index: int | None = None,
+) -> FlowResult:
     """Run a flow from a YAML file.
 
     Args:
@@ -48,6 +51,10 @@ def run_flow(
                   If None, uses MemorySaver (no persistence).
         quiet: When True, suppresses stderr streaming output from StreamLogger.
                Log files are still written and completion summary is still shown.
+        task_file_path: Optional path to the task YAML file. When provided along
+                        with task_entry_index, stored in _meta so that resume_flow
+                        can update the task entry status after completion.
+        task_entry_index: Optional index of the task entry within task_file_path.
 
     Returns:
         Final state variables as result dict. When max_loop is reached,
@@ -126,6 +133,16 @@ def run_flow(
             "flow_path": str(flow_path),
             "flow_name": flow.name,
             "run_dir": str(run_dir),
+            **(
+                {"task_file_path": str(task_file_path)}
+                if task_file_path is not None
+                else {}
+            ),
+            **(
+                {"task_entry_index": task_entry_index}
+                if task_entry_index is not None
+                else {}
+            ),
         },
         "_state_iterations": {},
     }
@@ -179,7 +196,7 @@ def run_flow(
             )
         else:
             display_completion_summary(flow.name, _calc_elapsed(recorder))
-        return results
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
@@ -195,7 +212,7 @@ def run_flow(
             )
         else:
             display_completion_summary(flow.name, _calc_elapsed(recorder))
-        return results
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except Exception as e:
         if checkpoint_manager is not None:
             print(

@@ -6,6 +6,7 @@ to work without changes.
 """
 
 from .results import (
+    FlowResult,
     _calc_elapsed,
     _detect_abort_status,
     _extract_results,
@@ -24,6 +25,7 @@ from .tasks_dir import (
 from .validate import FlowValidationError, validate_flow
 
 __all__ = [
+    "FlowResult",
     "FlowValidationError",
     "_calc_elapsed",
     "_detect_abort_status",

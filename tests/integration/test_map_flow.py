@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import PassState
 from tests import FIXTURES_DIR
@@ -23,15 +23,16 @@ class TestMapBasic:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "map_results" in result
-        assert len(result["map_results"]) == 3
+        assert isinstance(result, FlowResult)
+        assert "map_results" in result.results
+        assert len(result.results["map_results"]) == 3
 
-        assert result["map_results"][0] == "step2-item1"
-        assert result["map_results"][1] == "step2-item2"
-        assert result["map_results"][2] == "step2-item3"
+        assert result.results["map_results"][0] == "step2-item1"
+        assert result.results["map_results"][1] == "step2-item2"
+        assert result.results["map_results"][2] == "step2-item3"
 
-        assert "after_result" in result
-        assert result["after_result"] == "done"
+        assert "after_result" in result.results
+        assert result.results["after_result"] == "done"
 
 
 class TestMapEmptyItems:
@@ -44,11 +45,11 @@ class TestMapEmptyItems:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "map_results" in result
-        assert result["map_results"] == []
+        assert "map_results" in result.results
+        assert result.results["map_results"] == []
 
-        assert "after_result" in result
-        assert result["after_result"] == "map-completed"
+        assert "after_result" in result.results
+        assert result.results["after_result"] == "map-completed"
 
 
 class TestMapFailFast:
@@ -173,13 +174,13 @@ class TestMapInsideParallel:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "parallel_results" in result
-        assert len(result["parallel_results"]) == 2
+        assert "parallel_results" in result.results
+        assert len(result.results["parallel_results"]) == 2
 
-        assert "map_results" in result
-        assert len(result["map_results"]) == 2
-        assert result["map_results"][0] == "mapped-x"
-        assert result["map_results"][1] == "mapped-y"
+        assert "map_results" in result.results
+        assert len(result.results["map_results"]) == 2
+        assert result.results["map_results"][0] == "mapped-x"
+        assert result.results["map_results"][1] == "mapped-y"
 
 
 class TestMapItemVariableResolution:

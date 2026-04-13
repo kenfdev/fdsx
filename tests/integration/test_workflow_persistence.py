@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fdsx.core import engine
+from fdsx.core.engine import FlowResult
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 from tests import FIXTURES_DIR
 
@@ -24,7 +25,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch("fdsx.core.mode.is_interactive", return_value=False),
@@ -50,7 +53,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch("fdsx.core.mode.is_interactive", return_value=False),
@@ -91,7 +96,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch(
@@ -126,7 +133,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch(
@@ -157,7 +166,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch("fdsx.core.mode.is_interactive", return_value=False),
@@ -185,7 +196,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch("fdsx.core.mode.is_interactive", return_value=False),
@@ -218,7 +231,9 @@ class TestWorkflowPersistence:
             with (
                 patch(
                     "fdsx.core.engine.tasks_dir.run_flow",
-                    return_value={"result": "ok"},
+                    return_value=FlowResult(
+                        results={"result": "ok"}, status="completed"
+                    ),
                 ),
                 patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
                 patch("fdsx.core.mode.is_interactive", return_value=False),

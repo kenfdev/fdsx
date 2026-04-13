@@ -123,9 +123,9 @@ class TestCLICommands:
             base_dir=base_dir,
         )
 
-        assert result.get("plan_output") == "plan output"
-        assert result.get("implement_output") == "implement output"
-        assert result.get("review_output") == "review output"
+        assert result.results.get("plan_output") == "plan output"
+        assert result.results.get("implement_output") == "implement output"
+        assert result.results.get("review_output") == "review output"
 
 
 class TestCheckpointSave:
@@ -198,9 +198,11 @@ class TestResumeSuccess:
             result = engine.resume_flow(thread_id, base_dir, wait_resume_flow_path)
 
         # Verify flow completed through the approve branch
-        assert "status" in result, f"Expected 'status' in result, got: {result}"
-        assert result["status"] == "approved"
-        assert result.get("plan_output") == "plan output"
+        assert "status" in result.results, (
+            f"Expected 'status' in result.results, got: {result.results}"
+        )
+        assert result.results["status"] == "approved"
+        assert result.results.get("plan_output") == "plan output"
 
 
 class TestScenario4FullResume:
@@ -245,9 +247,9 @@ class TestScenario4FullResume:
         # Step 2: Resume WITHOUT mock — implement and review should now succeed
         result = engine.resume_flow(thread_id, base_dir, checkpoint_flow_path)
 
-        assert result.get("plan_output") == "plan output"
-        assert result.get("implement_output") == "implement output"
-        assert result.get("review_output") == "review output"
+        assert result.results.get("plan_output") == "plan output"
+        assert result.results.get("implement_output") == "implement output"
+        assert result.results.get("review_output") == "review output"
 
     def test_list_shows_stopped_after_crash(self, temp_dir, checkpoint_flow_path):
         """T051: crash mid-flow → fdsx list shows 'stopped' not 'waiting'."""

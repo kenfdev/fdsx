@@ -194,11 +194,11 @@ class TestMapCheckpoint:
                 flow_path,
             )
 
-        assert result["results"] is not None
-        assert len(result["results"]) == 3
-        assert result["results"][0] == "result-item1"
-        assert result["results"][1] == "result-item2"
-        assert result["results"][2] == "result-item3"
+        assert result.results["results"] is not None
+        assert len(result.results["results"]) == 3
+        assert result.results["results"][0] == "result-item1"
+        assert result.results["results"][1] == "result-item2"
+        assert result.results["results"][2] == "result-item3"
 
         progress_file = base_dir / "runs" / thread_id / "map_state" / "progress.json"
         assert progress_file.exists()
@@ -284,12 +284,12 @@ class TestMapCheckpoint:
             flow_path,
         )
 
-        assert result["results"] is not None
-        assert len(result["results"]) == 4
-        assert result["results"][0] == "out-a"
-        assert result["results"][1] == "out-b"
-        assert result["results"][2] == "out-c"
-        assert result["results"][3] == "out-d"
+        assert result.results["results"] is not None
+        assert len(result.results["results"]) == 4
+        assert result.results["results"][0] == "out-a"
+        assert result.results["results"][1] == "out-b"
+        assert result.results["results"][2] == "out-c"
+        assert result.results["results"][3] == "out-d"
 
     def test_map_progress_file_not_written_when_run_dir_empty(self, temp_dir):
         """When run_dir is empty (direct invoke), no progress file is written."""
@@ -452,8 +452,8 @@ class TestMapCheckpoint:
             base_dir=base_dir,
         )
 
-        assert result["results"] is not None
-        assert len(result["results"]) == 3
-        assert result["results"][0] == "result-a"
-        assert result["results"][1] == "result-b"
-        assert result["results"][2] == "result-c"
+        assert result.results["results"] is not None
+        assert len(result.results["results"]) == 3
+        assert result.results["results"][0] == "result-a"
+        assert result.results["results"][1] == "result-b"
+        assert result.results["results"][2] == "result-c"

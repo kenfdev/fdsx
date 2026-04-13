@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.core.loader import load_flow
 from tests import FIXTURES_DIR
 
@@ -21,23 +21,27 @@ class TestWaitFlow:
         with patch("builtins.input", return_value="1"):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "plan_output" in result
-        assert "approval_decision" in result
-        assert result["approval_decision"] == "approve"
-        assert "implementation_output" in result
+        assert isinstance(result, FlowResult)
+        assert "plan_output" in result.results
+        assert "approval_decision" in result.results
+        assert result.results["approval_decision"] == "approve"
+        assert "implementation_output" in result.results
 
     def test_wait_state_prompt_with_reject_selection(self, tmp_path):
         """Test Wait → Choice routing: select reject → verify flow takes reject branch."""
         path = FIXTURES_DIR / "wait_approval.yaml"
 
-        # Mock stdin to provide "2" (reject)
-        with patch("builtins.input", return_value="2"):
+        # Patch is_interactive to force the interactive prompt path in CI
+        with (
+            patch("fdsx.core.mode.is_interactive", return_value=True),
+            patch("builtins.input", return_value="2"),
+        ):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "plan_output" in result
-        assert "approval_decision" in result
-        assert result["approval_decision"] == "reject"
-        assert "rejected_output" in result
+        assert "plan_output" in result.results
+        assert "approval_decision" in result.results
+        assert result.results["approval_decision"] == "reject"
+        assert "rejected_output" in result.results
 
     def test_wait_state_prompt_with_invalid_input_then_valid(self, tmp_path):
         """Test Wait state re-prompt on invalid input."""
@@ -47,8 +51,8 @@ class TestWaitFlow:
         with patch("builtins.input", side_effect=["invalid", "5", "1"]):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "approval_decision" in result
-        assert result["approval_decision"] == "approve"
+        assert "approval_decision" in result.results
+        assert result.results["approval_decision"] == "approve"
 
     def test_wait_webhook_notification_sent(self, tmp_path):
         """Test webhook notification: verify POST is sent when notify is configured."""
@@ -65,8 +69,8 @@ class TestWaitFlow:
             call_args = mock_webhook.call_args
             assert call_args[0][0] == "https://example.com/webhook"
             assert "Approval needed" in call_args[0][1]
-            assert "plan_output" in result
-            assert result["approval_decision"] == "approve"
+            assert "plan_output" in result.results
+            assert result.results["approval_decision"] == "approve"
 
     def test_wait_webhook_sent_exactly_once_on_approve(self, tmp_path):
         """Regression: webhook must fire exactly once, not on every resume cycle.
@@ -84,7 +88,7 @@ class TestWaitFlow:
             with patch("builtins.input", return_value="1"):
                 result = run_flow(path, base_dir=tmp_path)
 
-        assert result["approval_decision"] == "approve"
+        assert result.results["approval_decision"] == "approve"
         assert mock_webhook.call_count == 1, (
             f"Expected webhook called exactly once, got {mock_webhook.call_count}"
         )
@@ -103,5 +107,5 @@ class TestWaitFlow:
             # Verify webhook was called
             assert mock_webhook.called
             # Flow should still complete successfully
-            assert result["approval_decision"] == "approve"
-            assert "implementation_output" in result
+            assert result.results["approval_decision"] == "approve"
+            assert "implementation_output" in result.results

@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.core.loader import load_flow
 from fdsx.providers.base import ProviderResult
 from tests import FIXTURES_DIR
@@ -48,8 +48,9 @@ class TestSelfImproveWorkflow:
         with patch("fdsx.providers.system._run_subprocess", return_value=fake):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "collect_decision" in result
-        assert result["collect_decision"] == "HAS_RUNS"
+        assert isinstance(result, FlowResult)
+        assert "collect_decision" in result.results
+        assert result.results["collect_decision"] == "HAS_RUNS"
 
     def test_collect_data_extracts_no_runs_keyword(self, tmp_path):
         """Test that collect_data extracts NO_RUNS when no runs exist."""
@@ -59,8 +60,8 @@ class TestSelfImproveWorkflow:
         with patch("fdsx.providers.system._run_subprocess", return_value=fake):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "collect_decision" in result
-        assert result["collect_decision"] == "NO_RUNS"
+        assert "collect_decision" in result.results
+        assert result.results["collect_decision"] == "NO_RUNS"
 
     def test_choice_routes_to_clean_path_when_no_runs(self, tmp_path):
         """Test that choice routes to update_timestamp_clean when NO_RUNS."""
@@ -83,7 +84,7 @@ class TestSelfImproveWorkflow:
         ):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "timestamp_update" in result
+        assert "timestamp_update" in result.results
         assert call_count[0] >= 2
 
     def test_choice_routes_to_write_lessons_when_has_runs(self, tmp_path):
@@ -107,9 +108,9 @@ class TestSelfImproveWorkflow:
         ):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "collect_decision" in result
-        assert result["collect_decision"] == "HAS_RUNS"
-        assert "lessons" in result
+        assert "collect_decision" in result.results
+        assert result.results["collect_decision"] == "HAS_RUNS"
+        assert "lessons" in result.results
 
 
 class TestCollectDataScript:

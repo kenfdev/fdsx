@@ -9,6 +9,7 @@ from fdsx.cli.main import app
 from fdsx.core import engine
 from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
 from fdsx.core.config import TaskSplitterConfig
+from fdsx.core.engine import FlowResult
 from fdsx.models.task import load_task_file, save_task_file
 from tests import FIXTURES_DIR
 
@@ -74,7 +75,7 @@ class TestFullPipelineE2E:
                 task_desc = inputs.get("task", "")
             if task_desc and "feature B" in task_desc:
                 raise RuntimeError("Simulated crash during feature B")
-            return {"result": "ok"}
+            return FlowResult(results={"result": "ok"}, status="completed")
 
         with (
             patch("fdsx.core.engine.tasks_dir.run_flow", side_effect=mock_run_flow),
@@ -100,7 +101,7 @@ class TestFullPipelineE2E:
 
         def mock_run_flow_resume(flow_path, inputs, thread_id, base_dir, **kwargs):
             run_count_after_resume[0] += 1
-            return {"result": "ok"}
+            return FlowResult(results={"result": "ok"}, status="completed")
 
         with (
             patch(
@@ -154,7 +155,10 @@ class TestFullPipelineE2E:
         created_files = write_task_files(result_groups, tasks_dir)
 
         with (
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             runner = CliRunner()
@@ -255,7 +259,7 @@ class TestFullPipelineE2E:
             run_count[0] += 1
             if inputs and "E2E Task 2" in inputs.get("task", ""):
                 raise RuntimeError("Simulated error on Task 2")
-            return {"result": "ok"}
+            return FlowResult(results={"result": "ok"}, status="completed")
 
         auto_select_spinners: list[str] = []
 
@@ -316,7 +320,7 @@ class TestFullPipelineE2E:
 
         def mock_run_flow_rerun(flow_path, inputs, thread_id, base_dir, **kwargs):
             run_count_rerun[0] += 1
-            return {"result": "ok"}
+            return FlowResult(results={"result": "ok"}, status="completed")
 
         with (
             patch(

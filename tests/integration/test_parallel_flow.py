@@ -1,6 +1,6 @@
 import pytest
 
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.core.loader import load_flow
 from fdsx.logging.recorder import LOGS_DIR_NAME, RUNS_DIR_NAME
 from tests import FIXTURES_DIR
@@ -16,15 +16,16 @@ class TestParallelFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "reviews" in result
-        assert len(result["reviews"]) == 3
+        assert isinstance(result, FlowResult)
+        assert "reviews" in result.results
+        assert len(result.results["reviews"]) == 3
 
-        for review in result["reviews"]:
+        for review in result.results["reviews"]:
             assert "output" in review
             assert "exit_code" in review
 
-        assert "decision" in result
-        assert result["decision"] == "APPROVED"
+        assert "decision" in result.results
+        assert result.results["decision"] == "APPROVED"
 
     def test_parallel_branch_results_have_output_field(self, tmp_path):
         """Verify branch results array contains output field."""
@@ -32,9 +33,9 @@ class TestParallelFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "reviews" in result
-        assert len(result["reviews"]) == 3
-        for review in result["reviews"]:
+        assert "reviews" in result.results
+        assert len(result.results["reviews"]) == 3
+        for review in result.results["reviews"]:
             assert "output" in review
 
 
@@ -48,14 +49,16 @@ class TestParallelMinSuccess:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "results" in result
-        assert len(result["results"]) == 3
+        assert "results" in result.results
+        assert len(result.results["results"]) == 3
 
-        successful = sum(1 for r in result["results"] if r.get("exit_code") == 0)
+        successful = sum(
+            1 for r in result.results["results"] if r.get("exit_code") == 0
+        )
         assert successful == 2
 
-        assert "success_check" in result
-        assert result["success_check"] == "Flow continued after partial failure"
+        assert "success_check" in result.results
+        assert result.results["success_check"] == "Flow continued after partial failure"
 
     def test_min_success_failure_raises_error(self):
         """Test that when too many branches fail, flow raises error."""

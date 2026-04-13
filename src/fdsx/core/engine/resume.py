@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
@@ -18,10 +18,13 @@ from fdsx.display.terminal import (
 )
 from fdsx.logging import RunRecorder
 from fdsx.logging.recorder import LOGS_DIR_NAME
+from fdsx.models.task import load_task_file, save_task_file
 
 from .interrupts import handle_interrupts
 from .results import (
+    FlowResult,
     _calc_elapsed,
+    _detect_abort_status,
     _extract_results,
     _find_failed_state,
     _sanitize_state_for_log,
@@ -33,7 +36,7 @@ def resume_flow(
     thread_id: str,
     base_dir: Path | None = None,
     flow_path: Path | None = None,
-) -> dict[str, Any]:
+) -> FlowResult:
     """Resume a flow from a checkpoint.
 
     Args:
@@ -205,19 +208,57 @@ def resume_flow(
             last_state = final_state_info.values
 
         results = _extract_results(last_state, compiled.result_paths)
+        status: str = "completed"
+        failed_state: str | None = None
         if recorder is not None:
-            recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+            status, failed_state, _ = _detect_abort_status(recorder)
+            recorder.finalize(_sanitize_state_for_log(last_state), status)
             recorder.save(base_dir=base_dir)
-            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-        return results
+            if failed_state is not None:
+                display_completion_summary(
+                    recorder.flow_name,
+                    _calc_elapsed(recorder),
+                    failed_state,
+                    "workflow aborted",
+                )
+            else:
+                display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
+
+        # Best-effort: update task YAML entry if stored in _meta
+        _meta = last_state.get("_meta", {})
+        _task_file_path_str = _meta.get("task_file_path")
+        _task_entry_index = _meta.get("task_entry_index")
+        if _task_file_path_str is not None and _task_entry_index is not None:
+            try:
+                _task_file_path = Path(_task_file_path_str)
+                _task_file = load_task_file(_task_file_path)
+                _entry = _task_file.entries[_task_entry_index]
+                _new_status = "failed" if status == "aborted" else "completed"
+                _entry.status = cast(
+                    Literal["pending", "running", "completed", "failed"], _new_status
+                )
+                _entry.thread_id = thread_id
+                _entry.error = (
+                    f"workflow aborted at state '{failed_state}'"
+                    if status == "aborted"
+                    else None
+                )
+                save_task_file(_task_file_path, _task_file)
+            except (FileNotFoundError, IndexError, ValueError):
+                pass  # best-effort: do not raise if file is missing or index is invalid
+
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except GraphRecursionError:
         if flow is not None:
             print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
+        rec_status: str = "completed"
+        rec_failed_state: str | None = None
         if recorder is not None:
-            recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+            rec_status, rec_failed_state, _ = _detect_abort_status(recorder)
+            recorder.finalize(_sanitize_state_for_log(last_state), rec_status)
             recorder.save(base_dir=base_dir)
             display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-        return {}
+        return FlowResult(results={}, status=rec_status, abort_state=rec_failed_state)
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")

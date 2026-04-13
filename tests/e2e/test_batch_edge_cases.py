@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from fdsx.cli.main import app
 from fdsx.core import engine
+from fdsx.core.engine import FlowResult
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 from tests import FIXTURES_DIR
 
@@ -62,7 +63,8 @@ class TestEdgeCases:
 
         with (
             patch(
-                "fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
             ) as mock_run,
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
@@ -84,7 +86,10 @@ class TestEdgeCases:
         save_task_file(tasks_dir / "001-single.yaml", tf)
 
         with (
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)

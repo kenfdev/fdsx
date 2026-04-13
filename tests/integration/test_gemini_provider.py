@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import yaml
 
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult, get_provider
 from fdsx.providers.gemini import GeminiOptions, GeminiProvider
 
@@ -230,10 +230,11 @@ class TestGeminiWorkflowExecution:
         with patch("fdsx.providers.gemini._run_subprocess", return_value=fake):
             result = run_flow(flow_path, base_dir=tmp_path)
 
-        assert "greeting" in result
-        assert "farewell" in result
-        assert result["greeting"] == "gemini output"
-        assert result["farewell"] == "gemini output"
+        assert isinstance(result, FlowResult)
+        assert "greeting" in result.results
+        assert "farewell" in result.results
+        assert result.results["greeting"] == "gemini output"
+        assert result.results["farewell"] == "gemini output"
 
     def test_gemini_mixed_provider_workflow(self, tmp_path):
         """A mixed claude+gemini workflow passes state correctly between providers."""
@@ -282,10 +283,10 @@ class TestGeminiWorkflowExecution:
         ):
             result = run_flow(flow_path, base_dir=tmp_path)
 
-        assert "claude_output" in result
-        assert "gemini_output" in result
-        assert result["claude_output"] == "claude result"
-        assert result["gemini_output"] == "gemini result"
+        assert "claude_output" in result.results
+        assert "gemini_output" in result.results
+        assert result.results["claude_output"] == "claude result"
+        assert result.results["gemini_output"] == "gemini result"
 
         # Verify Gemini received the interpolated Claude output
         assert len(gemini_calls) == 1

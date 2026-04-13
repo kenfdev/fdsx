@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from fdsx.core import engine
+from fdsx.core.engine import FlowResult
 from fdsx.core.variables import RESULT_FILE_DATA_DIR
 from fdsx.logging.recorder import RUNS_DIR_NAME
 from tests import FIXTURES_DIR
@@ -58,14 +59,15 @@ class TestTaskResultFileIntegration:
         thread_id = "test-task-result-file"
         result = engine.run_flow(flow_yaml, thread_id=thread_id, base_dir=tmp_path)
 
+        assert isinstance(result, FlowResult)
         run_dir = tmp_path / RUNS_DIR_NAME / thread_id
         expected_file = run_dir / RESULT_FILE_DATA_DIR / "output_ref.md"
 
-        assert "output_ref" in result, (
-            f"result_file variable missing from result: {result}"
+        assert "output_ref" in result.results, (
+            f"result_file variable missing from result: {result.results}"
         )
-        assert Path(result["output_ref"]).is_absolute(), (
-            f"output_ref should be absolute path, got: {result['output_ref']}"
+        assert Path(result.results["output_ref"]).is_absolute(), (
+            f"output_ref should be absolute path, got: {result.results['output_ref']}"
         )
         assert expected_file.exists(), f"Expected file not found: {expected_file}"
 
@@ -73,12 +75,14 @@ class TestTaskResultFileIntegration:
         assert "Hello World" in content, (
             f"File content mismatch. Expected 'Hello World', got: {content!r}"
         )
-        assert result["output_ref"] == str(expected_file.resolve()), (
-            f"output_ref path mismatch: {result['output_ref']} != {expected_file.resolve()}"
+        assert result.results["output_ref"] == str(expected_file.resolve()), (
+            f"output_ref path mismatch: {result.results['output_ref']} != {expected_file.resolve()}"
         )
-        assert "final" in result, f"Downstream state result missing: {result}"
-        assert "Hello World" in result["final"], (
-            f"Downstream state should read file contents, got: {result['final']!r}"
+        assert "final" in result.results, (
+            f"Downstream state result missing: {result.results}"
+        )
+        assert "Hello World" in result.results["final"], (
+            f"Downstream state should read file contents, got: {result.results['final']!r}"
         )
 
 
@@ -124,11 +128,11 @@ class TestParallelResultFileIntegration:
         run_dir = tmp_path / RUNS_DIR_NAME / thread_id
         expected_file = run_dir / RESULT_FILE_DATA_DIR / "reviews_ref.json"
 
-        assert "reviews_ref" in result, (
-            f"result_file variable missing from result: {result}"
+        assert "reviews_ref" in result.results, (
+            f"result_file variable missing from result: {result.results}"
         )
-        assert Path(result["reviews_ref"]).is_absolute(), (
-            f"reviews_ref should be absolute path, got: {result['reviews_ref']}"
+        assert Path(result.results["reviews_ref"]).is_absolute(), (
+            f"reviews_ref should be absolute path, got: {result.results['reviews_ref']}"
         )
         assert expected_file.exists(), f"Expected JSON file not found: {expected_file}"
 
@@ -143,8 +147,8 @@ class TestParallelResultFileIntegration:
             assert "exit_code" in entry, (
                 f"Missing 'exit_code' key in branch result: {entry}"
             )
-        assert result["reviews_ref"] == str(expected_file.resolve()), (
-            f"reviews_ref path mismatch: {result['reviews_ref']} != {expected_file.resolve()}"
+        assert result.results["reviews_ref"] == str(expected_file.resolve()), (
+            f"reviews_ref path mismatch: {result.results['reviews_ref']} != {expected_file.resolve()}"
         )
 
 
@@ -167,8 +171,12 @@ class TestResultFileRegression:
             f"data/ directory should not be created when result_file is not used, "
             f"but found: {data_dir}"
         )
-        assert "plan" in result, f"Expected 'plan' in result: {result}"
-        assert "implementation" in result, (
-            f"Expected 'implementation' in result: {result}"
+        assert "plan" in result.results, (
+            f"Expected 'plan' in result.results: {result.results}"
         )
-        assert "review" in result, f"Expected 'review' in result: {result}"
+        assert "implementation" in result.results, (
+            f"Expected 'implementation' in result.results: {result.results}"
+        )
+        assert "review" in result.results, (
+            f"Expected 'review' in result.results: {result.results}"
+        )
