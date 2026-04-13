@@ -356,28 +356,46 @@ def run_tasks_dir(
 
             try:
                 task_inputs = {"task": description, "source": task_file.source or ""}
-                run_flow(
+                flow_result = run_flow(
                     flow_path=effective_workflow,
                     inputs=task_inputs,
                     thread_id=thread_id,
                     base_dir=base_dir,
                     quiet=quiet,
                 )
-                _update_task_status(
-                    file_path, task_file, entry_idx, "completed", thread_id=thread_id
-                )
-                results.append(
-                    {
-                        "file_index": file_idx,
-                        "file_name": file_path.name,
-                        "entry_index": entry_idx,
-                        "entry_description": description,
-                        "thread_id": thread_id,
-                        "status": "completed",
-                        "error": None,
-                        "category": category,
-                    }
-                )
+                if flow_result.status == "aborted":
+                    error_msg = f"workflow aborted at state '{flow_result.abort_state}'"
+                    _update_task_status(
+                        file_path, task_file, entry_idx, "failed", thread_id=thread_id, error=error_msg
+                    )
+                    results.append(
+                        {
+                            "file_index": file_idx,
+                            "file_name": file_path.name,
+                            "entry_index": entry_idx,
+                            "entry_description": description,
+                            "thread_id": thread_id,
+                            "status": "failed",
+                            "error": error_msg,
+                            "category": category,
+                        }
+                    )
+                else:
+                    _update_task_status(
+                        file_path, task_file, entry_idx, "completed", thread_id=thread_id
+                    )
+                    results.append(
+                        {
+                            "file_index": file_idx,
+                            "file_name": file_path.name,
+                            "entry_index": entry_idx,
+                            "entry_description": description,
+                            "thread_id": thread_id,
+                            "status": "completed",
+                            "error": None,
+                            "category": category,
+                        }
+                    )
             except Exception as e:
                 _update_task_status(
                     file_path,

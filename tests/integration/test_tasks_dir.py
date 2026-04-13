@@ -603,6 +603,58 @@ class TestRunTasksDir:
             loaded = load_task_file(tasks_dir / "001-test.yaml")
             assert loaded.entries[0].thread_id is not None
 
+    def test_aborted_workflow_marks_entry_failed_no_file_move(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+
+            tf = TaskFile(entries=[TaskEntry(description="task 1")])
+            save_task_file(tasks_dir / "001-test.yaml", tf)
+
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value=FlowResult(
+                        results={}, status="aborted", abort_state="abort_blocked"
+                    ),
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            assert len(results) == 1
+            result = results[0]
+            assert result["status"] == "failed"
+            assert result["error"] == "workflow aborted at state 'abort_blocked'"
+
+            # Task file must NOT be moved to completed/
+            assert (tasks_dir / "001-test.yaml").exists()
+            assert not (tasks_dir / "completed" / "001-test.yaml").exists()
+
+            # Entry status persisted as failed
+            loaded = load_task_file(tasks_dir / "001-test.yaml")
+            assert loaded.entries[0].status == "failed"
+
+    def test_aborted_workflow_summary_shows_failed_count(self, capsys):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+
+            tf = TaskFile(entries=[TaskEntry(description="task 1")])
+            save_task_file(tasks_dir / "001-test.yaml", tf)
+
+            with patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(
+                    results={}, status="aborted", abort_state="abort_blocked"
+                ),
+            ):
+                engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            captured = capsys.readouterr()
+            assert "Failed: 1" in captured.err
+            assert "✗" in captured.err
+
 
 class TestDisplayTasksDirSummary:
     def test_displays_summary_to_stderr(self, capsys):
