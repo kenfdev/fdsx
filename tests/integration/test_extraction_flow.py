@@ -57,6 +57,15 @@ class TestExtractionFlow:
         assert result["extracted_status"] == "approved"
         assert "approved_result" in result
 
+    def test_json_array_extract_feeds_map(self, tmp_path):
+        """System command outputs JSON array, extracted with '.', map iterates over items."""
+        path = FIXTURES_DIR / "json_array_extract_map_flow.yaml"
+        result = run_flow(path, base_dir=tmp_path)
+        assert "items" in result
+        assert result["items"] == ["item1", "item2", "item3"]
+        assert "map_results" in result
+        assert len(result["map_results"]) == 3
+
 
 class TestParallelBranchExtraction:
     def test_parallel_branch_extraction_failure_marked_as_error(self):

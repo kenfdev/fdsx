@@ -12,7 +12,7 @@ def extract_value(
     provider_factory: Callable[[str], Any] | None = None,
     state_dict: dict[str, Any] | None = None,
     source_provider: str | None = None,
-) -> str | None:
+) -> Any | None:
     """Extract a value from output using the specified extraction rule.
 
     Args:
@@ -47,7 +47,7 @@ def extract_value(
     return None
 
 
-def _execute_strategy(strategy_name: str, output: str, pattern: str) -> str | None:
+def _execute_strategy(strategy_name: str, output: str, pattern: str) -> Any | None:
     """Execute a single extraction strategy.
 
     Args:
@@ -71,7 +71,7 @@ def _execute_strategy(strategy_name: str, output: str, pattern: str) -> str | No
     return strategy_func(output, pattern)
 
 
-def _json_strategy(output: str, pattern: str) -> str | None:
+def _json_strategy(output: str, pattern: str) -> Any | None:
     """Extract a value from JSON in the output.
 
     First tries to find a JSON code block, then tries parsing the entire output as JSON.
@@ -91,7 +91,7 @@ def _json_strategy(output: str, pattern: str) -> str | None:
             data = json.loads(json_str)
             value = _get_nested_value(data, pattern)
             if value is not None:
-                return str(value)
+                return value
         except json.JSONDecodeError:
             pass
 
@@ -99,7 +99,7 @@ def _json_strategy(output: str, pattern: str) -> str | None:
         data = json.loads(output)
         value = _get_nested_value(data, pattern)
         if value is not None:
-            return str(value)
+            return value
     except json.JSONDecodeError:
         pass
 

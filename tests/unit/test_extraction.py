@@ -80,6 +80,36 @@ class TestJsonStrategy:
         result = _json_strategy(output, "decision")
         assert result is None
 
+    def test_returns_list(self):
+        output = '[1, 2, 3]'
+        result = _json_strategy(output, ".")
+        assert result == [1, 2, 3]
+        assert isinstance(result, list)
+
+    def test_returns_dict(self):
+        output = '{"a": 1}'
+        result = _json_strategy(output, ".")
+        assert result == {"a": 1}
+        assert isinstance(result, dict)
+
+    def test_returns_scalar_string(self):
+        output = '{"key": "hello"}'
+        result = _json_strategy(output, "key")
+        assert result == "hello"
+        assert isinstance(result, str)
+
+    def test_returns_scalar_number(self):
+        output = '{"count": 42}'
+        result = _json_strategy(output, "count")
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_root_dot_on_array_returns_list(self):
+        output = '["a", "b", "c"]'
+        result = _json_strategy(output, ".")
+        assert result == ["a", "b", "c"]
+        assert isinstance(result, list)
+
 
 class TestRegexStrategy:
     def test_capture_group(self):
