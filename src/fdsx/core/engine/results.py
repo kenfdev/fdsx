@@ -1,5 +1,6 @@
 """Result extraction and helper utilities for the engine package."""
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -93,3 +94,12 @@ def _detect_abort_status(
         if isinstance(name, str) and name.startswith("abort_"):
             return ("aborted", name, "workflow aborted")
     return ("completed", None, None)
+
+
+@dataclass(frozen=True)
+class FlowResult:
+    """Structured return value for run_flow and resume_flow."""
+
+    results: dict[str, Any]
+    status: str  # "completed" | "aborted"
+    abort_state: str | None = None

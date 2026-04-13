@@ -21,6 +21,7 @@ from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
 
 from .interrupts import handle_interrupts
 from .results import (
+    FlowResult,
     _calc_elapsed,
     _detect_abort_status,
     _extract_results,
@@ -37,7 +38,7 @@ def run_flow(
     thread_id: str | None = None,
     base_dir: Path | None = None,
     quiet: bool = False,
-) -> dict[str, Any]:
+) -> FlowResult:
     """Run a flow from a YAML file.
 
     Args:
@@ -179,7 +180,7 @@ def run_flow(
             )
         else:
             display_completion_summary(flow.name, _calc_elapsed(recorder))
-        return results
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except GraphRecursionError:
         print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
@@ -195,7 +196,7 @@ def run_flow(
             )
         else:
             display_completion_summary(flow.name, _calc_elapsed(recorder))
-        return results
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except Exception as e:
         if checkpoint_manager is not None:
             print(

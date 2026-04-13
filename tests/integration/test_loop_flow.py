@@ -1,4 +1,4 @@
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.core.loader import load_flow
 from tests import FIXTURES_DIR
 
@@ -15,9 +15,11 @@ class TestLoopFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        # Must return a dict (not raise), and must not be empty — partial results preserved
-        assert isinstance(result, dict)
-        assert result != {}, "Loop control must return partial state, not empty dict"
+        # Must return a FlowResult (not raise), and results must not be empty — partial results preserved
+        assert isinstance(result, FlowResult)
+        assert result.results != {}, (
+            "Loop control must return partial state, not empty dict"
+        )
 
     def test_loop_returns_partial_results(self, tmp_path):
         """Test that loop returns results from the last iteration when max_loop is reached."""
@@ -25,14 +27,14 @@ class TestLoopFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert isinstance(result, dict)
+        assert isinstance(result, FlowResult)
         # The fixture loops plan→implement→review→decide and never reaches done,
         # so partial results from the last completed iteration must be present.
-        assert result != {}, "Partial results must be returned (not empty dict)"
+        assert result.results != {}, "Partial results must be returned (not empty dict)"
         # At least one of the task states' result_paths must appear in the result
         partial_keys = {"plan_output", "impl_output", "review_output"}
-        assert partial_keys.intersection(result.keys()), (
-            f"Expected at least one of {partial_keys} in result, got: {list(result.keys())}"
+        assert partial_keys.intersection(result.results.keys()), (
+            f"Expected at least one of {partial_keys} in result, got: {list(result.results.keys())}"
         )
 
     def test_state_variables_retained_across_iterations(self, tmp_path):
@@ -44,12 +46,12 @@ class TestLoopFlow:
         # plan_output, impl_output, and review_output were all set in the loop body.
         # They must all survive to the final captured state (the last iteration overwrites them,
         # so all three should be present in partial results).
-        assert "plan_output" in result, (
+        assert "plan_output" in result.results, (
             "plan_output must be retained in partial results"
         )
-        assert "impl_output" in result, (
+        assert "impl_output" in result.results, (
             "impl_output must be retained in partial results"
         )
-        assert "review_output" in result, (
+        assert "review_output" in result.results, (
             "review_output must be retained in partial results"
         )

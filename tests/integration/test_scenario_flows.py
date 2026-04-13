@@ -9,6 +9,7 @@ import pytest
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core import engine
+from fdsx.core.engine import FlowResult
 from fdsx.core.loader import load_flow
 from fdsx.providers.base import ProviderResult
 from tests import FIXTURES_DIR
@@ -27,12 +28,13 @@ class TestScenario1LinearFlow:
         thread_id = "test-scenario1"
         result = engine.run_flow(path, thread_id=thread_id, base_dir=tmp_path)
 
-        assert "plan" in result
-        assert "implementation" in result
-        assert "review" in result
-        assert "Plan:" in result["plan"]
-        assert "Implementation:" in result["implementation"]
-        assert "Review:" in result["review"]
+        assert isinstance(result, FlowResult)
+        assert "plan" in result.results
+        assert "implementation" in result.results
+        assert "review" in result.results
+        assert "Plan:" in result.results["plan"]
+        assert "Implementation:" in result.results["implementation"]
+        assert "Review:" in result.results["review"]
 
     def test_linear_flow_run_log_schema(self, tmp_path, monkeypatch):
         """Verify runs/<thread_id>.json conforms to Run Log Format schema."""
@@ -107,14 +109,14 @@ class TestScenario2ParallelVote:
 
         result = engine.run_flow(path, thread_id="test-scenario2", base_dir=tmp_path)
 
-        assert "reviews" in result
-        assert len(result["reviews"]) == 3
-        for review in result["reviews"]:
+        assert "reviews" in result.results
+        assert len(result.results["reviews"]) == 3
+        for review in result.results["reviews"]:
             assert "output" in review
 
-        assert "decision" in result
-        assert result["decision"] == "APPROVED"
-        assert "approved_result" in result
+        assert "decision" in result.results
+        assert result.results["decision"] == "APPROVED"
+        assert "approved_result" in result.results
 
     def test_parallel_run_log_has_branch_details(self, tmp_path, monkeypatch):
         """Verify parallel state entries include branch-level details."""
@@ -169,10 +171,10 @@ class TestScenario3WaitWebhook:
                 )
 
             assert mock_webhook.call_count == 1
-            assert "plan_output" in result
-            assert "approval_decision" in result
-            assert result["approval_decision"] == "approve"
-            assert "implementation_output" in result
+            assert "plan_output" in result.results
+            assert "approval_decision" in result.results
+            assert result.results["approval_decision"] == "approve"
+            assert "implementation_output" in result.results
 
     def test_wait_webhook_run_log(self, tmp_path, monkeypatch):
         """Verify run log for wait state scenario."""
@@ -235,9 +237,9 @@ class TestScenario4CheckpointResume:
                 flow_path,
             )
 
-            assert result.get("plan_output") == "plan output"
-            assert result.get("implement_output") == "implement output"
-            assert result.get("review_output") == "review output"
+            assert result.results.get("plan_output") == "plan output"
+            assert result.results.get("implement_output") == "implement output"
+            assert result.results.get("review_output") == "review output"
 
     def test_resume_appends_to_existing_run_log(self, monkeypatch):
         """Verify resume appends new state entries to existing run log."""
@@ -330,10 +332,10 @@ class TestScenario5ExtractionChoice:
 
         result = engine.run_flow(path, thread_id="test-scenario5", base_dir=tmp_path)
 
-        assert "raw_output" in result
-        assert "decision" in result
-        assert result["decision"] == "APPROVED"
-        assert "approved_result" in result
+        assert "raw_output" in result.results
+        assert "decision" in result.results
+        assert result.results["decision"] == "APPROVED"
+        assert "approved_result" in result.results
 
     def test_extraction_run_log(self, tmp_path, monkeypatch):
         """Verify run log for extraction + choice scenario."""

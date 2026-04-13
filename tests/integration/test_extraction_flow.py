@@ -1,4 +1,4 @@
-from fdsx.core.engine import run_flow
+from fdsx.core.engine import FlowResult, run_flow
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import Branch, ExtractRule, Flow, ParallelState
 from tests import FIXTURES_DIR
@@ -14,9 +14,10 @@ class TestExtractionFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "decision" in result
-        assert result["decision"] == "APPROVED"
-        assert "approved_result" in result
+        assert isinstance(result, FlowResult)
+        assert "decision" in result.results
+        assert result.results["decision"] == "APPROVED"
+        assert "approved_result" in result.results
 
     def test_regex_extraction_choice_routing(self, tmp_path):
         """Test regex extraction from structured output."""
@@ -27,9 +28,9 @@ class TestExtractionFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "extracted_status" in result
-        assert result["extracted_status"] == "success"
-        assert "success_result" in result
+        assert "extracted_status" in result.results
+        assert result.results["extracted_status"] == "success"
+        assert "success_result" in result.results
 
     def test_json_extraction_choice_routing(self, tmp_path):
         """Test JSON extraction from raw JSON output."""
@@ -40,9 +41,9 @@ class TestExtractionFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "extracted_status" in result
-        assert result["extracted_status"] == "approved"
-        assert "approved_result" in result
+        assert "extracted_status" in result.results
+        assert result.results["extracted_status"] == "approved"
+        assert "approved_result" in result.results
 
     def test_json_codeblock_extraction_choice_routing(self, tmp_path):
         """Test JSON extraction from ```json code block output (T024)."""
@@ -53,18 +54,18 @@ class TestExtractionFlow:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "extracted_status" in result
-        assert result["extracted_status"] == "approved"
-        assert "approved_result" in result
+        assert "extracted_status" in result.results
+        assert result.results["extracted_status"] == "approved"
+        assert "approved_result" in result.results
 
     def test_json_array_extract_feeds_map(self, tmp_path):
         """System command outputs JSON array, extracted with '.', map iterates over items."""
         path = FIXTURES_DIR / "json_array_extract_map_flow.yaml"
         result = run_flow(path, base_dir=tmp_path)
-        assert "items" in result
-        assert result["items"] == ["item1", "item2", "item3"]
-        assert "map_results" in result
-        assert len(result["map_results"]) == 3
+        assert "items" in result.results
+        assert result.results["items"] == ["item1", "item2", "item3"]
+        assert "map_results" in result.results
+        assert len(result.results["map_results"]) == 3
 
 
 class TestParallelBranchExtraction:

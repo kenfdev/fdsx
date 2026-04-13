@@ -82,9 +82,9 @@ class TestProfileFlow:
         with patch("fdsx.providers.claude._run_subprocess", return_value=fake):
             result = run_flow(path, base_dir=tmp_path)
 
-        assert "plan" in result
-        assert "implementation" in result
-        assert "review" in result
+        assert "plan" in result.results
+        assert "implementation" in result.results
+        assert "review" in result.results
 
 
 class TestProfileFlowErrors:
@@ -323,8 +323,8 @@ class TestParallelProfileFlow:
 
         result = run_flow(flow_path, base_dir=tmp_path)
 
-        assert "reviews" in result
-        assert len(result["reviews"]) == 2
+        assert "reviews" in result.results
+        assert len(result.results["reviews"]) == 2
 
 
 class TestBackwardCompatibility:
@@ -343,12 +343,12 @@ class TestBackwardCompatibility:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "plan" in result
-        assert "implementation" in result
-        assert "review" in result
-        assert "Plan:" in result["plan"]
-        assert "Implementation:" in result["implementation"]
-        assert "Review:" in result["review"]
+        assert "plan" in result.results
+        assert "implementation" in result.results
+        assert "review" in result.results
+        assert "Plan:" in result.results["plan"]
+        assert "Implementation:" in result.results["implementation"]
+        assert "Review:" in result.results["review"]
 
     def test_parallel_review_flow_loads_compiles_and_runs_without_profiles(
         self, tmp_path
@@ -365,8 +365,8 @@ class TestBackwardCompatibility:
 
         result = run_flow(path, base_dir=tmp_path)
 
-        assert "reviews" in result
-        assert "decision" in result
+        assert "reviews" in result.results
+        assert "decision" in result.results
 
 
 class TestProfilesOptional:

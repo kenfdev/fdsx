@@ -21,7 +21,9 @@ from fdsx.logging.recorder import LOGS_DIR_NAME
 
 from .interrupts import handle_interrupts
 from .results import (
+    FlowResult,
     _calc_elapsed,
+    _detect_abort_status,
     _extract_results,
     _find_failed_state,
     _sanitize_state_for_log,
@@ -33,7 +35,7 @@ def resume_flow(
     thread_id: str,
     base_dir: Path | None = None,
     flow_path: Path | None = None,
-) -> dict[str, Any]:
+) -> FlowResult:
     """Resume a flow from a checkpoint.
 
     Args:
@@ -205,19 +207,33 @@ def resume_flow(
             last_state = final_state_info.values
 
         results = _extract_results(last_state, compiled.result_paths)
+        status: str = "completed"
+        failed_state: str | None = None
         if recorder is not None:
-            recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+            status, failed_state, _ = _detect_abort_status(recorder)
+            recorder.finalize(_sanitize_state_for_log(last_state), status)
             recorder.save(base_dir=base_dir)
-            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-        return results
+            if failed_state is not None:
+                display_completion_summary(
+                    recorder.flow_name,
+                    _calc_elapsed(recorder),
+                    failed_state,
+                    "workflow aborted",
+                )
+            else:
+                display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except GraphRecursionError:
         if flow is not None:
             print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
+        rec_status: str = "completed"
+        rec_failed_state: str | None = None
         if recorder is not None:
-            recorder.finalize(_sanitize_state_for_log(last_state), "completed")
+            rec_status, rec_failed_state, _ = _detect_abort_status(recorder)
+            recorder.finalize(_sanitize_state_for_log(last_state), rec_status)
             recorder.save(base_dir=base_dir)
             display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-        return {}
+        return FlowResult(results={}, status=rec_status, abort_state=rec_failed_state)
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
