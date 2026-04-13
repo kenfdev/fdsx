@@ -106,10 +106,6 @@ echo "===== SOURCE: core/engine/resume.py ====="
 cat "$SRC_DIR/core/engine/resume.py"
 
 echo ""
-echo "===== SOURCE: core/engine/batch.py ====="
-cat "$SRC_DIR/core/engine/batch.py"
-
-echo ""
 echo "===== SOURCE: core/engine/tasks_dir.py ====="
 cat "$SRC_DIR/core/engine/tasks_dir.py"
 

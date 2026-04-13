@@ -1,0 +1,32 @@
+name: JSON Array Extract Map Flow
+description: System command outputs JSON array, extract with ".", map iterates over items
+start_at: produce_items
+version: '1.0'
+
+states:
+  produce_items:
+    type: task
+    provider: system
+    command: 'echo ''["item1", "item2", "item3"]'''
+    result_path: $.raw_output
+    extract:
+      strategy:
+        - json
+      pattern: "."
+      result_path: $.items
+    next: process_items
+
+  process_items:
+    type: map
+    items_path: $.items
+    iterator:
+      states:
+        - name: echo_item
+          type: task
+          provider: system
+          command: echo "processing-{item}"
+          result_path: $.iter.output
+          retry: 0
+    result_path: $.map_results
+    fail_fast: true
+    end: true

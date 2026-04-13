@@ -1,14 +1,42 @@
 import pytest
+import structlog.testing
 
 from fdsx.core.extraction import (
     _execute_llm_fallback,
     _execute_strategy,
+    _get_nested_value,
     _json_strategy,
     _keyword_strategy,
     _regex_strategy,
     extract_value,
 )
 from fdsx.models.flow import ExtractRule, LLMClassifyFallback
+
+
+class TestGetNestedValue:
+    def test_dot_returns_root(self):
+        data = {"a": 1}
+        assert _get_nested_value(data, ".") == {"a": 1}
+
+    def test_leading_dot_stripped(self):
+        data = {"groups": ["x"]}
+        assert _get_nested_value(data, ".groups") == ["x"]
+
+    def test_leading_dot_nested_path(self):
+        data = {"result": {"status": "ok"}}
+        assert _get_nested_value(data, ".result.status") == "ok"
+
+    def test_empty_string_returns_none(self):
+        data = {"a": 1}
+        assert _get_nested_value(data, "") is None
+
+    def test_existing_dot_notation_unchanged(self):
+        data = {"a": {"b": "c"}}
+        assert _get_nested_value(data, "a.b") == "c"
+
+    def test_missing_key_returns_none(self):
+        data = {"a": 1}
+        assert _get_nested_value(data, "missing") is None
 
 
 class TestJsonStrategy:
@@ -52,6 +80,36 @@ class TestJsonStrategy:
         output = '{"other": "value"}'
         result = _json_strategy(output, "decision")
         assert result is None
+
+    def test_returns_list(self):
+        output = "[1, 2, 3]"
+        result = _json_strategy(output, ".")
+        assert result == [1, 2, 3]
+        assert isinstance(result, list)
+
+    def test_returns_dict(self):
+        output = '{"a": 1}'
+        result = _json_strategy(output, ".")
+        assert result == {"a": 1}
+        assert isinstance(result, dict)
+
+    def test_returns_scalar_string(self):
+        output = '{"key": "hello"}'
+        result = _json_strategy(output, "key")
+        assert result == "hello"
+        assert isinstance(result, str)
+
+    def test_returns_scalar_number(self):
+        output = '{"count": 42}'
+        result = _json_strategy(output, "count")
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_root_dot_on_array_returns_list(self):
+        output = '["a", "b", "c"]'
+        result = _json_strategy(output, ".")
+        assert result == ["a", "b", "c"]
+        assert isinstance(result, list)
 
 
 class TestRegexStrategy:
@@ -204,6 +262,78 @@ class TestExtractValue:
         )
         result = extract_value("random text", rule)
         assert result is None
+
+
+class TestExtractionDiagnostics:
+    def test_warning_emitted_on_all_strategies_fail(self):
+        rule = ExtractRule(
+            strategy=["json", "regex", "keyword"],
+            pattern="MISSING",
+            result_path="$.result",
+        )
+        with structlog.testing.capture_logs() as log_output:
+            extract_value("random text", rule)
+        warning_logs = [e for e in log_output if e.get("log_level") == "warning"]
+        assert len(warning_logs) == 1
+        assert warning_logs[0]["event"] == "extraction_failed"
+
+    def test_log_includes_output_preview(self):
+        rule = ExtractRule(
+            strategy=["keyword"],
+            pattern="MISSING",
+            result_path="$.result",
+        )
+        short_output = "short output text"
+        with structlog.testing.capture_logs() as log_output:
+            extract_value(short_output, rule)
+        warning_log = next(e for e in log_output if e.get("log_level") == "warning")
+        assert warning_log["output_preview"] == short_output
+
+    def test_long_output_truncated_to_500_chars(self):
+        rule = ExtractRule(
+            strategy=["keyword"],
+            pattern="MISSING",
+            result_path="$.result",
+        )
+        long_output = "x" * 600
+        with structlog.testing.capture_logs() as log_output:
+            extract_value(long_output, rule)
+        warning_log = next(e for e in log_output if e.get("log_level") == "warning")
+        assert len(warning_log["output_preview"]) == 500
+
+    def test_per_strategy_failure_reasons_included(self):
+        rule = ExtractRule(
+            strategy=["json", "regex"],
+            pattern=r"NOMATCH_\d+",
+            result_path="$.result",
+        )
+        with structlog.testing.capture_logs() as log_output:
+            extract_value("plain text no json", rule)
+        warning_log = next(e for e in log_output if e.get("log_level") == "warning")
+        strategies_tried = warning_log["strategies_tried"]
+        assert len(strategies_tried) == 2
+        strategy_names = [s["strategy"] for s in strategies_tried]
+        assert "json" in strategy_names
+        assert "regex" in strategy_names
+        for entry in strategies_tried:
+            assert "strategy" in entry
+            assert "reason" in entry
+        json_entry = next(s for s in strategies_tried if s["strategy"] == "json")
+        regex_entry = next(s for s in strategies_tried if s["strategy"] == "regex")
+        assert json_entry["reason"] == "invalid JSON"
+        assert regex_entry["reason"] == "no match"
+
+    def test_warning_not_emitted_when_strategy_succeeds(self):
+        rule = ExtractRule(
+            strategy=["keyword"],
+            pattern="APPROVED|REJECTED",
+            result_path="$.result",
+        )
+        with structlog.testing.capture_logs() as log_output:
+            result = extract_value("Status: APPROVED", rule)
+        assert result == "APPROVED"
+        warning_logs = [e for e in log_output if e.get("log_level") == "warning"]
+        assert len(warning_logs) == 0
 
 
 class TestExtractRuleValidation:

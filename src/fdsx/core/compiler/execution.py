@@ -17,7 +17,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fdsx.core.extraction import extract_value
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
@@ -81,7 +81,7 @@ class ExecutionResult:
     """
 
     result: ProviderResult
-    extracted: str | None
+    extracted: Any | None
     last_error: str
 
 
@@ -116,7 +116,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     """
     last_error = _NO_ATTEMPTS_ERROR
     result = ProviderResult(exit_code=1, stdout="", stderr="")
-    extracted: str | None = None
+    extracted: Any | None = None
 
     try:
         for attempt in range(config.max_retries + 1):
@@ -160,6 +160,8 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                     if extracted is not None:
                         break
                     last_error = "Extraction failed: all strategies returned None"
+                    if config.provider_name == "system":
+                        break
                 else:
                     break
             else:

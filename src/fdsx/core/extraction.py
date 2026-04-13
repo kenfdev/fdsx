@@ -3,7 +3,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+import structlog
+
 from fdsx.models.flow import ExtractRule, LLMClassifyFallback
+
+log = structlog.get_logger(__name__)
 
 
 def extract_value(
@@ -12,7 +16,7 @@ def extract_value(
     provider_factory: Callable[[str], Any] | None = None,
     state_dict: dict[str, Any] | None = None,
     source_provider: str | None = None,
-) -> str | None:
+) -> Any | None:
     """Extract a value from output using the specified extraction rule.
 
     Args:
@@ -26,10 +30,25 @@ def extract_value(
     Returns:
         The extracted value as a string, or None if extraction failed
     """
+    failures: list[dict[str, str]] = []
     for strategy_name in extract_rule.strategy:
         result = _execute_strategy(strategy_name, output, extract_rule.pattern)
         if result is not None:
             return result
+        failures.append(
+            {
+                "strategy": strategy_name,
+                "reason": _get_failure_reason(
+                    strategy_name, output, extract_rule.pattern
+                ),
+            }
+        )
+
+    log.warning(
+        "extraction_failed",
+        strategies_tried=failures,
+        output_preview=output[:500],
+    )
 
     if extract_rule.fallback is not None:
         if source_provider == "system":
@@ -47,7 +66,7 @@ def extract_value(
     return None
 
 
-def _execute_strategy(strategy_name: str, output: str, pattern: str) -> str | None:
+def _execute_strategy(strategy_name: str, output: str, pattern: str) -> Any | None:
     """Execute a single extraction strategy.
 
     Args:
@@ -71,7 +90,46 @@ def _execute_strategy(strategy_name: str, output: str, pattern: str) -> str | No
     return strategy_func(output, pattern)
 
 
-def _json_strategy(output: str, pattern: str) -> str | None:
+def _get_failure_reason(strategy_name: str, output: str, pattern: str) -> str:
+    """Return a human-readable reason why a strategy returned None.
+
+    Args:
+        strategy_name: The name of the strategy (json, regex, keyword)
+        output: The output that was searched
+        pattern: The pattern used for extraction
+
+    Returns:
+        A short description of why the strategy failed
+    """
+    if strategy_name == "json":
+        json_match = re.search(r"```json\s*([\s\S]*?)\s*```", output)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                if _get_nested_value(data, pattern) is None:
+                    return f"missing key '{pattern}'"
+            except json.JSONDecodeError:
+                return "invalid JSON"
+        try:
+            data = json.loads(output)
+            if _get_nested_value(data, pattern) is None:
+                return f"missing key '{pattern}'"
+        except json.JSONDecodeError:
+            return "invalid JSON"
+        return f"missing key '{pattern}'"
+    elif strategy_name == "regex":
+        try:
+            re.compile(pattern)
+        except re.error:
+            return "regex compile error"
+        return "no match"
+    elif strategy_name == "keyword":
+        return "no match"
+    else:
+        return "unknown strategy"
+
+
+def _json_strategy(output: str, pattern: str) -> Any | None:
     """Extract a value from JSON in the output.
 
     First tries to find a JSON code block, then tries parsing the entire output as JSON.
@@ -91,7 +149,7 @@ def _json_strategy(output: str, pattern: str) -> str | None:
             data = json.loads(json_str)
             value = _get_nested_value(data, pattern)
             if value is not None:
-                return str(value)
+                return value
         except json.JSONDecodeError:
             pass
 
@@ -99,7 +157,7 @@ def _json_strategy(output: str, pattern: str) -> str | None:
         data = json.loads(output)
         value = _get_nested_value(data, pattern)
         if value is not None:
-            return str(value)
+            return value
     except json.JSONDecodeError:
         pass
 
@@ -116,6 +174,11 @@ def _get_nested_value(data: dict[str, Any] | list[Any], path: str) -> Any:
     Returns:
         The value at the path, or None if not found
     """
+    if not path:
+        return None
+    path = path.lstrip(".")
+    if not path:  # was "." (or "..") — return root
+        return data
     keys = path.split(".")
     current: Any = data
 

@@ -214,7 +214,7 @@ provider_options?: {k: v}       # optional — per-task provider option override
 
 **Differences from TaskState:** Has a required `name` field. Does not support `max_iterations`, `hooks`, `next`, or `end` (iteration order is determined by list position).
 
-**Note:** Profile shorthand (`profile: <name>`) is not currently supported on iterator task states. Use explicit `provider`/`model` fields.
+**Profile shorthand:** Use `profile: <name>` instead of `provider`/`model`. Resolved pre-validation; XOR with explicit provider/model.
 
 **Validation:**
 - `prompt_template` and `prompt_file` are mutually exclusive

@@ -666,3 +666,182 @@ class TestExtractFallbackProfileResolution:
         fallback = data["states"]["review"]["branches"][0]["extract"]["fallback"]
         assert fallback["provider"] == "claude"
         assert "profile" not in fallback
+
+
+class TestMapIteratorProfileResolution(TestResolveProfilesInFlow):
+    """Tests for profile resolution in map iterator states."""
+
+    def test_map_iterator_profile_resolves_to_provider_model(self):
+        """Map iterator state with profile gets resolved to provider/model."""
+        data = self._make_flow(
+            {
+                "process": {
+                    "type": "map",
+                    "items_path": "$.items",
+                    "iterator": {
+                        "states": [
+                            {
+                                "name": "step1",
+                                "type": "task",
+                                "profile": "fast",
+                                "prompt_template": "Process item",
+                                "result_path": "$.result",
+                            }
+                        ]
+                    },
+                    "result_path": "$.results",
+                }
+            },
+            profiles={"fast": {"provider": "claude", "model": "haiku"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        iter_state = data["states"]["process"]["iterator"]["states"][0]
+        assert iter_state["provider"] == "claude"
+        assert iter_state["model"] == "haiku"
+        assert "profile" not in iter_state
+
+    def test_map_iterator_profile_xor_explicit_provider(self):
+        """Iterator state with both profile and provider returns XOR error."""
+        data = self._make_flow(
+            {
+                "process": {
+                    "type": "map",
+                    "items_path": "$.items",
+                    "iterator": {
+                        "states": [
+                            {
+                                "name": "step1",
+                                "type": "task",
+                                "profile": "fast",
+                                "provider": "claude",
+                                "prompt_template": "Process item",
+                                "result_path": "$.result",
+                            }
+                        ]
+                    },
+                    "result_path": "$.results",
+                }
+            },
+            profiles={"fast": {"provider": "claude", "model": "haiku"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert len(errors) == 1
+        assert "mutually exclusive" in errors[0]
+        assert "step1" in errors[0]
+
+    def test_map_iterator_extract_fallback_profile_resolved(self):
+        """Iterator state with extract.fallback.profile gets fallback resolved."""
+        data = self._make_flow(
+            {
+                "process": {
+                    "type": "map",
+                    "items_path": "$.items",
+                    "iterator": {
+                        "states": [
+                            {
+                                "name": "step1",
+                                "type": "task",
+                                "provider": "claude",
+                                "prompt_template": "Process item",
+                                "result_path": "$.result",
+                                "extract": {
+                                    "strategy": ["json"],
+                                    "pattern": ".*",
+                                    "result_path": "$.extracted",
+                                    "fallback": {
+                                        "profile": "smart",
+                                        "prompt": "Fallback prompt",
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                    "result_path": "$.results",
+                }
+            },
+            profiles={"smart": {"provider": "claude", "model": "sonnet"}},
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        fallback = data["states"]["process"]["iterator"]["states"][0]["extract"][
+            "fallback"
+        ]
+        assert fallback["provider"] == "claude"
+        assert "profile" not in fallback
+        assert "step1" in repr(data)  # iter state name present in structure
+
+    def test_map_iterator_multiple_states_all_resolved(self):
+        """Multiple iterator states each with different profiles are all resolved."""
+        data = self._make_flow(
+            {
+                "process": {
+                    "type": "map",
+                    "items_path": "$.items",
+                    "iterator": {
+                        "states": [
+                            {
+                                "name": "step1",
+                                "type": "task",
+                                "profile": "profile_a",
+                                "prompt_template": "Step 1",
+                                "result_path": "$.r1",
+                            },
+                            {
+                                "name": "step2",
+                                "type": "task",
+                                "profile": "profile_b",
+                                "prompt_template": "Step 2",
+                                "result_path": "$.r2",
+                            },
+                        ]
+                    },
+                    "result_path": "$.results",
+                }
+            },
+            profiles={
+                "profile_a": {"provider": "claude", "model": "sonnet"},
+                "profile_b": {"provider": "codex", "model": "gpt"},
+            },
+        )
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        states = data["states"]["process"]["iterator"]["states"]
+        assert states[0]["provider"] == "claude"
+        assert states[0]["model"] == "sonnet"
+        assert "profile" not in states[0]
+        assert states[1]["provider"] == "codex"
+        assert states[1]["model"] == "gpt"
+        assert "profile" not in states[1]
+
+    def test_map_iterator_no_profile_unchanged(self):
+        """Iterator state without profile is left unchanged."""
+        data = self._make_flow(
+            {
+                "process": {
+                    "type": "map",
+                    "items_path": "$.items",
+                    "iterator": {
+                        "states": [
+                            {
+                                "name": "step1",
+                                "type": "task",
+                                "provider": "claude",
+                                "prompt_template": "Process item",
+                                "result_path": "$.result",
+                            }
+                        ]
+                    },
+                    "result_path": "$.results",
+                }
+            },
+        )
+        original = dict(data["states"]["process"]["iterator"]["states"][0])
+        data, errors = resolve_profiles_in_flow(data)
+
+        assert errors == []
+        assert data["states"]["process"]["iterator"]["states"][0] == original

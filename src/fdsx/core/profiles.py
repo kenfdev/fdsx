@@ -204,6 +204,22 @@ def resolve_profiles_in_flow(
                     merged_profiles,
                 )
                 errors.extend(fallback_errors)
+        elif state_data.get("type") == "map":
+            iterator = state_data.get("iterator", {})
+            if isinstance(iterator, dict):
+                for iter_state in iterator.get("states", []):
+                    if not isinstance(iter_state, dict):
+                        continue
+                    iter_name = iter_state.get("name", "<unnamed>")
+                    iter_label = f"State '{state_name}', iterator state '{iter_name}'"
+                    iter_errors = _resolve_profile_on_dict(
+                        iter_state, iter_label, merged_profiles
+                    )
+                    errors.extend(iter_errors)
+                    fallback_errors = _resolve_fallback_profile(
+                        iter_state, iter_label, merged_profiles
+                    )
+                    errors.extend(fallback_errors)
 
     return data, errors
 
