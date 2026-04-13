@@ -3,7 +3,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+import structlog
+
 from fdsx.models.flow import ExtractRule, LLMClassifyFallback
+
+log = structlog.get_logger(__name__)
 
 
 def extract_value(
@@ -26,10 +30,23 @@ def extract_value(
     Returns:
         The extracted value as a string, or None if extraction failed
     """
+    failures: list[dict[str, str]] = []
     for strategy_name in extract_rule.strategy:
         result = _execute_strategy(strategy_name, output, extract_rule.pattern)
         if result is not None:
             return result
+        failures.append(
+            {
+                "strategy": strategy_name,
+                "reason": _get_failure_reason(strategy_name, output, extract_rule.pattern),
+            }
+        )
+
+    log.warning(
+        "extraction_failed",
+        strategies_tried=failures,
+        output_preview=output[:500],
+    )
 
     if extract_rule.fallback is not None:
         if source_provider == "system":
@@ -69,6 +86,45 @@ def _execute_strategy(strategy_name: str, output: str, pattern: str) -> Any | No
         return None
 
     return strategy_func(output, pattern)
+
+
+def _get_failure_reason(strategy_name: str, output: str, pattern: str) -> str:
+    """Return a human-readable reason why a strategy returned None.
+
+    Args:
+        strategy_name: The name of the strategy (json, regex, keyword)
+        output: The output that was searched
+        pattern: The pattern used for extraction
+
+    Returns:
+        A short description of why the strategy failed
+    """
+    if strategy_name == "json":
+        json_match = re.search(r"```json\s*([\s\S]*?)\s*```", output)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                if _get_nested_value(data, pattern) is None:
+                    return f"missing key '{pattern}'"
+            except json.JSONDecodeError:
+                return "invalid JSON"
+        try:
+            data = json.loads(output)
+            if _get_nested_value(data, pattern) is None:
+                return f"missing key '{pattern}'"
+        except json.JSONDecodeError:
+            return "invalid JSON"
+        return f"missing key '{pattern}'"
+    elif strategy_name == "regex":
+        try:
+            re.compile(pattern)
+        except re.error:
+            return "regex compile error"
+        return "no match"
+    elif strategy_name == "keyword":
+        return "no match"
+    else:
+        return "unknown strategy"
 
 
 def _json_strategy(output: str, pattern: str) -> Any | None:

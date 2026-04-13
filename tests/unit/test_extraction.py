@@ -1,3 +1,4 @@
+import structlog.testing
 import pytest
 
 from fdsx.core.extraction import (
@@ -261,6 +262,78 @@ class TestExtractValue:
         )
         result = extract_value("random text", rule)
         assert result is None
+
+
+class TestExtractionDiagnostics:
+    def test_warning_emitted_on_all_strategies_fail(self):
+        rule = ExtractRule(
+            strategy=["json", "regex", "keyword"],
+            pattern="MISSING",
+            result_path="$.result",
+        )
+        with structlog.testing.capture_logs() as log_output:
+            extract_value("random text", rule)
+        warning_logs = [e for e in log_output if e.get("log_level") == "warning"]
+        assert len(warning_logs) == 1
+        assert warning_logs[0]["event"] == "extraction_failed"
+
+    def test_log_includes_output_preview(self):
+        rule = ExtractRule(
+            strategy=["keyword"],
+            pattern="MISSING",
+            result_path="$.result",
+        )
+        short_output = "short output text"
+        with structlog.testing.capture_logs() as log_output:
+            extract_value(short_output, rule)
+        warning_log = next(e for e in log_output if e.get("log_level") == "warning")
+        assert warning_log["output_preview"] == short_output
+
+    def test_long_output_truncated_to_500_chars(self):
+        rule = ExtractRule(
+            strategy=["keyword"],
+            pattern="MISSING",
+            result_path="$.result",
+        )
+        long_output = "x" * 600
+        with structlog.testing.capture_logs() as log_output:
+            extract_value(long_output, rule)
+        warning_log = next(e for e in log_output if e.get("log_level") == "warning")
+        assert len(warning_log["output_preview"]) == 500
+
+    def test_per_strategy_failure_reasons_included(self):
+        rule = ExtractRule(
+            strategy=["json", "regex"],
+            pattern=r"NOMATCH_\d+",
+            result_path="$.result",
+        )
+        with structlog.testing.capture_logs() as log_output:
+            extract_value("plain text no json", rule)
+        warning_log = next(e for e in log_output if e.get("log_level") == "warning")
+        strategies_tried = warning_log["strategies_tried"]
+        assert len(strategies_tried) == 2
+        strategy_names = [s["strategy"] for s in strategies_tried]
+        assert "json" in strategy_names
+        assert "regex" in strategy_names
+        for entry in strategies_tried:
+            assert "strategy" in entry
+            assert "reason" in entry
+        json_entry = next(s for s in strategies_tried if s["strategy"] == "json")
+        regex_entry = next(s for s in strategies_tried if s["strategy"] == "regex")
+        assert json_entry["reason"] == "invalid JSON"
+        assert regex_entry["reason"] == "no match"
+
+    def test_warning_not_emitted_when_strategy_succeeds(self):
+        rule = ExtractRule(
+            strategy=["keyword"],
+            pattern="APPROVED|REJECTED",
+            result_path="$.result",
+        )
+        with structlog.testing.capture_logs() as log_output:
+            result = extract_value("Status: APPROVED", rule)
+        assert result == "APPROVED"
+        warning_logs = [e for e in log_output if e.get("log_level") == "warning"]
+        assert len(warning_logs) == 0
 
 
 class TestExtractRuleValidation:
