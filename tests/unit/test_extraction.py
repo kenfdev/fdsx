@@ -3,12 +3,39 @@ import pytest
 from fdsx.core.extraction import (
     _execute_llm_fallback,
     _execute_strategy,
+    _get_nested_value,
     _json_strategy,
     _keyword_strategy,
     _regex_strategy,
     extract_value,
 )
 from fdsx.models.flow import ExtractRule, LLMClassifyFallback
+
+
+class TestGetNestedValue:
+    def test_dot_returns_root(self):
+        data = {"a": 1}
+        assert _get_nested_value(data, ".") == {"a": 1}
+
+    def test_leading_dot_stripped(self):
+        data = {"groups": ["x"]}
+        assert _get_nested_value(data, ".groups") == ["x"]
+
+    def test_leading_dot_nested_path(self):
+        data = {"result": {"status": "ok"}}
+        assert _get_nested_value(data, ".result.status") == "ok"
+
+    def test_empty_string_returns_none(self):
+        data = {"a": 1}
+        assert _get_nested_value(data, "") is None
+
+    def test_existing_dot_notation_unchanged(self):
+        data = {"a": {"b": "c"}}
+        assert _get_nested_value(data, "a.b") == "c"
+
+    def test_missing_key_returns_none(self):
+        data = {"a": 1}
+        assert _get_nested_value(data, "missing") is None
 
 
 class TestJsonStrategy:

@@ -116,6 +116,11 @@ def _get_nested_value(data: dict[str, Any] | list[Any], path: str) -> Any:
     Returns:
         The value at the path, or None if not found
     """
+    if not path:
+        return None
+    path = path.lstrip(".")
+    if not path:  # was "." (or "..") — return root
+        return data
     keys = path.split(".")
     current: Any = data
 
