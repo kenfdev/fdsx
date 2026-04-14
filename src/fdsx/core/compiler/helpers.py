@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 import structlog
+from langgraph.managed import RemainingSteps
 
 from fdsx.core.config import _deep_merge
 from fdsx.models.flow import (
@@ -187,14 +188,11 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     2. All result_path / extract / aggregate top-level keys as LastValue channels.
     3. Input keys from --input CLI flags.
     4. _meta internal key.
+    5. remaining_steps managed channel for loop control.
 
-    Returns `object` (→ __root__ single channel, no filtering) for flows with no
-    ParallelState, since they don't need the Send API reducer channels.
+    Always returns a TypedDict class with named channels for proper per-key
+    channel tracking in LangGraph checkpoints.
     """
-    has_parallel = any(isinstance(s, ParallelState) for s in flow.states.values())
-    if not has_parallel:
-        return object
-
     annotations: dict[str, Any] = {}
 
     # 1. Reducer channels for parallel branch result accumulation
@@ -234,7 +232,15 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
                     k = _top_level_key(str(target))
                     if k:
                         annotations.setdefault(k, Any)
-        elif isinstance(state, (WaitState, MapState)) and state.result_path:
+        elif isinstance(state, MapState):
+            if state.result_path:
+                k = _top_level_key(state.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
+            k = _top_level_key(state.items_path)
+            if k:
+                annotations.setdefault(k, Any)
+        elif isinstance(state, WaitState) and state.result_path:
             k = _top_level_key(state.result_path)
             if k:
                 annotations.setdefault(k, Any)
@@ -247,5 +253,8 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     # 4. Internal tracking keys
     annotations.setdefault("_meta", Any)
     annotations.setdefault("_state_iterations", Any)
+
+    # 5. Managed channel for loop control (Phase 4)
+    annotations["remaining_steps"] = RemainingSteps
 
     return TypedDict("FlowState", annotations, total=False)  # type: ignore[no-any-return,operator]

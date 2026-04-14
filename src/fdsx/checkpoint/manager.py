@@ -16,19 +16,11 @@ logger = logging.getLogger(__name__)
 def _extract_meta_from_checkpoint(
     checkpoint_data: Checkpoint | dict[str, Any],
 ) -> dict[str, Any]:
-    """Extract _meta from checkpoint channel_values, handling both
-    __root__ (object schema) and named-channel (TypedDict schema) layouts."""
+    """Extract _meta from checkpoint channel_values (named-channel TypedDict schema)."""
     channel_values = checkpoint_data.get("channel_values", {})
-    # Named-channel layout (flows with ParallelState or TypedDict schema)
     meta = channel_values.get("_meta")
     if isinstance(meta, dict):
         return meta
-    # __root__ layout (flows using object schema, e.g. no ParallelState)
-    root = channel_values.get("__root__")
-    if isinstance(root, dict):
-        meta = root.get("_meta")
-        if isinstance(meta, dict):
-            return meta
     return {}
 
 
