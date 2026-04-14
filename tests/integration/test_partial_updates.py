@@ -7,7 +7,7 @@ T007 is a regression guard that is GREEN now and must remain GREEN after the ref
 
 from fdsx.core.compiler.nodes import _create_pass_node, _create_task_node
 from fdsx.core.engine import FlowResult, run_flow
-from fdsx.models.flow import Flow, PassState, TaskState
+from fdsx.models.flow import ExtractRule, Flow, PassState, TaskState
 from tests import FIXTURES_DIR
 
 
@@ -62,6 +62,36 @@ class TestParallelFlowPartialUpdate:
         assert result.results["decision"] == "APPROVED"
 
 
+class TestTaskNodeSiblingPaths:
+    """When extract.result_path and result_path share a parent, both keys survive."""
+
+    def test_task_node_with_extract_siblings_both_preserved(self):
+        """When extract.result_path and result_path share a parent, both keys survive."""
+        state_def = TaskState(
+            type="task",
+            provider="system",
+            command='echo \'{"value": 42}\'',
+            result_path="$.result.raw",
+            extract=ExtractRule(
+                strategy=["json"],
+                pattern="value",
+                result_path="$.result.parsed",
+            ),
+            end=True,
+        )
+        flow = Flow(
+            name="t",
+            description="sibling path test",
+            start_at="s1",
+            states={"s1": state_def},
+        )
+        node_fn = _create_task_node("s1", state_def, flow)
+        result = node_fn({"_state_iterations": {}})
+
+        assert "raw" in result["result"]
+        assert "parsed" in result["result"]
+
+
 class TestPassNodePartialUpdate:
     """T008: Pass node should return only modified keys (partial update)."""
 
@@ -89,3 +119,22 @@ class TestPassNodePartialUpdate:
         assert "noise_key" not in result
         assert "output" in result
         assert "_state_iterations" in result
+
+    def test_pass_node_sibling_parameters_both_preserved(self):
+        """Two parameters targeting sibling paths under the same parent must both survive."""
+        state_def = PassState(
+            type="pass",
+            parameters={"$.review.summary": "good", "$.review.decision": "APPROVED"},
+            end=True,
+        )
+        flow = Flow(
+            name="t",
+            description="sibling test",
+            start_at="s1",
+            states={"s1": state_def},
+        )
+        node_fn = _create_pass_node("s1", state_def, flow)
+        result = node_fn({"_state_iterations": {}})
+
+        assert result["review"]["summary"] == "good"
+        assert result["review"]["decision"] == "APPROVED"

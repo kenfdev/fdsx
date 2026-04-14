@@ -113,6 +113,8 @@ def _create_task_node(
                 f"Provider {state.provider} failed after {max_retries + 1} attempts with exit code {result.exit_code}: {_sanitize_output(last_error)}"
             )
 
+        partial: dict[str, Any] = {}
+
         if state.extract:
             if extracted is None:
                 terminal.display_state_error(state_name, last_error)
@@ -121,15 +123,11 @@ def _create_task_node(
                 raise RuntimeError(
                     f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
                 )
-            new_state = set_jsonpath(state.extract.result_path, state_dict, extracted)
-            new_state = set_jsonpath(
-                state.result_path, new_state, result.stdout.strip()
-            )
+            partial = set_jsonpath(state.extract.result_path, partial, extracted)
+            partial = set_jsonpath(state.result_path, partial, result.stdout.strip())
             variables_set = [state.extract.result_path, state.result_path]
         else:
-            new_state = set_jsonpath(
-                state.result_path, state_dict, result.stdout.strip()
-            )
+            partial = set_jsonpath(state.result_path, partial, result.stdout.strip())
             variables_set = [state.result_path]
 
         if state.result_file:
@@ -139,7 +137,7 @@ def _create_task_node(
                 file_path = write_result_to_file(
                     varname, result.stdout.strip(), Path(run_dir)
                 )
-                new_state = set_jsonpath(state.result_file, new_state, file_path)
+                partial = set_jsonpath(state.result_file, partial, file_path)
                 variables_set = [*variables_set, state.result_file]
 
         duration = time.time() - start_time
@@ -153,9 +151,10 @@ def _create_task_node(
                 variables_set,
             )
 
-        new_state = _set_next_state_meta(new_state, state)
-        new_state["_state_iterations"] = iters
-        return new_state
+        partial["_state_iterations"] = iters
+        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
+        partial["_meta"] = meta_holder["_meta"]
+        return partial
 
     return node
 
@@ -173,7 +172,7 @@ def _create_choice_node(
         if recorder is not None:
             recorder.record_state_start(state_name, "choice")
             recorder.record_state_complete(state_name, "success", "", [])
-        return {**state_dict, "_state_iterations": iters}
+        return {"_state_iterations": iters}
 
     return node
 
@@ -193,6 +192,7 @@ def _create_pass_node(
         if recorder is not None:
             recorder.record_state_start(state_name, "pass")
 
+        partial: dict[str, Any] = {}
         variables_set = []
         if state.parameters:
             for target, source in state.parameters.items():
@@ -200,8 +200,8 @@ def _create_pass_node(
                     value = resolve_template(source, state_dict)
                 else:
                     value = source
-                new_state = set_jsonpath(target, state_dict, value)
-                state_dict = new_state
+                state_dict = set_jsonpath(target, state_dict, value)  # working copy for chaining
+                partial = set_jsonpath(target, partial, value)
                 variables_set.append(target)
 
         if state.aggregate:
@@ -215,13 +215,16 @@ def _create_pass_node(
             else:
                 result = state.aggregate.no_match
             state_dict = set_jsonpath(state.aggregate.result_path, state_dict, result)
+            partial = set_jsonpath(state.aggregate.result_path, partial, result)
             variables_set.append(state.aggregate.result_path)
 
         if recorder is not None:
             recorder.record_state_complete(state_name, "success", "", variables_set)
 
-        state_dict = _set_next_state_meta(state_dict, state)
-        return state_dict
+        partial["_state_iterations"] = iters
+        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
+        partial["_meta"] = meta_holder["_meta"]
+        return partial
 
     return node
 
@@ -250,7 +253,7 @@ def _create_wait_notify_node(
             from fdsx.notify.webhook import send_notification
 
             send_notification(state.notify, state_dict)
-        return {**state_dict, "_state_iterations": iters}
+        return {"_state_iterations": iters}
 
     return node
 
@@ -276,7 +279,7 @@ def _create_wait_interrupt_node(
             }
         )
 
-        new_state = set_jsonpath(state.result_path, state_dict, user_selection)
+        partial: dict[str, Any] = set_jsonpath(state.result_path, {}, user_selection)
 
         if recorder is not None:
             recorder.record_state_complete(
@@ -287,7 +290,8 @@ def _create_wait_interrupt_node(
                 state_type="wait",
             )
 
-        new_state = _set_next_state_meta(new_state, state)
-        return new_state
+        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
+        partial["_meta"] = meta_holder["_meta"]
+        return partial
 
     return node
