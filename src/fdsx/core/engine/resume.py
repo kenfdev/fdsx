@@ -87,22 +87,6 @@ def resume_flow(
                 except (json.JSONDecodeError, OSError, KeyError):
                     pass
 
-            # Legacy fallback: recover flow_path from checkpoint channel_values
-            # for threads created before flow_path was persisted to run.json.
-            if flow_path is None or not (flow_path and flow_path.exists()):
-                try:
-                    _ckpt = checkpointer.get({"configurable": {"thread_id": thread_id}})
-                    if _ckpt is not None:
-                        _fp = (
-                            _ckpt.get("channel_values", {})
-                            .get("_meta", {})
-                            .get("flow_path")
-                        )
-                        if _fp:
-                            flow_path = Path(_fp)
-                except Exception:
-                    pass
-
             if flow_path is None or not (flow_path and flow_path.exists()):
                 raise RuntimeError(
                     f"Flow path not found for thread ID {thread_id}. "

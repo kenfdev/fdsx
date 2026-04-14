@@ -1,4 +1,3 @@
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -169,46 +168,6 @@ class TestCheckpointSave:
 
 
 class TestResumeSuccess:
-    def test_resume_without_flow_path_uses_legacy_channel_values_fallback(
-        self, temp_dir, wait_resume_flow_path
-    ):
-        """resume_flow succeeds via channel_values legacy fallback when run.json lacks flow_path."""
-        from unittest.mock import patch
-
-        base_dir = temp_dir / ".fdsx"
-        thread_id = "test-legacy-resume-no-flow-path"
-
-        # Step 1: Run flow until Wait state, simulate crash at prompt
-        with (
-            pytest.raises(RuntimeError, match="Flow execution failed"),
-            patch(
-                "fdsx.core.engine.interrupts.display_wait_prompt",
-                side_effect=Exception("simulated crash"),
-            ),
-        ):
-            engine.run_flow(
-                wait_resume_flow_path,
-                thread_id=thread_id,
-                base_dir=base_dir,
-            )
-
-        # Step 2: Remove flow_path from run.json to simulate legacy thread
-        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
-
-        run_json_path = base_dir / RUNS_DIR_NAME / thread_id / RUN_FILENAME
-        with run_json_path.open() as f:
-            run_log = json.load(f)
-        run_log.pop("flow_path", None)
-        with run_json_path.open("w") as f:
-            json.dump(run_log, f)
-
-        # Step 3: Resume WITHOUT passing flow_path — must succeed via channel_values fallback
-        with patch("builtins.input", return_value="1"):
-            result = engine.resume_flow(thread_id, base_dir)
-
-        assert result.results.get("status") == "approved"
-        assert result.results.get("plan_output") == "plan output"
-
     def test_resume_wait_state_flow(self, temp_dir, wait_resume_flow_path):
         """T051: interrupt at Wait → resume with resume_flow → verify completion."""
         from unittest.mock import patch

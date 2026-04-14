@@ -274,16 +274,6 @@ class CheckpointManager:
                         if checkpointer is not None
                         else None
                     )
-                    # Legacy fallback: recover flow_path from checkpoint channel_values
-                    # for threads created before flow_path was persisted to run.json.
-                    if flow_path_str is None and checkpoint_tuple is not None:
-                        try:
-                            _cv = checkpoint_tuple.checkpoint.get("channel_values", {})
-                            _fp = _cv.get("_meta", {}).get("flow_path")
-                            if _fp:
-                                flow_path_str = _fp
-                        except Exception:
-                            pass
                     if checkpoint_tuple is not None and not is_locked and flow_path_str:
                         try:
                             if flow_path_str not in _compiled_cache:
