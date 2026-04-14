@@ -43,7 +43,5 @@ class TestCLIE2EPhase2:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         # FR-1.3: No JSON on stdout
         assert result.stdout == ""
-        # Verify loop completion message on stderr
-        assert "Loop completed" in result.stderr
         # FR-1.1: Completion message on stderr
         assert "completed successfully" in result.stderr

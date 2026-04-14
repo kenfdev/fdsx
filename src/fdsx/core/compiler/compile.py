@@ -56,9 +56,7 @@ _GRAY = 1
 _BLACK = 2
 
 
-def _get_all_next_state_names(
-    state: Any, flow_states: dict[str, Any]
-) -> list[str]:
+def _get_all_next_state_names(state: Any, flow_states: dict[str, Any]) -> list[str]:
     """Return all possible next state names from a state, filtered to known states.
 
     Handles TaskState/MapState/WaitState/PassState/ParallelState (next attribute)
@@ -104,15 +102,12 @@ def _detect_loop_back_edges(flow: Any) -> set[tuple[str, str]]:
     return back_edges
 
 
-def _make_loop_guard(target: str) -> Callable[[dict[str, Any]], str]:
-    """Return a routing function that routes to END when remaining_steps <= 2.
-
-    Used for regular (non-choice) edges that loop back to an earlier state.
-    """
+def _make_loop_guard(target: str, max_loop: int) -> Callable[[dict[str, Any]], str]:
+    """Route to END after max_loop visits to target (loop start), else loop back."""
 
     def route(state_dict: dict[str, Any]) -> str:
-        remaining = state_dict.get("remaining_steps", float("inf"))
-        if remaining <= 2:
+        iters = state_dict.get("_state_iterations", {})
+        if iters.get(target, 0) >= max_loop:
             return END
         return target
 
@@ -122,18 +117,15 @@ def _make_loop_guard(target: str) -> Callable[[dict[str, Any]], str]:
 def _wrap_routing_with_loop_guard(
     routing_fn: Callable[[dict[str, Any]], str],
     loop_back_targets: set[str],
+    max_loop: int,
 ) -> Callable[[dict[str, Any]], str]:
-    """Wrap an existing routing function to intercept loop-back transitions.
-
-    When the routing function returns a state that is a loop-back target and
-    remaining_steps <= 2, reroutes to END instead.
-    """
+    """Wrap routing fn to intercept loop-back transitions after max_loop visits."""
 
     def route(state_dict: dict[str, Any]) -> str:
         destination = routing_fn(state_dict)
         if destination in loop_back_targets:
-            remaining = state_dict.get("remaining_steps", float("inf"))
-            if remaining <= 2:
+            iters = state_dict.get("_state_iterations", {})
+            if iters.get(destination, 0) >= max_loop:
                 return END
         return destination
 
@@ -514,7 +506,7 @@ def compile_flow(
                 # Loop-back edge: replace add_edge with conditional guard
                 graph.add_conditional_edges(
                     state_name,
-                    _make_loop_guard(next_state),
+                    _make_loop_guard(next_state, flow.max_loop),
                     {next_state: next_state, END: END},
                 )
             else:
@@ -525,11 +517,13 @@ def compile_flow(
             default = state.default or END
             loop_back_targets = loop_back_targets_by_source.get(state_name, set())
             routing_fn = _create_routing_function(state)
-            path_map: dict[Any, str] = (
-                {choice.next: choice.next for choice in choices} | {default: default}
-            )
+            path_map: dict[Any, str] = {
+                choice.next: choice.next for choice in choices
+            } | {default: default}
             if loop_back_targets:
-                routing_fn = _wrap_routing_with_loop_guard(routing_fn, loop_back_targets)
+                routing_fn = _wrap_routing_with_loop_guard(
+                    routing_fn, loop_back_targets, flow.max_loop
+                )
                 path_map[END] = END
             graph.add_conditional_edges(
                 state_name,

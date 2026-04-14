@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 
 from fdsx.checkpoint.manager import CheckpointManager, _extract_meta_from_checkpoint
@@ -248,17 +247,6 @@ def resume_flow(
                 pass  # best-effort: do not raise if file is missing or index is invalid
 
         return FlowResult(results=results, status=status, abort_state=failed_state)
-    except GraphRecursionError:
-        if flow is not None:
-            print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
-        rec_status: str = "completed"
-        rec_failed_state: str | None = None
-        if recorder is not None:
-            rec_status, rec_failed_state, _ = _detect_abort_status(recorder)
-            recorder.finalize(_sanitize_state_for_log(last_state), rec_status)
-            recorder.save(base_dir=base_dir)
-            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-        return FlowResult(results={}, status=rec_status, abort_state=rec_failed_state)
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
