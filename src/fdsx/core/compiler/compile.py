@@ -135,7 +135,7 @@ def _wrap_with_hooks(
 
         try:
             output_data_path = write_hook_data(
-                result,
+                {**state_dict, **result},
                 state_name=state_name,
                 filename=OUTPUT_FILENAME,
                 thread_id=thread_id,
