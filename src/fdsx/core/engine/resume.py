@@ -177,26 +177,24 @@ def resume_flow(
 
                     user_selection = display_wait_prompt(state_name, message, choices)
 
-                    for state_snapshot in compiled.graph.stream(
+                    for chunk in compiled.graph.stream(
                         Command(resume=user_selection),
                         config=resume_config,
                         stream_mode="values",
+                        version="v2",
                     ):
-                        if "__interrupt__" not in state_snapshot:
-                            last_state = state_snapshot
+                        last_state = chunk["data"]
                 else:
                     # Error/pending task (no interrupt) — re-execute from checkpoint
-                    for state_snapshot in compiled.graph.stream(
-                        None, config=resume_config, stream_mode="values"
+                    for chunk in compiled.graph.stream(
+                        None, config=resume_config, stream_mode="values", version="v2"
                     ):
-                        if "__interrupt__" not in state_snapshot:
-                            last_state = state_snapshot
+                        last_state = chunk["data"]
             else:
-                for state_snapshot in compiled.graph.stream(
-                    None, config=resume_config, stream_mode="values"
+                for chunk in compiled.graph.stream(
+                    None, config=resume_config, stream_mode="values", version="v2"
                 ):
-                    if "__interrupt__" not in state_snapshot:
-                        last_state = state_snapshot
+                    last_state = chunk["data"]
 
             # Continue handling any further interrupts (e.g. multi-Wait flows)
             last_state = handle_interrupts(compiled.graph, resume_config, last_state)

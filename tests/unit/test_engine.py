@@ -377,8 +377,8 @@ class TestHandleInterrupts:
         state_with_interrupt = self._make_state_info(tasks=[task])
         graph.get_state.side_effect = [state_with_interrupt, empty_state]
 
-        # stream yields one non-interrupt snapshot
-        graph.stream.return_value = iter([{"status": "ok"}])
+        # stream yields one v2 chunk
+        graph.stream.return_value = iter([{"data": {"status": "ok"}}])
 
         with patch(
             "fdsx.core.engine.interrupts.display_wait_prompt", return_value="yes"
@@ -403,7 +403,7 @@ class TestHandleInterrupts:
             state_with_interrupt,
             empty_state,
         ]
-        graph.stream.return_value = iter([{"round": 1}])
+        graph.stream.return_value = iter([{"data": {"round": 1}}])
 
         with patch(
             "fdsx.core.engine.interrupts.display_wait_prompt", return_value="yes"
@@ -412,8 +412,8 @@ class TestHandleInterrupts:
 
         assert mock_prompt.call_count == 2
 
-    def test_interrupt_snapshot_with_interrupt_key_skipped(self):
-        """State snapshots containing '__interrupt__' are skipped (last_state not updated)."""
+    def test_interrupt_snapshot_last_chunk_wins(self):
+        """With v2 streaming, each chunk's data updates last_state; the final chunk wins."""
         graph = MagicMock()
         payload = {"message": "ok?", "choices": [], "state_name": "s"}
         task = self._make_task_with_interrupt(payload)
@@ -421,11 +421,11 @@ class TestHandleInterrupts:
         state_with_interrupt = self._make_state_info(tasks=[task])
 
         graph.get_state.side_effect = [state_with_interrupt, empty_state]
-        # stream yields an interrupt snapshot then a valid one
+        # stream yields two v2 chunks; last one wins
         graph.stream.return_value = iter(
             [
-                {"__interrupt__": True},
-                {"real": "state"},
+                {"data": {"intermediate": "state"}},
+                {"data": {"real": "state"}},
             ]
         )
 
@@ -434,5 +434,5 @@ class TestHandleInterrupts:
         ):
             result = handle_interrupts(graph, {}, {"original": True})
 
-        # The __interrupt__ snapshot was skipped; real state was captured
+        # The last chunk's data is captured
         assert result == {"real": "state"}

@@ -166,11 +166,10 @@ def run_flow(
 
     try:
         with handler:
-            for state_snapshot in compiled.graph.stream(
-                initial_state, config=config, stream_mode="values"
+            for chunk in compiled.graph.stream(
+                initial_state, config=config, stream_mode="values", version="v2"
             ):
-                if "__interrupt__" not in state_snapshot:
-                    last_state = state_snapshot
+                last_state = chunk["data"]
 
             if needs_checkpointer:
                 last_state = handle_interrupts(compiled.graph, config, last_state)
