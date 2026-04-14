@@ -51,6 +51,86 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_WHITE = 0
+_GRAY = 1
+_BLACK = 2
+
+
+def _get_all_next_state_names(state: Any, flow_states: dict[str, Any]) -> list[str]:
+    """Return all possible next state names from a state, filtered to known states.
+
+    Handles TaskState/MapState/WaitState/PassState/ParallelState (next attribute)
+    and ChoiceState (choices[*].next + default). Excludes "END" and None.
+    """
+    results: list[str] = []
+
+    if isinstance(state, ChoiceState):
+        for choice in state.choices:
+            if choice.next and choice.next in flow_states:
+                results.append(choice.next)
+        if state.default and state.default in flow_states:
+            results.append(state.default)
+    else:
+        next_val = getattr(state, "next", None)
+        if next_val and next_val in flow_states:
+            results.append(next_val)
+
+    return results
+
+
+def _detect_loop_back_edges(flow: Any) -> set[tuple[str, str]]:
+    """Detect back-edges in the flow graph using DFS with color marking.
+
+    A back-edge (src, dst) exists when dst is on the current DFS stack (GRAY).
+    Returns the set of (source_state_name, target_state_name) back-edge pairs.
+    """
+    color: dict[str, int] = {name: _WHITE for name in flow.states}
+    back_edges: set[tuple[str, str]] = set()
+
+    def dfs(node: str) -> None:
+        color[node] = _GRAY
+        for neighbor in _get_all_next_state_names(flow.states[node], flow.states):
+            if color[neighbor] == _GRAY:
+                back_edges.add((node, neighbor))
+            elif color[neighbor] == _WHITE:
+                dfs(neighbor)
+        color[node] = _BLACK
+
+    if flow.start_at in color:
+        dfs(flow.start_at)
+
+    return back_edges
+
+
+def _make_loop_guard(target: str, max_loop: int) -> Callable[[dict[str, Any]], str]:
+    """Route to END after max_loop visits to target (loop start), else loop back."""
+
+    def route(state_dict: dict[str, Any]) -> str:
+        iters = state_dict.get("_state_iterations", {})
+        if iters.get(target, 0) >= max_loop:
+            return END
+        return target
+
+    return route
+
+
+def _wrap_routing_with_loop_guard(
+    routing_fn: Callable[[dict[str, Any]], str],
+    loop_back_targets: set[str],
+    max_loop: int,
+) -> Callable[[dict[str, Any]], str]:
+    """Wrap routing fn to intercept loop-back transitions after max_loop visits."""
+
+    def route(state_dict: dict[str, Any]) -> str:
+        destination = routing_fn(state_dict)
+        if destination in loop_back_targets:
+            iters = state_dict.get("_state_iterations", {})
+            if iters.get(destination, 0) >= max_loop:
+                return END
+        return destination
+
+    return route
+
 
 class FlowState(TypedDict):
     """Base flow state - uses Any for flexibility."""
@@ -135,7 +215,7 @@ def _wrap_with_hooks(
 
         try:
             output_data_path = write_hook_data(
-                result,
+                {**state_dict, **result},
                 state_name=state_name,
                 filename=OUTPUT_FILENAME,
                 thread_id=thread_id,
@@ -382,6 +462,12 @@ def compile_flow(
                 ),
             )  # type: ignore[call-overload]
 
+    # Pre-compute loop-back edges for loop guard insertion
+    loop_back_edges = _detect_loop_back_edges(flow)
+    loop_back_targets_by_source: dict[str, set[str]] = {}
+    for src, tgt in loop_back_edges:
+        loop_back_targets_by_source.setdefault(src, set()).add(tgt)
+
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
             # Fan-out: dispatch node → branch nodes via Send API (no path_map needed)
@@ -416,16 +502,33 @@ def compile_flow(
         if next_state:
             if next_state == "END":
                 graph.add_edge(state_name, END)
+            elif next_state in loop_back_targets_by_source.get(state_name, set()):
+                # Loop-back edge: replace add_edge with conditional guard
+                graph.add_conditional_edges(
+                    state_name,
+                    _make_loop_guard(next_state, flow.max_loop),
+                    {next_state: next_state, END: END},
+                )
             else:
                 graph.add_edge(state_name, next_state)
 
         if isinstance(state, ChoiceState):
             choices = state.choices
             default = state.default or END
+            loop_back_targets = loop_back_targets_by_source.get(state_name, set())
+            routing_fn = _create_routing_function(state)
+            path_map: dict[Any, str] = {
+                choice.next: choice.next for choice in choices
+            } | {default: default}
+            if loop_back_targets:
+                routing_fn = _wrap_routing_with_loop_guard(
+                    routing_fn, loop_back_targets, flow.max_loop
+                )
+                path_map[END] = END
             graph.add_conditional_edges(
                 state_name,
-                _create_routing_function(state),
-                {choice.next: choice.next for choice in choices} | {default: default},  # type: ignore[arg-type]
+                routing_fn,
+                path_map,
             )
 
     graph.set_entry_point(flow.start_at)

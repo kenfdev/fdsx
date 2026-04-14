@@ -1,0 +1,25 @@
+name: Parallel Nested Result Path Flow
+description: Tests that parallel state preserves sibling keys under a nested result_path channel
+start_at: setup
+version: '1.0'
+
+states:
+  setup:
+    type: task
+    provider: system
+    command: echo "preserved"
+    result_path: $.output.other_key
+    retry: 0
+    next: parallel_state
+
+  parallel_state:
+    type: parallel
+    branches:
+      - provider: system
+        command: echo "branch1"
+        retry: 0
+      - provider: system
+        command: echo "branch2"
+        retry: 0
+    result_path: $.output.results
+    end: true

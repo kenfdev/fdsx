@@ -48,12 +48,12 @@ def handle_interrupts(
 
         user_selection = display_wait_prompt(state_name, message, choices)
 
-        for state_snapshot in graph.stream(
+        for chunk in graph.stream(
             Command(resume=user_selection),
             config=config,
             stream_mode=stream_mode,
+            version="v2",
         ):
-            if "__interrupt__" not in state_snapshot:
-                last_state = state_snapshot
+            last_state = chunk["data"]
 
     return last_state

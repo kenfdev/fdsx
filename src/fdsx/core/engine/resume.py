@@ -1,13 +1,13 @@
 """resume_flow implementation for the engine package."""
 
+import json
 import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 
-from fdsx.checkpoint.manager import CheckpointManager, _extract_meta_from_checkpoint
+from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
@@ -17,7 +17,7 @@ from fdsx.display.terminal import (
     display_wait_prompt,
 )
 from fdsx.logging import RunRecorder
-from fdsx.logging.recorder import LOGS_DIR_NAME
+from fdsx.logging.recorder import LOGS_DIR_NAME, RUN_FILENAME, RUNS_DIR_NAME
 from fdsx.models.task import load_task_file, save_task_file
 
 from .interrupts import handle_interrupts
@@ -72,15 +72,20 @@ def resume_flow(
         checkpointer = checkpoint_manager.get_checkpointer()
 
         if flow_path is None or not flow_path.exists():
-            config_for_lookup: Any = {"configurable": {"thread_id": thread_id}}
-            checkpoint = checkpointer.get(config_for_lookup)
-
-            if checkpoint:
-                stored_meta = _extract_meta_from_checkpoint(checkpoint)
-                if isinstance(stored_meta, dict):
-                    flow_path_str = stored_meta.get("flow_path")
-                    if flow_path_str:
-                        flow_path = Path(flow_path_str)
+            # Read flow_path from run.json sidecar (written by RunRecorder on first run)
+            _effective_base = (
+                base_dir if base_dir is not None else checkpoint_manager.base_dir
+            )
+            run_log_path = _effective_base / RUNS_DIR_NAME / thread_id / RUN_FILENAME
+            if run_log_path.is_file():
+                try:
+                    with run_log_path.open() as f:
+                        _run_log = json.load(f)
+                    _flow_path_str = _run_log.get("flow_path")
+                    if _flow_path_str:
+                        flow_path = Path(_flow_path_str)
+                except (json.JSONDecodeError, OSError, KeyError):
+                    pass
 
             if flow_path is None or not (flow_path and flow_path.exists()):
                 raise RuntimeError(
@@ -101,15 +106,12 @@ def resume_flow(
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
-        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
         from fdsx.models.flow import ParallelState, WaitState
 
         runs_dir = base_dir / RUNS_DIR_NAME
         existing_log_path = runs_dir / thread_id / RUN_FILENAME
 
         if existing_log_path.exists():
-            import json
-
             with existing_log_path.open() as f:
                 existing_log = json.load(f)
             flow_name = existing_log.get("flow_name", flow.name)
@@ -122,6 +124,7 @@ def resume_flow(
             thread_id=thread_id,
             flow_name=flow_name,
             flow_version=flow_version,
+            flow_path=str(flow_path),
         )
 
         resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id
@@ -178,26 +181,24 @@ def resume_flow(
 
                     user_selection = display_wait_prompt(state_name, message, choices)
 
-                    for state_snapshot in compiled.graph.stream(
+                    for chunk in compiled.graph.stream(
                         Command(resume=user_selection),
                         config=resume_config,
                         stream_mode="values",
+                        version="v2",
                     ):
-                        if "__interrupt__" not in state_snapshot:
-                            last_state = state_snapshot
+                        last_state = chunk["data"]
                 else:
                     # Error/pending task (no interrupt) — re-execute from checkpoint
-                    for state_snapshot in compiled.graph.stream(
-                        None, config=resume_config, stream_mode="values"
+                    for chunk in compiled.graph.stream(
+                        None, config=resume_config, stream_mode="values", version="v2"
                     ):
-                        if "__interrupt__" not in state_snapshot:
-                            last_state = state_snapshot
+                        last_state = chunk["data"]
             else:
-                for state_snapshot in compiled.graph.stream(
-                    None, config=resume_config, stream_mode="values"
+                for chunk in compiled.graph.stream(
+                    None, config=resume_config, stream_mode="values", version="v2"
                 ):
-                    if "__interrupt__" not in state_snapshot:
-                        last_state = state_snapshot
+                    last_state = chunk["data"]
 
             # Continue handling any further interrupts (e.g. multi-Wait flows)
             last_state = handle_interrupts(compiled.graph, resume_config, last_state)
@@ -248,17 +249,6 @@ def resume_flow(
                 pass  # best-effort: do not raise if file is missing or index is invalid
 
         return FlowResult(results=results, status=status, abort_state=failed_state)
-    except GraphRecursionError:
-        if flow is not None:
-            print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
-        rec_status: str = "completed"
-        rec_failed_state: str | None = None
-        if recorder is not None:
-            rec_status, rec_failed_state, _ = _detect_abort_status(recorder)
-            recorder.finalize(_sanitize_state_for_log(last_state), rec_status)
-            recorder.save(base_dir=base_dir)
-            display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-        return FlowResult(results={}, status=rec_status, abort_state=rec_failed_state)
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")

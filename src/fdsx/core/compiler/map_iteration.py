@@ -31,11 +31,20 @@ from fdsx.providers.base import get_provider
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
-    _set_next_state_meta,
 )
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
+
+
+def _top_key(path: str) -> str:
+    """Extract the top-level channel key from a JSONPath expression.
+
+    e.g. "$.steps.processed" -> "steps", "$.output" -> "output", "$.items[0].x" -> "items"
+    """
+    stripped = path[2:] if path.startswith("$.") else path
+    return stripped.split(".")[0].split("[")[0]
+
 
 _MAP_PROGRESS_FILENAME = "progress.json"
 
@@ -131,9 +140,14 @@ def _create_map_node(
             recorder.record_map_start(state_name, len(items))
 
         if len(items) == 0:
-            new_state = set_jsonpath(state.result_path, state_dict, [])
-            new_state = _set_next_state_meta(new_state, state)
-            new_state["_state_iterations"] = iters
+            rp_key = _top_key(state.result_path)
+            seed: dict[str, Any] = (
+                {rp_key: state_dict.get(rp_key)}
+                if state_dict.get(rp_key) is not None
+                else {}
+            )
+            partial: dict[str, Any] = set_jsonpath(state.result_path, seed, [])
+            partial["_state_iterations"] = iters
             duration = time.time() - start_time
             display_map_complete(state_name, 0, 0, duration)
             if recorder is not None:
@@ -143,7 +157,7 @@ def _create_map_node(
                     0,
                     0,
                 )
-            return new_state
+            return partial
 
         results: list[Any] = []
         n_failed = 0
@@ -342,9 +356,14 @@ def _create_map_node(
                         str(last_result) if last_result is not None else "",
                     )
 
-        new_state = set_jsonpath(state.result_path, state_dict, results)
-        new_state = _set_next_state_meta(new_state, state)
-        new_state["_state_iterations"] = iters
+        rp_key = _top_key(state.result_path)
+        seed = (
+            {rp_key: state_dict.get(rp_key)}
+            if state_dict.get(rp_key) is not None
+            else {}
+        )
+        partial = set_jsonpath(state.result_path, seed, results)
+        partial["_state_iterations"] = iters
 
         duration = time.time() - start_time
         display_map_complete(state_name, len(items), n_failed, duration)
@@ -362,6 +381,6 @@ def _create_map_node(
                 f"Map state '{state_name}': {n_failed} of {len(items)} iterations failed"
             )
 
-        return new_state
+        return partial
 
     return node

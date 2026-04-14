@@ -24,6 +24,7 @@ class RunRecorder:
         thread_id: str,
         flow_name: str,
         flow_version: str | None = None,
+        flow_path: str | None = None,
     ):
         if not THREAD_ID_PATTERN.match(thread_id):
             raise ValueError(
@@ -32,6 +33,7 @@ class RunRecorder:
         self.thread_id = thread_id
         self.flow_name = flow_name
         self.flow_version = flow_version
+        self.flow_path = flow_path
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.status = "running"
         self.states: list[dict[str, Any]] = []
@@ -272,6 +274,7 @@ class RunRecorder:
             "thread_id": self.thread_id,
             "flow_name": self.flow_name,
             "flow_version": self.flow_version,
+            "flow_path": self.flow_path,
             "started_at": self.started_at,
             "status": self.status,
             "states": self.states,

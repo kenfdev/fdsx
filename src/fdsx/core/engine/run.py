@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.errors import GraphRecursionError
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.compiler import compile_flow
@@ -57,9 +56,7 @@ def run_flow(
         task_entry_index: Optional index of the task entry within task_file_path.
 
     Returns:
-        Final state variables as result dict. When max_loop is reached,
-        returns partial results from the last completed iteration rather
-        than raising an error.
+        Final state variables as result dict.
 
     Raises:
         RuntimeError: If flow validation fails or execution fails
@@ -108,6 +105,7 @@ def run_flow(
         thread_id=thread_id,
         flow_name=flow.name,
         flow_version=flow.version,
+        flow_path=str(flow_path),
     )
 
     _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME
@@ -169,11 +167,10 @@ def run_flow(
 
     try:
         with handler:
-            for state_snapshot in compiled.graph.stream(
-                initial_state, config=config, stream_mode="values"
+            for chunk in compiled.graph.stream(
+                initial_state, config=config, stream_mode="values", version="v2"
             ):
-                if "__interrupt__" not in state_snapshot:
-                    last_state = state_snapshot
+                last_state = chunk["data"]
 
             if needs_checkpointer:
                 last_state = handle_interrupts(compiled.graph, config, last_state)
@@ -183,22 +180,6 @@ def run_flow(
             if final_state_info.values:
                 last_state = final_state_info.values
 
-        results = _extract_results(last_state, compiled.result_paths)
-        status, failed_state, error_msg = _detect_abort_status(recorder)
-        recorder.finalize(_sanitize_state_for_log(last_state), status)
-        recorder.save(base_dir=base_dir)
-        if failed_state is not None:
-            display_completion_summary(
-                flow.name,
-                _calc_elapsed(recorder),
-                failed_state,
-                error_msg or "workflow aborted",
-            )
-        else:
-            display_completion_summary(flow.name, _calc_elapsed(recorder))
-        return FlowResult(results=results, status=status, abort_state=failed_state)
-    except GraphRecursionError:
-        print(f"Loop completed after {flow.max_loop} iterations", file=sys.stderr)
         results = _extract_results(last_state, compiled.result_paths)
         status, failed_state, error_msg = _detect_abort_status(recorder)
         recorder.finalize(_sanitize_state_for_log(last_state), status)

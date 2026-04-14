@@ -414,3 +414,25 @@ def _pass_state(result_path: str, value: list) -> PassState:
         parameters={result_path: value},
         next="map_state",
     )
+
+
+class TestMapNestedResultPath:
+    """Verify sibling keys under a nested result_path channel are preserved."""
+
+    def test_nested_result_path_preserves_sibling_keys(self, tmp_path):
+        """Map state with result_path=$.steps.processed must not clobber $.steps.count."""
+        path = FIXTURES_DIR / "map_nested_result_path.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+
+        result = run_flow(path, base_dir=tmp_path)
+
+        assert isinstance(result, FlowResult)
+        assert "steps" in result.results
+        steps = result.results["steps"]
+        assert "processed" in steps, "result_path key must be present"
+        assert isinstance(steps["processed"], list)
+        assert len(steps["processed"]) == 3
+        assert "count" in steps, "sibling key must survive the map state"
+        assert steps["count"] == "3"

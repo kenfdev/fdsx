@@ -22,11 +22,19 @@ from fdsx.providers.base import get_provider
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
-    _set_next_state_meta,
 )
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
+
+
+def _top_key(path: str) -> str:
+    """Extract the top-level channel key from a JSONPath expression.
+
+    e.g. "$.review.results" -> "review", "$.output" -> "output", "$.items[0].x" -> "items"
+    """
+    stripped = path[2:] if path.startswith("$.") else path
+    return stripped.split(".")[0].split("[")[0]
 
 
 def _create_dispatch_node(
@@ -267,14 +275,23 @@ def _create_collector_node(
                 f"Failed branches: {'; '.join(failed_branches)}"
             )
 
-        new_state = set_jsonpath(state.result_path, state_dict, clean_results)
+        rp_key = _top_key(state.result_path)
+        partial: dict[str, Any] = (
+            {rp_key: state_dict.get(rp_key)}
+            if state_dict.get(rp_key) is not None
+            else {}
+        )
+        partial = set_jsonpath(state.result_path, partial, clean_results)
 
         if state.result_file:
             run_dir = state_dict.get("_meta", {}).get("run_dir", "")
             if run_dir:
                 varname = state.result_file[2:]  # strip "$."
                 file_path = write_result_to_file(varname, clean_results, Path(run_dir))
-                new_state = set_jsonpath(state.result_file, new_state, file_path)
+                rf_key = _top_key(state.result_file)
+                if rf_key not in partial and state_dict.get(rf_key) is not None:
+                    partial[rf_key] = state_dict[rf_key]  # seed sibling-safe channel
+                partial = set_jsonpath(state.result_file, partial, file_path)
 
         display_results = []
         for r in sorted_results:
@@ -311,9 +328,8 @@ def _create_collector_node(
 
         # Reset the branch accumulator so the next loop iteration starts clean.
         # The custom _parallel_branch_reducer treats [] as a reset signal.
-        new_state[f"_br_{state_name}"] = []
+        partial[f"_br_{state_name}"] = []
 
-        new_state = _set_next_state_meta(new_state, state)
-        return new_state
+        return partial
 
     return node

@@ -1,0 +1,77 @@
+name: Loop With Post-Loop States
+description: Loop body (plan→decide→plan) with 8 extra post-loop pass states. Verifies guard fires at exactly max_loop iterations regardless of post-loop state count.
+start_at: plan
+max_loop: 2
+
+states:
+  plan:
+    type: task
+    provider: system
+    command: echo "Planning step"
+    result_path: $.plan_output
+    next: decide
+
+  decide:
+    type: choice
+    choices:
+      - variable: $.plan_output
+        operator: equals
+        value: "APPROVED"
+        next: post1
+    default: plan
+
+  post1:
+    type: task
+    provider: system
+    command: echo "post1"
+    result_path: $.post1_output
+    next: post2
+
+  post2:
+    type: task
+    provider: system
+    command: echo "post2"
+    result_path: $.post2_output
+    next: post3
+
+  post3:
+    type: task
+    provider: system
+    command: echo "post3"
+    result_path: $.post3_output
+    next: post4
+
+  post4:
+    type: task
+    provider: system
+    command: echo "post4"
+    result_path: $.post4_output
+    next: post5
+
+  post5:
+    type: task
+    provider: system
+    command: echo "post5"
+    result_path: $.post5_output
+    next: post6
+
+  post6:
+    type: task
+    provider: system
+    command: echo "post6"
+    result_path: $.post6_output
+    next: post7
+
+  post7:
+    type: task
+    provider: system
+    command: echo "post7"
+    result_path: $.post7_output
+    next: post8
+
+  post8:
+    type: task
+    provider: system
+    command: echo "post8"
+    result_path: $.post8_output
+    end: true
