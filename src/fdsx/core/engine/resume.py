@@ -1,5 +1,6 @@
 """resume_flow implementation for the engine package."""
 
+import json
 import sys
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -16,7 +17,7 @@ from fdsx.display.terminal import (
     display_wait_prompt,
 )
 from fdsx.logging import RunRecorder
-from fdsx.logging.recorder import LOGS_DIR_NAME
+from fdsx.logging.recorder import LOGS_DIR_NAME, RUN_FILENAME, RUNS_DIR_NAME
 from fdsx.models.task import load_task_file, save_task_file
 
 from .interrupts import handle_interrupts
@@ -71,21 +72,36 @@ def resume_flow(
         checkpointer = checkpoint_manager.get_checkpointer()
 
         if flow_path is None or not flow_path.exists():
-            config_for_lookup: Any = {"configurable": {"thread_id": thread_id}}
-            checkpoint = checkpointer.get(config_for_lookup)
+            # Read flow_path from run.json sidecar (written by RunRecorder on first run)
+            _effective_base = (
+                base_dir if base_dir is not None else checkpoint_manager.base_dir
+            )
+            run_log_path = _effective_base / RUNS_DIR_NAME / thread_id / RUN_FILENAME
+            if run_log_path.is_file():
+                try:
+                    with run_log_path.open() as f:
+                        _run_log = json.load(f)
+                    _flow_path_str = _run_log.get("flow_path")
+                    if _flow_path_str:
+                        flow_path = Path(_flow_path_str)
+                except (json.JSONDecodeError, OSError, KeyError):
+                    pass
 
-            if checkpoint:
-                channel_vals = checkpoint.get("channel_values", {}) or {}
-                meta_boot = (
-                    channel_vals.get("_meta", {})
-                    if isinstance(channel_vals, dict)
-                    else {}
-                )
-                flow_path_str = (
-                    meta_boot.get("flow_path") if isinstance(meta_boot, dict) else None
-                )
-                if flow_path_str:
-                    flow_path = Path(flow_path_str)
+            # Legacy fallback: recover flow_path from checkpoint channel_values
+            # for threads created before flow_path was persisted to run.json.
+            if flow_path is None or not (flow_path and flow_path.exists()):
+                try:
+                    _ckpt = checkpointer.get({"configurable": {"thread_id": thread_id}})
+                    if _ckpt is not None:
+                        _fp = (
+                            _ckpt.get("channel_values", {})
+                            .get("_meta", {})
+                            .get("flow_path")
+                        )
+                        if _fp:
+                            flow_path = Path(_fp)
+                except Exception:
+                    pass
 
             if flow_path is None or not (flow_path and flow_path.exists()):
                 raise RuntimeError(
@@ -106,15 +122,12 @@ def resume_flow(
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
-        from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
         from fdsx.models.flow import ParallelState, WaitState
 
         runs_dir = base_dir / RUNS_DIR_NAME
         existing_log_path = runs_dir / thread_id / RUN_FILENAME
 
         if existing_log_path.exists():
-            import json
-
             with existing_log_path.open() as f:
                 existing_log = json.load(f)
             flow_name = existing_log.get("flow_name", flow.name)
@@ -127,6 +140,7 @@ def resume_flow(
             thread_id=thread_id,
             flow_name=flow_name,
             flow_version=flow_version,
+            flow_path=str(flow_path),
         )
 
         resume_run_dir = base_dir / RUNS_DIR_NAME / thread_id

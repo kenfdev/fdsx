@@ -233,8 +233,8 @@ class CheckpointManager:
             _compiled_cache: dict[str, Any] = {}
 
             # Load project config once so profile-based flows can be reloaded
-            from fdsx.core.config import load_config as _load_config
             from fdsx.core.compiler import compile_flow
+            from fdsx.core.config import load_config as _load_config
             from fdsx.core.loader import load_flow
 
             _config_profiles: dict[str, Any] | None = None
@@ -252,9 +252,21 @@ class CheckpointManager:
                 is_locked, _pid = self.is_locked(thread_id)
                 status = "running" if is_locked else "stopped"
                 flow_name = thread_id  # fallback default
-
+                flow_path_str: str | None = None
                 current_state = ""
                 started_at = ""
+
+                # Read flow_path and metadata from run.json (public sidecar, not checkpoint internals)
+                run_log_path = runs_dir / thread_id / RUN_FILENAME
+                if run_log_path.is_file():
+                    try:
+                        with run_log_path.open() as f:
+                            _run_log_boot = json.load(f)
+                        flow_path_str = _run_log_boot.get("flow_path")
+                        flow_name = _run_log_boot.get("flow_name", thread_id)
+                    except (json.JSONDecodeError, OSError, KeyError):
+                        pass
+
                 config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
                 try:
                     checkpoint_tuple = (
@@ -262,97 +274,84 @@ class CheckpointManager:
                         if checkpointer is not None
                         else None
                     )
-                    if checkpoint_tuple is not None:
-                        # Bootstrap flow_path from channel_values — one-time internal
-                        # access used only to locate the flow YAML for compilation.
-                        channel_vals = (
-                            checkpoint_tuple.checkpoint.get("channel_values", {}) or {}
-                        )
-                        meta_boot = (
-                            channel_vals.get("_meta", {})
-                            if isinstance(channel_vals, dict)
-                            else {}
-                        )
-                        if not isinstance(meta_boot, dict):
-                            meta_boot = {}
-                        flow_path_str = meta_boot.get("flow_path")
-                        flow_name = meta_boot.get("flow_name", thread_id)
-
-                        if not is_locked and flow_path_str:
-                            try:
-                                if flow_path_str not in _compiled_cache:
-                                    flow_path = Path(flow_path_str)
-                                    if flow_path.exists():
-                                        loaded_flow, _errors = load_flow(
-                                            flow_path, config_profiles=_config_profiles
+                    # Legacy fallback: recover flow_path from checkpoint channel_values
+                    # for threads created before flow_path was persisted to run.json.
+                    if flow_path_str is None and checkpoint_tuple is not None:
+                        try:
+                            _cv = checkpoint_tuple.checkpoint.get("channel_values", {})
+                            _fp = _cv.get("_meta", {}).get("flow_path")
+                            if _fp:
+                                flow_path_str = _fp
+                        except Exception:
+                            pass
+                    if checkpoint_tuple is not None and not is_locked and flow_path_str:
+                        try:
+                            if flow_path_str not in _compiled_cache:
+                                flow_path = Path(flow_path_str)
+                                if flow_path.exists():
+                                    loaded_flow, _errors = load_flow(
+                                        flow_path, config_profiles=_config_profiles
+                                    )
+                                    if loaded_flow is not None:
+                                        compiled = compile_flow(
+                                            loaded_flow, checkpointer=checkpointer
                                         )
-                                        if loaded_flow is not None:
-                                            compiled = compile_flow(
-                                                loaded_flow, checkpointer=checkpointer
-                                            )
-                                            _compiled_cache[flow_path_str] = compiled
+                                        _compiled_cache[flow_path_str] = compiled
 
-                                if flow_path_str in _compiled_cache:
-                                    compiled = _compiled_cache[flow_path_str]
-                                    state_snapshot = compiled.graph.get_state(config)
+                            if flow_path_str in _compiled_cache:
+                                compiled = _compiled_cache[flow_path_str]
+                                state_snapshot = compiled.graph.get_state(config)
 
-                                    # Prefer flow_name from snapshot values if available
-                                    if state_snapshot.values:
-                                        snap_meta = state_snapshot.values.get(
-                                            "_meta", {}
+                                # Prefer flow_name from snapshot values if available
+                                if state_snapshot.values:
+                                    snap_meta = state_snapshot.values.get("_meta", {})
+                                    if isinstance(snap_meta, dict):
+                                        flow_name = snap_meta.get(
+                                            "flow_name", flow_name
                                         )
-                                        if isinstance(snap_meta, dict):
-                                            flow_name = snap_meta.get(
-                                                "flow_name", flow_name
-                                            )
 
-                                    # Status detection via public StateSnapshot fields
-                                    if state_snapshot.interrupts:
-                                        status = "waiting"
-                                    elif any(
-                                        getattr(task, "error", None)
-                                        for task in state_snapshot.tasks
-                                    ):
-                                        status = "stopped"
-                                    elif state_snapshot.next == ():
-                                        status = "completed"
-                                    else:
-                                        status = "stopped"
+                                # Status detection via public StateSnapshot fields
+                                if state_snapshot.interrupts:
+                                    status = "waiting"
+                                elif any(
+                                    getattr(task, "error", None)
+                                    for task in state_snapshot.tasks
+                                ):
+                                    status = "stopped"
+                                elif state_snapshot.next == ():
+                                    status = "completed"
+                                else:
+                                    status = "stopped"
 
-                                    # current_state: next node if pending, else run log
-                                    if state_snapshot.next:
-                                        current_state = state_snapshot.next[0]
+                                # current_state: next node if pending, else run log
+                                if state_snapshot.next:
+                                    current_state = state_snapshot.next[0]
 
-                                    # started_at from snapshot timestamp
-                                    if state_snapshot.created_at:
-                                        ts = str(state_snapshot.created_at)
-                                        if "T" in ts:
-                                            started_at = ts[:16].replace("T", " ")
-                            except Exception:
-                                pass
+                                # started_at from snapshot timestamp
+                                if state_snapshot.created_at:
+                                    ts = str(state_snapshot.created_at)
+                                    if "T" in ts:
+                                        started_at = ts[:16].replace("T", " ")
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
-                # Fallback: read flow_name, started_at, and current_state from run log
-                # when the checkpoint/snapshot did not provide them.
-                if flow_name == thread_id or not started_at or not current_state:
+                # Fallback: read started_at, current_state, and status from run log
+                # when the snapshot did not provide them.
+                if not started_at or not current_state:
                     try:
-                        run_log_path = runs_dir / thread_id / RUN_FILENAME
                         if run_log_path.is_file():
                             with run_log_path.open() as f:
                                 run_log = json.load(f)
-                            if flow_name == thread_id:
-                                flow_name = run_log.get("flow_name", thread_id)
                             if not started_at:
                                 ts_str = run_log.get("started_at", "")
                                 if ts_str and "T" in ts_str:
                                     started_at = ts_str[:16].replace("T", " ")
                             if not is_locked and flow_name != thread_id:
-                                # Run-log-only thread: derive status from log status
                                 log_status = run_log.get("status", "")
                                 if log_status == "completed":
                                     status = "completed"
-                            # For completed flows, current_state comes from run log
                             if not current_state:
                                 states = run_log.get("states", [])
                                 if states:

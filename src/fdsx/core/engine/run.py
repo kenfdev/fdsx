@@ -105,6 +105,7 @@ def run_flow(
         thread_id=thread_id,
         flow_name=flow.name,
         flow_version=flow.version,
+        flow_path=str(flow_path),
     )
 
     _runs_base = base_dir if base_dir is not None else Path.cwd() / FDSX_DIR_NAME

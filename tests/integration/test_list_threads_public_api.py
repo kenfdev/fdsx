@@ -1,5 +1,6 @@
 """Integration tests for list_threads using get_state() public API (T032)."""
 
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -132,11 +133,18 @@ states:
         # ProfileConfig requires a valid LLM provider and model (not "system").
         base_dir.mkdir(parents=True, exist_ok=True)
         config_path = base_dir / "config.yaml"
-        config_path.write_text(yaml.dump({
-            "profiles": {
-                "test_profile": {"provider": "claude", "model": "claude-haiku-4-5"}
-            }
-        }))
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "profiles": {
+                        "test_profile": {
+                            "provider": "claude",
+                            "model": "claude-haiku-4-5",
+                        }
+                    }
+                }
+            )
+        )
 
         # Flow uses `profile: test_profile` with NO `provider:` key.
         # If config_profiles is None, load_flow fails to resolve the profile
@@ -185,3 +193,25 @@ states:
 
         thread_info = next(t for t in threads if t["thread_id"] == thread_id)
         assert thread_info["status"] == "waiting"
+
+    def test_legacy_thread_without_flow_path_in_run_json(
+        self, temp_dir, simple_flow_path
+    ):
+        """list_threads returns correct status for threads whose run.json lacks flow_path."""
+        base_dir = temp_dir / ".fdsx"
+        thread_id = "test-legacy-no-flow-path"
+
+        engine.run_flow(simple_flow_path, thread_id=thread_id, base_dir=base_dir)
+
+        # Simulate legacy run.json by removing the flow_path field
+        run_json_path = base_dir / "runs" / thread_id / "run.json"
+        with run_json_path.open() as f:
+            run_log = json.load(f)
+        run_log.pop("flow_path", None)
+        with run_json_path.open("w") as f:
+            json.dump(run_log, f)
+
+        manager = CheckpointManager(base_dir=base_dir)
+        threads = manager.list_threads()
+        thread_info = next(t for t in threads if t["thread_id"] == thread_id)
+        assert thread_info["status"] == "completed"
