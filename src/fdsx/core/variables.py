@@ -191,6 +191,38 @@ def set_jsonpath(path: str, data: dict[str, Any], value: Any) -> dict[str, Any]:
     return result
 
 
+def set_jsonpath_partial(path: str, value: Any) -> dict[str, Any]:
+    """Build a minimal partial dict for a JSONPath location.
+
+    Unlike ``set_jsonpath``, this function does NOT take a ``data`` parameter and
+    does NOT copy existing state.  It constructs only the nested structure needed
+    to express the assignment, returning the smallest possible dict.
+
+    Example::
+
+        set_jsonpath_partial("$.review", "text")  # {"review": "text"}
+        set_jsonpath_partial("$.a.b", 1)           # {"a": {"b": 1}}
+        set_jsonpath_partial("$.items[0]", "x")    # {"items": ["x"]}
+    """
+    if path.startswith("$."):
+        path = path[2:]
+
+    parts = parse_jsonpath(path)
+
+    if not parts:
+        return {"": value}
+
+    current: Any = value
+    for part in reversed(parts):
+        if isinstance(part, int):
+            lst: list[Any] = [None] * (part + 1)
+            lst[part] = current
+            current = lst
+        else:
+            current = {part: current}
+    return current  # type: ignore[no-any-return]
+
+
 def _is_var_satisfied(var: str, available: set[str]) -> bool:
     """Check if a variable reference is satisfied by the available paths.
 
