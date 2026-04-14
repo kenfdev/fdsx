@@ -132,28 +132,6 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     return paths
 
 
-def _set_next_state_meta(state_dict: dict[str, Any], state: Any) -> dict[str, Any]:
-    """Inject _meta.next_state so list_threads can show the correct current state.
-
-    Stores the name of the node that will execute NEXT so that if the next node
-    crashes before its checkpoint is written, list_threads() can still report the
-    correct CURRENT_STATE for the stopped flow.
-    """
-    next_name = ""
-    if hasattr(state, "next") and state.next:
-        next_name = state.next
-    elif hasattr(state, "end") and state.end:
-        next_name = "__end__"
-    if not next_name:
-        return state_dict
-    meta = state_dict.get("_meta", {})
-    if isinstance(meta, dict):
-        state_dict["_meta"] = {**meta, "next_state": next_name}
-    else:
-        state_dict["_meta"] = {"next_state": next_name}
-    return state_dict
-
-
 def _check_max_iterations(state_name: str, state_def: Any, iteration: int) -> None:
     """Raise RuntimeError if the state has exceeded its max_iterations limit.
 

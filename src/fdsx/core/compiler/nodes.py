@@ -28,7 +28,6 @@ from fdsx.providers.base import get_provider
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
-    _set_next_state_meta,
 )
 
 if TYPE_CHECKING:
@@ -152,8 +151,6 @@ def _create_task_node(
             )
 
         partial["_state_iterations"] = iters
-        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
-        partial["_meta"] = meta_holder["_meta"]
         return partial
 
     return node
@@ -200,7 +197,9 @@ def _create_pass_node(
                     value = resolve_template(source, state_dict)
                 else:
                     value = source
-                state_dict = set_jsonpath(target, state_dict, value)  # working copy for chaining
+                state_dict = set_jsonpath(
+                    target, state_dict, value
+                )  # working copy for chaining
                 partial = set_jsonpath(target, partial, value)
                 variables_set.append(target)
 
@@ -222,8 +221,6 @@ def _create_pass_node(
             recorder.record_state_complete(state_name, "success", "", variables_set)
 
         partial["_state_iterations"] = iters
-        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
-        partial["_meta"] = meta_holder["_meta"]
         return partial
 
     return node
@@ -290,8 +287,6 @@ def _create_wait_interrupt_node(
                 state_type="wait",
             )
 
-        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
-        partial["_meta"] = meta_holder["_meta"]
         return partial
 
     return node

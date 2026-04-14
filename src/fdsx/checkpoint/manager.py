@@ -7,21 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables.config import RunnableConfig
-from langgraph.checkpoint.base import Checkpoint
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_meta_from_checkpoint(
-    checkpoint_data: Checkpoint | dict[str, Any],
-) -> dict[str, Any]:
-    """Extract _meta from checkpoint channel_values (named-channel TypedDict schema)."""
-    channel_values = checkpoint_data.get("channel_values", {})
-    meta = channel_values.get("_meta")
-    if isinstance(meta, dict):
-        return meta
-    return {}
 
 
 _SAFE_THREAD_ID = re.compile(r"^[a-zA-Z0-9_\-]+$")
@@ -202,6 +190,8 @@ class CheckpointManager:
         Returns:
             List of thread info dictionaries with thread_id, status, flow_name
         """
+        import json
+
         from fdsx.logging.recorder import RUN_FILENAME, RUNS_DIR_NAME
 
         # Collect thread IDs from checkpoint DB
@@ -239,6 +229,25 @@ class CheckpointManager:
         try:
             threads = []
             checkpointer = self.get_checkpointer() if db_path.exists() else None
+            # Cache compiled graphs by flow_path_str to avoid re-compiling
+            _compiled_cache: dict[str, Any] = {}
+
+            # Load project config once so profile-based flows can be reloaded
+            from fdsx.core.config import load_config as _load_config
+            from fdsx.core.compiler import compile_flow
+            from fdsx.core.loader import load_flow
+
+            _config_profiles: dict[str, Any] | None = None
+            try:
+                _fdsx_config = _load_config(project_dir=self.base_dir.parent)
+                if _fdsx_config.profiles:
+                    _config_profiles = {
+                        name: prof.model_dump()
+                        for name, prof in _fdsx_config.profiles.items()
+                    }
+            except Exception:
+                pass  # malformed config: profile resolution unavailable, continue without profiles
+
             for thread_id in all_thread_ids:
                 is_locked, _pid = self.is_locked(thread_id)
                 status = "running" if is_locked else "stopped"
@@ -254,48 +263,80 @@ class CheckpointManager:
                         else None
                     )
                     if checkpoint_tuple is not None:
-                        checkpoint_data = checkpoint_tuple.checkpoint
-                        meta = _extract_meta_from_checkpoint(checkpoint_data)
-                        flow_name = meta.get("flow_name", thread_id)
-                        if not is_locked:
-                            if checkpoint_tuple.pending_writes:
-                                has_error = any(
-                                    pw[1] == "__error__"
-                                    for pw in checkpoint_tuple.pending_writes
-                                    if isinstance(pw, (list, tuple)) and len(pw) >= 2
-                                )
-                                status = "stopped" if has_error else "waiting"
-                            else:
-                                status = "completed"
-                        # Extract current_state from checkpoint.
-                        # For stopped/waiting flows, prefer _meta.next_state (the node
-                        # about to execute when the crash/interrupt happened).
-                        # For completed/running flows, use last entry in versions_seen.
-                        if status in ("stopped", "waiting"):
-                            next_state_val = meta.get("next_state", "")
-                            if next_state_val and next_state_val != "__end__":
-                                current_state = next_state_val
-                            else:
-                                versions_seen = checkpoint_data.get("versions_seen", {})
-                                if isinstance(versions_seen, dict) and versions_seen:
-                                    current_state = list(versions_seen.keys())[-1]
-                        else:
-                            versions_seen = checkpoint_data.get("versions_seen", {})
-                            if isinstance(versions_seen, dict) and versions_seen:
-                                current_state = list(versions_seen.keys())[-1]
-                        # Extract started_at from checkpoint ts
-                        ts = checkpoint_data.get("ts", "")
-                        if ts and "T" in str(ts):
-                            started_at = str(ts)[:16].replace("T", " ")
+                        # Bootstrap flow_path from channel_values — one-time internal
+                        # access used only to locate the flow YAML for compilation.
+                        channel_vals = (
+                            checkpoint_tuple.checkpoint.get("channel_values", {}) or {}
+                        )
+                        meta_boot = (
+                            channel_vals.get("_meta", {})
+                            if isinstance(channel_vals, dict)
+                            else {}
+                        )
+                        if not isinstance(meta_boot, dict):
+                            meta_boot = {}
+                        flow_path_str = meta_boot.get("flow_path")
+                        flow_name = meta_boot.get("flow_name", thread_id)
+
+                        if not is_locked and flow_path_str:
+                            try:
+                                if flow_path_str not in _compiled_cache:
+                                    flow_path = Path(flow_path_str)
+                                    if flow_path.exists():
+                                        loaded_flow, _errors = load_flow(
+                                            flow_path, config_profiles=_config_profiles
+                                        )
+                                        if loaded_flow is not None:
+                                            compiled = compile_flow(
+                                                loaded_flow, checkpointer=checkpointer
+                                            )
+                                            _compiled_cache[flow_path_str] = compiled
+
+                                if flow_path_str in _compiled_cache:
+                                    compiled = _compiled_cache[flow_path_str]
+                                    state_snapshot = compiled.graph.get_state(config)
+
+                                    # Prefer flow_name from snapshot values if available
+                                    if state_snapshot.values:
+                                        snap_meta = state_snapshot.values.get(
+                                            "_meta", {}
+                                        )
+                                        if isinstance(snap_meta, dict):
+                                            flow_name = snap_meta.get(
+                                                "flow_name", flow_name
+                                            )
+
+                                    # Status detection via public StateSnapshot fields
+                                    if state_snapshot.interrupts:
+                                        status = "waiting"
+                                    elif any(
+                                        getattr(task, "error", None)
+                                        for task in state_snapshot.tasks
+                                    ):
+                                        status = "stopped"
+                                    elif state_snapshot.next == ():
+                                        status = "completed"
+                                    else:
+                                        status = "stopped"
+
+                                    # current_state: next node if pending, else run log
+                                    if state_snapshot.next:
+                                        current_state = state_snapshot.next[0]
+
+                                    # started_at from snapshot timestamp
+                                    if state_snapshot.created_at:
+                                        ts = str(state_snapshot.created_at)
+                                        if "T" in ts:
+                                            started_at = ts[:16].replace("T", " ")
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 
-                # Fallback: read flow_name and started_at from run log when
-                # the checkpoint did not provide them.
-                if flow_name == thread_id or not started_at:
+                # Fallback: read flow_name, started_at, and current_state from run log
+                # when the checkpoint/snapshot did not provide them.
+                if flow_name == thread_id or not started_at or not current_state:
                     try:
-                        import json
-
                         run_log_path = runs_dir / thread_id / RUN_FILENAME
                         if run_log_path.is_file():
                             with run_log_path.open() as f:
@@ -311,6 +352,11 @@ class CheckpointManager:
                                 log_status = run_log.get("status", "")
                                 if log_status == "completed":
                                     status = "completed"
+                            # For completed flows, current_state comes from run log
+                            if not current_state:
+                                states = run_log.get("states", [])
+                                if states:
+                                    current_state = states[-1].get("name", "")
                     except (json.JSONDecodeError, OSError, KeyError):
                         pass
 

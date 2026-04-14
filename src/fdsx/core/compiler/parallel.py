@@ -22,7 +22,6 @@ from fdsx.providers.base import get_provider
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
-    _set_next_state_meta,
 )
 
 if TYPE_CHECKING:
@@ -277,7 +276,11 @@ def _create_collector_node(
             )
 
         rp_key = _top_key(state.result_path)
-        partial: dict[str, Any] = {rp_key: state_dict.get(rp_key)} if state_dict.get(rp_key) is not None else {}
+        partial: dict[str, Any] = (
+            {rp_key: state_dict.get(rp_key)}
+            if state_dict.get(rp_key) is not None
+            else {}
+        )
         partial = set_jsonpath(state.result_path, partial, clean_results)
 
         if state.result_file:
@@ -327,8 +330,6 @@ def _create_collector_node(
         # The custom _parallel_branch_reducer treats [] as a reset signal.
         partial[f"_br_{state_name}"] = []
 
-        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
-        partial["_meta"] = meta_holder["_meta"]
         return partial
 
     return node

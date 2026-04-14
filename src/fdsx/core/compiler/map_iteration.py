@@ -31,7 +31,6 @@ from fdsx.providers.base import get_provider
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
-    _set_next_state_meta,
 )
 
 if TYPE_CHECKING:
@@ -142,11 +141,13 @@ def _create_map_node(
 
         if len(items) == 0:
             rp_key = _top_key(state.result_path)
-            seed: dict[str, Any] = {rp_key: state_dict.get(rp_key)} if state_dict.get(rp_key) is not None else {}
+            seed: dict[str, Any] = (
+                {rp_key: state_dict.get(rp_key)}
+                if state_dict.get(rp_key) is not None
+                else {}
+            )
             partial: dict[str, Any] = set_jsonpath(state.result_path, seed, [])
             partial["_state_iterations"] = iters
-            meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
-            partial["_meta"] = meta_holder["_meta"]
             duration = time.time() - start_time
             display_map_complete(state_name, 0, 0, duration)
             if recorder is not None:
@@ -356,11 +357,13 @@ def _create_map_node(
                     )
 
         rp_key = _top_key(state.result_path)
-        seed = {rp_key: state_dict.get(rp_key)} if state_dict.get(rp_key) is not None else {}
+        seed = (
+            {rp_key: state_dict.get(rp_key)}
+            if state_dict.get(rp_key) is not None
+            else {}
+        )
         partial = set_jsonpath(state.result_path, seed, results)
         partial["_state_iterations"] = iters
-        meta_holder = _set_next_state_meta({"_meta": state_dict.get("_meta") or {}}, state)
-        partial["_meta"] = meta_holder["_meta"]
 
         duration = time.time() - start_time
         display_map_complete(state_name, len(items), n_failed, duration)

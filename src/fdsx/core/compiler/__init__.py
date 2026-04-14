@@ -13,7 +13,6 @@ from .helpers import (
     _get_next_state,
     _merge_provider_options,
     _parallel_branch_reducer,
-    _set_next_state_meta,
     _top_level_key,
 )
 from .nodes import _create_task_node
@@ -35,7 +34,6 @@ __all__ = [
     "_merge_provider_options",
     "_parallel_branch_reducer",
     "_resolve_jsonpath",
-    "_set_next_state_meta",
     "_top_level_key",
     "_wrap_with_hooks",
     "compile_flow",

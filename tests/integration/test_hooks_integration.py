@@ -291,7 +291,10 @@ class TestWrapWithHooksDataFiles:
 
         # Second call = output.json, data = full post-execution state (input merged with partial result)
         second_call = mock_write.call_args_list[1]
-        assert second_call[0][0] == {"in": "data", "result": "node_output"}  # positional arg
+        assert second_call[0][0] == {
+            "in": "data",
+            "result": "node_output",
+        }  # positional arg
         assert second_call[1]["filename"] == OUTPUT_FILENAME
 
 

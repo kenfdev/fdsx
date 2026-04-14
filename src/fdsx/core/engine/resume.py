@@ -6,7 +6,7 @@ from typing import Any, Literal, cast
 
 from langgraph.types import Command
 
-from fdsx.checkpoint.manager import CheckpointManager, _extract_meta_from_checkpoint
+from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
 from fdsx.core.loader import load_flow
@@ -75,11 +75,17 @@ def resume_flow(
             checkpoint = checkpointer.get(config_for_lookup)
 
             if checkpoint:
-                stored_meta = _extract_meta_from_checkpoint(checkpoint)
-                if isinstance(stored_meta, dict):
-                    flow_path_str = stored_meta.get("flow_path")
-                    if flow_path_str:
-                        flow_path = Path(flow_path_str)
+                channel_vals = checkpoint.get("channel_values", {}) or {}
+                meta_boot = (
+                    channel_vals.get("_meta", {})
+                    if isinstance(channel_vals, dict)
+                    else {}
+                )
+                flow_path_str = (
+                    meta_boot.get("flow_path") if isinstance(meta_boot, dict) else None
+                )
+                if flow_path_str:
+                    flow_path = Path(flow_path_str)
 
             if flow_path is None or not (flow_path and flow_path.exists()):
                 raise RuntimeError(

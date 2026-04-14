@@ -40,7 +40,7 @@ class TestTaskNodePartialUpdate:
 
         # RED until T010: currently full state dict is returned, including unrelated_key
         assert "unrelated_key" not in result
-        assert set(result) == {"result", "_meta", "_state_iterations"}
+        assert set(result) == {"result", "_state_iterations"}
 
 
 class TestParallelFlowPartialUpdate:
@@ -70,7 +70,7 @@ class TestTaskNodeSiblingPaths:
         state_def = TaskState(
             type="task",
             provider="system",
-            command='echo \'{"value": 42}\'',
+            command="echo '{\"value\": 42}'",
             result_path="$.result.raw",
             extract=ExtractRule(
                 strategy=["json"],
