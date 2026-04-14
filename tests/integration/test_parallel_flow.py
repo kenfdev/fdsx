@@ -217,3 +217,24 @@ class TestParallelBranchLabeling:
         assert not log_file.exists(), (
             f"Log file should not exist for branch with no output: {log_file}"
         )
+
+
+class TestParallelNestedResultPath:
+    """Verify sibling keys under a nested result_path channel are preserved."""
+
+    def test_nested_result_path_preserves_sibling_keys(self, tmp_path):
+        """Parallel state with result_path=$.output.results must not clobber $.output.other_key."""
+        path = FIXTURES_DIR / "parallel_nested_result_path.yaml"
+
+        flow, errors = load_flow(path)
+        assert flow is not None, f"Failed to load: {errors}"
+
+        result = run_flow(path, base_dir=tmp_path)
+
+        assert isinstance(result, FlowResult)
+        assert "output" in result.results
+        output = result.results["output"]
+        assert "results" in output, "result_path key must be present"
+        assert isinstance(output["results"], list)
+        assert "other_key" in output, "sibling key must survive the parallel state"
+        assert output["other_key"] == "preserved"

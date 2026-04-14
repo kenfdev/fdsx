@@ -1,0 +1,37 @@
+name: Map Nested Result Path Flow
+description: Tests that map state preserves sibling keys under a nested result_path channel
+start_at: setup_count
+version: '1.0'
+
+states:
+  setup_count:
+    type: task
+    provider: system
+    command: echo "3"
+    result_path: $.steps.count
+    retry: 0
+    next: setup_items
+
+  setup_items:
+    type: pass
+    parameters:
+      $.items:
+        - item1
+        - item2
+        - item3
+    next: map_state
+
+  map_state:
+    type: map
+    items_path: $.items
+    iterator:
+      states:
+        - name: process
+          type: task
+          provider: system
+          command: echo "processed-{item}"
+          result_path: $.iter.result
+          retry: 0
+    result_path: $.steps.processed
+    fail_fast: true
+    end: true
