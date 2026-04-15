@@ -565,7 +565,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append(
                 {
@@ -639,7 +639,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append({"status": status, "count": len(hooks)})
 
@@ -704,7 +704,7 @@ states:
         hook_calls: list[list] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append([h.command for h in hooks])
 
@@ -773,7 +773,7 @@ states:
         captured_hooks: list[list[str]] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             if status == "starting":
                 captured_hooks.append([h.command for h in hooks])
@@ -869,7 +869,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append({"state_name": state_name, "status": status})
 
@@ -941,7 +941,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append(
                 {"state_name": state_name, "status": status, "count": len(hooks)}

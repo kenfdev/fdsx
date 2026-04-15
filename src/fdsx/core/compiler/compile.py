@@ -200,6 +200,7 @@ def _wrap_with_hooks(
                 data_path=input_data_path,
                 thread_id=thread_id,
                 flow_name=flow_name,
+                event="on_start",
             )
 
         node_error: BaseException | None = None
@@ -230,6 +231,7 @@ def _wrap_with_hooks(
                     data_path=output_data_path,
                     thread_id=thread_id,
                     flow_name=flow_name,
+                    event="on_complete",
                 )
         except BaseException:
             if node_error is not None:

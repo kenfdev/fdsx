@@ -200,7 +200,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append({"state_name": state_name, "status": status})
 
@@ -557,7 +557,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append({"state_name": state_name, "status": status})
 
