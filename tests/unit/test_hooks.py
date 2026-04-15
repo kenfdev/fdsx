@@ -260,6 +260,117 @@ class TestExecuteHooks:
         # Verify the dangerous string is properly quoted (not expanded)
         assert "rm -rf" not in full_cmd.replace("'my state; rm -rf /'", "")
 
+    def test_execute_hooks_sets_fdsx_hooks_on_start(self, tmp_path: Path) -> None:
+        """FDSX_HOOKS env var is set to 'on_start' when event='on_start'."""
+        hook = self._make_hook("true")
+        data_path = tmp_path / "data.json"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_hooks(
+                [hook],
+                state_name="S",
+                status="starting",
+                data_path=data_path,
+                thread_id="t",
+                flow_name="F",
+                event="on_start",
+            )
+
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_HOOKS"] == "on_start"
+
+    def test_execute_hooks_sets_fdsx_hooks_on_complete_success(
+        self, tmp_path: Path
+    ) -> None:
+        """FDSX_HOOKS env var is set to 'on_complete' when event='on_complete' and status='completed'."""
+        hook = self._make_hook("true")
+        data_path = tmp_path / "data.json"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_hooks(
+                [hook],
+                state_name="S",
+                status="completed",
+                data_path=data_path,
+                thread_id="t",
+                flow_name="F",
+                event="on_complete",
+            )
+
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_HOOKS"] == "on_complete"
+
+    def test_execute_hooks_sets_fdsx_hooks_on_complete_failure(
+        self, tmp_path: Path
+    ) -> None:
+        """FDSX_HOOKS env var is set to 'on_complete' when event='on_complete' and status='failed'."""
+        hook = self._make_hook("true")
+        data_path = tmp_path / "data.json"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_hooks(
+                [hook],
+                state_name="S",
+                status="failed",
+                data_path=data_path,
+                thread_id="t",
+                flow_name="F",
+                event="on_complete",
+            )
+
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_HOOKS"] == "on_complete"
+
+    def test_execute_hooks_overrides_inherited_fdsx_hooks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FDSX_HOOKS from the inherited environment is overridden by the event value."""
+        monkeypatch.setenv("FDSX_HOOKS", "stale")
+        hook = self._make_hook("true")
+        data_path = tmp_path / "data.json"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_hooks(
+                [hook],
+                state_name="S",
+                status="starting",
+                data_path=data_path,
+                thread_id="t",
+                flow_name="F",
+                event="on_start",
+            )
+
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_HOOKS"] == "on_start"
+
+    def test_execute_hooks_preserves_existing_env_vars(self, tmp_path: Path) -> None:
+        """All five existing FDSX_ env vars are still present alongside FDSX_HOOKS (FR-5 regression guard)."""
+        hook = self._make_hook("true")
+        data_path = tmp_path / "data.json"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_hooks(
+                [hook],
+                state_name="StateX",
+                status="starting",
+                data_path=data_path,
+                thread_id="tid-42",
+                flow_name="FlowY",
+                event="on_start",
+            )
+
+        env = mock_run.call_args[1]["env"]
+        assert ENV_STATE_NAME in env
+        assert ENV_STATUS in env
+        assert ENV_DATA_PATH in env
+        assert ENV_THREAD_ID in env
+        assert ENV_FLOW_NAME in env
+
 
 # ---------------------------------------------------------------------------
 # T020: write_hook_data
