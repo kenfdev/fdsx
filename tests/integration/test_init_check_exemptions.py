@@ -97,8 +97,8 @@ class TestExemptCommands:
         result = runner.invoke(app, ["validate", str(workflow)])
 
         assert _INIT_WARNING not in result.output
-        assert result.exit_code != 0       # validate must reject malformed YAML
-        assert "Error:" in result.output   # validation error must surface in output
+        assert result.exit_code != 0  # validate must reject malformed YAML
+        assert "Error:" in result.output  # validation error must surface in output
 
     def test_bare_invocation_skips_init_warning(self, tmp_path, monkeypatch):
         """T007: bare 'fdsx' with no subcommand should not show the init warning."""
