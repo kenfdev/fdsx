@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 import typer
+import typer.core
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
@@ -39,7 +40,31 @@ from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 from fdsx.models.init import InitConfig
 
-app = typer.Typer(help="fdsx - Declarative AI agent workflow execution framework")
+EXEMPT_SUBCOMMANDS = frozenset({"init", "validate"})
+
+_RAW_ARGS_KEY = "_fdsx_raw_args"
+
+
+class _FdsxGroup(typer.core.TyperGroup):
+    """Custom Typer group that captures raw invocation args before Click consumes them.
+
+    This is needed to detect `--help` on subcommands (e.g. `fdsx run --help`) inside
+    the group callback, where Click has already separated the subcommand args from the
+    group args by the time the callback runs.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        if ctx.obj is None:
+            ctx.obj = {}
+        if isinstance(ctx.obj, dict):
+            ctx.obj[_RAW_ARGS_KEY] = list(args)
+        return super().parse_args(ctx, args)
+
+
+app = typer.Typer(
+    help="fdsx - Declarative AI agent workflow execution framework",
+    cls=_FdsxGroup,
+)
 
 
 def _validate_tasks_dir(tasks_dir: Path) -> None:
@@ -99,14 +124,25 @@ def main(
             set_interactive_mode(False)
         else:
             set_interactive_mode(sys.stdin.isatty())
-    if ctx.invoked_subcommand != "init" and needs_init(Path.cwd()):
+    _raw_args: list[str] = (
+        ctx.obj.get(_RAW_ARGS_KEY, []) if isinstance(ctx.obj, dict) else []
+    )
+    _exempt = (
+        version
+        or ctx.invoked_subcommand is None
+        or ctx.invoked_subcommand in EXEMPT_SUBCOMMANDS
+        or "--help" in _raw_args
+        or "-h" in _raw_args
+    )
+    if not _exempt and needs_init(Path.cwd()):
         typer.echo(
             "No .fdsx/ directory found. Run 'fdsx init' to set up your project.",
             err=True,
         )
         raise typer.Exit(code=0)
     elif (
-        is_interactive()
+        not _exempt
+        and is_interactive()
         and not needs_init(Path.cwd())
         and not (Path.cwd() / ".fdsx" / ".gitignore").exists()
     ):

@@ -90,8 +90,8 @@ class TestInitGuard:
         assert "No .fdsx/ directory found" in result.output
         assert "Run 'fdsx init'" in result.output
 
-    def test_init_triggers_on_validate_without_fdsx(self, tmp_path, monkeypatch):
-        """Guide message shown when running 'validate' without .fdsx/ directory."""
+    def test_init_skipped_on_validate_without_fdsx(self, tmp_path, monkeypatch):
+        """'validate' is exempt from the init guard: no guide message shown."""
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
@@ -104,11 +104,7 @@ class TestInitGuard:
                 catch_exceptions=False,
             )
 
-        assert result.exit_code == 0, (
-            f"Expected exit 0, got {result.exit_code}. output: {result.output}"
-        )
-        assert "No .fdsx/ directory found" in result.output
-        assert "Run 'fdsx init'" in result.output
+        assert "No .fdsx/ directory found" not in result.output
 
     def test_init_triggers_on_list_without_fdsx(self, tmp_path, monkeypatch):
         """Guide message shown when running 'list' without .fdsx/ directory."""

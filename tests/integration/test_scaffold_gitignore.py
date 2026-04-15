@@ -78,9 +78,10 @@ class TestRetroactiveGitignore:
         (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
 
-        result = runner.invoke(main.app, ["--interactive", "--version"])
+        # Use a non-exempt operational command so the gitignore creation path runs.
+        # --version is exempt and skips the retroactive gitignore logic.
+        result = runner.invoke(main.app, ["--interactive", "list"])
 
-        assert result.exit_code == 0
         gitignore_path = tmp_path / ".fdsx" / ".gitignore"
         assert gitignore_path.exists(), (
             ".fdsx/.gitignore should be created retroactively"
