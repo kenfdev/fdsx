@@ -48,6 +48,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-001",
                 flow_name="MyFlow",
+                event="on_start",
             )
         mock_run.assert_not_called()
 
@@ -65,6 +66,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t1",
                 flow_name="F1",
+                event="on_start",
             )
 
         assert mock_run.call_count == 1
@@ -85,6 +87,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t1",
                 flow_name="F1",
+                event="on_start",
             )
 
         full_cmd: str = mock_run.call_args[0][0]
@@ -106,6 +109,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-42",
                 flow_name="FlowY",
+                event="on_start",
             )
 
         env = mock_run.call_args[1]["env"]
@@ -130,6 +134,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
+                event="on_start",
             )
 
     def test_abort_on_failure_raises_hook_abort_error(self, tmp_path: Path) -> None:
@@ -147,6 +152,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
+                    event="on_start",
                 )
         assert exc_info.value.return_code == 2
         assert exc_info.value.command == "false"
@@ -169,6 +175,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
+                    event="on_start",
                 )
         # Only cmd1 ran; cmd2 was skipped
         assert mock_run.call_count == 1
@@ -191,6 +198,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
+                event="on_start",
             )
         assert mock_run.call_count == 2
 
@@ -209,6 +217,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
+                    event="on_start",
                 )
         assert "my-script.sh" in str(exc_info.value)
 
@@ -230,6 +239,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
+                event="on_start",
             )
 
         assert mock_run.call_count == 3
@@ -254,6 +264,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
+                event="on_start",
             )
 
         full_cmd: str = mock_run.call_args[0][0]
