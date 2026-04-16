@@ -35,6 +35,7 @@ ENV_STATUS = "FDSX_STATUS"
 ENV_DATA_PATH = "FDSX_DATA_PATH"
 ENV_THREAD_ID = "FDSX_THREAD_ID"
 ENV_FLOW_NAME = "FDSX_FLOW_NAME"
+ENV_HOOKS = "FDSX_HOOKS"
 
 
 class HookAbortError(Exception):
@@ -56,13 +57,14 @@ def execute_hooks(
     data_path: Path,
     thread_id: str,
     flow_name: str,
+    event: Literal["on_start", "on_complete"],
 ) -> None:
     """Execute a flat list of hook commands in order.
 
     Each command is run with ``shell=True`` and receives:
     - Positional args: $1=state_name, $2=status, $3=data_path
     - Environment variables: FDSX_STATE_NAME, FDSX_STATUS, FDSX_DATA_PATH,
-      FDSX_THREAD_ID, FDSX_FLOW_NAME
+      FDSX_THREAD_ID, FDSX_FLOW_NAME, FDSX_HOOKS
 
     Args:
         hooks: Ordered list of HookEntry objects to execute.
@@ -71,6 +73,8 @@ def execute_hooks(
         data_path: Path to the state data JSON file passed as $3 / FDSX_DATA_PATH.
         thread_id: Current run thread ID.
         flow_name: Name of the flow.
+        event: Lifecycle event that triggered this hook invocation ("on_start" or
+            "on_complete"). Exported as FDSX_HOOKS; overrides any inherited value.
 
     Raises:
         HookAbortError: When a hook exits non-zero and its on_failure is "abort".
@@ -82,6 +86,7 @@ def execute_hooks(
         ENV_DATA_PATH: str(data_path),
         ENV_THREAD_ID: thread_id,
         ENV_FLOW_NAME: flow_name,
+        ENV_HOOKS: event,
     }
 
     # Build positional arg suffix (safely quoted)

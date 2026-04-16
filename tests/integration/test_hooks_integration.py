@@ -20,6 +20,7 @@ import pytest
 
 from fdsx.core.compiler import _wrap_with_hooks, compile_flow
 from fdsx.core.config import FdsxConfig
+from fdsx.core.engine import run_flow
 from fdsx.core.hooks import INPUT_FILENAME, OUTPUT_FILENAME
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import HookConfig, HookEntry
@@ -564,7 +565,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append(
                 {
@@ -638,7 +639,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append({"status": status, "count": len(hooks)})
 
@@ -703,7 +704,7 @@ states:
         hook_calls: list[list] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append([h.command for h in hooks])
 
@@ -772,7 +773,7 @@ states:
         captured_hooks: list[list[str]] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             if status == "starting":
                 captured_hooks.append([h.command for h in hooks])
@@ -868,7 +869,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append({"state_name": state_name, "status": status})
 
@@ -940,7 +941,7 @@ states:
         hook_calls: list[dict] = []
 
         def fake_execute_hooks(
-            hooks, *, state_name, status, data_path, thread_id, flow_name
+            hooks, *, state_name, status, data_path, thread_id, flow_name, event
         ):
             hook_calls.append(
                 {"state_name": state_name, "status": status, "count": len(hooks)}
@@ -1076,3 +1077,238 @@ states:
 
         assert len(write_calls) > 0
         assert write_calls[0]["base_dir"] is None
+
+
+# ---------------------------------------------------------------------------
+# T003: FDSX_HOOKS environment variable integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestFdsxHooksEnvVar:
+    """Verify FDSX_HOOKS env var is set for hook subprocesses and absent from provider subprocesses."""
+
+    _FLOW_WITH_ON_START_HOOK = """
+name: FDSX Hooks Env Test
+description: Tests that FDSX_HOOKS is set for on_start hooks
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: echo done
+    result_path: $.result
+    end: true
+    hooks:
+      on_start:
+        - command: "echo hook_start"
+"""
+
+    _FLOW_WITH_ON_COMPLETE_HOOK = """
+name: FDSX Hooks Env Test
+description: Tests that FDSX_HOOKS is set for on_complete hooks
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: echo done
+    result_path: $.result
+    end: true
+    hooks:
+      on_complete:
+        - command: "echo hook_complete"
+"""
+
+    _FLOW_PROVIDER_ENV_CHECK = """
+name: Provider Env Check
+description: Tests that FDSX_HOOKS is absent from provider subprocess env
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "sh -c 'printf \\"%s\\" \\"${FDSX_HOOKS+PRESENT}\\" > out.txt'"
+    result_path: $.result
+    end: true
+"""
+
+    def test_on_start_hook_observes_event_value(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_start hook subprocess receives FDSX_HOOKS=on_start in its environment."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_ON_START_HOOK)
+
+        flow, errors = load_flow(flow_path)
+        assert flow is not None, f"Load errors: {errors}"
+
+        thread_id = "fdsx-hooks-env-start"
+        recorder = _make_recorder(thread_id=thread_id, flow_name="FDSX Hooks Env Test")
+        log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+        ):
+            compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+            config_dict = {"configurable": {"thread_id": thread_id}}
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
+
+        on_start_envs = [e for e in captured_envs if e.get("FDSX_STATUS") == "starting"]
+        assert len(on_start_envs) >= 1, "on_start hook should have fired"
+        assert on_start_envs[0].get("FDSX_HOOKS") == "on_start", (
+            f"Expected FDSX_HOOKS='on_start', got {on_start_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_on_complete_hook_observes_event_value_success(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_complete hook subprocess receives FDSX_HOOKS=on_complete when node succeeds."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_ON_COMPLETE_HOOK)
+
+        flow, errors = load_flow(flow_path)
+        assert flow is not None, f"Load errors: {errors}"
+
+        thread_id = "fdsx-hooks-env-complete"
+        recorder = _make_recorder(thread_id=thread_id, flow_name="FDSX Hooks Env Test")
+        log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+        ):
+            compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+            config_dict = {"configurable": {"thread_id": thread_id}}
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
+
+        on_complete_envs = [
+            e for e in captured_envs if e.get("FDSX_STATUS") in ("completed", "failed")
+        ]
+        assert len(on_complete_envs) >= 1, "on_complete hook should have fired"
+        assert on_complete_envs[0].get("FDSX_HOOKS") == "on_complete", (
+            f"Expected FDSX_HOOKS='on_complete', got {on_complete_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_on_complete_hook_observes_event_value_failure(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_complete hook subprocess receives FDSX_HOOKS=on_complete even when node fails."""
+        monkeypatch.chdir(tmp_path)
+
+        def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
+            raise RuntimeError("node exploded")
+
+        hook = _make_hook("echo on_complete")
+        recorder = _make_recorder()
+        wrapped = _wrap_with_hooks(
+            failing_node,
+            "FailState",
+            [],
+            [hook],
+            recorder=recorder,
+            fdsx_base_dir=tmp_path,
+        )
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+            pytest.raises(RuntimeError, match="node exploded"),
+        ):
+            wrapped({"x": 1})
+
+        assert len(captured_envs) >= 1, (
+            "on_complete hook should have fired after node failure"
+        )
+        assert captured_envs[0].get("FDSX_HOOKS") == "on_complete", (
+            f"Expected FDSX_HOOKS='on_complete', got {captured_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_provider_subprocess_does_not_see_fdsx_hooks(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Provider subprocess does not receive FDSX_HOOKS when it is absent from the environment."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_PROVIDER_ENV_CHECK)
+
+        run_flow(flow_path, thread_id="provider-env-check", base_dir=tmp_path)
+
+        out = (tmp_path / "out.txt").read_text().strip()
+        assert out == "", (
+            f"FDSX_HOOKS should not be present in provider subprocess env, got: {out!r}"
+        )
+
+    def test_inherited_fdsx_hooks_scrubbed_from_provider(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Stale FDSX_HOOKS inherited from the parent process is scrubbed from provider subprocess env."""
+        monkeypatch.setenv("FDSX_HOOKS", "stale")
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_PROVIDER_ENV_CHECK)
+
+        run_flow(flow_path, thread_id="provider-env-scrub", base_dir=tmp_path)
+
+        out = (tmp_path / "out.txt").read_text().strip()
+        assert out == "", (
+            f"Stale FDSX_HOOKS should be scrubbed from provider subprocess env, got: {out!r}"
+        )
