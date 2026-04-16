@@ -178,9 +178,9 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
-      on_complete:
+      on_state_end:
         - command: "echo hook_complete"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -253,7 +253,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -311,9 +311,9 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
-      on_complete:
+      on_state_end:
         - command: "echo hook_done"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -522,9 +522,9 @@ name: Multi State Hook Stream
 description: Multi-state hook and streaming
 start_at: step1
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo flow_start"
-  on_complete:
+  on_state_end:
     - command: "echo flow_complete"
 states:
   step1:
@@ -621,7 +621,7 @@ name: Per State Logs With Hooks
 description: Log files per state with flow hooks
 start_at: stateA
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo flow_hook"
 states:
   stateA:

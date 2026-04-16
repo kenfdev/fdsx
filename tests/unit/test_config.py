@@ -604,80 +604,88 @@ class TestFdsxConfigHooks:
         """T018: FdsxConfig.hooks accepts a valid HookConfig."""
         cfg = FdsxConfig(
             hooks=HookConfig(
-                on_start=[HookEntry(command="setup.sh")],
-                on_complete=[HookEntry(command="teardown.sh", on_failure="abort")],
+                on_state_start=[HookEntry(command="setup.sh")],
+                on_state_end=[HookEntry(command="teardown.sh", on_failure="abort")],
             )
         )
         assert cfg.hooks is not None
-        assert cfg.hooks.on_start[0].command == "setup.sh"
-        assert cfg.hooks.on_complete[0].on_failure == "abort"
+        assert cfg.hooks.on_state_start[0].command == "setup.sh"
+        assert cfg.hooks.on_state_end[0].on_failure == "abort"
 
     def test_hooks_parsed_from_dict(self):
         """T018: FdsxConfig parses hooks from raw dict via model_validate."""
         cfg = FdsxConfig.model_validate(
             {
                 "hooks": {
-                    "on_start": [{"command": "init.sh"}],
-                    "on_complete": [],
+                    "on_state_start": [{"command": "init.sh"}],
+                    "on_state_end": [],
                 }
             }
         )
         assert cfg.hooks is not None
-        assert cfg.hooks.on_start[0].command == "init.sh"
-        assert cfg.hooks.on_complete == []
+        assert cfg.hooks.on_state_start[0].command == "init.sh"
+        assert cfg.hooks.on_state_end == []
 
     def test_hooks_invalid_on_failure_rejected(self):
         """T018: Invalid on_failure value in hooks config must be rejected."""
         with pytest.raises(ValidationError):
             FdsxConfig.model_validate(
-                {"hooks": {"on_start": [{"command": "x", "on_failure": "skip"}]}}
+                {"hooks": {"on_state_start": [{"command": "x", "on_failure": "skip"}]}}
             )
 
     def test_hooks_empty_command_rejected(self):
         """T018: Empty command in hook entry must be rejected."""
         with pytest.raises(ValidationError):
-            FdsxConfig.model_validate({"hooks": {"on_start": [{"command": ""}]}})
+            FdsxConfig.model_validate({"hooks": {"on_state_start": [{"command": ""}]}})
 
 
 class TestDeepMergeHookListConcatenation:
-    """T018: Tests for _deep_merge list concatenation for on_start/on_complete."""
+    """T018: Tests for _deep_merge list concatenation for on_state_start/on_state_end."""
 
-    def test_on_start_lists_are_concatenated(self):
-        """T018: on_start lists from base and override are concatenated."""
-        base = {"hooks": {"on_start": [{"command": "a.sh"}], "on_complete": []}}
-        override = {"hooks": {"on_start": [{"command": "b.sh"}], "on_complete": []}}
-        result = _deep_merge(base, override)
-        assert len(result["hooks"]["on_start"]) == 2
-        assert result["hooks"]["on_start"][0]["command"] == "a.sh"
-        assert result["hooks"]["on_start"][1]["command"] == "b.sh"
-
-    def test_on_complete_lists_are_concatenated(self):
-        """T018: on_complete lists from base and override are concatenated."""
-        base = {"hooks": {"on_start": [], "on_complete": [{"command": "cleanup.sh"}]}}
+    def test_on_state_start_lists_are_concatenated(self):
+        """T018: on_state_start lists from base and override are concatenated."""
+        base = {"hooks": {"on_state_start": [{"command": "a.sh"}], "on_state_end": []}}
         override = {
-            "hooks": {"on_start": [], "on_complete": [{"command": "notify.sh"}]}
+            "hooks": {"on_state_start": [{"command": "b.sh"}], "on_state_end": []}
         }
         result = _deep_merge(base, override)
-        assert len(result["hooks"]["on_complete"]) == 2
-        assert result["hooks"]["on_complete"][0]["command"] == "cleanup.sh"
-        assert result["hooks"]["on_complete"][1]["command"] == "notify.sh"
+        assert len(result["hooks"]["on_state_start"]) == 2
+        assert result["hooks"]["on_state_start"][0]["command"] == "a.sh"
+        assert result["hooks"]["on_state_start"][1]["command"] == "b.sh"
+
+    def test_on_state_end_lists_are_concatenated(self):
+        """T018: on_state_end lists from base and override are concatenated."""
+        base = {
+            "hooks": {"on_state_start": [], "on_state_end": [{"command": "cleanup.sh"}]}
+        }
+        override = {
+            "hooks": {"on_state_start": [], "on_state_end": [{"command": "notify.sh"}]}
+        }
+        result = _deep_merge(base, override)
+        assert len(result["hooks"]["on_state_end"]) == 2
+        assert result["hooks"]["on_state_end"][0]["command"] == "cleanup.sh"
+        assert result["hooks"]["on_state_end"][1]["command"] == "notify.sh"
 
     def test_empty_base_hook_list_with_override(self):
         """T018: Empty base list + override list yields only override entries."""
-        base = {"hooks": {"on_start": [], "on_complete": []}}
-        override = {"hooks": {"on_start": [{"command": "x.sh"}], "on_complete": []}}
+        base = {"hooks": {"on_state_start": [], "on_state_end": []}}
+        override = {
+            "hooks": {"on_state_start": [{"command": "x.sh"}], "on_state_end": []}
+        }
         result = _deep_merge(base, override)
-        assert result["hooks"]["on_start"] == [{"command": "x.sh"}]
+        assert result["hooks"]["on_state_start"] == [{"command": "x.sh"}]
 
     def test_empty_override_hook_list_with_base(self):
         """T018: Base list + empty override list yields only base entries."""
-        base = {"hooks": {"on_start": [{"command": "base.sh"}], "on_complete": []}}
-        override = {"hooks": {"on_start": [], "on_complete": []}}
+        base = {
+            "hooks": {"on_state_start": [{"command": "base.sh"}], "on_state_end": []}
+        }
+        override = {"hooks": {"on_state_start": [], "on_state_end": []}}
         result = _deep_merge(base, override)
-        assert result["hooks"]["on_start"] == [{"command": "base.sh"}]
+        assert result["hooks"]["on_state_start"] == [{"command": "base.sh"}]
 
     def test_non_hook_list_is_replaced_not_concatenated(self):
-        """T018: Regular list values (not on_start/on_complete) are replaced, not concatenated."""
+        """T018: Regular list values (not on_state_start/on_state_end) are replaced, not concatenated."""
         base = {"items": [1, 2, 3]}
         override = {"items": [4, 5]}
         result = _deep_merge(base, override)
@@ -687,18 +695,21 @@ class TestDeepMergeHookListConcatenation:
         """T018: Concatenation preserves global-first, project-second ordering."""
         base = {
             "hooks": {
-                "on_start": [{"command": "global1.sh"}, {"command": "global2.sh"}],
-                "on_complete": [],
+                "on_state_start": [
+                    {"command": "global1.sh"},
+                    {"command": "global2.sh"},
+                ],
+                "on_state_end": [],
             }
         }
         override = {
             "hooks": {
-                "on_start": [{"command": "project.sh"}],
-                "on_complete": [],
+                "on_state_start": [{"command": "project.sh"}],
+                "on_state_end": [],
             }
         }
         result = _deep_merge(base, override)
-        commands = [e["command"] for e in result["hooks"]["on_start"]]
+        commands = [e["command"] for e in result["hooks"]["on_state_start"]]
         assert commands == ["global1.sh", "global2.sh", "project.sh"]
 
 

@@ -200,7 +200,7 @@ def _wrap_with_hooks(
                 data_path=input_data_path,
                 thread_id=thread_id,
                 flow_name=flow_name,
-                event="on_start",
+                event="on_state_start",
             )
 
         node_error: BaseException | None = None
@@ -231,7 +231,7 @@ def _wrap_with_hooks(
                     data_path=output_data_path,
                     thread_id=thread_id,
                     flow_name=flow_name,
-                    event="on_complete",
+                    event="on_state_end",
                 )
         except BaseException:
             if node_error is not None:
@@ -302,16 +302,16 @@ def compile_flow(
     config_hooks = config.hooks if config is not None else None
 
     def _collect_state_hooks(state_obj: Any) -> tuple[list[HookEntry], list[HookEntry]]:
-        """Collect on_start and on_complete hooks for a state from all levels."""
+        """Collect on_state_start and on_state_end hooks for a state from all levels."""
         on_s = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=config_hooks,
             project_hooks=None,
             flow_hooks=flow.hooks,
             state_hooks=state_obj.hooks,
         )
         on_c = collect_hooks(
-            "on_complete",
+            "on_state_end",
             global_hooks=config_hooks,
             project_hooks=None,
             flow_hooks=flow.hooks,

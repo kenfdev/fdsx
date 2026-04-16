@@ -548,9 +548,9 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo on_start"
-      on_complete:
+      on_state_end:
         - command: "echo on_complete"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -615,9 +615,9 @@ name: Flow Hook Test
 description: Flow-level hooks
 start_at: step1
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo flow_start"
-  on_complete:
+  on_state_end:
     - command: "echo flow_complete"
 states:
   step1:
@@ -693,7 +693,7 @@ states:
 
         # Config with global hook
         fdsx_config = FdsxConfig(
-            hooks=HookConfig(on_start=[HookEntry(command="echo global_start")])
+            hooks=HookConfig(on_state_start=[HookEntry(command="echo global_start")])
         )
 
         recorder = _make_recorder(
@@ -744,7 +744,7 @@ name: Merge Order Test
 description: Hook merge order
 start_at: step1
 hooks:
-  on_start:
+  on_state_start:
     - command: "flow-hook"
 states:
   step1:
@@ -754,7 +754,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "state-hook"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -764,7 +764,7 @@ states:
         assert flow is not None
 
         fdsx_config = FdsxConfig(
-            hooks=HookConfig(on_start=[HookEntry(command="global-hook")])
+            hooks=HookConfig(on_state_start=[HookEntry(command="global-hook")])
         )
 
         recorder = _make_recorder(thread_id="merge-tid", flow_name="Merge Order Test")
@@ -852,9 +852,9 @@ states:
     type: pass
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo pass_start"
-      on_complete:
+      on_state_end:
         - command: "echo pass_done"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -917,9 +917,9 @@ states:
     result_path: $.results
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo par_start"
-      on_complete:
+      on_state_end:
         - command: "echo par_done"
     branches:
       - provider: system
@@ -991,7 +991,7 @@ states:
     result_path: $.r
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo h"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -1044,7 +1044,7 @@ states:
     result_path: $.r
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo h"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -1089,7 +1089,7 @@ class TestFdsxHooksEnvVar:
 
     _FLOW_WITH_ON_START_HOOK = """
 name: FDSX Hooks Env Test
-description: Tests that FDSX_HOOKS is set for on_start hooks
+description: Tests that FDSX_HOOKS is set for on_state_start hooks
 start_at: step1
 states:
   step1:
@@ -1099,13 +1099,13 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
 """
 
     _FLOW_WITH_ON_COMPLETE_HOOK = """
 name: FDSX Hooks Env Test
-description: Tests that FDSX_HOOKS is set for on_complete hooks
+description: Tests that FDSX_HOOKS is set for on_state_end hooks
 start_at: step1
 states:
   step1:
@@ -1115,7 +1115,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_complete:
+      on_state_end:
         - command: "echo hook_complete"
 """
 
@@ -1176,9 +1176,9 @@ states:
             )
 
         on_start_envs = [e for e in captured_envs if e.get("FDSX_STATUS") == "starting"]
-        assert len(on_start_envs) >= 1, "on_start hook should have fired"
-        assert on_start_envs[0].get("FDSX_HOOKS") == "on_start", (
-            f"Expected FDSX_HOOKS='on_start', got {on_start_envs[0].get('FDSX_HOOKS')!r}"
+        assert len(on_start_envs) >= 1, "on_state_start hook should have fired"
+        assert on_start_envs[0].get("FDSX_HOOKS") == "on_state_start", (
+            f"Expected FDSX_HOOKS='on_state_start', got {on_start_envs[0].get('FDSX_HOOKS')!r}"
         )
 
     def test_on_complete_hook_observes_event_value_success(
@@ -1227,9 +1227,9 @@ states:
         on_complete_envs = [
             e for e in captured_envs if e.get("FDSX_STATUS") in ("completed", "failed")
         ]
-        assert len(on_complete_envs) >= 1, "on_complete hook should have fired"
-        assert on_complete_envs[0].get("FDSX_HOOKS") == "on_complete", (
-            f"Expected FDSX_HOOKS='on_complete', got {on_complete_envs[0].get('FDSX_HOOKS')!r}"
+        assert len(on_complete_envs) >= 1, "on_state_end hook should have fired"
+        assert on_complete_envs[0].get("FDSX_HOOKS") == "on_state_end", (
+            f"Expected FDSX_HOOKS='on_state_end', got {on_complete_envs[0].get('FDSX_HOOKS')!r}"
         )
 
     def test_on_complete_hook_observes_event_value_failure(
@@ -1276,10 +1276,10 @@ states:
             wrapped({"x": 1})
 
         assert len(captured_envs) >= 1, (
-            "on_complete hook should have fired after node failure"
+            "on_state_end hook should have fired after node failure"
         )
-        assert captured_envs[0].get("FDSX_HOOKS") == "on_complete", (
-            f"Expected FDSX_HOOKS='on_complete', got {captured_envs[0].get('FDSX_HOOKS')!r}"
+        assert captured_envs[0].get("FDSX_HOOKS") == "on_state_end", (
+            f"Expected FDSX_HOOKS='on_state_end', got {captured_envs[0].get('FDSX_HOOKS')!r}"
         )
 
     def test_provider_subprocess_does_not_see_fdsx_hooks(
@@ -1398,7 +1398,9 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "fdsx-hooks-state-start"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="State Hook Rename Test")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="State Hook Rename Test"
+        )
         log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
 
         captured_envs: list[dict] = []
@@ -1449,7 +1451,9 @@ states:
         assert flow is not None, f"Load errors: {errors}"
 
         thread_id = "fdsx-hooks-state-end"
-        recorder = _make_recorder(thread_id=thread_id, flow_name="State Hook Rename Test")
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="State Hook Rename Test"
+        )
         log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
 
         captured_envs: list[dict] = []

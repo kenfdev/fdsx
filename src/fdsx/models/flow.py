@@ -78,12 +78,29 @@ class HookEntry(BaseModel):
 class HookConfig(BaseModel):
     """Hook configuration for a state or flow."""
 
-    on_start: list[HookEntry] = Field(
+    on_state_start: list[HookEntry] = Field(
         default_factory=list, description="Hooks to run before execution"
     )
-    on_complete: list[HookEntry] = Field(
+    on_state_end: list[HookEntry] = Field(
         default_factory=list, description="Hooks to run after execution"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if "on_start" in values:
+            raise ValueError(
+                "Hook key 'on_start' has been renamed to 'on_state_start'. "
+                "Update the YAML file and retry."
+            )
+        if "on_complete" in values:
+            raise ValueError(
+                "Hook key 'on_complete' has been renamed to 'on_state_end'. "
+                "Update the YAML file and retry."
+            )
+        return values
 
 
 class ChoiceRule(BaseModel):

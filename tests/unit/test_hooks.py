@@ -49,7 +49,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-001",
                 flow_name="MyFlow",
-                event="on_start",
+                event="on_state_start",
             )
         mock_run.assert_not_called()
 
@@ -67,7 +67,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t1",
                 flow_name="F1",
-                event="on_start",
+                event="on_state_start",
             )
 
         assert mock_run.call_count == 1
@@ -88,7 +88,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t1",
                 flow_name="F1",
-                event="on_start",
+                event="on_state_start",
             )
 
         full_cmd: str = mock_run.call_args[0][0]
@@ -110,7 +110,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-42",
                 flow_name="FlowY",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
@@ -135,7 +135,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
     def test_abort_on_failure_raises_hook_abort_error(self, tmp_path: Path) -> None:
@@ -153,7 +153,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
-                    event="on_start",
+                    event="on_state_start",
                 )
         assert exc_info.value.return_code == 2
         assert exc_info.value.command == "false"
@@ -176,7 +176,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
-                    event="on_start",
+                    event="on_state_start",
                 )
         # Only cmd1 ran; cmd2 was skipped
         assert mock_run.call_count == 1
@@ -199,7 +199,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
         assert mock_run.call_count == 2
 
@@ -218,7 +218,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
-                    event="on_start",
+                    event="on_state_start",
                 )
         assert "my-script.sh" in str(exc_info.value)
 
@@ -240,7 +240,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         assert mock_run.call_count == 3
@@ -265,7 +265,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         full_cmd: str = mock_run.call_args[0][0]
@@ -286,11 +286,11 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_start"
+        assert env["FDSX_HOOKS"] == "on_state_start"
 
     def test_execute_hooks_sets_fdsx_hooks_on_complete_success(
         self, tmp_path: Path
@@ -308,11 +308,11 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_complete",
+                event="on_state_end",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_complete"
+        assert env["FDSX_HOOKS"] == "on_state_end"
 
     def test_execute_hooks_sets_fdsx_hooks_on_complete_failure(
         self, tmp_path: Path
@@ -330,11 +330,11 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_complete",
+                event="on_state_end",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_complete"
+        assert env["FDSX_HOOKS"] == "on_state_end"
 
     def test_execute_hooks_overrides_inherited_fdsx_hooks(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -353,11 +353,11 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_start"
+        assert env["FDSX_HOOKS"] == "on_state_start"
 
     def test_execute_hooks_preserves_existing_env_vars(self, tmp_path: Path) -> None:
         """All five existing FDSX_ env vars are still present alongside FDSX_HOOKS (FR-5 regression guard)."""
@@ -373,7 +373,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-42",
                 flow_name="FlowY",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
@@ -579,16 +579,18 @@ class TestWriteHookData:
 class TestCollectHooks:
     """Tests for collect_hooks()."""
 
-    def _make_config(self, commands: list[str], event: str = "on_start") -> HookConfig:
+    def _make_config(
+        self, commands: list[str], event: str = "on_state_start"
+    ) -> HookConfig:
         entries = [HookEntry(command=cmd) for cmd in commands]
-        kwargs: dict = {"on_start": [], "on_complete": []}
+        kwargs: dict = {"on_state_start": [], "on_state_end": []}
         kwargs[event] = entries
         return HookConfig(**kwargs)
 
     def test_all_none_returns_empty_list(self) -> None:
         """All-None configs produces an empty list."""
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=None,
             project_hooks=None,
             flow_hooks=None,
@@ -600,7 +602,7 @@ class TestCollectHooks:
         """Only global hooks are returned."""
         global_cfg = self._make_config(["global-hook"])
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=global_cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -613,7 +615,7 @@ class TestCollectHooks:
         """Only state hooks are returned."""
         state_cfg = self._make_config(["state-hook"])
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=None,
             project_hooks=None,
             flow_hooks=None,
@@ -630,7 +632,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["st1"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=global_cfg,
             project_hooks=project_cfg,
             flow_hooks=flow_cfg,
@@ -645,7 +647,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["s1", "s2"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=global_cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -655,21 +657,21 @@ class TestCollectHooks:
         assert [h.command for h in result] == ["g1", "g2", "g3", "s1", "s2"]
 
     def test_on_complete_event(self) -> None:
-        """on_complete event selects the correct hook list."""
+        """on_state_end event selects the correct hook list."""
         config = HookConfig(
-            on_start=[HookEntry(command="start-hook")],
-            on_complete=[HookEntry(command="complete-hook")],
+            on_state_start=[HookEntry(command="start-hook")],
+            on_state_end=[HookEntry(command="complete-hook")],
         )
 
         result_start = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=config,
             project_hooks=None,
             flow_hooks=None,
             state_hooks=None,
         )
         result_complete = collect_hooks(
-            "on_complete",
+            "on_state_end",
             global_hooks=config,
             project_hooks=None,
             flow_hooks=None,
@@ -684,14 +686,14 @@ class TestCollectHooks:
     def test_on_failure_policy_preserved(self) -> None:
         """on_failure values are preserved through collection."""
         cfg = HookConfig(
-            on_start=[
+            on_state_start=[
                 HookEntry(command="cmd-abort", on_failure="abort"),
                 HookEntry(command="cmd-warn", on_failure="warn"),
             ]
         )
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -705,7 +707,7 @@ class TestCollectHooks:
         """Return type is a list of HookEntry."""
         cfg = self._make_config(["cmd"])
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -720,7 +722,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["s1"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=None,
             project_hooks=project_cfg,
             flow_hooks=None,
@@ -735,7 +737,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["s1"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=empty_cfg,
             project_hooks=None,
             flow_hooks=None,

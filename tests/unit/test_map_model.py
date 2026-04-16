@@ -347,12 +347,12 @@ class TestMapState:
             ),
             result_path="$.results",
             hooks=HookConfig(
-                on_start=[HookEntry(command="echo starting")],
-                on_complete=[HookEntry(command="echo done")],
+                on_state_start=[HookEntry(command="echo starting")],
+                on_state_end=[HookEntry(command="echo done")],
             ),
         )
         assert state.hooks is not None
-        assert len(state.hooks.on_start) == 1
+        assert len(state.hooks.on_state_start) == 1
 
     def test_with_max_iterations(self):
         state = MapState(

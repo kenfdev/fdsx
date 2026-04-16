@@ -57,7 +57,7 @@ def execute_hooks(
     data_path: Path,
     thread_id: str,
     flow_name: str,
-    event: Literal["on_start", "on_complete"],
+    event: Literal["on_state_start", "on_state_end"],
 ) -> None:
     """Execute a flat list of hook commands in order.
 
@@ -73,8 +73,8 @@ def execute_hooks(
         data_path: Path to the state data JSON file passed as $3 / FDSX_DATA_PATH.
         thread_id: Current run thread ID.
         flow_name: Name of the flow.
-        event: Lifecycle event that triggered this hook invocation ("on_start" or
-            "on_complete"). Exported as FDSX_HOOKS; overrides any inherited value.
+        event: Lifecycle event that triggered this hook invocation ("on_state_start" or
+            "on_state_end"). Exported as FDSX_HOOKS; overrides any inherited value.
 
     Raises:
         HookAbortError: When a hook exits non-zero and its on_failure is "abort".
@@ -173,7 +173,7 @@ def write_hook_data(
 
 
 def collect_hooks(
-    event: Literal["on_start", "on_complete"],
+    event: Literal["on_state_start", "on_state_end"],
     *,
     global_hooks: HookConfig | None,
     project_hooks: HookConfig | None,
@@ -186,7 +186,7 @@ def collect_hooks(
     Returns a single flat list of HookEntry objects.
 
     Args:
-        event: "on_start" or "on_complete".
+        event: "on_state_start" or "on_state_end".
         global_hooks: Hook config from global ~/.config/fdsx/config.yaml.
         project_hooks: Hook config from project .fdsx/config.yaml.
         flow_hooks: Hook config from the flow definition.
