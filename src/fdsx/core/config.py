@@ -198,7 +198,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     """Recursively merge override into base, with override taking precedence.
 
     When both base and override have a dict value for the same key, the dicts
-    are merged recursively. For keys in _HOOK_LIST_KEYS (on_start, on_complete),
+    are merged recursively. For keys in _HOOK_LIST_KEYS (on_state_start, on_state_end),
     list values are concatenated (base + override) rather than replaced.
     For keys in _SHALLOW_MERGE_KEYS (profiles), dict values are shallow-merged
     (full replacement per name, not deep merge of individual profile fields).
