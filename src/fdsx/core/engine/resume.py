@@ -10,6 +10,11 @@ from langgraph.types import Command
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
+from fdsx.core.hooks import (
+    HookAbortError,
+    collect_workflow_hooks,
+    execute_workflow_hooks,
+)
 from fdsx.core.loader import load_flow
 from fdsx.display.terminal import (
     _sanitize_output,
@@ -213,6 +218,19 @@ def resume_flow(
         failed_state: str | None = None
         if recorder is not None:
             status, failed_state, _ = _detect_abort_status(recorder)
+            # T024: fire on_workflow_end with terminal status on resume completion
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks,
+                ),
+                status=status,
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
             recorder.finalize(_sanitize_state_for_log(last_state), status)
             recorder.save(base_dir=base_dir)
             if failed_state is not None:
@@ -253,6 +271,25 @@ def resume_flow(
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
             recorder.save(base_dir=base_dir)
+            # T024: fire on_workflow_end with failed/aborted status on exception path
+            _abort_detect, _, _ = _detect_abort_status(recorder)
+            _end_status = (
+                "aborted"
+                if _abort_detect == "aborted" or isinstance(e, HookAbortError)
+                else "failed"
+            )
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks if flow is not None else None,
+                ),
+                status=_end_status,
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
             failed = _find_failed_state(recorder)
             failed_state_name = failed[0] if failed else "unknown"
             error_message = failed[1] if (failed and failed[1]) else str(e)

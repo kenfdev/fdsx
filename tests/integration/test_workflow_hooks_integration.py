@@ -406,7 +406,9 @@ class TestWorkflowMerge:
         from fdsx.models.flow import HookConfig
 
         global_cfg = HookConfig(on_workflow_start=[HookEntry(command="global-wf-hook")])
-        project_cfg = HookConfig(on_workflow_start=[HookEntry(command="project-wf-hook")])
+        project_cfg = HookConfig(
+            on_workflow_start=[HookEntry(command="project-wf-hook")]
+        )
         flow_cfg = HookConfig(on_workflow_start=[HookEntry(command="flow-wf-hook")])
 
         result = collect_workflow_hooks(

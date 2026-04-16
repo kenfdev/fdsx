@@ -4,11 +4,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import structlog
 from langgraph.checkpoint.memory import MemorySaver
 
 from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import load_config
+from fdsx.core.hooks import (
+    HookAbortError,
+    collect_workflow_hooks,
+    execute_workflow_hooks,
+)
 from fdsx.core.loader import load_flow
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import (
@@ -29,6 +35,8 @@ from .results import (
 )
 from .signals import SignalHandler
 from .validate import FlowValidationError
+
+logger = structlog.get_logger(__name__)
 
 
 def run_flow(
@@ -163,6 +171,30 @@ def run_flow(
         "configurable": {"thread_id": thread_id},
     }
 
+    # T022: fire on_workflow_start for fresh runs only (skip if checkpoint exists)
+    _is_fresh = checkpoint_manager is None or not checkpoint_manager.verify_checkpoint(
+        thread_id
+    )
+    if _is_fresh:
+        execute_workflow_hooks(
+            collect_workflow_hooks(
+                "on_workflow_start",
+                global_hooks=fdsx_config.hooks,
+                project_hooks=None,
+                flow_hooks=flow.hooks,
+            ),
+            status="starting",
+            event="on_workflow_start",
+            thread_id=thread_id,
+            flow_name=flow.name,
+        )
+    else:
+        logger.debug(
+            "on_workflow_start_skipped",
+            thread_id=thread_id,
+            flow_name=flow.name,
+        )
+
     last_state: dict[str, Any] = initial_state.copy()
 
     try:
@@ -182,6 +214,19 @@ def run_flow(
 
         results = _extract_results(last_state, compiled.result_paths)
         status, failed_state, error_msg = _detect_abort_status(recorder)
+        # T023: fire on_workflow_end with terminal status
+        execute_workflow_hooks(
+            collect_workflow_hooks(
+                "on_workflow_end",
+                global_hooks=fdsx_config.hooks,
+                project_hooks=None,
+                flow_hooks=flow.hooks,
+            ),
+            status=status,
+            event="on_workflow_end",
+            thread_id=thread_id,
+            flow_name=flow.name,
+        )
         recorder.finalize(_sanitize_state_for_log(last_state), status)
         recorder.save(base_dir=base_dir)
         if failed_state is not None:
@@ -202,6 +247,25 @@ def run_flow(
             )
         recorder.finalize(_sanitize_state_for_log(last_state), "error")
         recorder.save(base_dir=base_dir)
+        # T023: fire on_workflow_end with failed/aborted status on exception path
+        _abort_detect, _, _ = _detect_abort_status(recorder)
+        _end_status = (
+            "aborted"
+            if _abort_detect == "aborted" or isinstance(e, HookAbortError)
+            else "failed"
+        )
+        execute_workflow_hooks(
+            collect_workflow_hooks(
+                "on_workflow_end",
+                global_hooks=fdsx_config.hooks,
+                project_hooks=None,
+                flow_hooks=flow.hooks,
+            ),
+            status=_end_status,
+            event="on_workflow_end",
+            thread_id=thread_id,
+            flow_name=flow.name,
+        )
         failed = _find_failed_state(recorder)
         failed_state_name = failed[0] if failed else "unknown"
         error_message = failed[1] if (failed and failed[1]) else str(e)

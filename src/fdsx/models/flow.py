@@ -332,7 +332,9 @@ class TaskState(BaseModel):
     provider_options: dict[str, Any] | None = Field(
         default=None, description="Per-task provider option overrides"
     )
-    hooks: StateHookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -396,7 +398,9 @@ class ChoiceState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: StateHookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
 
 
 class ParallelState(BaseModel):
@@ -413,7 +417,9 @@ class ParallelState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: StateHookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -471,7 +477,9 @@ class WaitState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: StateHookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -603,7 +611,9 @@ class MapState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: StateHookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )

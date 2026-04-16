@@ -356,6 +356,9 @@ def run_tasks_dir(
 
             try:
                 task_inputs = {"task": description, "source": task_file.source or ""}
+                # FR-4/FR-5: on_workflow_start and on_workflow_end fire once per task, inside
+                # run_flow() / resume_flow() below. Do NOT wrap the outer tasks-dir loop with
+                # additional workflow hook calls — hooks must fire per-task, not per-directory-run.
                 flow_result = run_flow(
                     flow_path=effective_workflow,
                     inputs=task_inputs,

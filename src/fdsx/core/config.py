@@ -23,7 +23,9 @@ from fdsx.providers.gemini import GeminiOptions
 from fdsx.providers.opencode import OpenCodeOptions
 
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
-_HOOK_LIST_KEYS: frozenset[str] = frozenset({"on_state_start", "on_state_end", "on_workflow_start", "on_workflow_end"})
+_HOOK_LIST_KEYS: frozenset[str] = frozenset(
+    {"on_state_start", "on_state_end", "on_workflow_start", "on_workflow_end"}
+)
 
 # Keys whose dict values are shallow-merged instead of deep-merged
 _SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
