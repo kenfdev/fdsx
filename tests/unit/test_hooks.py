@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from fdsx.core.hooks import (
     ENV_DATA_PATH,
@@ -742,3 +743,22 @@ class TestCollectHooks:
         )
 
         assert [h.command for h in result] == ["s1"]
+
+
+# ---------------------------------------------------------------------------
+# T001: TestLegacyKeyRejection — on_start/on_complete keys must be rejected
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyKeyRejection:
+    """Assert that legacy hook keys raise ValidationError with a rename hint."""
+
+    def test_on_start_key_rejected_with_rename_hint(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            HookConfig.model_validate({"on_start": [{"command": "echo x"}]})
+        assert "on_state_start" in str(exc_info.value)
+
+    def test_on_complete_key_rejected_with_rename_hint(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            HookConfig.model_validate({"on_complete": [{"command": "echo x"}]})
+        assert "on_state_end" in str(exc_info.value)

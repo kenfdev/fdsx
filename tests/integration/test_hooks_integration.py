@@ -1312,3 +1312,202 @@ states:
         assert out == "", (
             f"Stale FDSX_HOOKS should be scrubbed from provider subprocess env, got: {out!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# T002: TestStateHookRename — on_state_start/on_state_end rename (US1)
+# ---------------------------------------------------------------------------
+
+
+class TestStateHookRename:
+    """Verify on_state_start/on_state_end rename acceptance criteria (US1)."""
+
+    _FLOW_WITH_ON_STATE_START_HOOK = """
+name: State Hook Rename Test
+description: Tests on_state_start hook fires with renamed key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_state_start:
+        - command: "echo hook_state_start"
+"""
+
+    _FLOW_WITH_ON_STATE_END_HOOK = """
+name: State Hook Rename Test
+description: Tests on_state_end hook fires with renamed key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_state_end:
+        - command: "echo hook_state_end"
+"""
+
+    _FLOW_WITH_LEGACY_ON_START = """
+name: Legacy Key Test
+description: YAML with legacy on_start key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_start:
+        - command: "echo x"
+"""
+
+    _FLOW_WITH_LEGACY_ON_COMPLETE = """
+name: Legacy Key Test
+description: YAML with legacy on_complete key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_complete:
+        - command: "echo x"
+"""
+
+    def test_on_state_start_fires_with_correct_fdsx_hooks_value(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_state_start hook subprocess receives FDSX_HOOKS='on_state_start' in its environment."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_ON_STATE_START_HOOK)
+
+        flow, errors = load_flow(flow_path)
+        assert flow is not None, f"Load errors: {errors}"
+
+        thread_id = "fdsx-hooks-state-start"
+        recorder = _make_recorder(thread_id=thread_id, flow_name="State Hook Rename Test")
+        log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+        ):
+            compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+            config_dict = {"configurable": {"thread_id": thread_id}}
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
+
+        on_state_start_envs = [
+            e for e in captured_envs if e.get("FDSX_STATUS") == "starting"
+        ]
+        assert len(on_state_start_envs) >= 1, "on_state_start hook should have fired"
+        assert on_state_start_envs[0].get("FDSX_HOOKS") == "on_state_start", (
+            f"Expected FDSX_HOOKS='on_state_start', got {on_state_start_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_on_state_end_fires_with_correct_fdsx_hooks_value(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_state_end hook subprocess receives FDSX_HOOKS='on_state_end' in its environment."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_ON_STATE_END_HOOK)
+
+        flow, errors = load_flow(flow_path)
+        assert flow is not None, f"Load errors: {errors}"
+
+        thread_id = "fdsx-hooks-state-end"
+        recorder = _make_recorder(thread_id=thread_id, flow_name="State Hook Rename Test")
+        log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+        ):
+            compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+            config_dict = {"configurable": {"thread_id": thread_id}}
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
+
+        on_state_end_envs = [
+            e for e in captured_envs if e.get("FDSX_STATUS") in ("completed", "failed")
+        ]
+        assert len(on_state_end_envs) >= 1, "on_state_end hook should have fired"
+        assert on_state_end_envs[0].get("FDSX_HOOKS") == "on_state_end", (
+            f"Expected FDSX_HOOKS='on_state_end', got {on_state_end_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_legacy_on_start_rejected_by_load_flow(self, tmp_path: Path) -> None:
+        """load_flow rejects YAML with legacy 'on_start' key and hints at 'on_state_start'."""
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_LEGACY_ON_START)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None, "Expected load_flow to fail with legacy on_start key"
+        assert any("on_state_start" in e for e in errors), (
+            f"Expected error hinting at 'on_state_start', got: {errors}"
+        )
+
+    def test_legacy_on_complete_rejected_by_load_flow(self, tmp_path: Path) -> None:
+        """load_flow rejects YAML with legacy 'on_complete' key and hints at 'on_state_end'."""
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_LEGACY_ON_COMPLETE)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None, "Expected load_flow to fail with legacy on_complete key"
+        assert any("on_state_end" in e for e in errors), (
+            f"Expected error hinting at 'on_state_end', got: {errors}"
+        )
