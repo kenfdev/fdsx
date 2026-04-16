@@ -330,7 +330,7 @@ class TestMapState:
         assert state.end is True
 
     def test_with_hooks(self):
-        from fdsx.models.flow import HookConfig, HookEntry
+        from fdsx.models.flow import HookEntry, StateHookConfig
 
         state = MapState(
             items_path="$.items",
@@ -346,7 +346,7 @@ class TestMapState:
                 ]
             ),
             result_path="$.results",
-            hooks=HookConfig(
+            hooks=StateHookConfig(
                 on_state_start=[HookEntry(command="echo starting")],
                 on_state_end=[HookEntry(command="echo done")],
             ),
