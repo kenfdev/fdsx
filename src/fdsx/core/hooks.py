@@ -172,6 +172,86 @@ def write_hook_data(
     return file_path
 
 
+def collect_workflow_hooks(
+    event: Literal["on_workflow_start", "on_workflow_end"],
+    *,
+    global_hooks: HookConfig | None,
+    project_hooks: HookConfig | None,
+    flow_hooks: HookConfig | None,
+) -> list[HookEntry]:
+    """Collect and merge workflow-scope hooks from global, project, and flow configs.
+
+    Merges in order: global → project → flow (no state level).
+    Returns a single flat list of HookEntry objects.
+
+    Args:
+        event: "on_workflow_start" or "on_workflow_end".
+        global_hooks: Hook config from global ~/.config/fdsx/config.yaml.
+        project_hooks: Hook config from project .fdsx/config.yaml.
+        flow_hooks: Hook config from the flow definition.
+
+    Returns:
+        Concatenated list of HookEntry objects in global → project → flow order.
+    """
+    result: list[HookEntry] = []
+    for hook_config in (global_hooks, project_hooks, flow_hooks):
+        if hook_config is not None:
+            result.extend(getattr(hook_config, event))
+    return result
+
+
+def execute_workflow_hooks(
+    hooks: list[HookEntry],
+    *,
+    status: str,
+    thread_id: str,
+    flow_name: str,
+    event: Literal["on_workflow_start", "on_workflow_end"],
+    timeout_seconds: float = 30.0,
+) -> None:
+    """Execute workflow-scope hook commands in order.
+
+    Each command is run with ``shell=True`` and a timeout. Receives:
+    - Environment variables: FDSX_HOOKS, FDSX_STATUS, FDSX_FLOW_NAME, FDSX_THREAD_ID
+    - FDSX_STATE_NAME and FDSX_DATA_PATH are explicitly omitted.
+
+    Non-zero exit codes and timeouts log a warning and continue — never raises.
+
+    Args:
+        hooks: Ordered list of HookEntry objects to execute.
+        status: Lifecycle status ("starting", "completed", "failed", "aborted").
+        thread_id: Current run thread ID.
+        flow_name: Name of the flow.
+        event: Lifecycle event ("on_workflow_start" or "on_workflow_end").
+        timeout_seconds: Per-hook subprocess timeout in seconds. Defaults to 30.0.
+    """
+    env = {
+        k: v for k, v in os.environ.items() if k not in (ENV_STATE_NAME, ENV_DATA_PATH)
+    }
+    env[ENV_HOOKS] = event
+    env[ENV_STATUS] = status
+    env[ENV_FLOW_NAME] = flow_name
+    env[ENV_THREAD_ID] = thread_id
+
+    for hook in hooks:
+        try:
+            result = subprocess.run(
+                hook.command, shell=True, env=env, timeout=timeout_seconds
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "Workflow hook exited with code %d (warn-only): %r",
+                    result.returncode,
+                    hook.command,
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "Workflow hook timed out after %s s (killed): %r",
+                timeout_seconds,
+                hook.command,
+            )
+
+
 def collect_hooks(
     event: Literal["on_state_start", "on_state_end"],
     *,

@@ -296,13 +296,15 @@ aggregate:
 
 ```yaml
 hooks:
-  on_start:                     # optional — hooks run before execution
+  on_state_start:               # optional — hooks run before execution
     - command: string           # required — shell command (min 1 char)
       on_failure: string        # default: "warn" — abort|warn
-  on_complete:                  # optional — hooks run after execution
+  on_state_end:                 # optional — hooks run after execution
     - command: string
       on_failure: string
 ```
+
+**Note:** The legacy keys `on_start` and `on_complete` are rejected with a validation error. Use `on_state_start` and `on_state_end`.
 
 Hooks can be set at flow level and per-state level. Each hook command receives:
 
@@ -314,6 +316,7 @@ Hooks can be set at flow level and per-state level. Each hook command receives:
 - `FDSX_DATA_PATH` — path to the state data JSON file
 - `FDSX_THREAD_ID` — current run thread ID
 - `FDSX_FLOW_NAME` — name of the flow
+- `FDSX_HOOKS` — lifecycle event name (`on_state_start` or `on_state_end`)
 
 **Hook data files:** Before hooks run, state data is written to JSON files at `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution). The `FDSX_DATA_PATH` environment variable points to the relevant data file.
 

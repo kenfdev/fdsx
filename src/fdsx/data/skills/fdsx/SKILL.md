@@ -159,17 +159,19 @@ Shell commands that run before/after state or flow execution:
 
 ```yaml
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo Starting"
       on_failure: warn       # or "abort"
-  on_complete:
+  on_state_end:
     - command: "echo Done"
 ```
 
 Hooks can be defined at flow level and per-state level. Each hook command receives:
 
 - **Positional arguments:** `$1=state_name`, `$2=status`, `$3=data_path`
-- **Environment variables:** `FDSX_STATE_NAME`, `FDSX_STATUS`, `FDSX_DATA_PATH`, `FDSX_THREAD_ID`, `FDSX_FLOW_NAME`
+- **Environment variables:** `FDSX_STATE_NAME`, `FDSX_STATUS`, `FDSX_DATA_PATH`, `FDSX_THREAD_ID`, `FDSX_FLOW_NAME`, `FDSX_HOOKS`
+
+`FDSX_HOOKS` contains the lifecycle event name (`on_state_start` or `on_state_end`).
 
 Hook data files are written to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution).
 
