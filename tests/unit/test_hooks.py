@@ -764,3 +764,216 @@ class TestLegacyKeyRejection:
         with pytest.raises(ValidationError) as exc_info:
             HookConfig.model_validate({"on_complete": [{"command": "echo x"}]})
         assert "on_state_end" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# T014: TestExecuteWorkflowHooks — execute_workflow_hooks() (US2)
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteWorkflowHooks:
+    """Tests for execute_workflow_hooks(). Imports symbol inside each test body."""
+
+    def _make_hook(self, command: str, on_failure: str = "warn") -> HookEntry:
+        return HookEntry(command=command, on_failure=on_failure)  # type: ignore[arg-type]
+
+    def test_env_contains_fdsx_hooks(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_HOOKS"] == "on_workflow_start"
+
+    def test_env_contains_fdsx_status(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_STATUS"] == "starting"
+
+    def test_env_omits_fdsx_state_name(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert "FDSX_STATE_NAME" not in env
+
+    def test_env_omits_fdsx_data_path(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert "FDSX_DATA_PATH" not in env
+
+    def test_env_contains_fdsx_flow_name(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_FLOW_NAME"] == "MyFlow"
+
+    def test_env_contains_fdsx_thread_id(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_THREAD_ID"] == "t1"
+
+    def test_no_positional_args_in_command(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        full_cmd: str = mock_run.call_args[0][0]
+        assert full_cmd == "echo test"
+
+    def test_timeout_defaults_to_30(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        assert mock_run.call_args[1]["timeout"] == 30.0
+
+    def test_on_failure_abort_ignored_warns_only(self, caplog) -> None:
+        import logging
+
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("false", on_failure="abort")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            # Must NOT raise HookAbortError (abort policy is silently demoted to warn)
+            with caplog.at_level(logging.WARNING, logger="fdsx.core.hooks"):
+                execute_workflow_hooks(
+                    [hook],
+                    status="starting",
+                    thread_id="t1",
+                    flow_name="MyFlow",
+                    event="on_workflow_start",
+                )
+
+        assert any(r.levelno >= logging.WARNING for r in caplog.records), (
+            "Expected a WARNING log when workflow hook exits non-zero"
+        )
+
+    def test_timeout_expired_caught_and_logged_as_warning(self, caplog) -> None:
+        import logging
+        import subprocess as _subprocess
+
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("slow-command")
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = _subprocess.TimeoutExpired(
+                cmd="slow-command", timeout=30.0
+            )
+            # Must NOT raise TimeoutExpired
+            with caplog.at_level(logging.WARNING, logger="fdsx.core.hooks"):
+                execute_workflow_hooks(
+                    [hook],
+                    status="starting",
+                    thread_id="t1",
+                    flow_name="MyFlow",
+                    event="on_workflow_start",
+                )
+
+        assert any(r.levelno >= logging.WARNING for r in caplog.records), (
+            "Expected a WARNING log when workflow hook times out"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T015: TestStateHookConfigWorkflowKeyRejection — workflow keys rejected in state blocks
+# ---------------------------------------------------------------------------
+
+
+class TestStateHookConfigWorkflowKeyRejection:
+    """Assert that workflow-scope hook keys raise ValidationError when used in state blocks."""
+
+    def test_on_workflow_start_rejected(self) -> None:
+        from fdsx.models.flow import StateHookConfig
+
+        with pytest.raises(ValidationError) as exc_info:
+            StateHookConfig.model_validate(
+                {"on_workflow_start": [{"command": "echo x"}]}
+            )
+        error_msg = str(exc_info.value)
+        assert any(keyword in error_msg for keyword in ("flow", "project", "global"))
+
+    def test_on_workflow_end_rejected(self) -> None:
+        from fdsx.models.flow import StateHookConfig
+
+        with pytest.raises(ValidationError) as exc_info:
+            StateHookConfig.model_validate({"on_workflow_end": [{"command": "echo x"}]})
+        error_msg = str(exc_info.value)
+        assert any(keyword in error_msg for keyword in ("flow", "project", "global"))
