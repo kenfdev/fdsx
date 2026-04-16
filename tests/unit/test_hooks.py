@@ -272,8 +272,8 @@ class TestExecuteHooks:
         # Verify the dangerous string is properly quoted (not expanded)
         assert "rm -rf" not in full_cmd.replace("'my state; rm -rf /'", "")
 
-    def test_execute_hooks_sets_fdsx_hooks_on_start(self, tmp_path: Path) -> None:
-        """FDSX_HOOKS env var is set to 'on_start' when event='on_start'."""
+    def test_execute_hooks_sets_fdsx_hooks_on_state_start(self, tmp_path: Path) -> None:
+        """FDSX_HOOKS env var is set to 'on_state_start' when event='on_state_start'."""
         hook = self._make_hook("true")
         data_path = tmp_path / "data.json"
 
@@ -292,10 +292,10 @@ class TestExecuteHooks:
         env = mock_run.call_args[1]["env"]
         assert env["FDSX_HOOKS"] == "on_state_start"
 
-    def test_execute_hooks_sets_fdsx_hooks_on_complete_success(
+    def test_execute_hooks_sets_fdsx_hooks_on_state_end_success(
         self, tmp_path: Path
     ) -> None:
-        """FDSX_HOOKS env var is set to 'on_complete' when event='on_complete' and status='completed'."""
+        """FDSX_HOOKS env var is set to 'on_state_end' when event='on_state_end' and status='completed'."""
         hook = self._make_hook("true")
         data_path = tmp_path / "data.json"
 
@@ -314,10 +314,10 @@ class TestExecuteHooks:
         env = mock_run.call_args[1]["env"]
         assert env["FDSX_HOOKS"] == "on_state_end"
 
-    def test_execute_hooks_sets_fdsx_hooks_on_complete_failure(
+    def test_execute_hooks_sets_fdsx_hooks_on_state_end_failure(
         self, tmp_path: Path
     ) -> None:
-        """FDSX_HOOKS env var is set to 'on_complete' when event='on_complete' and status='failed'."""
+        """FDSX_HOOKS env var is set to 'on_state_end' when event='on_state_end' and status='failed'."""
         hook = self._make_hook("true")
         data_path = tmp_path / "data.json"
 
@@ -656,7 +656,7 @@ class TestCollectHooks:
 
         assert [h.command for h in result] == ["g1", "g2", "g3", "s1", "s2"]
 
-    def test_on_complete_event(self) -> None:
+    def test_on_state_end_event(self) -> None:
         """on_state_end event selects the correct hook list."""
         config = HookConfig(
             on_state_start=[HookEntry(command="start-hook")],
@@ -732,7 +732,7 @@ class TestCollectHooks:
         assert [h.command for h in result] == ["p1", "s1"]
 
     def test_empty_hook_config_contributes_no_entries(self) -> None:
-        """HookConfig with empty on_start adds nothing."""
+        """HookConfig with empty on_state_start adds nothing."""
         empty_cfg = HookConfig()
         state_cfg = self._make_config(["s1"])
 
