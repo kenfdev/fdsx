@@ -1,13 +1,13 @@
 """Integration tests for Phase 8: Hooks System Wiring (T022-T023).
 
 Tests:
-- _wrap_with_hooks() wraps a node with on_start/on_complete hooks
+- _wrap_with_hooks() wraps a node with on_state_start/on_state_end hooks
 - Hooks fire correctly for TaskState, ChoiceState, PassState, ParallelState, WaitState
 - Hook levels merge in correct order: global → flow → state
 - Abort-policy hook failure halts the node execution
 - Warn-policy hook failure continues execution
 - ParallelState hooks wrap dispatch/collector, not branch executor
-- WaitState on_start fires in notify node, on_complete fires in interrupt node
+- WaitState on_state_start fires in notify node, on_state_end fires in interrupt node
 """
 
 from __future__ import annotations
@@ -82,10 +82,10 @@ class TestWrapWithHooksNoOp:
         assert result["executed"] is True
 
 
-class TestWrapWithHooksOnStart:
-    """on_start hooks fire before node execution with status='starting'."""
+class TestWrapWithHooksOnStateStart:
+    """on_state_start hooks fire before node execution with status='starting'."""
 
-    def test_on_start_hook_fires_before_node(self, tmp_path: Path) -> None:
+    def test_on_state_start_hook_fires_before_node(self, tmp_path: Path) -> None:
         execution_order: list[str] = []
 
         def tracking_node(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -93,13 +93,13 @@ class TestWrapWithHooksOnStart:
             return {**state_dict, "executed": True}
 
         hook = _make_hook("echo start")
-        on_start = [hook]
+        on_state_start = [hook]
 
         recorder = _make_recorder(thread_id="tid-001")
         wrapped = _wrap_with_hooks(
             tracking_node,
             "State1",
-            on_start,
+            on_state_start,
             [],
             recorder=recorder,
             fdsx_base_dir=tmp_path,
@@ -113,7 +113,7 @@ class TestWrapWithHooksOnStart:
             result = wrapped({"x": 1})
 
         assert result["executed"] is True
-        # execute_hooks called once (on_start)
+        # execute_hooks called once (on_state_start)
         assert mock_exec.call_count == 1
         call_kwargs = mock_exec.call_args[1]
         assert call_kwargs["status"] == "starting"
@@ -121,7 +121,7 @@ class TestWrapWithHooksOnStart:
         assert call_kwargs["thread_id"] == "tid-001"
         assert call_kwargs["flow_name"] == "TestFlow"
 
-    def test_input_json_written_before_on_start(self, tmp_path: Path) -> None:
+    def test_input_json_written_before_on_state_start(self, tmp_path: Path) -> None:
         hook = _make_hook("echo start")
         recorder = _make_recorder(thread_id="tid-input")
         wrapped = _wrap_with_hooks(
@@ -148,10 +148,10 @@ class TestWrapWithHooksOnStart:
         assert call_order[1] == "exec_hook"
 
 
-class TestWrapWithHooksOnComplete:
-    """on_complete hooks fire after node execution with status='completed'."""
+class TestWrapWithHooksOnStateEnd:
+    """on_state_end hooks fire after node execution with status='completed'."""
 
-    def test_on_complete_hook_fires_after_node(self, tmp_path: Path) -> None:
+    def test_on_state_end_hook_fires_after_node(self, tmp_path: Path) -> None:
         hook = _make_hook("echo complete")
         recorder = _make_recorder(thread_id="tid-002")
         wrapped = _wrap_with_hooks(
@@ -176,7 +176,7 @@ class TestWrapWithHooksOnComplete:
         assert call_kwargs["status"] == "completed"
         assert call_kwargs["state_name"] == "State2"
 
-    def test_output_json_written_before_on_complete(self, tmp_path: Path) -> None:
+    def test_output_json_written_before_on_state_end(self, tmp_path: Path) -> None:
         hook = _make_hook("echo done")
         recorder = _make_recorder(thread_id="tid-output")
         wrapped = _wrap_with_hooks(
@@ -214,15 +214,15 @@ class TestWrapWithHooksBothEvents:
             execution_order.append("node")
             return {**state_dict, "done": True}
 
-        on_start = [_make_hook("start-hook")]
-        on_complete = [_make_hook("complete-hook")]
+        on_state_start = [_make_hook("start-hook")]
+        on_state_end = [_make_hook("complete-hook")]
         recorder = _make_recorder()
 
         wrapped = _wrap_with_hooks(
             tracking_node,
             "MyState",
-            on_start,
-            on_complete,
+            on_state_start,
+            on_state_end,
             recorder=recorder,
             fdsx_base_dir=tmp_path,
         )
@@ -234,7 +234,7 @@ class TestWrapWithHooksBothEvents:
             mock_write.return_value = tmp_path / "x.json"
             wrapped({"input": "value"})
 
-        # execute_hooks called twice: once for on_start, once for on_complete
+        # execute_hooks called twice: once for on_state_start, once for on_state_end
         assert mock_exec.call_count == 2
         first_call = mock_exec.call_args_list[0]
         second_call = mock_exec.call_args_list[1]
@@ -302,7 +302,7 @@ class TestWrapWithHooksDataFiles:
 class TestWrapWithHooksAbortBehavior:
     """Abort-policy hook failure raises HookAbortError which halts the node."""
 
-    def test_abort_on_start_prevents_node_execution(self, tmp_path: Path) -> None:
+    def test_abort_on_state_start_prevents_node_execution(self, tmp_path: Path) -> None:
         from fdsx.core.hooks import HookAbortError
 
         executed = []
@@ -331,7 +331,7 @@ class TestWrapWithHooksAbortBehavior:
 
         assert len(executed) == 0, "Node should not execute after abort"
 
-    def test_abort_on_complete_raises_after_node(self, tmp_path: Path) -> None:
+    def test_abort_on_state_end_raises_after_node(self, tmp_path: Path) -> None:
         from fdsx.core.hooks import HookAbortError
 
         executed = []
@@ -362,17 +362,17 @@ class TestWrapWithHooksAbortBehavior:
 
 
 class TestWrapWithHooksNodeFailure:
-    """on_complete hooks fire with status='failed' when the node raises, then the error re-raises."""
+    """on_state_end hooks fire with status='failed' when the node raises, then the error re-raises."""
 
-    def test_on_complete_fires_with_failed_status_when_node_raises(
+    def test_on_state_end_fires_with_failed_status_when_node_raises(
         self, tmp_path: Path
     ) -> None:
-        """on_complete hooks fire with status='failed' when node raises RuntimeError."""
+        """on_state_end hooks fire with status='failed' when node raises RuntimeError."""
 
         def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("node exploded")
 
-        hook = _make_hook("echo on_complete")
+        hook = _make_hook("echo on_state_end")
         recorder = _make_recorder()
         wrapped = _wrap_with_hooks(
             failing_node,
@@ -395,16 +395,16 @@ class TestWrapWithHooksNodeFailure:
         exec_kwargs = mock_exec.call_args[1]
         assert exec_kwargs["status"] == "failed"
 
-    def test_node_error_is_reraised_after_on_complete_hooks(
+    def test_node_error_is_reraised_after_on_state_end_hooks(
         self, tmp_path: Path
     ) -> None:
-        """The original exception is re-raised after on_complete hooks run."""
+        """The original exception is re-raised after on_state_end hooks run."""
         original_error = ValueError("original error")
 
         def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
             raise original_error
 
-        hook = _make_hook("echo on_complete")
+        hook = _make_hook("echo on_state_end")
         recorder = _make_recorder()
         wrapped = _wrap_with_hooks(
             failing_node,
@@ -464,22 +464,22 @@ class TestWrapWithHooksNodeFailure:
             "output.json should contain the input state_dict as fallback on failure"
         )
 
-    def test_both_on_start_and_on_complete_fire_with_correct_statuses_on_failure(
+    def test_both_on_state_start_and_on_state_end_fire_with_correct_statuses_on_failure(
         self, tmp_path: Path
     ) -> None:
-        """on_start fires with 'starting', on_complete fires with 'failed' when node raises."""
+        """on_state_start fires with 'starting', on_state_end fires with 'failed' when node raises."""
 
         def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("fail")
 
-        on_start = [_make_hook("echo start")]
-        on_complete = [_make_hook("echo complete")]
+        on_state_start = [_make_hook("echo start")]
+        on_state_end = [_make_hook("echo complete")]
         recorder = _make_recorder()
         wrapped = _wrap_with_hooks(
             failing_node,
             "BothHooksFailState",
-            on_start,
-            on_complete,
+            on_state_start,
+            on_state_end,
             recorder=recorder,
             fdsx_base_dir=tmp_path,
         )
@@ -535,7 +535,7 @@ class TestCompileFlowHooksWiring:
     """Verify compile_flow applies _wrap_with_hooks for all node types."""
 
     def test_task_state_hooks_fire_via_compile_flow(self, tmp_path: Path) -> None:
-        """on_start and on_complete hooks fire for TaskState via compile_flow."""
+        """on_state_start and on_state_end hooks fire for TaskState via compile_flow."""
         flow_yaml = """
 name: Task Hook Flow
 description: Task with hooks
@@ -548,10 +548,10 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
-        - command: "echo on_start"
-      on_complete:
-        - command: "echo on_complete"
+      on_state_start:
+        - command: "echo on_state_start"
+      on_state_end:
+        - command: "echo on_state_end"
 """
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(flow_yaml)
@@ -603,8 +603,8 @@ states:
 
         starting_calls = [c for c in hook_calls if c["status"] == "starting"]
         completed_calls = [c for c in hook_calls if c["status"] == "completed"]
-        assert len(starting_calls) >= 1, "on_start hooks should have fired"
-        assert len(completed_calls) >= 1, "on_complete hooks should have fired"
+        assert len(starting_calls) >= 1, "on_state_start hooks should have fired"
+        assert len(completed_calls) >= 1, "on_state_end hooks should have fired"
         assert starting_calls[0]["state_name"] == "step1"
         assert completed_calls[0]["state_name"] == "step1"
 
@@ -615,9 +615,9 @@ name: Flow Hook Test
 description: Flow-level hooks
 start_at: step1
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo flow_start"
-  on_complete:
+  on_state_end:
     - command: "echo flow_complete"
 states:
   step1:
@@ -665,10 +665,10 @@ states:
             )
 
         assert any(c["status"] == "starting" for c in hook_calls), (
-            "on_start should fire"
+            "on_state_start should fire"
         )
         assert any(c["status"] == "completed" for c in hook_calls), (
-            "on_complete should fire"
+            "on_state_end should fire"
         )
 
     def test_config_level_hooks_merge_with_flow_and_state(self, tmp_path: Path) -> None:
@@ -693,7 +693,7 @@ states:
 
         # Config with global hook
         fdsx_config = FdsxConfig(
-            hooks=HookConfig(on_start=[HookEntry(command="echo global_start")])
+            hooks=HookConfig(on_state_start=[HookEntry(command="echo global_start")])
         )
 
         recorder = _make_recorder(
@@ -731,7 +731,7 @@ states:
                 )
             )
 
-        # Config-level hook should appear in the on_start call
+        # Config-level hook should appear in the on_state_start call
         all_commands = [cmd for call_cmds in hook_calls for cmd in call_cmds]
         assert "echo global_start" in all_commands, (
             f"Config-level hook not found in hook calls: {hook_calls}"
@@ -744,7 +744,7 @@ name: Merge Order Test
 description: Hook merge order
 start_at: step1
 hooks:
-  on_start:
+  on_state_start:
     - command: "flow-hook"
 states:
   step1:
@@ -754,7 +754,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "state-hook"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -764,7 +764,7 @@ states:
         assert flow is not None
 
         fdsx_config = FdsxConfig(
-            hooks=HookConfig(on_start=[HookEntry(command="global-hook")])
+            hooks=HookConfig(on_state_start=[HookEntry(command="global-hook")])
         )
 
         recorder = _make_recorder(thread_id="merge-tid", flow_name="Merge Order Test")
@@ -852,9 +852,9 @@ states:
     type: pass
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo pass_start"
-      on_complete:
+      on_state_end:
         - command: "echo pass_done"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -906,7 +906,7 @@ states:
     def test_parallel_state_hooks_wrap_dispatch_and_collector(
         self, tmp_path: Path
     ) -> None:
-        """ParallelState: on_start fires in dispatch, on_complete fires in collector."""
+        """ParallelState: on_state_start fires in dispatch, on_state_end fires in collector."""
         flow_yaml = """
 name: Parallel Hook Flow
 description: ParallelState with hooks
@@ -917,9 +917,9 @@ states:
     result_path: $.results
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo par_start"
-      on_complete:
+      on_state_end:
         - command: "echo par_done"
     branches:
       - provider: system
@@ -971,7 +971,7 @@ states:
         starting_calls = [c for c in hook_calls if c["status"] == "starting"]
         completed_calls = [c for c in hook_calls if c["status"] == "completed"]
 
-        # on_start fires once (in dispatch node), on_complete fires once (in collector)
+        # on_state_start fires once (in dispatch node), on_state_end fires once (in collector)
         assert len(starting_calls) == 1
         assert len(completed_calls) == 1
         assert starting_calls[0]["state_name"] == "par"
@@ -991,7 +991,7 @@ states:
     result_path: $.r
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo h"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -1044,7 +1044,7 @@ states:
     result_path: $.r
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo h"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -1089,7 +1089,7 @@ class TestFdsxHooksEnvVar:
 
     _FLOW_WITH_ON_START_HOOK = """
 name: FDSX Hooks Env Test
-description: Tests that FDSX_HOOKS is set for on_start hooks
+description: Tests that FDSX_HOOKS is set for on_state_start hooks
 start_at: step1
 states:
   step1:
@@ -1099,13 +1099,13 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
 """
 
     _FLOW_WITH_ON_COMPLETE_HOOK = """
 name: FDSX Hooks Env Test
-description: Tests that FDSX_HOOKS is set for on_complete hooks
+description: Tests that FDSX_HOOKS is set for on_state_end hooks
 start_at: step1
 states:
   step1:
@@ -1115,7 +1115,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_complete:
+      on_state_end:
         - command: "echo hook_complete"
 """
 
@@ -1132,10 +1132,10 @@ states:
     end: true
 """
 
-    def test_on_start_hook_observes_event_value(
+    def test_on_state_start_hook_observes_event_value(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """on_start hook subprocess receives FDSX_HOOKS=on_start in its environment."""
+        """on_state_start hook subprocess receives FDSX_HOOKS=on_state_start in its environment."""
         monkeypatch.chdir(tmp_path)
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(self._FLOW_WITH_ON_START_HOOK)
@@ -1176,15 +1176,15 @@ states:
             )
 
         on_start_envs = [e for e in captured_envs if e.get("FDSX_STATUS") == "starting"]
-        assert len(on_start_envs) >= 1, "on_start hook should have fired"
-        assert on_start_envs[0].get("FDSX_HOOKS") == "on_start", (
-            f"Expected FDSX_HOOKS='on_start', got {on_start_envs[0].get('FDSX_HOOKS')!r}"
+        assert len(on_start_envs) >= 1, "on_state_start hook should have fired"
+        assert on_start_envs[0].get("FDSX_HOOKS") == "on_state_start", (
+            f"Expected FDSX_HOOKS='on_state_start', got {on_start_envs[0].get('FDSX_HOOKS')!r}"
         )
 
-    def test_on_complete_hook_observes_event_value_success(
+    def test_on_state_end_hook_observes_event_value_success(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """on_complete hook subprocess receives FDSX_HOOKS=on_complete when node succeeds."""
+        """on_state_end hook subprocess receives FDSX_HOOKS=on_state_end when node succeeds."""
         monkeypatch.chdir(tmp_path)
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(self._FLOW_WITH_ON_COMPLETE_HOOK)
@@ -1227,21 +1227,21 @@ states:
         on_complete_envs = [
             e for e in captured_envs if e.get("FDSX_STATUS") in ("completed", "failed")
         ]
-        assert len(on_complete_envs) >= 1, "on_complete hook should have fired"
-        assert on_complete_envs[0].get("FDSX_HOOKS") == "on_complete", (
-            f"Expected FDSX_HOOKS='on_complete', got {on_complete_envs[0].get('FDSX_HOOKS')!r}"
+        assert len(on_complete_envs) >= 1, "on_state_end hook should have fired"
+        assert on_complete_envs[0].get("FDSX_HOOKS") == "on_state_end", (
+            f"Expected FDSX_HOOKS='on_state_end', got {on_complete_envs[0].get('FDSX_HOOKS')!r}"
         )
 
-    def test_on_complete_hook_observes_event_value_failure(
+    def test_on_state_end_hook_observes_event_value_failure(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """on_complete hook subprocess receives FDSX_HOOKS=on_complete even when node fails."""
+        """on_state_end hook subprocess receives FDSX_HOOKS=on_state_end even when node fails."""
         monkeypatch.chdir(tmp_path)
 
         def failing_node(state_dict: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("node exploded")
 
-        hook = _make_hook("echo on_complete")
+        hook = _make_hook("echo on_state_end")
         recorder = _make_recorder()
         wrapped = _wrap_with_hooks(
             failing_node,
@@ -1276,10 +1276,10 @@ states:
             wrapped({"x": 1})
 
         assert len(captured_envs) >= 1, (
-            "on_complete hook should have fired after node failure"
+            "on_state_end hook should have fired after node failure"
         )
-        assert captured_envs[0].get("FDSX_HOOKS") == "on_complete", (
-            f"Expected FDSX_HOOKS='on_complete', got {captured_envs[0].get('FDSX_HOOKS')!r}"
+        assert captured_envs[0].get("FDSX_HOOKS") == "on_state_end", (
+            f"Expected FDSX_HOOKS='on_state_end', got {captured_envs[0].get('FDSX_HOOKS')!r}"
         )
 
     def test_provider_subprocess_does_not_see_fdsx_hooks(
@@ -1311,4 +1311,207 @@ states:
         out = (tmp_path / "out.txt").read_text().strip()
         assert out == "", (
             f"Stale FDSX_HOOKS should be scrubbed from provider subprocess env, got: {out!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T002: TestStateHookRename — on_state_start/on_state_end rename (US1)
+# ---------------------------------------------------------------------------
+
+
+class TestStateHookRename:
+    """Verify on_state_start/on_state_end rename acceptance criteria (US1)."""
+
+    _FLOW_WITH_ON_STATE_START_HOOK = """
+name: State Hook Rename Test
+description: Tests on_state_start hook fires with renamed key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_state_start:
+        - command: "echo hook_state_start"
+"""
+
+    _FLOW_WITH_ON_STATE_END_HOOK = """
+name: State Hook Rename Test
+description: Tests on_state_end hook fires with renamed key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_state_end:
+        - command: "echo hook_state_end"
+"""
+
+    _FLOW_WITH_LEGACY_ON_START = """
+name: Legacy Key Test
+description: YAML with legacy on_start key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_start:  # intentionally uses legacy key — testing rejection behavior
+        - command: "echo x"
+"""
+
+    _FLOW_WITH_LEGACY_ON_COMPLETE = """
+name: Legacy Key Test
+description: YAML with legacy on_complete key
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "echo done"
+    result_path: $.result
+    end: true
+    hooks:
+      on_complete:  # intentionally uses legacy key — testing rejection behavior
+        - command: "echo x"
+"""
+
+    def test_on_state_start_fires_with_correct_fdsx_hooks_value(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_state_start hook subprocess receives FDSX_HOOKS='on_state_start' in its environment."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_ON_STATE_START_HOOK)
+
+        flow, errors = load_flow(flow_path)
+        assert flow is not None, f"Load errors: {errors}"
+
+        thread_id = "fdsx-hooks-state-start"
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="State Hook Rename Test"
+        )
+        log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+        ):
+            compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+            config_dict = {"configurable": {"thread_id": thread_id}}
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
+
+        on_state_start_envs = [
+            e for e in captured_envs if e.get("FDSX_STATUS") == "starting"
+        ]
+        assert len(on_state_start_envs) >= 1, "on_state_start hook should have fired"
+        assert on_state_start_envs[0].get("FDSX_HOOKS") == "on_state_start", (
+            f"Expected FDSX_HOOKS='on_state_start', got {on_state_start_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_on_state_end_fires_with_correct_fdsx_hooks_value(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """on_state_end hook subprocess receives FDSX_HOOKS='on_state_end' in its environment."""
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_ON_STATE_END_HOOK)
+
+        flow, errors = load_flow(flow_path)
+        assert flow is not None, f"Load errors: {errors}"
+
+        thread_id = "fdsx-hooks-state-end"
+        recorder = _make_recorder(
+            thread_id=thread_id, flow_name="State Hook Rename Test"
+        )
+        log_dir = tmp_path / ".fdsx" / "runs" / thread_id / "logs"
+
+        captured_envs: list[dict] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            env = kwargs.get("env")
+            if env is not None:
+                captured_envs.append(dict(env))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        def fake_write_hook_data(data, *, state_name, filename, thread_id, base_dir):
+            return tmp_path / filename
+
+        with (
+            patch("fdsx.core.hooks.subprocess.run", side_effect=fake_subprocess_run),
+            patch(
+                "fdsx.core.compiler.compile.write_hook_data",
+                side_effect=fake_write_hook_data,
+            ),
+        ):
+            compiled = compile_flow(flow, recorder=recorder, log_dir=log_dir)
+            config_dict = {"configurable": {"thread_id": thread_id}}
+            list(
+                compiled.graph.stream(
+                    {"_meta": {}}, config=config_dict, stream_mode="values"
+                )
+            )
+
+        on_state_end_envs = [
+            e for e in captured_envs if e.get("FDSX_STATUS") in ("completed", "failed")
+        ]
+        assert len(on_state_end_envs) >= 1, "on_state_end hook should have fired"
+        assert on_state_end_envs[0].get("FDSX_HOOKS") == "on_state_end", (
+            f"Expected FDSX_HOOKS='on_state_end', got {on_state_end_envs[0].get('FDSX_HOOKS')!r}"
+        )
+
+    def test_legacy_on_start_rejected_by_load_flow(self, tmp_path: Path) -> None:
+        """load_flow rejects YAML with legacy 'on_start' key and hints at 'on_state_start'."""
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_LEGACY_ON_START)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None, "Expected load_flow to fail with legacy on_start key"
+        assert any("on_state_start" in e for e in errors), (
+            f"Expected error hinting at 'on_state_start', got: {errors}"
+        )
+
+    def test_legacy_on_complete_rejected_by_load_flow(self, tmp_path: Path) -> None:
+        """load_flow rejects YAML with legacy 'on_complete' key and hints at 'on_state_end'."""
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_WITH_LEGACY_ON_COMPLETE)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None, "Expected load_flow to fail with legacy on_complete key"
+        assert any("on_state_end" in e for e in errors), (
+            f"Expected error hinting at 'on_state_end', got: {errors}"
         )

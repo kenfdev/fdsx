@@ -3,11 +3,11 @@
 Verifies that hooks fire correctly around states that produce streaming output.
 
 Key interactions to test:
-- on_start hook fires before the task node (before streaming begins)
-- on_complete hook fires after the task node (after streaming ends)
+- on_state_start hook fires before the task node (before streaming begins)
+- on_state_end hook fires after the task node (after streaming ends)
 - StreamLogger log files are created correctly alongside hook execution
 - Hook data files (input.json/output.json) are created correctly
-- Order of operations: on_start → streaming → on_complete
+- Order of operations: on_state_start → streaming → on_state_end
 - Both streaming output AND hook files coexist correctly
 """
 
@@ -50,10 +50,10 @@ def _make_hook(command: str, on_failure: str = "warn") -> HookEntry:
 class TestHookFiringOrderWithStreaming:
     """Verify hooks fire in correct order relative to streaming output."""
 
-    def test_on_start_fires_before_node_output(self, tmp_path: Path) -> None:
-        """on_start hook fires before the task node produces any streaming output.
+    def test_on_state_start_fires_before_node_output(self, tmp_path: Path) -> None:
+        """on_state_start hook fires before the task node produces any streaming output.
 
-        Execution order must be: on_start hook → streaming → on_complete hook.
+        Execution order must be: on_state_start hook → streaming → on_state_end hook.
         """
         execution_order: list[str] = []
 
@@ -65,15 +65,15 @@ class TestHookFiringOrderWithStreaming:
             execution_order.append("node_completed")
             return {**state_dict, "result": "streamed output"}
 
-        on_start = [_make_hook("echo on_start")]
-        on_complete = [_make_hook("echo on_complete")]
+        on_state_start = [_make_hook("echo on_state_start")]
+        on_state_end = [_make_hook("echo on_state_end")]
         recorder = _make_recorder(thread_id="hook-stream-tid")
 
         wrapped = _wrap_with_hooks(
             streaming_node,
             "StreamingState",
-            on_start,
-            on_complete,
+            on_state_start,
+            on_state_end,
             recorder=recorder,
             fdsx_base_dir=tmp_path,
         )
@@ -86,14 +86,14 @@ class TestHookFiringOrderWithStreaming:
                 )
                 wrapped({"input": "value"})
 
-        # on_start fires before node executes
+        # on_state_start fires before node executes
         assert execution_order.index("hook_starting") < execution_order.index(
             "node_started"
-        ), "on_start hook must fire before node execution starts"
-        # node executes before on_complete fires
+        ), "on_state_start hook must fire before node execution starts"
+        # node executes before on_state_end fires
         assert execution_order.index("node_completed") < execution_order.index(
             "hook_completed"
-        ), "on_complete hook must fire after node execution completes"
+        ), "on_state_end hook must fire after node execution completes"
 
     def test_streaming_log_file_and_hook_data_files_coexist(
         self, tmp_path: Path
@@ -163,8 +163,8 @@ class TestHookFiringOrderWithStreaming:
         Uses compile_flow with a real system provider task so that:
         - StreamLogger is instantiated inside the task node
         - Hooks are wired by _wrap_with_hooks
-        - on_start fires before the system command runs
-        - on_complete fires after the system command completes
+        - on_state_start fires before the system command runs
+        - on_state_end fires after the system command completes
         """
         flow_yaml = """
 name: Hook Streaming Integration
@@ -178,9 +178,9 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
-      on_complete:
+      on_state_end:
         - command: "echo hook_complete"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -229,8 +229,8 @@ states:
         starting_calls = [c for c in hook_calls if c["status"] == "starting"]
         completed_calls = [c for c in hook_calls if c["status"] == "completed"]
 
-        assert len(starting_calls) >= 1, "on_start hook should have fired"
-        assert len(completed_calls) >= 1, "on_complete hook should have fired"
+        assert len(starting_calls) >= 1, "on_state_start hook should have fired"
+        assert len(completed_calls) >= 1, "on_state_end hook should have fired"
         assert starting_calls[0]["state_name"] == "produce_output"
         assert completed_calls[0]["state_name"] == "produce_output"
 
@@ -253,7 +253,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -311,9 +311,9 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo hook_start"
-      on_complete:
+      on_state_end:
         - command: "echo hook_done"
 """
         flow_path = tmp_path / "flow.yaml"
@@ -439,8 +439,8 @@ class TestHookInputOutputDataWithStreaming:
 class TestHookAbortWithStreaming:
     """Verify abort policy behaves correctly when streaming is also configured."""
 
-    def test_abort_on_start_prevents_streaming(self, tmp_path: Path) -> None:
-        """When on_start hook aborts, the task node (including streaming) does not execute."""
+    def test_abort_on_state_start_prevents_streaming(self, tmp_path: Path) -> None:
+        """When on_state_start hook aborts, the task node (including streaming) does not execute."""
         from fdsx.core.hooks import HookAbortError
 
         node_executed = []
@@ -471,13 +471,13 @@ class TestHookAbortWithStreaming:
 
         # Node (and its streaming) should not have executed
         assert len(node_executed) == 0, (
-            "Node (and streaming) should not execute when on_start aborts"
+            "Node (and streaming) should not execute when on_state_start aborts"
         )
 
-    def test_on_complete_fires_with_failed_status_when_task_node_raises(
+    def test_on_state_end_fires_with_failed_status_when_task_node_raises(
         self, tmp_path: Path
     ) -> None:
-        """on_complete fires with status='failed' when the task node raises.
+        """on_state_end fires with status='failed' when the task node raises.
 
         This covers the case where a streaming task fails mid-execution.
         """
@@ -485,7 +485,7 @@ class TestHookAbortWithStreaming:
         def failing_node(state_dict: dict) -> dict:
             raise RuntimeError("provider failed")
 
-        hook = _make_hook("echo on_complete")
+        hook = _make_hook("echo on_state_end")
         recorder = _make_recorder()
 
         wrapped = _wrap_with_hooks(
@@ -508,7 +508,7 @@ class TestHookAbortWithStreaming:
         assert mock_exec.call_count == 1
         exec_kwargs = mock_exec.call_args[1]
         assert exec_kwargs["status"] == "failed", (
-            "on_complete should fire with 'failed' status when task node raises"
+            "on_state_end should fire with 'failed' status when task node raises"
         )
 
 
@@ -522,9 +522,9 @@ name: Multi State Hook Stream
 description: Multi-state hook and streaming
 start_at: step1
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo flow_start"
-  on_complete:
+  on_state_end:
     - command: "echo flow_complete"
 states:
   step1:
@@ -609,10 +609,10 @@ states:
             if c["state_name"] == "step2" and c["status"] == "completed"
         ]
 
-        assert len(step1_starting) == 1, "step1 on_start should fire once"
-        assert len(step1_completed) == 1, "step1 on_complete should fire once"
-        assert len(step2_starting) == 1, "step2 on_start should fire once"
-        assert len(step2_completed) == 1, "step2 on_complete should fire once"
+        assert len(step1_starting) == 1, "step1 on_state_start should fire once"
+        assert len(step1_completed) == 1, "step1 on_state_end should fire once"
+        assert len(step2_starting) == 1, "step2 on_state_start should fire once"
+        assert len(step2_completed) == 1, "step2 on_state_end should fire once"
 
     def test_log_files_created_per_state_with_hooks(self, tmp_path: Path) -> None:
         """Each state creates its own log file even when hooks are configured at flow level."""
@@ -621,7 +621,7 @@ name: Per State Logs With Hooks
 description: Log files per state with flow hooks
 start_at: stateA
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo flow_hook"
 states:
   stateA:

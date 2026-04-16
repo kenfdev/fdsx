@@ -78,12 +78,88 @@ class HookEntry(BaseModel):
 class HookConfig(BaseModel):
     """Hook configuration for a state or flow."""
 
-    on_start: list[HookEntry] = Field(
+    on_state_start: list[HookEntry] = Field(
         default_factory=list, description="Hooks to run before execution"
     )
-    on_complete: list[HookEntry] = Field(
+    on_state_end: list[HookEntry] = Field(
         default_factory=list, description="Hooks to run after execution"
     )
+    on_workflow_start: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run when the workflow starts"
+    )
+    on_workflow_end: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run when the workflow ends"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if (
+            "on_start" in values
+        ):  # legacy key name — detecting invalid input to reject it
+            raise ValueError(
+                "Hook key 'on_start' has been renamed to 'on_state_start'. "
+                "Update the YAML file and retry."
+            )
+        if (
+            "on_complete" in values
+        ):  # legacy key name — detecting invalid input to reject it
+            raise ValueError(
+                "Hook key 'on_complete' has been renamed to 'on_state_end'. "
+                "Update the YAML file and retry."
+            )
+        return values
+
+
+class StateHookConfig(BaseModel):
+    """Hook configuration for a state block (workflow-scope keys are rejected)."""
+
+    on_state_start: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run before execution"
+    )
+    on_state_end: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run after execution"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if (
+            "on_start" in values
+        ):  # legacy key name — detecting invalid input to reject it
+            raise ValueError(
+                "Hook key 'on_start' has been renamed to 'on_state_start'. "
+                "Update the YAML file and retry."
+            )
+        if (
+            "on_complete" in values
+        ):  # legacy key name — detecting invalid input to reject it
+            raise ValueError(
+                "Hook key 'on_complete' has been renamed to 'on_state_end'. "
+                "Update the YAML file and retry."
+            )
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_workflow_scope_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if "on_workflow_start" in values:
+            raise ValueError(
+                "Hook key 'on_workflow_start' is only valid at flow/project/global scope, "
+                "not in state blocks."
+            )
+        if "on_workflow_end" in values:
+            raise ValueError(
+                "Hook key 'on_workflow_end' is only valid at flow/project/global scope, "
+                "not in state blocks."
+            )
+        return values
 
 
 class ChoiceRule(BaseModel):
@@ -264,7 +340,9 @@ class TaskState(BaseModel):
     provider_options: dict[str, Any] | None = Field(
         default=None, description="Per-task provider option overrides"
     )
-    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -328,7 +406,9 @@ class ChoiceState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
 
 
 class ParallelState(BaseModel):
@@ -345,7 +425,9 @@ class ParallelState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -403,7 +485,9 @@ class WaitState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )
@@ -535,7 +619,9 @@ class MapState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: HookConfig | None = Field(default=None, description="Hook configuration")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
     next: str | None = Field(
         default=None, description="Next state (exclusive with end)"
     )

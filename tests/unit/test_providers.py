@@ -34,7 +34,7 @@ class TestRunSubprocessFdsxHooksScrub:
         When no env arg is supplied, _run_subprocess must still build an explicit
         env dict (not pass env=None) and strip FDSX_HOOKS from it.
         """
-        monkeypatch.setenv("FDSX_HOOKS", "on_start")
+        monkeypatch.setenv("FDSX_HOOKS", "on_state_start")
 
         with patch("fdsx.providers.base.subprocess.Popen") as mock_popen:
             mock_popen.return_value = _make_mock_process()
@@ -55,7 +55,7 @@ class TestRunSubprocessFdsxHooksScrub:
             mock_popen.return_value = _make_mock_process()
             _run_subprocess(
                 ["echo", "hi"],
-                env={"FDSX_HOOKS": "on_start", "MY_VAR": "hello"},
+                env={"FDSX_HOOKS": "on_state_start", "MY_VAR": "hello"},
             )
 
         captured_env = mock_popen.call_args[1]["env"]
@@ -73,7 +73,7 @@ class TestRunSubprocessFdsxHooksScrub:
             mock_popen.return_value = _make_mock_process()
             _run_subprocess(
                 ["echo", "hi"],
-                env={"FDSX_HOOKS": "on_complete", "FDSX_STATE_NAME": "MyState"},
+                env={"FDSX_HOOKS": "on_state_end", "FDSX_STATE_NAME": "MyState"},
             )
 
         captured_env = mock_popen.call_args[1]["env"]

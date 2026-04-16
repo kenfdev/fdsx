@@ -155,23 +155,57 @@ When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`,
 
 ## Hooks
 
-Shell commands that run before/after state or flow execution:
+Shell commands that run at lifecycle events. There are two scopes with different behaviors:
+
+### State-scope hooks (`on_state_start`, `on_state_end`)
+
+Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks on `task`, `choice`, `parallel`, `wait`, and `map` states **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start` or `on_workflow_end` in those state blocks raises a validation error. **Exception:** `pass` state `hooks` blocks use the full `HookConfig` and accept all four keys (workflow-scope keys are silently ignored at runtime).
 
 ```yaml
 hooks:
-  on_start:
+  on_state_start:
     - command: "echo Starting"
       on_failure: warn       # or "abort"
-  on_complete:
+  on_state_end:
     - command: "echo Done"
 ```
 
-Hooks can be defined at flow level and per-state level. Each hook command receives:
+Each state-scope hook command receives:
 
 - **Positional arguments:** `$1=state_name`, `$2=status`, `$3=data_path`
-- **Environment variables:** `FDSX_STATE_NAME`, `FDSX_STATUS`, `FDSX_DATA_PATH`, `FDSX_THREAD_ID`, `FDSX_FLOW_NAME`
+- **Environment variables:** `FDSX_STATE_NAME`, `FDSX_STATUS`, `FDSX_DATA_PATH`, `FDSX_THREAD_ID`, `FDSX_FLOW_NAME`, `FDSX_HOOKS`
+
+`FDSX_STATUS` values: `starting` (on_state_start), `completed` or `failed` (on_state_end).
+
+`FDSX_HOOKS` contains the lifecycle event name: `on_state_start` or `on_state_end`.
 
 Hook data files are written to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution).
+
+State-scope hooks respect `on_failure: abort` — a non-zero exit with `abort` policy raises an error and stops the workflow. `warn` (default) logs a warning and continues.
+
+### Workflow-scope hooks (`on_workflow_start`, `on_workflow_end`)
+
+Run at the start and end of an entire workflow run. Can be defined at flow level, in config files, or in `pass` state `hooks` blocks (though in a `pass` state they are silently ignored at runtime — workflow hooks only fire from `flow.hooks` and config-level hooks).
+
+```yaml
+hooks:
+  on_workflow_start:
+    - command: "echo Workflow starting"
+  on_workflow_end:
+    - command: "notify.sh"
+```
+
+Each workflow-scope hook command receives:
+
+- **No positional arguments** (unlike state-scope hooks)
+- **Environment variables:** `FDSX_HOOKS`, `FDSX_STATUS`, `FDSX_FLOW_NAME`, `FDSX_THREAD_ID`
+- `FDSX_STATE_NAME` and `FDSX_DATA_PATH` are **not** set
+
+`FDSX_STATUS` values: `starting` (on_workflow_start), `completed`, `failed`, or `aborted` (on_workflow_end).
+
+`FDSX_HOOKS` contains `on_workflow_start` or `on_workflow_end`.
+
+Workflow-scope hooks are always warn-only — non-zero exits log a warning and never abort the workflow. Each hook has a 30-second subprocess timeout. `on_workflow_start` fires only on fresh runs (not on `fdsx resume`).
 
 ## Config File
 
@@ -189,9 +223,22 @@ task_splitter:                  # must be explicitly present to enable batch spl
   provider: claude
   model: claude-sonnet-4-6
   extra_instructions: "..."
+hooks:                          # global hooks applied to all flows
+  on_state_start:
+    - command: "echo starting"
+  on_workflow_end:
+    - command: "notify.sh"
+profiles:                       # named provider/model bundles
+  fast:
+    provider: claude
+    model: claude-haiku-4-5-20251001
 ```
 
 Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+
+`hooks` at config level supports all four lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) and are prepended to flow-level and state-level hooks.
+
+`profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 
 ## Common Patterns
 
@@ -244,3 +291,4 @@ Inside iterator states, `{item}` refers to the current array element. Use `{item
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
+- `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, and `map` states; `pass` state `hooks` accepts all four keys (workflow-scope keys are silently ignored at runtime)

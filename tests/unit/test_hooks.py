@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from fdsx.core.hooks import (
     ENV_DATA_PATH,
@@ -48,7 +49,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-001",
                 flow_name="MyFlow",
-                event="on_start",
+                event="on_state_start",
             )
         mock_run.assert_not_called()
 
@@ -66,7 +67,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t1",
                 flow_name="F1",
-                event="on_start",
+                event="on_state_start",
             )
 
         assert mock_run.call_count == 1
@@ -87,7 +88,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t1",
                 flow_name="F1",
-                event="on_start",
+                event="on_state_start",
             )
 
         full_cmd: str = mock_run.call_args[0][0]
@@ -109,7 +110,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-42",
                 flow_name="FlowY",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
@@ -134,7 +135,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
     def test_abort_on_failure_raises_hook_abort_error(self, tmp_path: Path) -> None:
@@ -152,7 +153,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
-                    event="on_start",
+                    event="on_state_start",
                 )
         assert exc_info.value.return_code == 2
         assert exc_info.value.command == "false"
@@ -175,7 +176,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
-                    event="on_start",
+                    event="on_state_start",
                 )
         # Only cmd1 ran; cmd2 was skipped
         assert mock_run.call_count == 1
@@ -198,7 +199,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
         assert mock_run.call_count == 2
 
@@ -217,7 +218,7 @@ class TestExecuteHooks:
                     data_path=data_path,
                     thread_id="t",
                     flow_name="F",
-                    event="on_start",
+                    event="on_state_start",
                 )
         assert "my-script.sh" in str(exc_info.value)
 
@@ -239,7 +240,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         assert mock_run.call_count == 3
@@ -264,15 +265,15 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         full_cmd: str = mock_run.call_args[0][0]
         # Verify the dangerous string is properly quoted (not expanded)
         assert "rm -rf" not in full_cmd.replace("'my state; rm -rf /'", "")
 
-    def test_execute_hooks_sets_fdsx_hooks_on_start(self, tmp_path: Path) -> None:
-        """FDSX_HOOKS env var is set to 'on_start' when event='on_start'."""
+    def test_execute_hooks_sets_fdsx_hooks_on_state_start(self, tmp_path: Path) -> None:
+        """FDSX_HOOKS env var is set to 'on_state_start' when event='on_state_start'."""
         hook = self._make_hook("true")
         data_path = tmp_path / "data.json"
 
@@ -285,16 +286,16 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_start"
+        assert env["FDSX_HOOKS"] == "on_state_start"
 
-    def test_execute_hooks_sets_fdsx_hooks_on_complete_success(
+    def test_execute_hooks_sets_fdsx_hooks_on_state_end_success(
         self, tmp_path: Path
     ) -> None:
-        """FDSX_HOOKS env var is set to 'on_complete' when event='on_complete' and status='completed'."""
+        """FDSX_HOOKS env var is set to 'on_state_end' when event='on_state_end' and status='completed'."""
         hook = self._make_hook("true")
         data_path = tmp_path / "data.json"
 
@@ -307,16 +308,16 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_complete",
+                event="on_state_end",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_complete"
+        assert env["FDSX_HOOKS"] == "on_state_end"
 
-    def test_execute_hooks_sets_fdsx_hooks_on_complete_failure(
+    def test_execute_hooks_sets_fdsx_hooks_on_state_end_failure(
         self, tmp_path: Path
     ) -> None:
-        """FDSX_HOOKS env var is set to 'on_complete' when event='on_complete' and status='failed'."""
+        """FDSX_HOOKS env var is set to 'on_state_end' when event='on_state_end' and status='failed'."""
         hook = self._make_hook("true")
         data_path = tmp_path / "data.json"
 
@@ -329,11 +330,11 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_complete",
+                event="on_state_end",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_complete"
+        assert env["FDSX_HOOKS"] == "on_state_end"
 
     def test_execute_hooks_overrides_inherited_fdsx_hooks(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -352,11 +353,11 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="t",
                 flow_name="F",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
-        assert env["FDSX_HOOKS"] == "on_start"
+        assert env["FDSX_HOOKS"] == "on_state_start"
 
     def test_execute_hooks_preserves_existing_env_vars(self, tmp_path: Path) -> None:
         """All five existing FDSX_ env vars are still present alongside FDSX_HOOKS (FR-5 regression guard)."""
@@ -372,7 +373,7 @@ class TestExecuteHooks:
                 data_path=data_path,
                 thread_id="tid-42",
                 flow_name="FlowY",
-                event="on_start",
+                event="on_state_start",
             )
 
         env = mock_run.call_args[1]["env"]
@@ -578,16 +579,18 @@ class TestWriteHookData:
 class TestCollectHooks:
     """Tests for collect_hooks()."""
 
-    def _make_config(self, commands: list[str], event: str = "on_start") -> HookConfig:
+    def _make_config(
+        self, commands: list[str], event: str = "on_state_start"
+    ) -> HookConfig:
         entries = [HookEntry(command=cmd) for cmd in commands]
-        kwargs: dict = {"on_start": [], "on_complete": []}
+        kwargs: dict = {"on_state_start": [], "on_state_end": []}
         kwargs[event] = entries
         return HookConfig(**kwargs)
 
     def test_all_none_returns_empty_list(self) -> None:
         """All-None configs produces an empty list."""
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=None,
             project_hooks=None,
             flow_hooks=None,
@@ -599,7 +602,7 @@ class TestCollectHooks:
         """Only global hooks are returned."""
         global_cfg = self._make_config(["global-hook"])
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=global_cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -612,7 +615,7 @@ class TestCollectHooks:
         """Only state hooks are returned."""
         state_cfg = self._make_config(["state-hook"])
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=None,
             project_hooks=None,
             flow_hooks=None,
@@ -629,7 +632,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["st1"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=global_cfg,
             project_hooks=project_cfg,
             flow_hooks=flow_cfg,
@@ -644,7 +647,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["s1", "s2"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=global_cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -653,22 +656,22 @@ class TestCollectHooks:
 
         assert [h.command for h in result] == ["g1", "g2", "g3", "s1", "s2"]
 
-    def test_on_complete_event(self) -> None:
-        """on_complete event selects the correct hook list."""
+    def test_on_state_end_event(self) -> None:
+        """on_state_end event selects the correct hook list."""
         config = HookConfig(
-            on_start=[HookEntry(command="start-hook")],
-            on_complete=[HookEntry(command="complete-hook")],
+            on_state_start=[HookEntry(command="start-hook")],
+            on_state_end=[HookEntry(command="complete-hook")],
         )
 
         result_start = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=config,
             project_hooks=None,
             flow_hooks=None,
             state_hooks=None,
         )
         result_complete = collect_hooks(
-            "on_complete",
+            "on_state_end",
             global_hooks=config,
             project_hooks=None,
             flow_hooks=None,
@@ -683,14 +686,14 @@ class TestCollectHooks:
     def test_on_failure_policy_preserved(self) -> None:
         """on_failure values are preserved through collection."""
         cfg = HookConfig(
-            on_start=[
+            on_state_start=[
                 HookEntry(command="cmd-abort", on_failure="abort"),
                 HookEntry(command="cmd-warn", on_failure="warn"),
             ]
         )
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -704,7 +707,7 @@ class TestCollectHooks:
         """Return type is a list of HookEntry."""
         cfg = self._make_config(["cmd"])
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -719,7 +722,7 @@ class TestCollectHooks:
         state_cfg = self._make_config(["s1"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=None,
             project_hooks=project_cfg,
             flow_hooks=None,
@@ -729,12 +732,12 @@ class TestCollectHooks:
         assert [h.command for h in result] == ["p1", "s1"]
 
     def test_empty_hook_config_contributes_no_entries(self) -> None:
-        """HookConfig with empty on_start adds nothing."""
+        """HookConfig with empty on_state_start adds nothing."""
         empty_cfg = HookConfig()
         state_cfg = self._make_config(["s1"])
 
         result = collect_hooks(
-            "on_start",
+            "on_state_start",
             global_hooks=empty_cfg,
             project_hooks=None,
             flow_hooks=None,
@@ -742,3 +745,239 @@ class TestCollectHooks:
         )
 
         assert [h.command for h in result] == ["s1"]
+
+
+# ---------------------------------------------------------------------------
+# T001: TestLegacyKeyRejection — on_start/on_complete keys must be rejected
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyKeyRejection:
+    """Assert that legacy hook keys raise ValidationError with a rename hint."""
+
+    def test_on_start_key_rejected_with_rename_hint(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            HookConfig.model_validate(
+                {"on_start": [{"command": "echo x"}]}
+            )  # intentionally uses legacy key to test rejection
+        assert "on_state_start" in str(exc_info.value)
+
+    def test_on_complete_key_rejected_with_rename_hint(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            HookConfig.model_validate(
+                {"on_complete": [{"command": "echo x"}]}
+            )  # intentionally uses legacy key to test rejection
+        assert "on_state_end" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# T014: TestExecuteWorkflowHooks — execute_workflow_hooks() (US2)
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteWorkflowHooks:
+    """Tests for execute_workflow_hooks(). Imports symbol inside each test body."""
+
+    def _make_hook(self, command: str, on_failure: str = "warn") -> HookEntry:
+        return HookEntry(command=command, on_failure=on_failure)  # type: ignore[arg-type]
+
+    def test_env_contains_fdsx_hooks(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_HOOKS"] == "on_workflow_start"
+
+    def test_env_contains_fdsx_status(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_STATUS"] == "starting"
+
+    def test_env_omits_fdsx_state_name(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert "FDSX_STATE_NAME" not in env
+
+    def test_env_omits_fdsx_data_path(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert "FDSX_DATA_PATH" not in env
+
+    def test_env_contains_fdsx_flow_name(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_FLOW_NAME"] == "MyFlow"
+
+    def test_env_contains_fdsx_thread_id(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["FDSX_THREAD_ID"] == "t1"
+
+    def test_no_positional_args_in_command(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        full_cmd: str = mock_run.call_args[0][0]
+        assert full_cmd == "echo test"
+
+    def test_timeout_defaults_to_30(self) -> None:
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("echo test")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            execute_workflow_hooks(
+                [hook],
+                status="starting",
+                thread_id="t1",
+                flow_name="MyFlow",
+                event="on_workflow_start",
+            )
+        assert mock_run.call_args[1]["timeout"] == 30.0
+
+    def test_on_failure_abort_ignored_warns_only(self, caplog) -> None:
+        import logging
+
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("false", on_failure="abort")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            # Must NOT raise HookAbortError (abort policy is silently demoted to warn)
+            with caplog.at_level(logging.WARNING, logger="fdsx.core.hooks"):
+                execute_workflow_hooks(
+                    [hook],
+                    status="starting",
+                    thread_id="t1",
+                    flow_name="MyFlow",
+                    event="on_workflow_start",
+                )
+
+        assert any(r.levelno >= logging.WARNING for r in caplog.records), (
+            "Expected a WARNING log when workflow hook exits non-zero"
+        )
+
+    def test_timeout_expired_caught_and_logged_as_warning(self, caplog) -> None:
+        import logging
+        import subprocess as _subprocess
+
+        from fdsx.core.hooks import execute_workflow_hooks
+
+        hook = self._make_hook("slow-command")
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = _subprocess.TimeoutExpired(
+                cmd="slow-command", timeout=30.0
+            )
+            # Must NOT raise TimeoutExpired
+            with caplog.at_level(logging.WARNING, logger="fdsx.core.hooks"):
+                execute_workflow_hooks(
+                    [hook],
+                    status="starting",
+                    thread_id="t1",
+                    flow_name="MyFlow",
+                    event="on_workflow_start",
+                )
+
+        assert any(r.levelno >= logging.WARNING for r in caplog.records), (
+            "Expected a WARNING log when workflow hook times out"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T015: TestStateHookConfigWorkflowKeyRejection — workflow keys rejected in state blocks
+# ---------------------------------------------------------------------------
+
+
+class TestStateHookConfigWorkflowKeyRejection:
+    """Assert that workflow-scope hook keys raise ValidationError when used in state blocks."""
+
+    def test_on_workflow_start_rejected(self) -> None:
+        from fdsx.models.flow import StateHookConfig
+
+        with pytest.raises(ValidationError) as exc_info:
+            StateHookConfig.model_validate(
+                {"on_workflow_start": [{"command": "echo x"}]}
+            )
+        error_msg = str(exc_info.value)
+        assert any(keyword in error_msg for keyword in ("flow", "project", "global"))
+
+    def test_on_workflow_end_rejected(self) -> None:
+        from fdsx.models.flow import StateHookConfig
+
+        with pytest.raises(ValidationError) as exc_info:
+            StateHookConfig.model_validate({"on_workflow_end": [{"command": "echo x"}]})
+        error_msg = str(exc_info.value)
+        assert any(keyword in error_msg for keyword in ("flow", "project", "global"))

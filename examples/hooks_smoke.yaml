@@ -1,0 +1,70 @@
+name: Hooks Smoke Test
+description: >
+  Smoke test for all four workflow lifecycle hooks (on_workflow_start,
+  on_workflow_end, on_state_start, on_state_end). Each hook appends a
+  structured line to /tmp/fdsx_smoke_hooks.log.
+
+  Run modes:
+    fdsx run examples/hooks_smoke.yaml --input mode=fast          # fast completion
+    fdsx run examples/hooks_smoke.yaml --input mode=wait          # pause at wait state, then resume
+    fdsx run examples/hooks_smoke.yaml --tasks-dir examples/hooks_smoke_tasks/ --auto-workflow  # 3-task batch
+version: "1.0"
+start_at: start
+
+hooks:
+  on_workflow_start:
+    - command: >-
+        echo "EVENT=on_workflow_start STATUS=$FDSX_STATUS THREAD=$FDSX_THREAD_ID"
+        >> /tmp/fdsx_smoke_hooks.log
+  on_workflow_end:
+    - command: >-
+        echo "EVENT=on_workflow_end STATUS=$FDSX_STATUS THREAD=$FDSX_THREAD_ID"
+        >> /tmp/fdsx_smoke_hooks.log
+  on_state_start:
+    - command: >-
+        echo "EVENT=on_state_start STATE=$FDSX_STATE_NAME STATUS=$FDSX_STATUS THREAD=$FDSX_THREAD_ID"
+        >> /tmp/fdsx_smoke_hooks.log
+  on_state_end:
+    - command: >-
+        echo "EVENT=on_state_end STATE=$FDSX_STATE_NAME STATUS=$FDSX_STATUS THREAD=$FDSX_THREAD_ID"
+        >> /tmp/fdsx_smoke_hooks.log
+
+states:
+  start:
+    type: task
+    provider: system
+    command: "echo 'smoke test started'"
+    result_path: $.start_result
+    next: route
+
+  route:
+    type: choice
+    choices:
+      - variable: $.mode
+        operator: equals
+        value: wait
+        next: pause
+    default: fast_end
+
+  fast_end:
+    type: task
+    provider: system
+    command: "echo 'fast path complete'"
+    result_path: $.final_result
+    end: true
+
+  pause:
+    type: wait
+    mode: prompt
+    message: "Smoke test paused. Select 'continue' to resume."
+    choices:
+      - continue
+    result_path: $.wait_result
+    next: resumed_end
+
+  resumed_end:
+    type: task
+    provider: system
+    command: "echo 'resumed path complete'"
+    result_path: $.final_result
+    end: true

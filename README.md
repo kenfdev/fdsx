@@ -18,7 +18,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
-- Lifecycle hooks (on_start / on_complete) at flow and state level
+- Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end) at flow and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Workflow auto-selection via LLM-based matching
 
@@ -101,14 +101,20 @@ providers:
     full_auto: true
 
 # --- Flow-level hooks (optional) ---
-# Run before/after the entire flow. Merged with config-level hooks.
+# Run before/after states or the entire flow. Merged with config-level hooks.
 # See "Hook Environment" section below for available env vars and positional args.
 hooks:
-  on_start:
-    - command: "echo 'Flow starting'"  # (string, REQUIRED) shell command
-      on_failure: warn                  # "warn" (default) = log and continue, "abort" = stop execution
-  on_complete:
-    - command: "echo 'Flow done'"
+  on_state_start:
+    - command: "echo 'State starting'"  # (string, REQUIRED) shell command
+      on_failure: warn                   # "warn" (default) = log and continue, "abort" = stop execution
+  on_state_end:
+    - command: "echo 'State done'"
+      on_failure: warn
+  on_workflow_start:                     # fires once when the workflow begins (fresh runs only)
+    - command: "echo 'Workflow starting'"
+      on_failure: warn
+  on_workflow_end:                       # fires once when the workflow finishes (all terminal paths)
+    - command: "echo 'Workflow done'"
       on_failure: warn
 
 # ============================================================
@@ -168,11 +174,12 @@ states:
       permission_mode: dontAsk
 
     # --- State-level hooks (optional) ---
+    # Note: on_workflow_start and on_workflow_end are NOT valid here; use flow-level hooks.
     hooks:
-      on_start:
+      on_state_start:
         - command: "echo 'task starting'"
           on_failure: warn
-      on_complete:
+      on_state_end:
         - command: "echo 'task done'"
           on_failure: abort             # abort = stop the flow if this hook fails
 
@@ -198,7 +205,7 @@ states:
         next: fix
     default: fallback_state             # (string, optional) state when no choice matches
     max_iterations: 10                  # (int, optional) max times this state can be entered
-    hooks:                              # (optional) same structure as task hooks
+    hooks:                              # (optional) on_state_start / on_state_end only
 
   # ----------------------------------------------------------
   # parallel — run multiple branches concurrently
@@ -235,7 +242,7 @@ states:
     result_file: $.reviews_ref          # (string, optional) path to result file
     min_success: 2                      # (int, optional) minimum branches that must succeed
     max_iterations: 3                   # (int, optional)
-    hooks:                              # (optional)
+    hooks:                              # (optional) on_state_start / on_state_end only
     next: aggregate_reviews             # next / end — same rules as task
     # end: true
 
@@ -262,7 +269,7 @@ states:
     fail_fast: true                     # (bool, default: true) stop all iterations on first failure
     result_path: $.map_results           # (string, REQUIRED) JSONPath for the results array
     max_iterations: 10                  # (int, optional) max times this state can be re-entered
-    hooks:                              # (optional)
+    hooks:                              # (optional) on_state_start / on_state_end only
     next: after_map                     # next / end — same rules as task
     # end: true
 
@@ -286,7 +293,8 @@ states:
       result_path: $.review_decision    # (string, REQUIRED) where aggregated result is stored
 
     max_iterations: 3                   # (int, optional)
-    hooks:                              # (optional)
+    hooks:                              # (optional) pass states accept all hook keys including
+                                        #   on_workflow_start and on_workflow_end
     next: review_route                  # next / end — same rules as task
     # end: true
 
@@ -314,7 +322,7 @@ states:
                                         # Non-2xx responses are logged as warnings, never fail the flow
 
     max_iterations: 1                   # (int, optional)
-    hooks:                              # (optional)
+    hooks:                              # (optional) on_state_start / on_state_end only
     next: post_approval                 # next / end — same rules as task
     # end: true
 ```
@@ -332,6 +340,7 @@ Every hook command receives context via **environment variables** and **position
 | `FDSX_DATA_PATH` | Path to the state data JSON file | `.fdsx/runs/<thread_id>/hooks/plan/input.json` |
 | `FDSX_THREAD_ID` | Current run thread ID | `abc123` |
 | `FDSX_FLOW_NAME` | Name of the flow | `MyWorkflow` |
+| `FDSX_HOOKS` | Lifecycle event name that triggered the hook | `on_state_start`, `on_workflow_end` |
 
 **Positional arguments** (appended to your command):
 
@@ -343,8 +352,8 @@ Every hook command receives context via **environment variables** and **position
 
 **Data files:** Before each hook runs, fdsx writes a JSON file containing the current state dictionary:
 
-- `on_start` hooks receive `input.json` — the state *before* execution
-- `on_complete` hooks receive `output.json` — the state *after* execution
+- `on_state_start` hooks receive `input.json` — the state *before* execution
+- `on_state_end` hooks receive `output.json` — the state *after* execution
 
 Files are written to `.fdsx/runs/<thread_id>/hooks/<state_name>/`.
 
@@ -352,15 +361,17 @@ Files are written to `.fdsx/runs/<thread_id>/hooks/<state_name>/`.
 
 ```yaml
 hooks:
-  on_start:
+  on_state_start:
     - command: "curl -X POST https://slack.example.com/webhook -d '{\"text\": \"State '\"$FDSX_STATE_NAME\"' starting in flow '\"$FDSX_FLOW_NAME\"'\"}'"
       on_failure: warn
-  on_complete:
+  on_state_end:
     - command: "cat $FDSX_DATA_PATH | jq .review_verdict"
       on_failure: warn
 ```
 
 **Merge order:** Hooks from multiple levels are concatenated (not replaced) in this order: global config → project config → flow → state. All hooks at every level run.
+
+**Hook scope:** `on_state_start` and `on_state_end` are valid at all levels (global config, project config, flow, and individual states). `on_workflow_start` and `on_workflow_end` are only valid at global config, project config, and flow scope — placing them inside a state's `hooks:` block will raise a validation error (the one exception is `pass` states, which accept all hook keys).
 
 ### Variable References
 
@@ -484,11 +495,17 @@ providers:
 # --- Global hooks (optional) ---
 # Merged with flow-level hooks (config hooks run first).
 hooks:
-  on_start:
-    - command: "echo 'global start'"
+  on_state_start:
+    - command: "echo 'global state start'"
       on_failure: warn
-  on_complete:
-    - command: "echo 'global done'"
+  on_state_end:
+    - command: "echo 'global state done'"
+      on_failure: warn
+  on_workflow_start:
+    - command: "echo 'global workflow start'"
+      on_failure: warn
+  on_workflow_end:
+    - command: "echo 'global workflow done'"
       on_failure: warn
 ```
 

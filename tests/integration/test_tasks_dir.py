@@ -1282,3 +1282,106 @@ class TestRunTasksDirSourceInjection:
             assert len(captured_inputs) == 1
             assert captured_inputs[0]["task"] == "task B"
             assert captured_inputs[0]["source"] == ""
+
+
+# ---------------------------------------------------------------------------
+# T017: TestWorkflowHooksPerTask — on_workflow_start/end fires once per task
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowHooksPerTask:
+    """Verify that workflow lifecycle hooks fire exactly once per task in run_tasks_dir."""
+
+    _FLOW_YAML = """
+name: HookTasksFlow
+description: Flow with workflow-level hooks for tasks-dir test
+start_at: step1
+hooks:
+  on_workflow_start:
+    - command: "echo wf_start"
+  on_workflow_end:
+    - command: "echo wf_end"
+states:
+  step1:
+    type: task
+    provider: system
+    command: echo done
+    result_path: "$.result"
+    end: true
+"""
+
+    def test_workflow_hooks_fire_once_per_task(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """on_workflow_start and on_workflow_end each fire exactly once per task (3 tasks total)."""
+        monkeypatch.chdir(tmp_path)
+        from fdsx.providers.base import ProviderResult
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        for i in range(1, 4):
+            (tasks_dir / f"00{i}-task.yaml").write_text(f"description: task {i}\n")
+
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(self._FLOW_YAML)
+
+        fake_result = ProviderResult(exit_code=0, stdout="done", stderr="")
+
+        with (
+            patch(
+                "fdsx.core.engine.run.execute_workflow_hooks", create=True
+            ) as mock_run_wh,
+            patch(
+                "fdsx.core.engine.resume.execute_workflow_hooks", create=True
+            ) as mock_resume_wh,
+            patch("fdsx.providers.system._run_subprocess", return_value=fake_result),
+            patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+        ):
+            engine.run_tasks_dir(
+                flow_path,
+                tasks_dir,
+                base_dir=tmp_path / ".fdsx",
+                auto_workflow=True,
+            )
+
+        # Collect all calls from both run and resume patches
+        all_start_calls = [
+            c
+            for c in mock_run_wh.call_args_list
+            if c.kwargs.get("event") == "on_workflow_start"
+        ] + [
+            c
+            for c in mock_resume_wh.call_args_list
+            if c.kwargs.get("event") == "on_workflow_start"
+        ]
+        all_end_calls = [
+            c
+            for c in mock_run_wh.call_args_list
+            if c.kwargs.get("event") == "on_workflow_end"
+        ] + [
+            c
+            for c in mock_resume_wh.call_args_list
+            if c.kwargs.get("event") == "on_workflow_end"
+        ]
+
+        assert len(all_start_calls) == 3, (
+            f"on_workflow_start should fire once per task (3 tasks), "
+            f"got {len(all_start_calls)} calls"
+        )
+        assert len(all_end_calls) == 3, (
+            f"on_workflow_end should fire once per task (3 tasks), "
+            f"got {len(all_end_calls)} calls"
+        )
+
+        # Each task should run with a distinct thread_id
+        start_thread_ids = {c.kwargs.get("thread_id") for c in all_start_calls}
+        assert len(start_thread_ids) == 3, (
+            f"Expected 3 distinct thread_ids for 3 tasks, got: {start_thread_ids}"
+        )
+
+        # Each on_workflow_start's thread_id should match a corresponding on_workflow_end
+        end_thread_ids = {c.kwargs.get("thread_id") for c in all_end_calls}
+        assert start_thread_ids == end_thread_ids, (
+            f"thread_ids from on_workflow_start {start_thread_ids} must match "
+            f"on_workflow_end {end_thread_ids}"
+        )
