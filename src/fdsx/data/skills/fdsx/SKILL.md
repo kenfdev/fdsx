@@ -159,7 +159,7 @@ Shell commands that run at lifecycle events. There are two scopes with different
 
 ### State-scope hooks (`on_state_start`, `on_state_end`)
 
-Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start` or `on_workflow_end` in a state block raises a validation error.
+Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks on `task`, `choice`, `parallel`, `wait`, and `map` states **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start` or `on_workflow_end` in those state blocks raises a validation error. **Exception:** `pass` state `hooks` blocks use the full `HookConfig` and accept all four keys (workflow-scope keys are silently ignored at runtime).
 
 ```yaml
 hooks:
@@ -185,7 +185,7 @@ State-scope hooks respect `on_failure: abort` — a non-zero exit with `abort` p
 
 ### Workflow-scope hooks (`on_workflow_start`, `on_workflow_end`)
 
-Run at the start and end of an entire workflow run. Can only be defined at flow level or in config files — **not** in per-state `hooks` blocks.
+Run at the start and end of an entire workflow run. Can be defined at flow level, in config files, or in `pass` state `hooks` blocks (though in a `pass` state they are silently ignored at runtime — workflow hooks only fire from `flow.hooks` and config-level hooks).
 
 ```yaml
 hooks:
@@ -223,9 +223,22 @@ task_splitter:                  # must be explicitly present to enable batch spl
   provider: claude
   model: claude-sonnet-4-6
   extra_instructions: "..."
+hooks:                          # global hooks applied to all flows
+  on_state_start:
+    - command: "echo starting"
+  on_workflow_end:
+    - command: "notify.sh"
+profiles:                       # named provider/model bundles
+  fast:
+    provider: claude
+    model: claude-haiku-4-5-20251001
 ```
 
 Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+
+`hooks` at config level supports all four lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) and are prepended to flow-level and state-level hooks.
+
+`profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 
 ## Common Patterns
 
@@ -278,4 +291,4 @@ Inside iterator states, `{item}` refers to the current array element. Use `{item
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
-- `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks
+- `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, and `map` states; `pass` state `hooks` accepts all four keys (workflow-scope keys are silently ignored at runtime)

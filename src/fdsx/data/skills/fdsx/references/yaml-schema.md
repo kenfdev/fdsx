@@ -297,7 +297,7 @@ aggregate:
 
 ## HookConfig
 
-Used at **flow level** (`Flow.hooks`) and in `PassState.hooks`. Supports all four lifecycle events including workflow-scope events.
+Used at **flow level** (`Flow.hooks`), in **config files**, and in `PassState.hooks`. Supports all four lifecycle events including workflow-scope events.
 
 ```yaml
 hooks:
