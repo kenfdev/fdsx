@@ -139,7 +139,8 @@ def _run_subprocess(
         cmd = args
 
     try:
-        proc_env = {**os.environ, **env} if env else None
+        proc_env = {**os.environ, **(env or {})}
+        proc_env.pop("FDSX_HOOKS", None)
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE if stdin_data is not None else None,
