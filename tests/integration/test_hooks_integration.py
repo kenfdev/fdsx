@@ -1366,7 +1366,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_start:
+      on_start:  # intentionally uses legacy key — testing rejection behavior
         - command: "echo x"
 """
 
@@ -1382,7 +1382,7 @@ states:
     result_path: $.result
     end: true
     hooks:
-      on_complete:
+      on_complete:  # intentionally uses legacy key — testing rejection behavior
         - command: "echo x"
 """
 

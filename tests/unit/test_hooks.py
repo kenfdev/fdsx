@@ -757,12 +757,16 @@ class TestLegacyKeyRejection:
 
     def test_on_start_key_rejected_with_rename_hint(self) -> None:
         with pytest.raises(ValidationError) as exc_info:
-            HookConfig.model_validate({"on_start": [{"command": "echo x"}]})
+            HookConfig.model_validate(
+                {"on_start": [{"command": "echo x"}]}
+            )  # intentionally uses legacy key to test rejection
         assert "on_state_start" in str(exc_info.value)
 
     def test_on_complete_key_rejected_with_rename_hint(self) -> None:
         with pytest.raises(ValidationError) as exc_info:
-            HookConfig.model_validate({"on_complete": [{"command": "echo x"}]})
+            HookConfig.model_validate(
+                {"on_complete": [{"command": "echo x"}]}
+            )  # intentionally uses legacy key to test rejection
         assert "on_state_end" in str(exc_info.value)
 
 

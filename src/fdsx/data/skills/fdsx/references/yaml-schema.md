@@ -18,6 +18,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [ChoiceRule](#choicerule)
 - [AggregateRule](#aggregaterule)
 - [HookConfig](#hookconfig)
+- [StateHookConfig](#statehookconfig)
 - [ProfileConfig](#profileconfig)
 - [Provider Options](#provider-options)
 - [Config File](#config-file)
@@ -34,7 +35,7 @@ states: {name: State}           # required — map of state definitions
 version?: string                # optional
 max_loop?: int                  # default: 10 — max loop iterations
 providers?: {name: {k: v}}      # optional — workflow-level provider configs
-hooks?: HookConfig              # optional — flow-level hooks
+hooks?: HookConfig              # optional — flow-level hooks (full HookConfig including workflow-scope keys)
 profiles?: {name: {k: v}}       # optional — raw provider/model/extras dicts
 ```
 
@@ -66,7 +67,7 @@ max_iterations?: int            # optional — >=1, max times state can be enter
 retry?: int                     # default: 3
 timeout_seconds?: int           # optional — per-state timeout override
 provider_options?: {k: v}       # optional — per-task provider option overrides
-hooks?: HookConfig              # optional — per-state hooks
+hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end — target state
 end?: bool                      # XOR with next — terminate flow
 ```
@@ -90,7 +91,7 @@ type: "choice"                  # literal discriminator
 choices: [ChoiceRule]           # required — condition-transition pairs
 default?: string                # optional — fallback state name
 max_iterations?: int            # optional — >=1
-hooks?: HookConfig              # optional
+hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 ```
 
 No `next`/`end` fields — transitions are defined in `choices` and `default`.
@@ -106,7 +107,7 @@ result_path: string             # required — JSONPath for results array
 result_file?: string            # optional — top-level $.varname only
 min_success?: int               # optional — minimum successful branches
 max_iterations?: int            # optional — >=1
-hooks?: HookConfig              # optional
+hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end
 end?: bool                      # XOR with next
 ```
@@ -120,10 +121,12 @@ type: "pass"                    # literal discriminator
 parameters?: {k: v}             # optional — variable transformation
 aggregate?: AggregateRule       # optional — parallel result aggregation
 max_iterations?: int            # optional — >=1
-hooks?: HookConfig              # optional
+hooks?: HookConfig              # optional — full HookConfig (on_state_start/on_state_end/on_workflow_start/on_workflow_end)
 next?: string                   # XOR with end
 end?: bool                      # XOR with next
 ```
+
+**Note:** `PassState` is the only state type whose `hooks` field accepts the full `HookConfig` (including `on_workflow_start`/`on_workflow_end`). The engine does not invoke workflow-scope hooks at state execution time; those keys are silently ignored during state-level execution but will not cause a validation error.
 
 ---
 
@@ -137,7 +140,7 @@ choices: [string]               # required — min 1 item, user selection option
 result_path: string             # required — JSONPath for selection result
 notify?: NotifyConfig           # optional — webhook notification
 max_iterations?: int            # optional — >=1
-hooks?: HookConfig              # optional
+hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end
 end?: bool                      # XOR with next
 ```
@@ -162,7 +165,7 @@ iterator: IteratorDef           # required — sub-workflow to execute for each 
 result_path: string             # required — JSONPath for results array
 fail_fast?: bool                # default: true — stop on first failure
 max_iterations?: int            # optional — >=1, max times this state can be entered
-hooks?: HookConfig              # optional — per-state hooks
+hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end — target state
 end?: bool                      # XOR with next — terminate flow
 ```
@@ -294,31 +297,88 @@ aggregate:
 
 ## HookConfig
 
+Used at **flow level** (`Flow.hooks`) and in `PassState.hooks`. Supports all four lifecycle events including workflow-scope events.
+
 ```yaml
 hooks:
-  on_state_start:               # optional — hooks run before execution
+  on_state_start:               # optional — hooks run before each state execution
     - command: string           # required — shell command (min 1 char)
       on_failure: string        # default: "warn" — abort|warn
-  on_state_end:                 # optional — hooks run after execution
+  on_state_end:                 # optional — hooks run after each state execution
     - command: string
       on_failure: string
+  on_workflow_start:            # optional — hooks run once when the workflow starts (fresh runs only)
+    - command: string
+      on_failure: string        # note: ignored for workflow-scope hooks (always warn-only)
+  on_workflow_end:              # optional — hooks run once when the workflow ends
+    - command: string
+      on_failure: string        # note: ignored for workflow-scope hooks (always warn-only)
 ```
 
-**Note:** The legacy keys `on_start` and `on_complete` are rejected with a validation error. Use `on_state_start` and `on_state_end`.
+**Legacy keys rejected:** `on_start` and `on_complete` raise a validation error. Use `on_state_start` and `on_state_end`.
 
-Hooks can be set at flow level and per-state level. Each hook command receives:
+**Workflow-scope key restriction:** `on_workflow_start` and `on_workflow_end` are **only valid** at flow level, project config, and global config scope. Using them inside a state's `hooks` block raises a validation error (except in `PassState`, which uses the full `HookConfig` — see [PassState](#passstate)).
+
+---
+
+### State Hook Behavior (`on_state_start` / `on_state_end`)
+
+Each command receives:
 
 **Positional arguments:** `$1=state_name`, `$2=status`, `$3=data_path`
 
 **Environment variables:**
 - `FDSX_STATE_NAME` — current state name
-- `FDSX_STATUS` — lifecycle status (`starting`, `completed`, or `failed`)
+- `FDSX_STATUS` — lifecycle status: `starting` (before), `completed` or `failed` (after)
 - `FDSX_DATA_PATH` — path to the state data JSON file
 - `FDSX_THREAD_ID` — current run thread ID
 - `FDSX_FLOW_NAME` — name of the flow
-- `FDSX_HOOKS` — lifecycle event name (`on_state_start` or `on_state_end`)
+- `FDSX_HOOKS` — lifecycle event name: `on_state_start` or `on_state_end`
 
-**Hook data files:** Before hooks run, state data is written to JSON files at `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution). The `FDSX_DATA_PATH` environment variable points to the relevant data file.
+**Failure policy:** `on_failure: abort` raises `HookAbortError` and stops the flow. `on_failure: warn` (default) logs a warning and continues.
+
+**Hook data files:** State data is written to JSON files at `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution). `FDSX_DATA_PATH` points to the relevant file.
+
+---
+
+### Workflow Hook Behavior (`on_workflow_start` / `on_workflow_end`)
+
+**`on_workflow_start`** fires once per fresh workflow run, before any state executes. Skipped when resuming from a checkpoint.
+
+**`on_workflow_end`** fires once when the workflow terminates (success, failure, or abort), including on the exception path.
+
+Each command receives:
+
+**Positional arguments:** none (no `$1`, `$2`, `$3`)
+
+**Environment variables:**
+- `FDSX_HOOKS` — lifecycle event name: `on_workflow_start` or `on_workflow_end`
+- `FDSX_STATUS` — lifecycle status:
+  - `on_workflow_start`: always `starting`
+  - `on_workflow_end`: `completed`, `failed`, or `aborted`
+- `FDSX_FLOW_NAME` — name of the flow
+- `FDSX_THREAD_ID` — current run thread ID
+- `FDSX_STATE_NAME` and `FDSX_DATA_PATH` are **not set** for workflow hooks
+
+**Failure policy:** `on_failure` is ignored for workflow hooks. Non-zero exit codes and timeouts are always logged as warnings and never raise. Each hook has a 30-second subprocess timeout.
+
+---
+
+## StateHookConfig
+
+Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `WaitState`, `MapState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start` and `on_workflow_end` are explicitly forbidden.
+
+```yaml
+hooks:
+  on_state_start:               # optional — hooks run before state execution
+    - command: string           # required — shell command (min 1 char)
+      on_failure: string        # default: "warn" — abort|warn
+  on_state_end:                 # optional — hooks run after state execution
+    - command: string
+      on_failure: string
+```
+
+**Rejected keys:** `on_start`, `on_complete` (legacy), `on_workflow_start`, and `on_workflow_end` all raise a validation error when used inside a state's `hooks` block. Workflow-scope keys (`on_workflow_start`, `on_workflow_end`) are only valid at flow level or in config files.
 
 ---
 
@@ -425,3 +485,5 @@ profiles?:
 ```
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
+
+**Hook merging:** During global → project config deep merge, all four hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order.

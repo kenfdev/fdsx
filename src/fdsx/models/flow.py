@@ -96,12 +96,16 @@ class HookConfig(BaseModel):
     def reject_legacy_keys(cls, values: Any) -> Any:
         if not isinstance(values, dict):
             return values
-        if "on_start" in values:
+        if (
+            "on_start" in values
+        ):  # legacy key name — detecting invalid input to reject it
             raise ValueError(
                 "Hook key 'on_start' has been renamed to 'on_state_start'. "
                 "Update the YAML file and retry."
             )
-        if "on_complete" in values:
+        if (
+            "on_complete" in values
+        ):  # legacy key name — detecting invalid input to reject it
             raise ValueError(
                 "Hook key 'on_complete' has been renamed to 'on_state_end'. "
                 "Update the YAML file and retry."
@@ -124,12 +128,16 @@ class StateHookConfig(BaseModel):
     def reject_legacy_keys(cls, values: Any) -> Any:
         if not isinstance(values, dict):
             return values
-        if "on_start" in values:
+        if (
+            "on_start" in values
+        ):  # legacy key name — detecting invalid input to reject it
             raise ValueError(
                 "Hook key 'on_start' has been renamed to 'on_state_start'. "
                 "Update the YAML file and retry."
             )
-        if "on_complete" in values:
+        if (
+            "on_complete" in values
+        ):  # legacy key name — detecting invalid input to reject it
             raise ValueError(
                 "Hook key 'on_complete' has been renamed to 'on_state_end'. "
                 "Update the YAML file and retry."

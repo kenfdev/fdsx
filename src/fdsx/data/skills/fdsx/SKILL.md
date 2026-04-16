@@ -155,7 +155,11 @@ When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`,
 
 ## Hooks
 
-Shell commands that run before/after state or flow execution:
+Shell commands that run at lifecycle events. There are two scopes with different behaviors:
+
+### State-scope hooks (`on_state_start`, `on_state_end`)
+
+Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start` or `on_workflow_end` in a state block raises a validation error.
 
 ```yaml
 hooks:
@@ -166,14 +170,42 @@ hooks:
     - command: "echo Done"
 ```
 
-Hooks can be defined at flow level and per-state level. Each hook command receives:
+Each state-scope hook command receives:
 
 - **Positional arguments:** `$1=state_name`, `$2=status`, `$3=data_path`
 - **Environment variables:** `FDSX_STATE_NAME`, `FDSX_STATUS`, `FDSX_DATA_PATH`, `FDSX_THREAD_ID`, `FDSX_FLOW_NAME`, `FDSX_HOOKS`
 
-`FDSX_HOOKS` contains the lifecycle event name (`on_state_start` or `on_state_end`).
+`FDSX_STATUS` values: `starting` (on_state_start), `completed` or `failed` (on_state_end).
+
+`FDSX_HOOKS` contains the lifecycle event name: `on_state_start` or `on_state_end`.
 
 Hook data files are written to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution).
+
+State-scope hooks respect `on_failure: abort` — a non-zero exit with `abort` policy raises an error and stops the workflow. `warn` (default) logs a warning and continues.
+
+### Workflow-scope hooks (`on_workflow_start`, `on_workflow_end`)
+
+Run at the start and end of an entire workflow run. Can only be defined at flow level or in config files — **not** in per-state `hooks` blocks.
+
+```yaml
+hooks:
+  on_workflow_start:
+    - command: "echo Workflow starting"
+  on_workflow_end:
+    - command: "notify.sh"
+```
+
+Each workflow-scope hook command receives:
+
+- **No positional arguments** (unlike state-scope hooks)
+- **Environment variables:** `FDSX_HOOKS`, `FDSX_STATUS`, `FDSX_FLOW_NAME`, `FDSX_THREAD_ID`
+- `FDSX_STATE_NAME` and `FDSX_DATA_PATH` are **not** set
+
+`FDSX_STATUS` values: `starting` (on_workflow_start), `completed`, `failed`, or `aborted` (on_workflow_end).
+
+`FDSX_HOOKS` contains `on_workflow_start` or `on_workflow_end`.
+
+Workflow-scope hooks are always warn-only — non-zero exits log a warning and never abort the workflow. Each hook has a 30-second subprocess timeout. `on_workflow_start` fires only on fresh runs (not on `fdsx resume`).
 
 ## Config File
 
@@ -246,3 +278,4 @@ Inside iterator states, `{item}` refers to the current array element. Use `{item
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
+- `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks
