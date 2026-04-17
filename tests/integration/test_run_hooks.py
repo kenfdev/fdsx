@@ -19,6 +19,7 @@ from typer.testing import CliRunner
 
 from fdsx.cli.main import _compute_run_status, app
 from fdsx.core.config import RunHookConfig
+from fdsx.core.engine import run_flow
 from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import HookEntry
@@ -553,3 +554,57 @@ states:
         assert flow is None
         assert errors
         assert any("global or project configuration" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# T014: TestScrubRuleRegression
+# ---------------------------------------------------------------------------
+
+_FLOW_SCRUB_CHECK = """\
+name: ScrubCheck
+description: Confirms FDSX_HOOKS is absent from provider subprocess env
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: "sh -c 'printf \\"%s\\" \\"${FDSX_HOOKS+PRESENT}\\" > out.txt'"
+    result_path: $.result
+    end: true
+"""
+
+
+class TestScrubRuleRegression:
+    """T014: FDSX_HOOKS scrub rule regression for run-level hook values."""
+
+    def test_on_run_start_value_scrubbed_from_provider(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FDSX_HOOKS='on_run_start' inherited from parent is scrubbed before provider subprocess runs."""
+        monkeypatch.setenv("FDSX_HOOKS", "on_run_start")
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(_FLOW_SCRUB_CHECK)
+
+        run_flow(flow_path, base_dir=tmp_path)
+
+        out = (tmp_path / "out.txt").read_text().strip()
+        assert out == "", (
+            f"FDSX_HOOKS='on_run_start' should be scrubbed from provider subprocess env, got: {out!r}"
+        )
+
+    def test_on_run_end_value_scrubbed_from_provider(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FDSX_HOOKS='on_run_end' inherited from parent is scrubbed before provider subprocess runs."""
+        monkeypatch.setenv("FDSX_HOOKS", "on_run_end")
+        monkeypatch.chdir(tmp_path)
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(_FLOW_SCRUB_CHECK)
+
+        run_flow(flow_path, base_dir=tmp_path)
+
+        out = (tmp_path / "out.txt").read_text().strip()
+        assert out == "", (
+            f"FDSX_HOOKS='on_run_end' should be scrubbed from provider subprocess env, got: {out!r}"
+        )
