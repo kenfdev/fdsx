@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 from fdsx.cli.main import _compute_run_status, app
 from fdsx.core.config import RunHookConfig
 from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
+from fdsx.core.loader import load_flow
 from fdsx.models.flow import HookEntry
 
 runner = CliRunner()
@@ -452,3 +453,103 @@ class TestRunHookFailurePolicy:
         commands = [h.command for h in result]
         assert commands == ["end-only"]
         assert "start-only" not in commands
+
+
+# ---------------------------------------------------------------------------
+# T011: TestYamlRejectionEndToEnd
+# ---------------------------------------------------------------------------
+
+
+class TestYamlRejectionEndToEnd:
+    """T011: End-to-end YAML rejection for on_run_start/on_run_end in flow/state hooks."""
+
+    _BASE_YAML = """\
+name: FlowWithBadHook
+description: Test hook rejection
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: echo done
+    result_path: "$.result"
+    end: true
+"""
+
+    def test_flow_level_on_run_start_rejected(self, tmp_path: Path) -> None:
+        """on_run_start in flow-level hooks: block is rejected with a clear error."""
+        flow_yaml = (
+            self._BASE_YAML + "hooks:\n  on_run_start:\n    - command: echo hi\n"
+        )
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(flow_yaml)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None
+        assert errors
+        assert any("global or project configuration" in e for e in errors)
+
+    def test_flow_level_on_run_end_rejected(self, tmp_path: Path) -> None:
+        """on_run_end in flow-level hooks: block is rejected with a clear error."""
+        flow_yaml = self._BASE_YAML + "hooks:\n  on_run_end:\n    - command: echo bye\n"
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(flow_yaml)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None
+        assert errors
+        assert any("global or project configuration" in e for e in errors)
+
+    def test_state_level_on_run_start_rejected(self, tmp_path: Path) -> None:
+        """on_run_start in state-level hooks: block is rejected with a clear error."""
+        flow_yaml = """\
+name: FlowWithBadHook
+description: Test state-level on_run_start rejection
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: echo done
+    result_path: "$.result"
+    end: true
+    hooks:
+      on_run_start:
+        - command: echo hi
+"""
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(flow_yaml)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None
+        assert errors
+        assert any("global or project configuration" in e for e in errors)
+
+    def test_state_level_on_run_end_rejected(self, tmp_path: Path) -> None:
+        """on_run_end in state-level hooks: block is rejected with a clear error."""
+        flow_yaml = """\
+name: FlowWithBadHook
+description: Test state-level on_run_end rejection
+start_at: step1
+states:
+  step1:
+    type: task
+    provider: system
+    command: echo done
+    result_path: "$.result"
+    end: true
+    hooks:
+      on_run_end:
+        - command: echo bye
+"""
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(flow_yaml)
+
+        flow, errors = load_flow(flow_path)
+
+        assert flow is None
+        assert errors
+        assert any("global or project configuration" in e for e in errors)
