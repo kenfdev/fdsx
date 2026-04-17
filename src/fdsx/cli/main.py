@@ -27,6 +27,7 @@ from fdsx.core.batch import (
 )
 from fdsx.core.config import TaskSplitterConfig, load_config
 from fdsx.core.engine import FlowValidationError
+from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
 from fdsx.core.init import (
     check_conflicts,
     discover_templates,
@@ -253,6 +254,14 @@ def run(
 
     current_thread_id = thread_id if thread_id else None
 
+    _start_hooks = collect_run_hooks(
+        "on_run_start", global_run_hooks=config.run_hooks, project_run_hooks=None
+    )
+    _end_hooks = collect_run_hooks(
+        "on_run_end", global_run_hooks=config.run_hooks, project_run_hooks=None
+    )
+    execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+
     try:
         if tasks_dir is not None:
             results = engine.run_tasks_dir(
@@ -263,16 +272,15 @@ def run(
                 quiet=quiet,
                 continue_on_error=continue_on_error,
             )
-            has_failure = any(r.get("status") == "failed" for r in results)
-            if has_failure:
-                raise typer.Exit(code=1)
-            else:
-                raise typer.Exit(code=0)
+            run_status = _compute_run_status(results)
+            execute_run_hooks(_end_hooks, status=run_status, event="on_run_end")
+            raise typer.Exit(code=0 if run_status == "completed" else 1)
         else:
             assert workflow is not None
             if current_thread_id is None:
                 current_thread_id = generate_thread_id()
             engine.run_flow(workflow, inputs, current_thread_id, base_dir, quiet=quiet)
+            execute_run_hooks(_end_hooks, status="completed", event="on_run_end")
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
@@ -284,11 +292,13 @@ def run(
             raise
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         _display_resume_on_error(tasks_dir, current_thread_id)
+        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         raise typer.Exit(code=1) from None
     except Exception as e:
         if not isinstance(e, typer.Exit):
             typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
             _display_resume_on_error(tasks_dir, current_thread_id)
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
             raise typer.Exit(code=1) from None
         raise
 
@@ -302,6 +312,16 @@ def _display_resume_on_error(
         display_resume_command(mode="tasks-dir", tasks_dir=tasks_dir)
     elif thread_id is not None:
         display_resume_command(mode="single-flow", thread_id=thread_id)
+
+
+def _compute_run_status(results: list[dict[str, object]]) -> str:
+    """Compute aggregate status for a tasks-dir run from individual task results."""
+    statuses = {r.get("status") for r in results}
+    if statuses == {"completed"}:
+        return "completed"
+    if statuses == {"failed"}:
+        return "failed"
+    return "partial"
 
 
 @app.command()
@@ -456,10 +476,20 @@ def resume(
     ),
 ) -> None:
     """Resume a flow from a checkpoint."""
+    config = load_config()
+    _start_hooks = collect_run_hooks(
+        "on_run_start", global_run_hooks=config.run_hooks, project_run_hooks=None
+    )
+    _end_hooks = collect_run_hooks(
+        "on_run_end", global_run_hooks=config.run_hooks, project_run_hooks=None
+    )
+    execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
     try:
         engine.resume_flow(thread_id, base_dir)
+        execute_run_hooks(_end_hooks, status="completed", event="on_run_end")
     except RuntimeError as e:
         error_msg = str(e)
+        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         if "No checkpoint found" in error_msg:
             typer.echo(
                 f"Error: No checkpoint found for thread ID {_sanitize_output(thread_id)}",
@@ -474,6 +504,7 @@ def resume(
             raise typer.Exit(code=1) from None
     except Exception as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         raise typer.Exit(code=1) from None
 
 
