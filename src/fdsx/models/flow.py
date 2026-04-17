@@ -112,6 +112,23 @@ class HookConfig(BaseModel):
             )
         return values
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_run_scope_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if "on_run_start" in values:
+            raise ValueError(
+                "Hook key 'on_run_start' may only appear in global or project "
+                "configuration, not in flow or state YAML."
+            )
+        if "on_run_end" in values:
+            raise ValueError(
+                "Hook key 'on_run_end' may only appear in global or project "
+                "configuration, not in flow or state YAML."
+            )
+        return values
+
 
 class StateHookConfig(BaseModel):
     """Hook configuration for a state block (workflow-scope keys are rejected)."""
@@ -158,6 +175,23 @@ class StateHookConfig(BaseModel):
             raise ValueError(
                 "Hook key 'on_workflow_end' is only valid at flow/project/global scope, "
                 "not in state blocks."
+            )
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_run_scope_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if "on_run_start" in values:
+            raise ValueError(
+                "Hook key 'on_run_start' may only appear in global or project "
+                "configuration, not in flow or state YAML."
+            )
+        if "on_run_end" in values:
+            raise ValueError(
+                "Hook key 'on_run_end' may only appear in global or project "
+                "configuration, not in flow or state YAML."
             )
         return values
 

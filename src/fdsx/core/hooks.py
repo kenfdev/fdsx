@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
+from fdsx.core.config import RunHookConfig
 from fdsx.logging.recorder import FDSX_DIR_NAME, RUNS_DIR_NAME
 from fdsx.models.flow import HookConfig, HookEntry
 
@@ -247,6 +248,81 @@ def execute_workflow_hooks(
         except subprocess.TimeoutExpired:
             logger.warning(
                 "Workflow hook timed out after %s s (killed): %r",
+                timeout_seconds,
+                hook.command,
+            )
+
+
+def collect_run_hooks(
+    event: Literal["on_run_start", "on_run_end"],
+    *,
+    global_run_hooks: RunHookConfig | None,
+    project_run_hooks: RunHookConfig | None,
+) -> list[HookEntry]:
+    """Collect and merge run-scope hooks from global and project configs.
+
+    Merges in order: global → project (no flow or state level).
+    Returns a single flat list of HookEntry objects.
+
+    Args:
+        event: "on_run_start" or "on_run_end".
+        global_run_hooks: Run hook config from global ~/.config/fdsx/config.yaml.
+        project_run_hooks: Run hook config from project .fdsx/config.yaml.
+
+    Returns:
+        Concatenated list of HookEntry objects in global → project order.
+    """
+    result: list[HookEntry] = []
+    for hook_config in (global_run_hooks, project_run_hooks):
+        if hook_config is not None:
+            result.extend(getattr(hook_config, event))
+    return result
+
+
+def execute_run_hooks(
+    hooks: list[HookEntry],
+    *,
+    status: str,
+    event: Literal["on_run_start", "on_run_end"],
+    timeout_seconds: float = 30.0,
+) -> None:
+    """Execute run-scope hook commands in order.
+
+    Each command is run with ``shell=True`` and a timeout. Receives:
+    - Environment variables: FDSX_HOOKS, FDSX_STATUS
+    - FDSX_STATE_NAME, FDSX_DATA_PATH, FDSX_FLOW_NAME, and FDSX_THREAD_ID are
+      explicitly omitted (run hooks fire outside any flow/thread context).
+
+    Non-zero exit codes and timeouts log a warning and continue — never raises.
+
+    Args:
+        hooks: Ordered list of HookEntry objects to execute.
+        status: Lifecycle status ("starting", "completed", "failed", "aborted").
+        event: Lifecycle event ("on_run_start" or "on_run_end").
+        timeout_seconds: Per-hook subprocess timeout in seconds. Defaults to 30.0.
+    """
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in (ENV_STATE_NAME, ENV_DATA_PATH, ENV_FLOW_NAME, ENV_THREAD_ID)
+    }
+    env[ENV_HOOKS] = event
+    env[ENV_STATUS] = status
+
+    for hook in hooks:
+        try:
+            result = subprocess.run(
+                hook.command, shell=True, env=env, timeout=timeout_seconds
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "Run hook exited with code %d (warn-only): %r",
+                    result.returncode,
+                    hook.command,
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "Run hook timed out after %s s (killed): %r",
                 timeout_seconds,
                 hook.command,
             )

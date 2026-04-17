@@ -15,7 +15,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from fdsx.core.profiles import resolve_profiles_in_config
-from fdsx.models.flow import HookConfig, ProfileConfig
+from fdsx.models.flow import HookConfig, HookEntry, ProfileConfig
 from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
@@ -24,7 +24,14 @@ from fdsx.providers.opencode import OpenCodeOptions
 
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
 _HOOK_LIST_KEYS: frozenset[str] = frozenset(
-    {"on_state_start", "on_state_end", "on_workflow_start", "on_workflow_end"}
+    {
+        "on_state_start",
+        "on_state_end",
+        "on_workflow_start",
+        "on_workflow_end",
+        "on_run_start",
+        "on_run_end",
+    }
 )
 
 # Keys whose dict values are shallow-merged instead of deep-merged
@@ -134,6 +141,21 @@ class ProviderConfigs(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class RunHookConfig(BaseModel):
+    """Hook configuration for run-level lifecycle events (fired once per CLI invocation)."""
+
+    on_run_start: list[HookEntry] = Field(
+        default_factory=list,
+        description="Hooks to run at the start of a CLI invocation",
+    )
+    on_run_end: list[HookEntry] = Field(
+        default_factory=list,
+        description="Hooks to run at the end of a CLI invocation",
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class FdsxConfig(BaseModel):
     """Top-level fdsx configuration."""
 
@@ -164,6 +186,10 @@ class FdsxConfig(BaseModel):
     hooks: HookConfig | None = Field(
         default=None,
         description="Global hook configuration applied to all flows",
+    )
+    run_hooks: RunHookConfig | None = Field(
+        default=None,
+        description="Run-level hooks fired once per CLI invocation",
     )
     profiles: dict[str, ProfileConfig] | None = Field(
         default=None,
