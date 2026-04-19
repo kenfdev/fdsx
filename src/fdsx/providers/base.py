@@ -78,6 +78,35 @@ def check_cli_exists(command: str) -> bool:
     return shutil.which(command) is not None
 
 
+def _terminate_child_cascade(
+    process: subprocess.Popen[str], *, graceful_wait_seconds: float = 5.0
+) -> None:
+    """Escalating termination: voluntary exit → SIGTERM → SIGKILL → reap."""
+    if process.poll() is not None:
+        return
+    try:
+        process.wait(timeout=graceful_wait_seconds)
+    except subprocess.TimeoutExpired:
+        logger.debug(
+            "Process pid=%d did not exit voluntarily after %.1fs; sending SIGTERM",
+            process.pid,
+            graceful_wait_seconds,
+        )
+        with contextlib.suppress(OSError):
+            os.killpg(process.pid, signal_module.SIGTERM)
+        try:
+            process.wait(timeout=graceful_wait_seconds)
+        except subprocess.TimeoutExpired:
+            logger.debug(
+                "Process pid=%d did not exit after SIGTERM; sending SIGKILL",
+                process.pid,
+            )
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, signal_module.SIGKILL)
+            with contextlib.suppress(Exception):
+                process.wait()
+
+
 def _run_subprocess(
     args: list[str],
     timeout: int | None = None,
@@ -141,7 +170,7 @@ def _run_subprocess(
     try:
         proc_env = {**os.environ, **(env or {})}
         proc_env.pop("FDSX_HOOKS", None)
-        process = subprocess.Popen(
+        with subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE if stdin_data is not None else None,
             stdout=subprocess.PIPE,
@@ -150,219 +179,202 @@ def _run_subprocess(
             bufsize=1,
             env=proc_env,
             start_new_session=True,
-        )
-
-        if on_process_start is not None:
-            on_process_start(process)
-
-        killed_by_timeout = False
-        killed_by_inactivity = False
-
-        # Shared state for the inactivity watchdog
-        _last_activity: list[float] = [time.monotonic()]
-        _last_activity_lock = threading.Lock()
-        # _suppressed: set when the completion_event path takes control, preventing
-        # the inactivity watchdog from issuing a redundant kill.
-        _suppressed = threading.Event()
-
-        def _suspend_inactivity() -> None:
-            with _last_activity_lock:
-                _last_activity[0] = time.monotonic()
-
-        def _resume_inactivity() -> None:
-            with _last_activity_lock:
-                _last_activity[0] = time.monotonic()
-
-        def _killpg(sig: int) -> None:
-            """Send *sig* to the subprocess's process group (best-effort)."""
-            with contextlib.suppress(OSError):
-                os.killpg(process.pid, sig)
-
-        def _watchdog() -> None:
-            nonlocal killed_by_timeout
-            if timeout is None:
-                return
+        ) as process:
             try:
-                process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                killed_by_timeout = True
-                _killpg(signal_module.SIGKILL)
-                process.wait()  # Reap zombie so pipes close and readers unblock
+                if on_process_start is not None:
+                    on_process_start(process)
 
-        if timeout:
-            watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
-            watchdog_thread.start()
+                killed_by_timeout = False
+                killed_by_inactivity = False
 
-        def _inactivity_watchdog() -> None:
-            nonlocal killed_by_inactivity
-            assert inactivity_timeout is not None  # guarded by caller
-            while True:
-                time.sleep(1)
-                if _suppressed.is_set():
-                    break
-                if process.poll() is not None:
-                    break
-                with _last_activity_lock:
-                    idle = time.monotonic() - _last_activity[0]
-                if idle > inactivity_timeout:
-                    # Re-check suppressed after acquiring idle measurement
-                    if _suppressed.is_set():
-                        break
-                    killed_by_inactivity = True
-                    logger.debug(
-                        "Process pid=%d killed due to inactivity timeout after %ds",
-                        process.pid,
-                        inactivity_timeout,
-                    )
-                    _killpg(signal_module.SIGTERM)
+                # Shared state for the inactivity watchdog
+                _last_activity: list[float] = [time.monotonic()]
+                _last_activity_lock = threading.Lock()
+                # _suppressed: set when the completion_event path takes control, preventing
+                # the inactivity watchdog from issuing a redundant kill.
+                _suppressed = threading.Event()
+
+                def _suspend_inactivity() -> None:
+                    with _last_activity_lock:
+                        _last_activity[0] = time.monotonic()
+
+                def _resume_inactivity() -> None:
+                    with _last_activity_lock:
+                        _last_activity[0] = time.monotonic()
+
+                def _killpg(sig: int) -> None:
+                    """Send *sig* to the subprocess's process group (best-effort)."""
+                    with contextlib.suppress(OSError):
+                        os.killpg(process.pid, sig)
+
+                def _watchdog() -> None:
+                    nonlocal killed_by_timeout
+                    if timeout is None:
+                        return
                     try:
-                        process.wait(timeout=5)
+                        process.wait(timeout=timeout)
                     except subprocess.TimeoutExpired:
+                        killed_by_timeout = True
                         _killpg(signal_module.SIGKILL)
-                        process.wait()  # Reap zombie
-                    break
+                        process.wait()  # Reap zombie so pipes close and readers unblock
 
-        if inactivity_timeout:
-            inactivity_watchdog_thread = threading.Thread(
-                target=_inactivity_watchdog, daemon=True
-            )
-            inactivity_watchdog_thread.start()
+                if timeout:
+                    watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+                    watchdog_thread.start()
 
-        if on_inactivity_hooks is not None and inactivity_timeout:
-            on_inactivity_hooks(_suspend_inactivity, _resume_inactivity)
-
-        # Write stdin data if provided, then close stdin
-        if stdin_data is not None and process.stdin:
-            try:
-                process.stdin.write(stdin_data)
-                process.stdin.close()
-            except BrokenPipeError:
-                pass
-
-        stdout_lines: list[str] = []
-        stderr_lines: list[str] = []
-
-        def _read_stdout() -> None:
-            if process.stdout:
-                try:
+                def _inactivity_watchdog() -> None:
+                    nonlocal killed_by_inactivity
+                    assert inactivity_timeout is not None  # guarded by caller
                     while True:
-                        raw_line = process.stdout.readline()
-                        if not raw_line:
+                        time.sleep(1)
+                        if _suppressed.is_set():
                             break
-                        line = raw_line.rstrip("\n")
-                        stdout_lines.append(line)
-                        if inactivity_timeout:
-                            with _last_activity_lock:
-                                _last_activity[0] = time.monotonic()
-                        if output_callback:
-                            output_callback(line)
-                except BrokenPipeError:
-                    pass
-
-        def _read_stderr() -> None:
-            if process.stderr:
-                try:
-                    while True:
-                        raw_line = process.stderr.readline()
-                        if not raw_line:
+                        if process.poll() is not None:
                             break
-                        line = raw_line.rstrip("\n")
-                        stderr_lines.append(line)
-                        if inactivity_timeout:
-                            with _last_activity_lock:
-                                _last_activity[0] = time.monotonic()
-                        if stderr_callback:
-                            stderr_callback(line)
-                except BrokenPipeError:
-                    pass
+                        with _last_activity_lock:
+                            idle = time.monotonic() - _last_activity[0]
+                        if idle > inactivity_timeout:
+                            # Re-check suppressed after acquiring idle measurement
+                            if _suppressed.is_set():
+                                break
+                            killed_by_inactivity = True
+                            logger.debug(
+                                "Process pid=%d killed due to inactivity timeout after %ds",
+                                process.pid,
+                                inactivity_timeout,
+                            )
+                            _killpg(signal_module.SIGTERM)
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                _killpg(signal_module.SIGKILL)
+                                process.wait()  # Reap zombie
+                            break
 
-        stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
-        stdout_thread.start()
-        stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
-        stderr_thread.start()
-
-        if completion_event is not None:
-            # Poll: wait for stdout EOF or completion_event firing, whichever
-            # comes first.  A 100ms granularity check avoids a tight spin loop.
-            while stdout_thread.is_alive():
-                if completion_event.wait(timeout=0.1):
-                    break
-
-            if completion_event.is_set():
-                # Suppress inactivity watchdog — completion_event takes control
-                _suppressed.set()
-                # Termination cascade: wait for voluntary exit → SIGTERM → SIGKILL
-                try:
-                    process.wait(timeout=5)  # 1) Wait for voluntary exit
-                except subprocess.TimeoutExpired:
-                    logger.debug(
-                        "Process pid=%d did not exit voluntarily after completion event;"
-                        " sending SIGTERM",
-                        process.pid,
+                if inactivity_timeout:
+                    inactivity_watchdog_thread = threading.Thread(
+                        target=_inactivity_watchdog, daemon=True
                     )
-                    _killpg(signal_module.SIGTERM)  # 2) SIGTERM the group
+                    inactivity_watchdog_thread.start()
+
+                if on_inactivity_hooks is not None and inactivity_timeout:
+                    on_inactivity_hooks(_suspend_inactivity, _resume_inactivity)
+
+                # Write stdin data if provided, then close stdin
+                if stdin_data is not None and process.stdin:
                     try:
-                        process.wait(timeout=5)  # 3) Wait after SIGTERM
-                    except subprocess.TimeoutExpired:
-                        logger.debug(
-                            "Process pid=%d did not respond to SIGTERM;"
-                            " sending SIGKILL",
-                            process.pid,
-                        )
-                        _killpg(signal_module.SIGKILL)  # 4) SIGKILL the group
-                        process.wait()  # 5) Reap zombie
-                stdout_thread.join(timeout=1)
-                stderr_thread.join(timeout=1)
-                if inactivity_timeout:
-                    inactivity_watchdog_thread.join(timeout=1)
-            else:
-                # stdout EOF reached naturally (process likely exited already)
-                stderr_thread.join(timeout=5)
-                process.wait()
-                if inactivity_timeout:
-                    inactivity_watchdog_thread.join(timeout=1)
-        elif timeout:
-            # When a timeout is configured, wait for the watchdog to finish
-            # first (it either returns immediately if the process finished
-            # on its own, or kills the process after the timeout).  Then use
-            # bounded joins so the main thread is not blocked forever if the
-            # reader threads are stuck on readline() after the kill.
-            watchdog_thread.join()
-            stdout_thread.join(timeout=1)
-            stderr_thread.join(timeout=1)
-            if inactivity_timeout:
-                inactivity_watchdog_thread.join(timeout=1)
-            if not killed_by_timeout:
-                process.wait()
-        else:
-            stdout_thread.join()
-            stderr_thread.join(timeout=5)
-            process.wait()
-            if inactivity_timeout:
-                inactivity_watchdog_thread.join(timeout=1)
+                        process.stdin.write(stdin_data)
+                        process.stdin.close()
+                    except BrokenPipeError:
+                        pass
 
-        if killed_by_timeout:
-            return ProviderResult(
-                exit_code=124,
-                stdout="",
-                stderr=f"Command timed out after {timeout} seconds",
-            )
+                stdout_lines: list[str] = []
+                stderr_lines: list[str] = []
 
-        if killed_by_inactivity:
-            return ProviderResult(
-                exit_code=124,
-                stdout="",
-                stderr=f"Process killed due to inactivity timeout after {inactivity_timeout} seconds (no output received)",
-            )
+                def _read_stdout() -> None:
+                    if process.stdout:
+                        try:
+                            while True:
+                                raw_line = process.stdout.readline()
+                                if not raw_line:
+                                    break
+                                line = raw_line.rstrip("\n")
+                                stdout_lines.append(line)
+                                if inactivity_timeout:
+                                    with _last_activity_lock:
+                                        _last_activity[0] = time.monotonic()
+                                if output_callback:
+                                    output_callback(line)
+                        except BrokenPipeError:
+                            pass
 
-        stdout = "\n".join(stdout_lines)
-        stderr = "\n".join(stderr_lines)
+                def _read_stderr() -> None:
+                    if process.stderr:
+                        try:
+                            while True:
+                                raw_line = process.stderr.readline()
+                                if not raw_line:
+                                    break
+                                line = raw_line.rstrip("\n")
+                                stderr_lines.append(line)
+                                if inactivity_timeout:
+                                    with _last_activity_lock:
+                                        _last_activity[0] = time.monotonic()
+                                if stderr_callback:
+                                    stderr_callback(line)
+                        except BrokenPipeError:
+                            pass
 
-        return ProviderResult(
-            exit_code=process.returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
+                stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+                stdout_thread.start()
+                stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+                stderr_thread.start()
+
+                if completion_event is not None:
+                    # Poll: wait for stdout EOF or completion_event firing, whichever
+                    # comes first.  A 100ms granularity check avoids a tight spin loop.
+                    while stdout_thread.is_alive():
+                        if completion_event.wait(timeout=0.1):
+                            break
+
+                    if completion_event.is_set():
+                        # Suppress inactivity watchdog — completion_event takes control
+                        _suppressed.set()
+                        _terminate_child_cascade(process)
+                        stdout_thread.join(timeout=1)
+                        stderr_thread.join(timeout=1)
+                        if inactivity_timeout:
+                            inactivity_watchdog_thread.join(timeout=1)
+                    else:
+                        # stdout EOF reached naturally (process likely exited already)
+                        stderr_thread.join(timeout=5)
+                        process.wait()
+                        if inactivity_timeout:
+                            inactivity_watchdog_thread.join(timeout=1)
+                elif timeout:
+                    # When a timeout is configured, wait for the watchdog to finish
+                    # first (it either returns immediately if the process finished
+                    # on its own, or kills the process after the timeout).  Then use
+                    # bounded joins so the main thread is not blocked forever if the
+                    # reader threads are stuck on readline() after the kill.
+                    watchdog_thread.join()
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
+                    if inactivity_timeout:
+                        inactivity_watchdog_thread.join(timeout=1)
+                    if not killed_by_timeout:
+                        process.wait()
+                else:
+                    stdout_thread.join()
+                    stderr_thread.join(timeout=5)
+                    process.wait()
+                    if inactivity_timeout:
+                        inactivity_watchdog_thread.join(timeout=1)
+
+                if killed_by_timeout:
+                    return ProviderResult(
+                        exit_code=124,
+                        stdout="",
+                        stderr=f"Command timed out after {timeout} seconds",
+                    )
+
+                if killed_by_inactivity:
+                    return ProviderResult(
+                        exit_code=124,
+                        stdout="",
+                        stderr=f"Process killed due to inactivity timeout after {inactivity_timeout} seconds (no output received)",
+                    )
+
+                stdout = "\n".join(stdout_lines)
+                stderr = "\n".join(stderr_lines)
+
+                return ProviderResult(
+                    exit_code=process.returncode,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
+            finally:
+                _terminate_child_cascade(process)
 
     except Exception as e:
         return ProviderResult(

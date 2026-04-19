@@ -10,12 +10,20 @@ from fdsx.providers.base import _run_subprocess
 
 
 def _make_mock_process() -> MagicMock:
-    """Return a minimal mock subprocess.Popen object."""
+    """Return a minimal mock subprocess.Popen object.
+
+    Mirrors ``subprocess.Popen.__enter__`` returning ``self`` so that
+    ``with Popen(...) as process`` in the production code sees the same
+    mock (not ``MagicMock.__enter__.return_value``), which would otherwise
+    make ``readline()`` return a truthy MagicMock and loop forever.
+    """
     proc = MagicMock()
+    proc.__enter__.return_value = proc
     proc.stdout.readline.return_value = ""
     proc.stderr.readline.return_value = ""
     proc.returncode = 0
     proc.pid = 12345
+    proc.poll.return_value = 0
     return proc
 
 
