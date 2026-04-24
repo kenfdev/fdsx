@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'url';
 import express, { type Express, type Request, type Response } from 'express';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { scanWorkflows } from './scanner.js';
 import { parseWorkflow, WorkflowParseError } from './parser.js';
@@ -8,7 +9,19 @@ import { transformWorkflow } from './graph.js';
 import type { WorkflowFile } from '../shared/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CLIENT_DIST = path.resolve(__dirname, '../../dist/client');
+
+function resolveClientDist(): string {
+  let dir = __dirname;
+  while (dir !== path.dirname(dir)) {
+    const candidate = path.join(dir, 'dist', 'client');
+    if (fsSync.existsSync(candidate)) return candidate;
+    if (fsSync.existsSync(path.join(dir, 'package.json'))) break;
+    dir = path.dirname(dir);
+  }
+  return path.join(__dirname, '..', '..', '..', 'dist', 'client');
+}
+
+const CLIENT_DIST = resolveClientDist();
 
 export interface WorkflowResponse {
   workflow: {
