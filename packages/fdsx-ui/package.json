@@ -1,6 +1,6 @@
 {
   "name": "fdsx-ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Standalone web UI for visualizing fdsx workflow YAML files as interactive directed graphs",
   "license": "MIT",
@@ -13,8 +13,18 @@
   "bugs": {
     "url": "https://github.com/kenfdev/fdsx/issues"
   },
-  "keywords": ["fdsx", "workflow", "visualization", "yaml", "cli"],
-  "files": ["dist", "npm-shrinkwrap.json", "README.md"],
+  "keywords": [
+    "fdsx",
+    "workflow",
+    "visualization",
+    "yaml",
+    "cli"
+  ],
+  "files": [
+    "dist",
+    "npm-shrinkwrap.json",
+    "README.md"
+  ],
   "engines": {
     "node": ">=18"
   },
