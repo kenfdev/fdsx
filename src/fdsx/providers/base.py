@@ -120,6 +120,7 @@ def _run_subprocess(
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     on_inactivity_hooks: Callable[[Callable[[], None], Callable[[], None]], None]
     | None = None,
+    max_suspend_duration: int | None = None,
 ) -> ProviderResult:
     """Shared subprocess execution helper for all providers.
 
@@ -148,6 +149,14 @@ def _run_subprocess(
             when inactivity_timeout is active. Callers can use these to prevent
             false inactivity kills during long-running tool execution. Both suspend_fn
             and resume_fn reset the inactivity timer to the current time.
+        max_suspend_duration: Maximum seconds the watchdog will wait after suspend_fn()
+            is called before automatically calling resume (resetting _last_activity and
+            _suspended_at). None or 0 leaves behavior byte-identical to the current
+            implementation. When > 0, each call to suspend_fn() records the suspend
+            timestamp; if the process is still suspended when max_suspend_duration
+            elapses, the watchdog auto-resumes so the inactivity timer resumes counting.
+            A subsequent call to resume_fn() is idempotent. A second call to
+            suspend_fn() before the cap fires resets the deadline.
 
     Returns:
         ProviderResult with exit code and output.
@@ -189,6 +198,7 @@ def _run_subprocess(
 
                 # Shared state for the inactivity watchdog
                 _last_activity: list[float] = [time.monotonic()]
+                _suspended_at: list[float | None] = [None]
                 _last_activity_lock = threading.Lock()
                 # _suppressed: set when the completion_event path takes control, preventing
                 # the inactivity watchdog from issuing a redundant kill.
@@ -196,11 +206,15 @@ def _run_subprocess(
 
                 def _suspend_inactivity() -> None:
                     with _last_activity_lock:
-                        _last_activity[0] = time.monotonic()
+                        now = time.monotonic()
+                        _last_activity[0] = now
+                        if max_suspend_duration:
+                            _suspended_at[0] = now
 
                 def _resume_inactivity() -> None:
                     with _last_activity_lock:
                         _last_activity[0] = time.monotonic()
+                        _suspended_at[0] = None
 
                 def _killpg(sig: int) -> None:
                     """Send *sig* to the subprocess's process group (best-effort)."""
@@ -232,7 +246,15 @@ def _run_subprocess(
                         if process.poll() is not None:
                             break
                         with _last_activity_lock:
-                            idle = time.monotonic() - _last_activity[0]
+                            now = time.monotonic()
+                            if (
+                                max_suspend_duration
+                                and _suspended_at[0] is not None
+                                and now - _suspended_at[0] >= max_suspend_duration
+                            ):
+                                _last_activity[0] = now
+                                _suspended_at[0] = None
+                            idle = now - _last_activity[0]
                         if idle > inactivity_timeout:
                             # Re-check suppressed after acquiring idle measurement
                             if _suppressed.is_set():
