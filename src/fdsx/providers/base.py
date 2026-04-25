@@ -444,5 +444,10 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
 
         gemini_opts = GeminiOptions.model_validate(options) if options else None
         return GeminiProvider(gemini_opts)
+    elif name == "cursor":
+        from fdsx.providers.cursor import CursorOptions, CursorProvider
+
+        cursor_opts = CursorOptions.model_validate(options) if options else None
+        return CursorProvider(cursor_opts)
     else:
         raise ValueError(f"Unknown provider: {name}")
