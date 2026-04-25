@@ -136,6 +136,7 @@ class GeminiProvider(ProviderBase):
                 stdin_data=stdin_data,
                 completion_event=completion_event,
                 inactivity_timeout=effective_inactivity,
+                max_suspend_duration=effective_inactivity,
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
             )
