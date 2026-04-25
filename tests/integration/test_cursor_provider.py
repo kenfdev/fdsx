@@ -274,8 +274,7 @@ class TestCursorStreamingExecution:
                 prompt="hello", output_callback=lambda x: received_lines.append(x)
             )
 
-        assert "hello" in received_lines
-        assert " world" in received_lines
+        assert "hello world" in received_lines
 
     def test_streaming_result_from_parsed_content(self):
         """ProviderResult.stdout is the concatenated assistant text content."""
