@@ -1,12 +1,13 @@
-"""Integration tests for CursorProvider (T005, T006)."""
+"""Integration tests for CursorProvider (T005, T006, T011)."""
 
+import json
 from unittest.mock import patch
 
 import pytest
-from fdsx.providers.cursor import CursorOptions, CursorProvider, CursorProviderError
 from pydantic import ValidationError
 
 from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult, get_provider
+from fdsx.providers.cursor import CursorOptions, CursorProvider, CursorProviderError
 
 FAKE_SUCCESS = ProviderResult(exit_code=0, stdout="ok", stderr="")
 
@@ -168,3 +169,318 @@ class TestCursorProviderFactory:
         """get_provider('cursor', {'yolo': True}) raises ValidationError."""
         with pytest.raises(ValidationError):
             get_provider("cursor", {"yolo": True})
+
+
+class TestCursorStreamingExecution:
+    """T011: Verify CursorProvider.execute() streaming branch."""
+
+    def test_streaming_appends_output_format_flag(self):
+        """When output_callback is provided, --output-format stream-json and --stream-partial-output are in args."""
+        provider = CursorProvider()
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        assert len(captured_args) == 1
+        args = captured_args[0]
+        assert "--output-format" in args
+        assert "stream-json" in args
+        assert "--stream-partial-output" in args
+
+    def test_streaming_max_suspend_duration_default(self):
+        """Streaming branch passes max_suspend_duration=DEFAULT_INACTIVITY_TIMEOUT to _run_subprocess."""
+        provider = CursorProvider()
+        captured_kwargs: list[dict] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_kwargs.append(dict(kwargs))
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        assert len(captured_kwargs) == 1
+        assert captured_kwargs[0].get("max_suspend_duration") == 300
+
+    def test_streaming_parses_ndjson(self):
+        """NDJSON assistant delta lines are parsed and forwarded to output_callback."""
+        provider = CursorProvider()
+        received_lines: list[str] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {"content": [{"type": "text", "text": "hello"}]},
+                        }
+                    )
+                )
+                cb(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [{"type": "text", "text": " world"}]
+                            },
+                        }
+                    )
+                )
+                cb(json.dumps({"type": "result", "status": "success"}))
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            provider.execute(
+                prompt="hello", output_callback=lambda x: received_lines.append(x)
+            )
+
+        assert "hello" in received_lines
+        assert " world" in received_lines
+
+    def test_streaming_result_from_parsed_content(self):
+        """ProviderResult.stdout is the concatenated assistant text content."""
+        provider = CursorProvider()
+
+        def fake_run_subprocess(args, **kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [{"type": "text", "text": "partial1"}]
+                            },
+                        }
+                    )
+                )
+                cb(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [{"type": "text", "text": " partial2"}]
+                            },
+                        }
+                    )
+                )
+                cb(json.dumps({"type": "result", "status": "success"}))
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="raw stdout", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            result = provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        assert result.stdout == "partial1 partial2"
+
+    def test_streaming_raw_fallback_when_no_ndjson(self):
+        """When no NDJSON content is parsed, ProviderResult.stdout is the raw stdout."""
+        provider = CursorProvider()
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="raw", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            result = provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        # These flags are only present in the streaming branch — ensures T013 is wired.
+        assert "--output-format" in captured_args[0]
+        assert "stream-json" in captured_args[0]
+        # When parser accumulates no text, fall back to raw subprocess stdout.
+        assert result.stdout == "raw"
+
+    def test_streaming_summary_callback_for_tool_call(self):
+        """tool_call/started event forwards [tool: <key>] to summary_callback."""
+        provider = CursorProvider()
+        summary_received: list[str] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "subtype": "started",
+                            "toolKey": "writeToolCall",
+                        }
+                    )
+                )
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            provider.execute(
+                prompt="hello",
+                output_callback=lambda x: None,
+                summary_callback=summary_received.append,
+            )
+
+        assert "[tool: writeToolCall]" in summary_received
+
+    def test_streaming_summary_callback_for_thinking_line(self):
+        """thinking content in assistant event is forwarded as '[thinking] ...' to summary_callback."""
+        provider = CursorProvider()
+        summary_received: list[str] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [
+                                    {"type": "thinking", "thinking": "I am reasoning"}
+                                ]
+                            },
+                        }
+                    )
+                )
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            provider.execute(
+                prompt="hello",
+                output_callback=lambda x: None,
+                summary_callback=summary_received.append,
+            )
+
+        assert any("[thinking]" in s for s in summary_received)
+
+    def test_streaming_on_inactivity_hooks_suspend_resume(self):
+        """on_inactivity_hooks are wired: suspend called on tool_call started, resume on completed."""
+        provider = CursorProvider()
+        suspend_calls: list[bool] = []
+        resume_calls: list[bool] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            hooks_fn = kwargs.get("on_inactivity_hooks")
+            if hooks_fn is not None:
+                hooks_fn(
+                    lambda: suspend_calls.append(True),
+                    lambda: resume_calls.append(True),
+                )
+            cb = kwargs.get("output_callback")
+            if cb:
+                cb(
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "subtype": "started",
+                            "toolKey": "readTool",
+                        }
+                    )
+                )
+                cb(
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "subtype": "completed",
+                            "toolKey": "readTool",
+                        }
+                    )
+                )
+            evt = kwargs.get("completion_event")
+            if evt:
+                evt.set()
+            return ProviderResult(exit_code=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "fdsx.providers.cursor.shutil.which",
+                return_value="/usr/local/bin/agent",
+            ),
+            patch(
+                "fdsx.providers.cursor._run_subprocess", side_effect=fake_run_subprocess
+            ),
+        ):
+            provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        assert suspend_calls == [True]
+        assert resume_calls == [True]
