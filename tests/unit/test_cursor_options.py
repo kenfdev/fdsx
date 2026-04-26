@@ -1,8 +1,9 @@
 """Unit tests for CursorOptions model (T004)."""
 
 import pytest
-from fdsx.providers.cursor import CursorOptions
 from pydantic import ValidationError
+
+from fdsx.providers.cursor import CursorOptions
 
 
 class TestCursorOptions:
