@@ -69,6 +69,7 @@ Every state except `choice` supports `next` (go to state) or `end: true` (termin
 | `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
 | `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
+| `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` | **Note:** Not available in YAML workflows — use `get_provider("cursor")` directly. |
 | `system` | `sh -c <command>` | `command` | (none) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
@@ -155,7 +156,7 @@ When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`,
 
 ## Hooks
 
-Shell commands that run at lifecycle events. There are two scopes with different behaviors:
+Shell commands that run at lifecycle events. There are three scopes with different behaviors:
 
 ### State-scope hooks (`on_state_start`, `on_state_end`)
 
@@ -207,6 +208,31 @@ Each workflow-scope hook command receives:
 
 Workflow-scope hooks are always warn-only — non-zero exits log a warning and never abort the workflow. Each hook has a 30-second subprocess timeout. `on_workflow_start` fires only on fresh runs (not on `fdsx resume`).
 
+### Run-scope hooks (`on_run_start`, `on_run_end`)
+
+Run once per CLI invocation — outside any individual workflow or flow context. Configured under a **separate** `run_hooks:` key in `.fdsx/config.yaml` (not under `hooks:`). Not available in workflow YAML or at state level.
+
+```yaml
+# .fdsx/config.yaml
+run_hooks:
+  on_run_start:
+    - command: "echo CLI starting"
+  on_run_end:
+    - command: "notify-completion.sh"
+```
+
+Each run-scope hook command receives:
+
+- **No positional arguments**
+- **Environment variables:** `FDSX_HOOKS`, `FDSX_STATUS` only
+- `FDSX_STATE_NAME`, `FDSX_DATA_PATH`, `FDSX_FLOW_NAME`, and `FDSX_THREAD_ID` are **not set** (run hooks fire outside any flow/thread context)
+
+`FDSX_STATUS` values: `starting` (on_run_start), `completed`, `failed`, or `partial` (on_run_end; `partial` occurs in tasks-dir mode when some entries succeeded and some failed).
+
+`FDSX_HOOKS` contains `on_run_start` or `on_run_end`.
+
+Run-scope hooks are always warn-only — non-zero exits log a warning and never abort the run. Each hook has a 30-second subprocess timeout. Merging: global → project config concatenated (no flow or state level).
+
 ## Config File
 
 `.fdsx/config.yaml` supports these options beyond provider settings:
@@ -228,6 +254,11 @@ hooks:                          # global hooks applied to all flows
     - command: "echo starting"
   on_workflow_end:
     - command: "notify.sh"
+run_hooks:                      # run-level hooks fired once per CLI invocation
+  on_run_start:
+    - command: "echo CLI starting"
+  on_run_end:
+    - command: "notify-completion.sh"
 profiles:                       # named provider/model bundles
   fast:
     provider: claude
@@ -237,6 +268,8 @@ profiles:                       # named provider/model bundles
 Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
 
 `hooks` at config level supports all four lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) and are prepended to flow-level and state-level hooks.
+
+`run_hooks` is a separate key from `hooks` and only supports `on_run_start` and `on_run_end`.
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 
@@ -292,3 +325,4 @@ Inside iterator states, `{item}` refers to the current array element. Use `{item
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
 - `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, and `map` states; `pass` state `hooks` accepts all four keys (workflow-scope keys are silently ignored at runtime)
+- `on_run_start` and `on_run_end` are forbidden in flow YAML (`Flow.hooks`) and all state `hooks` blocks — they are only valid in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml` under the `run_hooks:` key

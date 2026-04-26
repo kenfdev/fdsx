@@ -5,7 +5,12 @@ from unittest.mock import patch
 import yaml
 
 from fdsx.core.engine import FlowResult, run_flow
-from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD, ProviderResult, get_provider
+from fdsx.providers.base import (
+    ARG_MAX_STDIN_THRESHOLD,
+    DEFAULT_INACTIVITY_TIMEOUT,
+    ProviderResult,
+    get_provider,
+)
 from fdsx.providers.gemini import GeminiOptions, GeminiProvider
 
 FAKE_SUCCESS = ProviderResult(exit_code=0, stdout="ok", stderr="")
@@ -176,6 +181,25 @@ class TestGeminiStreamingExecution:
             result = provider.execute(prompt="hello", output_callback=lambda x: None)
 
         assert result.stdout == "partial1 partial2"
+
+    def test_gemini_streaming_passes_max_suspend_duration(self):
+        """max_suspend_duration=DEFAULT_INACTIVITY_TIMEOUT forwarded on streaming call."""
+        provider = GeminiProvider()
+        captured_kwargs: list[dict] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_kwargs.append(dict(kwargs))
+            return FAKE_SUCCESS
+
+        with patch(
+            "fdsx.providers.gemini._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(prompt="hello", output_callback=lambda x: None)
+
+        assert len(captured_kwargs) == 1
+        assert (
+            captured_kwargs[0].get("max_suspend_duration") == DEFAULT_INACTIVITY_TIMEOUT
+        )
 
 
 class TestGeminiProviderRegistration:

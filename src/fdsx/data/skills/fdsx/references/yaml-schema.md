@@ -19,6 +19,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [AggregateRule](#aggregaterule)
 - [HookConfig](#hookconfig)
 - [StateHookConfig](#statehookconfig)
+- [RunHookConfig](#runhookconfig)
 - [ProfileConfig](#profileconfig)
 - [Provider Options](#provider-options)
 - [Config File](#config-file)
@@ -297,7 +298,7 @@ aggregate:
 
 ## HookConfig
 
-Used at **flow level** (`Flow.hooks`), in **config files**, and in `PassState.hooks`. Supports all four lifecycle events including workflow-scope events.
+Used at **flow level** (`Flow.hooks`), in **config files** (under `hooks:`), and in `PassState.hooks`. Supports all four state/workflow lifecycle events.
 
 ```yaml
 hooks:
@@ -316,6 +317,8 @@ hooks:
 ```
 
 **Legacy keys rejected:** `on_start` and `on_complete` raise a validation error. Use `on_state_start` and `on_state_end`.
+
+**Run-scope keys rejected:** `on_run_start` and `on_run_end` raise a validation error when used in `Flow.hooks` (flow YAML). These keys are only valid in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml` under the separate `run_hooks:` key — see [RunHookConfig](#runhookconfig).
 
 **Workflow-scope key restriction:** `on_workflow_start` and `on_workflow_end` are **only valid** at flow level, project config, and global config scope. Using them inside a state's `hooks` block raises a validation error (except in `PassState`, which uses the full `HookConfig` — see [PassState](#passstate)).
 
@@ -366,7 +369,7 @@ Each command receives:
 
 ## StateHookConfig
 
-Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `WaitState`, `MapState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start` and `on_workflow_end` are explicitly forbidden.
+Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `WaitState`, `MapState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` are explicitly forbidden.
 
 ```yaml
 hooks:
@@ -378,7 +381,46 @@ hooks:
       on_failure: string
 ```
 
-**Rejected keys:** `on_start`, `on_complete` (legacy), `on_workflow_start`, and `on_workflow_end` all raise a validation error when used inside a state's `hooks` block. Workflow-scope keys (`on_workflow_start`, `on_workflow_end`) are only valid at flow level or in config files.
+**Rejected keys:** `on_start`, `on_complete` (legacy), `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` all raise a validation error when used inside a state's `hooks` block. Workflow-scope keys (`on_workflow_start`, `on_workflow_end`) are only valid at flow level or in config files. Run-scope keys (`on_run_start`, `on_run_end`) are only valid in config files under the `run_hooks:` key.
+
+---
+
+## RunHookConfig
+
+Used by **config files only** (`FdsxConfig.run_hooks`). Fires once per CLI invocation, outside any individual workflow or state context. Cannot be used in flow YAML or state blocks.
+
+```yaml
+run_hooks:
+  on_run_start:                 # optional — hooks run once at CLI invocation start
+    - command: string           # required — shell command (min 1 char)
+      on_failure: string        # default: "warn" — always warn-only for run hooks
+  on_run_end:                   # optional — hooks run once at CLI invocation end
+    - command: string
+      on_failure: string        # note: on_failure is ignored; run hooks are always warn-only
+```
+
+**Scope:** `run_hooks` is a **separate top-level key** in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml`. It is distinct from `hooks:` (which contains state/workflow lifecycle events). Using `on_run_start`/`on_run_end` inside `hooks:` raises a validation error.
+
+**`on_run_start`** fires once at the start of a `fdsx run` or `fdsx resume` CLI invocation, before any workflow or checkpoint logic executes.
+
+**`on_run_end`** fires once when the CLI invocation exits (success, failure, or partial completion for tasks-dir runs).
+
+Each command receives:
+
+**Positional arguments:** none
+
+**Environment variables:**
+- `FDSX_HOOKS` — lifecycle event name: `on_run_start` or `on_run_end`
+- `FDSX_STATUS` — lifecycle status:
+  - `on_run_start`: always `starting`
+  - `on_run_end`: `completed`, `failed`, or `partial` (tasks-dir aggregate)
+- `FDSX_STATE_NAME`, `FDSX_DATA_PATH`, `FDSX_FLOW_NAME`, and `FDSX_THREAD_ID` are **not set** for run hooks
+
+**Failure policy:** Always warn-only — `on_failure` is ignored. Non-zero exit codes and timeouts log a warning and never raise. Each hook has a 30-second subprocess timeout.
+
+**Merging:** During global → project config deep merge, `on_run_start` and `on_run_end` lists are **concatenated** (global prepended to project), not replaced.
+
+Uses `extra="forbid"` — unknown keys cause validation errors.
 
 ---
 
@@ -447,6 +489,22 @@ provider_options:
   inactivity_timeout?: int              # default: 300
 ```
 
+### Cursor
+
+```yaml
+provider_options:
+  force?: bool                          # default: false — pass --force to agent CLI
+  sandbox?: string                      # optional — passed as --sandbox <value>
+  approve_mcps?: bool                   # default: false — pass --approve-mcps to agent CLI
+  inactivity_timeout?: int              # default: 300
+```
+
+CLI binary invoked: `agent -p <prompt> --trust [--model <model>] [--force] [--sandbox <val>] [--approve-mcps]`
+
+When `output_callback` is provided, `--output-format stream-json --stream-partial-output` flags are appended to enable streaming.
+
+**Note:** `cursor` is registered in the provider factory (`get_provider()`) and the `CursorProvider` implementation is complete. However, `cursor` is not currently listed in `VALID_PROVIDERS` in `models/validators.py` or `_validate_provider_fields` in `models/flow.py`, so using `provider: cursor` in workflow YAML will raise a validation error at load time. It may only be used via direct programmatic invocation of `get_provider("cursor")`.
+
 All provider option models use `extra="forbid"` — unknown keys cause validation errors.
 
 ---
@@ -478,7 +536,13 @@ providers?:
   opencode?: OpenCodeOptions
   gemini?: GeminiOptions
 
-hooks?: HookConfig              # global hooks, concatenated with flow/state hooks
+hooks?: HookConfig              # workflow/state lifecycle hooks applied to all flows
+                                # accepts: on_state_start, on_state_end, on_workflow_start, on_workflow_end
+                                # does NOT accept: on_run_start, on_run_end (use run_hooks: instead)
+
+run_hooks?:                     # run-level lifecycle hooks fired once per CLI invocation
+  on_run_start?: [HookEntry]    # fires at start of fdsx run / fdsx resume
+  on_run_end?: [HookEntry]      # fires at end of CLI invocation
 
 profiles?:
   <name>: ProfileConfig
@@ -486,4 +550,8 @@ profiles?:
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
 
-**Hook merging:** During global → project config deep merge, all four hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order.
+**Hook merging:** During global → project config deep merge, all six hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level.
+
+Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+
+`profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).

@@ -1,5 +1,6 @@
 import json
 import logging
+import shutil
 import subprocess
 import threading
 from collections.abc import Callable
@@ -19,43 +20,38 @@ from fdsx.providers.base import (
 logger = logging.getLogger(__name__)
 
 
-class GeminiOptions(BaseModel):
-    """Options for the Gemini CLI provider."""
+class CursorProviderError(Exception):
+    """Raised when the Cursor provider encounters a domain-level error."""
+
+
+class CursorOptions(BaseModel):
+    """Options for the Cursor CLI provider."""
 
     model_config = ConfigDict(extra="forbid")
 
-    approval_mode: Literal["default", "auto_edit", "yolo", "plan"] | None = None
-    yolo: bool = False
-    sandbox: bool = False
-    include_directories: list[str] = []
-    extensions: list[str] = []
-    policy: list[str] = []
+    force: bool = False
+    sandbox: Literal["enabled", "disabled"] | None = None
+    approve_mcps: bool = False
     inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
-        """Translate options to Gemini CLI flags."""
+        """Translate options to Cursor CLI flags."""
         flags: list[str] = []
-        if self.yolo:
-            flags.append("--yolo")
-        elif self.approval_mode is not None:
-            flags.extend(["--approval-mode", self.approval_mode])
-        if self.sandbox:
-            flags.append("--sandbox")
-        if self.include_directories:
-            flags.extend(["--include-directories", ",".join(self.include_directories)])
-        if self.extensions:
-            flags.extend(["--extensions", ",".join(self.extensions)])
-        for p in self.policy:
-            flags.extend(["--policy", p])
+        if self.force:
+            flags.append("--force")
+        if self.sandbox is not None:
+            flags.extend(["--sandbox", self.sandbox])
+        if self.approve_mcps:
+            flags.append("--approve-mcps")
         return flags
 
 
-class GeminiProvider(ProviderBase):
-    """Gemini provider - executes Gemini CLI."""
+class CursorProvider(ProviderBase):
+    """Cursor provider - executes Cursor agent CLI."""
 
-    def __init__(self, options: GeminiOptions | None = None) -> None:
-        self.options: GeminiOptions = (
-            options if options is not None else GeminiOptions()
+    def __init__(self, options: CursorOptions | None = None) -> None:
+        self.options: CursorOptions = (
+            options if options is not None else CursorOptions()
         )
 
     def execute(
@@ -69,31 +65,43 @@ class GeminiProvider(ProviderBase):
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
     ) -> ProviderResult:
-        """Execute Gemini CLI with a prompt.
+        """Execute Cursor agent CLI with a prompt.
 
         Args:
-            prompt: The prompt to send to Gemini
+            prompt: The prompt to send to Cursor agent
             model: Model name
             timeout: Timeout in seconds
-            command: Ignored for gemini provider
+            command: Ignored for cursor provider
             output_callback: Optional callback for streaming stdout lines.
             stderr_callback: Optional callback for streaming stderr lines.
             on_process_start: Optional callback invoked after Popen creation.
-            summary_callback: Optional callback for summary lines (ignored for Gemini).
+            summary_callback: Ignored for cursor provider.
 
         Returns:
             ProviderResult with exit code and output
+
+        Raises:
+            CursorProviderError: If the 'agent' binary is not found on PATH.
         """
+        if shutil.which("agent") is None:
+            raise CursorProviderError(
+                "Cursor 'agent' binary not found on PATH. "
+                "Ensure Cursor is installed and 'agent' is available."
+            )
+
         use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
-        args = ["gemini", "-p"]
         if use_stdin:
-            args.append("-")
+            prompt_arg = "-"
             stdin_data: str | None = prompt
         else:
-            args.append(prompt)
+            prompt_arg = prompt
             stdin_data = None
+
+        args: list[str] = ["agent", "-p", prompt_arg, "--trust"]
+
         if model:
             args.extend(["--model", model])
+
         args.extend(self.options.to_cli_flags())
 
         effective_inactivity = (
@@ -106,7 +114,7 @@ class GeminiProvider(ProviderBase):
         )
 
         if output_callback is not None:
-            args.extend(["--output-format", "stream-json"])
+            args.extend(["--output-format", "stream-json", "--stream-partial-output"])
             completion_event = threading.Event()
             suspend_fn: list[Callable[[], None] | None] = [None]
             resume_fn: list[Callable[[], None] | None] = [None]
@@ -136,9 +144,9 @@ class GeminiProvider(ProviderBase):
                 stdin_data=stdin_data,
                 completion_event=completion_event,
                 inactivity_timeout=effective_inactivity,
-                max_suspend_duration=effective_inactivity,
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
+                max_suspend_duration=effective_inactivity,
             )
             flush()
             parsed_stdout = get_result()
@@ -168,24 +176,17 @@ class GeminiProvider(ProviderBase):
         on_tool_start: Callable[[], None] | None = None,
         on_tool_end: Callable[[], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None], Callable[[], None]]:
-        """Create a streaming callback that parses stream-json NDJSON lines.
-
-        Wraps ``output_callback`` so that human-readable text extracted from
-        Gemini's ``stream-json`` NDJSON events is forwarded to the caller while
-        the raw JSON lines are silently consumed. Fragments are buffered and
-        emitted as complete lines (on newline boundaries or content block end).
+        """Create a streaming callback that parses Cursor stream-json NDJSON lines.
 
         Returns a ``(stream_callback, get_result, flush)`` tuple:
         - ``stream_callback``: parses each JSON line and dispatches text to
-          ``output_callback``. Malformed JSON lines are skipped with a warning
-          logged via ``logger.warning``.
+          ``output_callback``. Malformed JSON lines are skipped with a warning.
         - ``get_result``: returns the final stdout string reconstructed from
-          accumulated assistant message deltas. Gemini's ``result`` event does
-          NOT contain response text.
+          accumulated assistant message text parts, or None if none accumulated.
         - ``flush``: emits any remaining buffered text. Call after streaming ends.
         """
         text_parts: list[str] = []
-
+        _non_text_part_seen: list[bool] = [False]
         _buffer: list[str] = []
         _buffer_type: list[str | None] = [None]
 
@@ -228,46 +229,63 @@ class GeminiProvider(ProviderBase):
                 return
 
             event_type = event.get("type")
+            event_subtype = event.get("subtype")
 
-            if event_type == "init":
-                session_id = event.get("session_id", "unknown")
+            if event_type == "system" and event_subtype == "init":
                 model = event.get("model", "unknown")
-                logger.debug(
-                    "Gemini session init: session_id=%s model=%s", session_id, model
-                )
+                logger.debug("Cursor session init: model=%s", model)
 
-            elif event_type == "message":
-                role = event.get("role")
-                if role == "user":
+            elif event_type == "assistant":
+                if "model_call_id" in event:
                     return
-                if role == "assistant" and event.get("delta"):
-                    content = event.get("content", "")
-                    if content:
-                        text_parts.append(content)
-                        _append_and_emit(content, "text")
+                message = event.get("message", {})
+                content_list = message.get("content", [])
+                for part in content_list:
+                    part_type = part.get("type")
+                    if part_type == "text":
+                        text = part.get("text", "")
+                        text_parts.append(text)
+                        if text:
+                            _append_and_emit(text, "text")
+                    elif part_type == "thinking":
+                        _flush_buffer()
+                        thinking_text = part.get("thinking", "")
+                        cb = (
+                            summary_callback
+                            if summary_callback is not None
+                            else output_callback
+                        )
+                        cb(f"[thinking] {thinking_text}")
+                    else:
+                        if not _non_text_part_seen[0]:
+                            logger.debug(
+                                "Non-text content part skipped: type=%s", part_type
+                            )
+                            _non_text_part_seen[0] = True
 
-            elif event_type == "tool_use":
-                _flush_buffer()
-                tool_name = event.get("tool_name", "unknown")
-                cb = summary_callback if summary_callback else output_callback
-                cb(f"[tool: {tool_name}]")
-                if on_tool_start is not None:
-                    on_tool_start()
-
-            elif event_type == "tool_result":
-                if on_tool_end is not None:
-                    on_tool_end()
-
-            elif event_type == "error":
-                _flush_buffer()
-                message = event.get("message", "")
-                cb = summary_callback if summary_callback else output_callback
-                cb(message)
+            elif event_type == "tool_call":
+                if event_subtype == "started":
+                    _flush_buffer()
+                    tool_key = event.get("toolKey", "unknown")
+                    cb = (
+                        summary_callback
+                        if summary_callback is not None
+                        else output_callback
+                    )
+                    cb(f"[tool: {tool_key}]")
+                    if on_tool_start is not None:
+                        on_tool_start()
+                elif event_subtype == "completed":
+                    if on_tool_end is not None:
+                        on_tool_end()
 
             elif event_type == "result":
                 _flush_buffer()
                 if completion_event is not None:
                     completion_event.set()
+
+            else:
+                logger.debug("Unknown Cursor event type=%s, skipping", event_type)
 
         def flush() -> None:
             _flush_buffer()
