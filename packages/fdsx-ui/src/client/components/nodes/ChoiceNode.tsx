@@ -7,9 +7,9 @@ export function ChoiceNode({ data }: NodeProps<GraphNode>) {
     <>
       <Handle type="target" position={Position.Top} />
       <div
-        className={`${styles.nodeBase} ${styles.diamondWrapper} ${data.isStart ? styles.startNode : data.isEnd ? styles.endNode : ''}`}
+        className={`${styles.diamondOuter} ${data.isStart ? styles.startNode : data.isEnd ? styles.endNode : ''}`}
       >
-        <div className={styles.diamondContent}>
+        <div className={styles.diamondInner}>
           <p className={styles.nodeLabel}>
             {data.isStart ? (
               <span className={styles.nodeIcon}>▶</span>

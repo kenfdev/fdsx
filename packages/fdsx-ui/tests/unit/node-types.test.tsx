@@ -144,19 +144,7 @@ describe('TaskNode', () => {
 });
 
 describe('ChoiceNode', () => {
-  it('renders label and has diamond wrapper', () => {
-    const props = makeNodeProps({
-      label: 'Check Status',
-      stateType: 'choice',
-      isStart: false,
-      state: { type: 'choice' },
-    });
-    const { container } = render(<ChoiceNode {...props} />);
-    expect(screen.getByText('Check Status')).toBeInTheDocument();
-    expect(container.querySelector('.diamondWrapper')).toBeTruthy();
-  });
-
-  it('never gets endNode class', () => {
+  it('renders label and has diamondOuter and diamondInner nested', () => {
     const props = makeNodeProps({
       label: 'Check Status',
       stateType: 'choice',
@@ -165,7 +153,98 @@ describe('ChoiceNode', () => {
       state: { type: 'choice' },
     });
     const { container } = render(<ChoiceNode {...props} />);
+    expect(screen.getByText('Check Status')).toBeInTheDocument();
+    expect(container.querySelector('.diamondOuter')).toBeTruthy();
+    expect(container.querySelector('.diamondInner')).toBeTruthy();
+    expect(container.querySelector('.diamondOuter .diamondInner')).toBeTruthy();
+  });
+
+  it('applies startNode class on diamondOuter when isStart is true', () => {
+    const props = makeNodeProps({
+      label: 'Start Decision',
+      stateType: 'choice',
+      isStart: true,
+      isEnd: false,
+      state: { type: 'choice' },
+    });
+    const { container } = render(<ChoiceNode {...props} />);
+    expect(container.querySelector('.diamondOuter.startNode')).toBeTruthy();
+  });
+
+  it('applies endNode class on diamondOuter when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Decision',
+      stateType: 'choice',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'choice' },
+    });
+    const { container } = render(<ChoiceNode {...props} />);
+    expect(container.querySelector('.diamondOuter.endNode')).toBeTruthy();
+    expect(container.querySelector('.diamondOuter.startNode')).toBeFalsy();
+  });
+
+  it('startNode wins when both isStart and isEnd are true', () => {
+    const props = makeNodeProps({
+      label: 'Only Decision',
+      stateType: 'choice',
+      isStart: true,
+      isEnd: true,
+      state: { type: 'choice' },
+    });
+    const { container } = render(<ChoiceNode {...props} />);
+    expect(container.querySelector('.diamondOuter.startNode')).toBeTruthy();
+    expect(container.querySelector('.diamondOuter.endNode')).toBeFalsy();
+  });
+
+  it('does not apply role class when neither flag is set', () => {
+    const props = makeNodeProps({
+      label: 'Plain Decision',
+      stateType: 'choice',
+      isStart: false,
+      isEnd: false,
+      state: { type: 'choice' },
+    });
+    const { container } = render(<ChoiceNode {...props} />);
+    expect(container.querySelector('.startNode')).toBeFalsy();
     expect(container.querySelector('.endNode')).toBeFalsy();
+  });
+
+  it('renders play icon when isStart is true', () => {
+    const props = makeNodeProps({
+      label: 'Start Decision',
+      stateType: 'choice',
+      isStart: true,
+      isEnd: false,
+      state: { type: 'choice' },
+    });
+    render(<ChoiceNode {...props} />);
+    expect(screen.getByText('▶')).toBeInTheDocument();
+  });
+
+  it('renders stop icon when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Decision',
+      stateType: 'choice',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'choice' },
+    });
+    render(<ChoiceNode {...props} />);
+    expect(screen.getByText('■')).toBeInTheDocument();
+  });
+
+  it('renders no icon for plain decision', () => {
+    const props = makeNodeProps({
+      label: 'Plain Decision',
+      stateType: 'choice',
+      isStart: false,
+      isEnd: false,
+      state: { type: 'choice' },
+    });
+    render(<ChoiceNode {...props} />);
+    expect(screen.queryByText('▶')).not.toBeInTheDocument();
+    expect(screen.queryByText('■')).not.toBeInTheDocument();
   });
 });
 
