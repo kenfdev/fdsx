@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import http from 'http';
 import path from 'path';
-import { writeFile, chmod, unlink } from 'fs/promises';
+import os from 'os';
+import { writeFile, chmod, unlink, symlink } from 'fs/promises';
 import { createApp } from '../../src/server/server.js';
 
 const fixturesDir = path.join(__dirname, '../fixtures');
@@ -31,6 +32,7 @@ describe('Prompt file endpoint', () => {
       .get('/api/workflows/prompt-file.yaml/prompt');
 
     expect(response.status).toBe(400);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body.error).toBe('missing-file');
   });
 
@@ -40,6 +42,7 @@ describe('Prompt file endpoint', () => {
       .query({ file: '' });
 
     expect(response.status).toBe(400);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body.error).toBe('missing-file');
   });
 
@@ -51,6 +54,7 @@ describe('Prompt file endpoint', () => {
       .query({ file: 'prompts/nonexistent.txt' });
 
     expect(response.status).toBe(404);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body.error).toBe('not-found');
     expect(response.body.file).toBe('prompts/nonexistent.txt');
   });
@@ -61,6 +65,7 @@ describe('Prompt file endpoint', () => {
       .query({ file: 'prompts/my-prompt.txt' });
 
     expect(response.status).toBe(404);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
   });
 
   // ── 404 outside-workspace (path traversal) ──────────────────────────────────
@@ -103,7 +108,26 @@ describe('Prompt file endpoint', () => {
       .query({ file: '/etc/passwd' });
 
     expect(response.status).toBe(404);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body.error).toBe('outside-workspace');
+  });
+
+  it('returns 404 outside-workspace for a symlink pointing outside the workspace', async () => {
+    const targetOutside = path.join(os.tmpdir(), 'prompt-test-external.txt');
+    const linkInside = path.join(fixturesDir, 'prompts', 'outside-link.txt');
+    await writeFile(targetOutside, 'external content');
+    await symlink(targetOutside, linkInside);
+    try {
+      const response = await request(app)
+        .get('/api/workflows/prompt-file.yaml/prompt')
+        .query({ file: 'prompts/outside-link.txt' });
+      expect(response.status).toBe(404);
+      expect(response.headers['content-type']).toMatch(/application\/json/);
+      expect(response.body.error).toBe('outside-workspace');
+    } finally {
+      await unlink(linkInside).catch(() => {});
+      await unlink(targetOutside).catch(() => {});
+    }
   });
 
   // ── 404 missing workflowDir (Finding 1) ────────────────────────────────────
@@ -130,6 +154,7 @@ describe('Prompt file endpoint', () => {
       .query({ file: 'prompt-file.yaml' }); // exists in fixtures but not a prompt_file
 
     expect(response.status).toBe(404);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body.error).toBe('not-found');
   });
 
@@ -143,6 +168,7 @@ describe('Prompt file endpoint', () => {
         .get('/api/workflows/prompt-file.yaml/prompt')
         .query({ file: 'prompts/extra.txt' });
       expect(response.status).toBe(404);
+      expect(response.headers['content-type']).toMatch(/application\/json/);
       expect(response.body.error).toBe('not-found');
     } finally {
       await unlink(extra).catch(() => {});
@@ -165,6 +191,7 @@ describe('Prompt file endpoint', () => {
         .query({ file: 'prompts/unreadable-prompt.txt' });
 
       expect(response.status).toBe(404);
+      expect(response.headers['content-type']).toMatch(/application\/json/);
       expect(response.body.error).toBe('read-error');
     } finally {
       // Restore permissions before deleting so cleanup always succeeds.
