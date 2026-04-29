@@ -32,39 +32,23 @@
   white-space: nowrap;
 }
 
-.diamondOuter {
+.diamond {
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-  padding: 2px;
-  background-color: #d97706;
-  width: 120px;
-  min-height: 80px;
-  display: flex;
-}
-
-.diamondInner {
-  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-  flex: 1;
-  padding: 18px 28px;
   background-color: #fef3c7;
+  width: 140px;
+  height: 90px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 0 24px;
+  box-sizing: border-box;
 }
 
-.diamondOuter.startNode {
-  background-color: #4f46e5;
-}
-
-.diamondOuter.startNode .diamondInner {
+.diamond.startNode {
   background-color: #eef2ff;
 }
 
-.diamondOuter.endNode {
-  background-color: #e11d48;
-}
-
-.diamondOuter.endNode .diamondInner {
+.diamond.endNode {
   background-color: #fff1f2;
 }
 
@@ -113,26 +97,26 @@
   box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.4);
 }
 
-:global(.react-flow__node:hover) .diamondOuter {
+:global(.react-flow__node:hover) .diamond {
   filter: drop-shadow(0 0 3px rgba(217, 119, 6, 0.45));
 }
 
-:global(.react-flow__node.selected) .diamondOuter {
+:global(.react-flow__node.selected) .diamond {
   filter: drop-shadow(0 0 5px rgba(217, 119, 6, 0.7));
 }
 
-:global(.react-flow__node:hover) .diamondOuter.startNode {
+:global(.react-flow__node:hover) .diamond.startNode {
   filter: drop-shadow(0 0 3px rgba(79, 70, 229, 0.45));
 }
 
-:global(.react-flow__node.selected) .diamondOuter.startNode {
+:global(.react-flow__node.selected) .diamond.startNode {
   filter: drop-shadow(0 0 5px rgba(79, 70, 229, 0.7));
 }
 
-:global(.react-flow__node:hover) .diamondOuter.endNode {
+:global(.react-flow__node:hover) .diamond.endNode {
   filter: drop-shadow(0 0 3px rgba(225, 29, 72, 0.45));
 }
 
-:global(.react-flow__node.selected) .diamondOuter.endNode {
+:global(.react-flow__node.selected) .diamond.endNode {
   filter: drop-shadow(0 0 5px rgba(225, 29, 72, 0.7));
 }
