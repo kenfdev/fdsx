@@ -8,11 +8,6 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-.startNode {
-  border: 2px solid #4f46e5;
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
-}
-
 .nodeLabel {
   font-size: 13px;
   font-weight: 500;
@@ -21,6 +16,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nodeIcon {
+  margin-right: 4px;
+  font-size: 11px;
 }
 
 .nodeSublabel {
@@ -64,4 +64,27 @@
 
 .mapNode .nodeSublabel {
   color: #7c3aed;
+}
+
+/* Role styles AFTER type styles — wins cascade when both classes present */
+.startNode {
+  border: 2px solid #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+  background-color: #eef2ff;
+}
+
+.endNode {
+  border: 2px solid #e11d48;
+  box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.2);
+  background-color: #fff1f2;
+}
+
+:global(.react-flow__node.selected) .startNode {
+  border: 2px solid #4f46e5;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.4);
+}
+
+:global(.react-flow__node.selected) .endNode {
+  border: 2px solid #e11d48;
+  box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.4);
 }

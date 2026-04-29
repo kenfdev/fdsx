@@ -16,6 +16,7 @@ function createGraphNode(workflow: Workflow, stateName: string): GraphNode {
     stateType: state.type,
     state,
     isStart: stateName === workflow.startAt,
+    isEnd: state.type !== 'choice' && state.end === true,
   };
 
   return {

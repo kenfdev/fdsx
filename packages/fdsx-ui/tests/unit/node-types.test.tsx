@@ -66,6 +66,81 @@ describe('TaskNode', () => {
     const { container } = render(<TaskNode {...props} />);
     expect(container.querySelector('.startNode')).toBeFalsy();
   });
+
+  it('applies endNode class when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Task',
+      stateType: 'task',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'task', provider: 'claude' },
+    });
+    const { container } = render(<TaskNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeTruthy();
+    expect(container.querySelector('.startNode')).toBeFalsy();
+  });
+
+  it('does not apply endNode class when isEnd is false', () => {
+    const props = makeNodeProps({
+      label: 'Middle Task',
+      stateType: 'task',
+      isStart: false,
+      isEnd: false,
+      state: { type: 'task', provider: 'claude' },
+    });
+    const { container } = render(<TaskNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeFalsy();
+  });
+
+  it('startNode wins when both isStart and isEnd are true', () => {
+    const props = makeNodeProps({
+      label: 'Only Task',
+      stateType: 'task',
+      isStart: true,
+      isEnd: true,
+      state: { type: 'task', provider: 'claude' },
+    });
+    const { container } = render(<TaskNode {...props} />);
+    expect(container.querySelector('.startNode')).toBeTruthy();
+    expect(container.querySelector('.endNode')).toBeFalsy();
+  });
+
+  it('renders play icon when isStart is true', () => {
+    const props = makeNodeProps({
+      label: 'Start Task',
+      stateType: 'task',
+      isStart: true,
+      isEnd: false,
+      state: { type: 'task', provider: 'claude' },
+    });
+    render(<TaskNode {...props} />);
+    expect(screen.getByText('▶')).toBeInTheDocument();
+  });
+
+  it('renders stop icon when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Task',
+      stateType: 'task',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'task', provider: 'claude' },
+    });
+    render(<TaskNode {...props} />);
+    expect(screen.getByText('■')).toBeInTheDocument();
+  });
+
+  it('renders no icon for plain node', () => {
+    const props = makeNodeProps({
+      label: 'Middle Task',
+      stateType: 'task',
+      isStart: false,
+      isEnd: false,
+      state: { type: 'task', provider: 'claude' },
+    });
+    render(<TaskNode {...props} />);
+    expect(screen.queryByText('▶')).not.toBeInTheDocument();
+    expect(screen.queryByText('■')).not.toBeInTheDocument();
+  });
 });
 
 describe('ChoiceNode', () => {
@@ -79,6 +154,18 @@ describe('ChoiceNode', () => {
     const { container } = render(<ChoiceNode {...props} />);
     expect(screen.getByText('Check Status')).toBeInTheDocument();
     expect(container.querySelector('.diamondWrapper')).toBeTruthy();
+  });
+
+  it('never gets endNode class', () => {
+    const props = makeNodeProps({
+      label: 'Check Status',
+      stateType: 'choice',
+      isStart: false,
+      isEnd: false,
+      state: { type: 'choice' },
+    });
+    const { container } = render(<ChoiceNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeFalsy();
   });
 });
 
@@ -105,6 +192,31 @@ describe('ParallelNode', () => {
     render(<ParallelNode {...props} />);
     expect(screen.getByText('1 branch')).toBeInTheDocument();
   });
+
+  it('applies endNode class when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Parallel',
+      stateType: 'parallel',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'parallel', branches: [{}] },
+    });
+    const { container } = render(<ParallelNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeTruthy();
+    expect(container.querySelector('.startNode')).toBeFalsy();
+  });
+
+  it('renders stop icon when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Parallel',
+      stateType: 'parallel',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'parallel', branches: [{}] },
+    });
+    render(<ParallelNode {...props} />);
+    expect(screen.getByText('■')).toBeInTheDocument();
+  });
 });
 
 describe('PassNode', () => {
@@ -119,6 +231,31 @@ describe('PassNode', () => {
     expect(screen.getByText('Skip Step')).toBeInTheDocument();
     expect(container.querySelector('.passNode')).toBeTruthy();
   });
+
+  it('applies endNode class when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Pass',
+      stateType: 'pass',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'pass' },
+    });
+    const { container } = render(<PassNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeTruthy();
+    expect(container.querySelector('.startNode')).toBeFalsy();
+  });
+
+  it('renders stop icon when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Pass',
+      stateType: 'pass',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'pass' },
+    });
+    render(<PassNode {...props} />);
+    expect(screen.getByText('■')).toBeInTheDocument();
+  });
 });
 
 describe('WaitNode', () => {
@@ -132,6 +269,31 @@ describe('WaitNode', () => {
     render(<WaitNode {...props} />);
     expect(screen.getByText('Wait for Input')).toBeInTheDocument();
     expect(screen.getByText('confirm')).toBeInTheDocument();
+  });
+
+  it('applies endNode class when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Wait',
+      stateType: 'wait',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'wait', mode: 'confirm' },
+    });
+    const { container } = render(<WaitNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeTruthy();
+    expect(container.querySelector('.startNode')).toBeFalsy();
+  });
+
+  it('renders stop icon when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Wait',
+      stateType: 'wait',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'wait', mode: 'confirm' },
+    });
+    render(<WaitNode {...props} />);
+    expect(screen.getByText('■')).toBeInTheDocument();
   });
 });
 
@@ -157,5 +319,30 @@ describe('MapNode', () => {
     });
     const { container } = render(<MapNode {...props} />);
     expect(container.querySelector('.mapNode')).toBeTruthy();
+  });
+
+  it('applies endNode class when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Map',
+      stateType: 'map',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'map' },
+    });
+    const { container } = render(<MapNode {...props} />);
+    expect(container.querySelector('.endNode')).toBeTruthy();
+    expect(container.querySelector('.startNode')).toBeFalsy();
+  });
+
+  it('renders stop icon when isEnd is true', () => {
+    const props = makeNodeProps({
+      label: 'End Map',
+      stateType: 'map',
+      isStart: false,
+      isEnd: true,
+      state: { type: 'map' },
+    });
+    render(<MapNode {...props} />);
+    expect(screen.getByText('■')).toBeInTheDocument();
   });
 });
