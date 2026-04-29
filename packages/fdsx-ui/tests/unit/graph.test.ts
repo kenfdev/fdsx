@@ -348,4 +348,91 @@ states:
     const successNode = nodes.find((n) => n.id === 'success');
     expect(successNode?.type).toBe('task');
   });
+
+  it('isEnd is true for state with end: true', () => {
+    const workflow = parseWorkflow(`
+name: Test
+start_at: only
+states:
+  only:
+    type: task
+    provider: system
+    command: echo only
+    result_path: $.result
+    end: true
+`);
+    const { nodes } = transformWorkflow(workflow);
+
+    const onlyNode = nodes.find((n) => n.id === 'only');
+    expect(onlyNode?.data['isEnd']).toBe(true);
+  });
+
+  it('isEnd is false for non-terminal state', () => {
+    const workflow = parseWorkflow(`
+name: Test
+start_at: first
+states:
+  first:
+    type: task
+    provider: system
+    command: echo first
+    result_path: $.result
+    next: second
+  second:
+    type: task
+    provider: system
+    command: echo second
+    result_path: $.result
+    end: true
+`);
+    const { nodes } = transformWorkflow(workflow);
+
+    const firstNode = nodes.find((n) => n.id === 'first');
+    expect(firstNode?.data['isEnd']).toBe(false);
+  });
+
+  it('isEnd is false for choice state', () => {
+    const workflow = parseWorkflow(`
+name: Test
+start_at: check
+states:
+  check:
+    type: choice
+    choices:
+      - variable: $.status
+        operator: equals
+        value: ok
+        next: done
+    default: done
+  done:
+    type: task
+    provider: system
+    command: echo done
+    result_path: $.result
+    end: true
+`);
+    const { nodes } = transformWorkflow(workflow);
+
+    const choiceNode = nodes.find((n) => n.id === 'check');
+    expect(choiceNode?.data['isEnd']).toBe(false);
+  });
+
+  it('both isStart and isEnd true for single-state workflow', () => {
+    const workflow = parseWorkflow(`
+name: Test
+start_at: only
+states:
+  only:
+    type: task
+    provider: system
+    command: echo only
+    result_path: $.result
+    end: true
+`);
+    const { nodes } = transformWorkflow(workflow);
+
+    const onlyNode = nodes.find((n) => n.id === 'only');
+    expect(onlyNode?.data.isStart).toBe(true);
+    expect(onlyNode?.data['isEnd']).toBe(true);
+  });
 });

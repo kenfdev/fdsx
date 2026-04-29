@@ -188,6 +188,7 @@ export interface NodeData extends Record<string, unknown> {
   stateType: State['type'];
   state: State;
   isStart: boolean;
+  isEnd: boolean;
 }
 
 export type GraphNode = Node<NodeData>;

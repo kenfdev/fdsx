@@ -143,7 +143,7 @@ export function GraphView({ workflowPath }: GraphViewProps) {
         </ReactFlow>
       </div>
       {selectedNode && (
-        <NodeDetail node={selectedNode} onClose={handleCloseNodeDetail} />
+        <NodeDetail node={selectedNode} onClose={handleCloseNodeDetail} workflowPath={workflowPath} />
       )}
     </div>
   );
