@@ -1,10 +1,11 @@
 name: full-impl-ui
 description: >
-  Full pipeline for TypeScript projects: plan -> implement -> parallel review
+  Full pipeline for TypeScript projects: plan -> test-implement (TDD) ->
+  human gate (approve / feedback loop) -> implement -> parallel review
   (code quality + security) -> replan (routes by complexity) -> fix-simple
   (cheap model, escalates to fix-complex on failure) / fix-complex (capable
   model) -> finalize with PR creation.
-version: "1.0"
+version: "1.1"
 start_at: plan
 max_loop: 25
 
@@ -31,11 +32,95 @@ states:
       - variable: $.plan_decision
         operator: equals
         value: "STEP:1"
-        next: implement
+        next: test_implement
     default: abort_blocked
 
   # ──────────────────────────────────────────────
-  # 2. Implementation (OpenCode / minimax-m2.7)
+  # 2a. Test Implementation (TDD — Claude / smarty)
+  # ──────────────────────────────────────────────
+  test_implement:
+    type: task
+    profile: smarty
+    prompt_file: test-implement.md
+    result_path: $.test_implement_output
+    result_file: $.test_implement_ref
+    extract:
+      strategy: [keyword, regex]
+      pattern: "STEP:1|STEP:2"
+      result_path: $.test_implement_decision
+    retry: 2
+    next: test_implement_route
+
+  test_implement_route:
+    type: choice
+    choices:
+      - variable: $.test_implement_decision
+        operator: equals
+        value: "STEP:1"
+        next: human_gate
+    default: abort_error
+
+  # ──────────────────────────────────────────────
+  # 2b. Human gate — approve tests or request feedback
+  # ──────────────────────────────────────────────
+  human_gate:
+    type: wait
+    mode: prompt
+    message: |
+      Test implementation is ready for review.
+
+      Tests written in this iteration: {test_implement_ref}
+
+      To proceed to the implementation phase, select "approve".
+      To request changes, write your feedback to .fdsx/feedback.md
+      (relative to the repo root), then select "feedback". The feedback
+      will be applied to the tests and you will be asked again.
+    choices:
+      - approve
+      - feedback
+    result_path: $.gate_decision
+    next: human_gate_route
+
+  human_gate_route:
+    type: choice
+    choices:
+      - variable: $.gate_decision
+        operator: equals
+        value: "approve"
+        next: implement
+      - variable: $.gate_decision
+        operator: equals
+        value: "feedback"
+        next: apply_feedback
+    default: abort_error
+
+  # ──────────────────────────────────────────────
+  # 2c. Apply human feedback to the tests, then loop back to gate
+  # ──────────────────────────────────────────────
+  apply_feedback:
+    type: task
+    profile: smarty
+    prompt_file: apply-feedback.md
+    result_path: $.feedback_output
+    result_file: $.feedback_ref
+    extract:
+      strategy: [keyword, regex]
+      pattern: "STEP:1|STEP:2"
+      result_path: $.apply_feedback_decision
+    retry: 2
+    next: apply_feedback_route
+
+  apply_feedback_route:
+    type: choice
+    choices:
+      - variable: $.apply_feedback_decision
+        operator: equals
+        value: "STEP:1"
+        next: human_gate
+    default: abort_error              # STEP:2 or missing tag → abort
+
+  # ──────────────────────────────────────────────
+  # 3. Implementation (OpenCode / minimax-m2.7)
   # ──────────────────────────────────────────────
   implement:
     type: task
@@ -60,7 +145,7 @@ states:
     default: abort_error
 
   # ──────────────────────────────────────────────
-  # 3. Parallel Review (Codex / gpt-5.4)
+  # 4. Parallel Review (Codex / gpt-5.4)
   # ──────────────────────────────────────────────
   parallel_review:
     type: parallel
@@ -89,7 +174,7 @@ states:
     next: aggregate_reviews
 
   # ──────────────────────────────────────────────
-  # 3b. Aggregate review results
+  # 4b. Aggregate review results
   # ──────────────────────────────────────────────
   aggregate_reviews:
     type: pass
@@ -112,7 +197,7 @@ states:
     default: replan
 
   # ──────────────────────────────────────────────
-  # 4. Replan (Claude — analyze review feedback, classify complexity, route)
+  # 5. Replan (Claude — analyze review feedback, classify complexity, route)
   # ──────────────────────────────────────────────
   replan:
     type: task
@@ -142,7 +227,7 @@ states:
     default: abort_design_issues
 
   # ──────────────────────────────────────────────
-  # 5a. Fix — simple (OpenCode / minimax, cheap)
+  # 6a. Fix — simple (OpenCode / minimax, cheap)
   # ──────────────────────────────────────────────
   fix_simple:
     type: task
@@ -175,7 +260,7 @@ states:
     default: fix_complex
 
   # ──────────────────────────────────────────────
-  # 5b. Fix — complex (Claude / sonnet, capable)
+  # 6b. Fix — complex (Claude / sonnet, capable)
   # ──────────────────────────────────────────────
   fix_complex:
     type: task
@@ -204,7 +289,7 @@ states:
     default: abort_fix_failed
 
   # ──────────────────────────────────────────────
-  # 6. Finalize (Claude — commit, push, PR)
+  # 7. Finalize (Claude — commit, push, PR)
   # ──────────────────────────────────────────────
   finalize:
     type: task
