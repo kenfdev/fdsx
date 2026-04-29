@@ -7,18 +7,16 @@ export function ChoiceNode({ data }: NodeProps<GraphNode>) {
     <>
       <Handle type="target" position={Position.Top} />
       <div
-        className={`${styles.diamondOuter} ${data.isStart ? styles.startNode : data.isEnd ? styles.endNode : ''}`}
+        className={`${styles.diamond} ${data.isStart ? styles.startNode : data.isEnd ? styles.endNode : ''}`}
       >
-        <div className={styles.diamondInner}>
-          <p className={styles.nodeLabel}>
-            {data.isStart ? (
-              <span className={styles.nodeIcon}>▶</span>
-            ) : data.isEnd ? (
-              <span className={styles.nodeIcon}>■</span>
-            ) : null}
-            {data.label}
-          </p>
-        </div>
+        <p className={styles.nodeLabel}>
+          {data.isStart ? (
+            <span className={styles.nodeIcon}>▶</span>
+          ) : data.isEnd ? (
+            <span className={styles.nodeIcon}>■</span>
+          ) : null}
+          {data.label}
+        </p>
       </div>
       <Handle type="source" position={Position.Bottom} />
     </>

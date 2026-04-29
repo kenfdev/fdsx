@@ -144,7 +144,7 @@ describe('TaskNode', () => {
 });
 
 describe('ChoiceNode', () => {
-  it('renders label and has diamondOuter and diamondInner nested', () => {
+  it('renders label inside a single diamond element', () => {
     const props = makeNodeProps({
       label: 'Check Status',
       stateType: 'choice',
@@ -154,12 +154,10 @@ describe('ChoiceNode', () => {
     });
     const { container } = render(<ChoiceNode {...props} />);
     expect(screen.getByText('Check Status')).toBeInTheDocument();
-    expect(container.querySelector('.diamondOuter')).toBeTruthy();
-    expect(container.querySelector('.diamondInner')).toBeTruthy();
-    expect(container.querySelector('.diamondOuter .diamondInner')).toBeTruthy();
+    expect(container.querySelector('.diamond')).toBeTruthy();
   });
 
-  it('applies startNode class on diamondOuter when isStart is true', () => {
+  it('applies startNode class on diamond when isStart is true', () => {
     const props = makeNodeProps({
       label: 'Start Decision',
       stateType: 'choice',
@@ -168,10 +166,10 @@ describe('ChoiceNode', () => {
       state: { type: 'choice' },
     });
     const { container } = render(<ChoiceNode {...props} />);
-    expect(container.querySelector('.diamondOuter.startNode')).toBeTruthy();
+    expect(container.querySelector('.diamond.startNode')).toBeTruthy();
   });
 
-  it('applies endNode class on diamondOuter when isEnd is true', () => {
+  it('applies endNode class on diamond when isEnd is true', () => {
     const props = makeNodeProps({
       label: 'End Decision',
       stateType: 'choice',
@@ -180,8 +178,8 @@ describe('ChoiceNode', () => {
       state: { type: 'choice' },
     });
     const { container } = render(<ChoiceNode {...props} />);
-    expect(container.querySelector('.diamondOuter.endNode')).toBeTruthy();
-    expect(container.querySelector('.diamondOuter.startNode')).toBeFalsy();
+    expect(container.querySelector('.diamond.endNode')).toBeTruthy();
+    expect(container.querySelector('.diamond.startNode')).toBeFalsy();
   });
 
   it('startNode wins when both isStart and isEnd are true', () => {
@@ -193,8 +191,8 @@ describe('ChoiceNode', () => {
       state: { type: 'choice' },
     });
     const { container } = render(<ChoiceNode {...props} />);
-    expect(container.querySelector('.diamondOuter.startNode')).toBeTruthy();
-    expect(container.querySelector('.diamondOuter.endNode')).toBeFalsy();
+    expect(container.querySelector('.diamond.startNode')).toBeTruthy();
+    expect(container.querySelector('.diamond.endNode')).toBeFalsy();
   });
 
   it('does not apply role class when neither flag is set', () => {
