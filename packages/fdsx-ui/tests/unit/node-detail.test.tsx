@@ -321,4 +321,84 @@ describe('NodeDetail PromptContent', () => {
 
     expect(screen.getByText(/Loading/i)).toBeInTheDocument();
   });
+
+  // CSS-class contract tests: verify that promptSource and errorBlock
+  // classes are applied to the correct elements, not just that the text appears.
+
+  it('applies promptSource class to the "From file:" subheader element', async () => {
+    // Never-resolving promise keeps the component in "loading" state for the
+    // entire test. The "From file:" label is rendered synchronously on mount
+    // before any fetch result arrives, so no resolution is needed here.
+    mockFetch.mockImplementation(() => new Promise(() => {}));
+
+    const node = makeTaskNode({ promptFile: 'prompts/q.txt', promptTemplate: null });
+    render(<ND node={node} onClose={() => {}} workflowPath="test.yaml" />);
+
+    const label = screen.getByText(/From file:/);
+    expect(label).toHaveClass('promptSource');
+  });
+
+  it('applies errorBlock class to the not-found error element', async () => {
+    mockFetch.mockResolvedValue({
+      json: () => Promise.resolve({ error: 'not-found', file: 'prompts/missing.txt' }),
+    });
+
+    const node = makeTaskNode({ promptFile: 'prompts/missing.txt', promptTemplate: null });
+    render(<ND node={node} onClose={() => {}} workflowPath="test.yaml" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Prompt file not found/)).toBeInTheDocument();
+    });
+
+    // The error container must carry the errorBlock class so it gets the
+    // red monospace styling (#dc2626 colour, #fef2f2 background, border).
+    const errorEl = screen.getByText(/Prompt file not found/);
+    expect(errorEl).toHaveClass('errorBlock');
+  });
+
+  it('applies errorBlock class to the outside-workspace error element', async () => {
+    mockFetch.mockResolvedValue({
+      json: () => Promise.resolve({ error: 'outside-workspace', file: '../secret.txt' }),
+    });
+
+    const node = makeTaskNode({ promptFile: '../secret.txt', promptTemplate: null });
+    render(<ND node={node} onClose={() => {}} workflowPath="test.yaml" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/outside the visualized workspace/i)).toBeInTheDocument();
+    });
+
+    const errorEl = screen.getByText(/outside the visualized workspace/i);
+    expect(errorEl).toHaveClass('errorBlock');
+  });
+
+  it('applies errorBlock class to the read-error element (server-side error)', async () => {
+    mockFetch.mockResolvedValue({
+      json: () => Promise.resolve({ error: 'read-error', file: 'prompts/bad.txt' }),
+    });
+
+    const node = makeTaskNode({ promptFile: 'prompts/bad.txt', promptTemplate: null });
+    render(<ND node={node} onClose={() => {}} workflowPath="test.yaml" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not read prompt file/i)).toBeInTheDocument();
+    });
+
+    const errorEl = screen.getByText(/Could not read prompt file/i);
+    expect(errorEl).toHaveClass('errorBlock');
+  });
+
+  it('applies errorBlock class to the read-error element (network failure)', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
+    const node = makeTaskNode({ promptFile: 'prompts/net.txt', promptTemplate: null });
+    render(<ND node={node} onClose={() => {}} workflowPath="test.yaml" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not read prompt file.*prompts\/net\.txt/i)).toBeInTheDocument();
+    });
+
+    const errorEl = screen.getByText(/Could not read prompt file.*prompts\/net\.txt/i);
+    expect(errorEl).toHaveClass('errorBlock');
+  });
 });
