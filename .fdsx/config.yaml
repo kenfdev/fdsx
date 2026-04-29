@@ -21,6 +21,13 @@ profiles:
 
 task_splitter:
   profile: smarty
+  extra_instructions: |
+    CRITICAL: The implementation workflow is TDD (test-driven development).
+    Every task MUST be a complete TDD cycle: write a failing test, implement the code to make it pass, and verify it passes — all in ONE task.
+    NEVER create tasks that ONLY write tests, ONLY verify tests, or ONLY run tests.
+    NEVER create tasks that ONLY implement code without a corresponding test.
+    The smallest valid task is: write test + implement + verify.
+    A single task does all three. It must not be smaller than this.
 workflow_selector:
   profile: generalist
 workflows_dir: .fdsx/workflows
