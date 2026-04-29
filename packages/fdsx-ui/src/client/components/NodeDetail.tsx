@@ -1,12 +1,85 @@
+import { useState, useEffect } from 'react';
 import type { GraphNode, GraphEdge, State, TaskState, ChoiceState, ParallelState, MapState, WaitState, PassState } from '../../shared/types.js';
 import styles from '../styles/NodeDetail.module.css';
 
 interface NodeDetailProps {
   node: GraphNode;
   onClose: () => void;
+  workflowPath: string;
 }
 
-function renderTaskState(state: TaskState) {
+interface PromptContentProps {
+  promptTemplate: string | null;
+  promptFile: string | null;
+  workflowPath: string;
+}
+
+function PromptContent({ promptTemplate, promptFile, workflowPath }: PromptContentProps) {
+  const [fetchState, setFetchState] = useState<{
+    status: 'loading' | 'ok' | 'error';
+    contents?: string;
+    errorKind?: string;
+  }>({ status: 'loading' });
+
+  useEffect(() => {
+    if (promptTemplate !== null || !promptFile) return;
+
+    let cancelled = false;
+    setFetchState({ status: 'loading' });
+
+    fetch(`/api/workflows/${workflowPath}/prompt?file=${encodeURIComponent(promptFile)}`)
+      .then(res => res.json())
+      .then((data: { contents?: string; error?: string }) => {
+        if (cancelled) return;
+        if (data.contents !== undefined) {
+          setFetchState({ status: 'ok', contents: data.contents });
+        } else {
+          setFetchState({ status: 'error', errorKind: data.error ?? 'read-error' });
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFetchState({ status: 'error', errorKind: 'read-error' });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workflowPath, promptFile, promptTemplate]);
+
+  if (promptTemplate !== null) {
+    return <pre className={styles.codeBlock}>{promptTemplate}</pre>;
+  }
+
+  if (!promptFile) {
+    return null;
+  }
+
+  const errorMessages: Record<string, string> = {
+    'not-found': `Prompt file not found: ${promptFile}`,
+    'outside-workspace': `Prompt file is outside the visualized workspace: ${promptFile}`,
+    'read-error': `Could not read prompt file: ${promptFile}`,
+  };
+
+  return (
+    <>
+      <p className={styles.promptSource}>From file: {promptFile}</p>
+      {fetchState.status === 'loading' && (
+        <p className={styles.field}>Loading…</p>
+      )}
+      {fetchState.status === 'ok' && (
+        <pre className={styles.codeBlock}>{fetchState.contents}</pre>
+      )}
+      {fetchState.status === 'error' && (
+        <div className={styles.errorBlock}>
+          {errorMessages[fetchState.errorKind ?? 'read-error'] ?? errorMessages['read-error']}
+        </div>
+      )}
+    </>
+  );
+}
+
+function renderTaskState(state: TaskState, workflowPath: string) {
   return (
     <>
       <div className={styles.section}>
@@ -22,9 +95,11 @@ function renderTaskState(state: TaskState) {
       {(state.promptTemplate || state.promptFile) && (
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}>Prompt</h4>
-          <pre className={styles.codeBlock}>
-            {state.promptTemplate || `[File: ${state.promptFile}]`}
-          </pre>
+          <PromptContent
+            promptTemplate={state.promptTemplate}
+            promptFile={state.promptFile}
+            workflowPath={workflowPath}
+          />
         </div>
       )}
       {state.command && (
@@ -146,10 +221,10 @@ function renderPassState(state: PassState) {
   );
 }
 
-function renderStateSpecificSection(state: State) {
+function renderStateSpecificSection(state: State, workflowPath: string) {
   switch (state.type) {
     case 'task':
-      return renderTaskState(state);
+      return renderTaskState(state, workflowPath);
     case 'choice':
       return renderChoiceState(state);
     case 'parallel':
@@ -218,7 +293,7 @@ function renderTransitions(state: State) {
   );
 }
 
-export function NodeDetail({ node, onClose }: NodeDetailProps) {
+export function NodeDetail({ node, onClose, workflowPath }: NodeDetailProps) {
   const state = node.data.state as State;
   const stateType = node.data.stateType;
 
@@ -234,7 +309,7 @@ export function NodeDetail({ node, onClose }: NodeDetailProps) {
         </button>
       </div>
       <div className={styles.content}>
-        {renderStateSpecificSection(state)}
+        {renderStateSpecificSection(state, workflowPath)}
         {renderCommonFields(state)}
         {renderTransitions(state)}
       </div>

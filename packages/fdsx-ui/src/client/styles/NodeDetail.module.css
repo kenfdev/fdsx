@@ -182,3 +182,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.promptSource {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 0 0 6px 0;
+}
+
+.errorBlock {
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  color: #dc2626;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 10px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
