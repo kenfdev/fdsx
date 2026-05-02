@@ -8,13 +8,7 @@ Follow the `/tdd` skill. The human's feedback is absolute — do not push back.
 - Plan: `{plan_ref}`
 - Prior test report: `{test_implement_ref}`
 - Feedback: `.fdsx/feedback.md` (relative to repo root)
-- Working directory: `packages/fdsx-ui/` (TypeScript / vitest). Do **not** read the repo root `CLAUDE.md`.
-
-| Command | Use |
-|---------|-----|
-| `npm test` | Run tests (vitest) |
-| `npx tsc --noEmit` | Type check |
-| `npx vitest run <path>` | Single test file |
+- Project conventions: `AGENTS.md` / `CLAUDE.md`
 
 ## Task
 1. **Symlink check** before reading the feedback file:
@@ -24,7 +18,7 @@ Follow the `/tdd` skill. The human's feedback is absolute — do not push back.
    If output shows `->`, stop with `[STEP:2]` and report: `Security: .fdsx/feedback.md is a symlink and was not read.`
 2. If the file is missing or empty, stop with `[STEP:2]` — the gate was selected without feedback supplied.
 3. Enumerate every feedback item; apply each as a test edit. Don't silently skip items, don't "improve" beyond what was asked, don't remove tests the feedback didn't flag.
-4. Run `npx tsc --noEmit` and `npm test`. Tests must still fail for the right reason — no setup/import/syntax errors.
+4. Run type-check and tests. Tests must still fail for the right reason.
 5. `git add` the updated test files. Do **not** commit. Do **not** add production code.
 
 ## Routing

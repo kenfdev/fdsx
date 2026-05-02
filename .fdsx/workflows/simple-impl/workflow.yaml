@@ -1,8 +1,9 @@
 name: simple-impl
 description: >
-  Lightweight pipeline: plan -> implement -> review -> replan -> fix loop ->
-  finalize with squash commit and PR.
-version: "1.0"
+  Lightweight pipeline: plan -> test-implement (TDD) -> human gate (approve /
+  feedback loop) -> implement -> review -> replan -> fix loop -> finalize with
+  squash commit and PR.
+version: "1.1"
 start_at: plan
 max_loop: 10
 
@@ -29,11 +30,95 @@ states:
       - variable: $.plan_decision
         operator: equals
         value: "STEP:1"
-        next: implement
+        next: test_implement
     default: abort_blocked
 
   # ──────────────────────────────────────────────
-  # 2. Implementation
+  # 2a. Test Implementation (TDD — RED, Claude)
+  # ──────────────────────────────────────────────
+  test_implement:
+    type: task
+    profile: smarty
+    prompt_file: test-implement.md
+    result_path: $.test_implement_output
+    result_file: $.test_implement_ref
+    extract:
+      strategy: [keyword, regex]
+      pattern: "STEP:1|STEP:2"
+      result_path: $.test_implement_decision
+    retry: 2
+    next: test_implement_route
+
+  test_implement_route:
+    type: choice
+    choices:
+      - variable: $.test_implement_decision
+        operator: equals
+        value: "STEP:1"
+        next: human_gate
+    default: abort_error
+
+  # ──────────────────────────────────────────────
+  # 2b. Human gate — approve tests or request feedback
+  # ──────────────────────────────────────────────
+  human_gate:
+    type: wait
+    mode: prompt
+    message: |
+      Test implementation is ready for review.
+
+      Tests written in this iteration: {test_implement_ref}
+
+      To proceed to the implementation phase, select "approve".
+      To request changes, write your feedback to .fdsx/feedback.md
+      (relative to the repo root), then select "feedback". The feedback
+      will be applied to the tests and you will be asked again.
+    choices:
+      - approve
+      - feedback
+    result_path: $.gate_decision
+    next: human_gate_route
+
+  human_gate_route:
+    type: choice
+    choices:
+      - variable: $.gate_decision
+        operator: equals
+        value: "approve"
+        next: implement
+      - variable: $.gate_decision
+        operator: equals
+        value: "feedback"
+        next: apply_feedback
+    default: abort_error
+
+  # ──────────────────────────────────────────────
+  # 2c. Apply human feedback to the tests, then loop back to gate
+  # ──────────────────────────────────────────────
+  apply_feedback:
+    type: task
+    profile: smarty
+    prompt_file: apply-feedback.md
+    result_path: $.feedback_output
+    result_file: $.feedback_ref
+    extract:
+      strategy: [keyword, regex]
+      pattern: "STEP:1|STEP:2"
+      result_path: $.apply_feedback_decision
+    retry: 2
+    next: apply_feedback_route
+
+  apply_feedback_route:
+    type: choice
+    choices:
+      - variable: $.apply_feedback_decision
+        operator: equals
+        value: "STEP:1"
+        next: human_gate
+    default: abort_error              # STEP:2 or missing tag → abort
+
+  # ──────────────────────────────────────────────
+  # 3. Implementation (TDD — GREEN, Claude)
   # ──────────────────────────────────────────────
   implement:
     type: task
