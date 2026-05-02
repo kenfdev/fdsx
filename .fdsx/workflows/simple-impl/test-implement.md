@@ -6,21 +6,12 @@ Follow the `/tdd` skill for what counts as a good test (behavior over implementa
 
 ## Context
 - Plan: read `{plan_ref}` — focus on the `Behaviors to test` section.
-- Working directory: `packages/fdsx-ui/` (TypeScript / vitest). Do **not** read the repo root `CLAUDE.md` — it's Python-specific.
-
-| Command | Use |
-|---------|-----|
-| `npm ci --ignore-scripts` | Install deps (if `node_modules/` missing) |
-| `npm test` | Run tests (vitest) |
-| `npx tsc --noEmit` | Type check |
-| `npx vitest run <path>` | Single test file |
-
-Test placement: `tests/unit/` and `tests/integration/`. Use `describe`, `it`, `expect`.
+- Project conventions: read `AGENTS.md` / `CLAUDE.md` for tooling, test placement, and commands.
 
 ## Task
 1. For each behavior in the plan, write one focused test that fails for the right reason — missing implementation — not setup, import, or syntax errors.
-2. Run `npx tsc --noEmit` and `npm test`. New tests must fail with messages like "function not defined" or "expected X got Y".
-3. `git add` the new test files (and only test files / fixtures). Do **not** commit. Do **not** write production code or stubs.
+2. Run the project's type-check and test suite. Confirm new tests fail with messages like "function not defined" or "expected X got Y".
+3. `git add` the new test files (and only test files / fixtures). Do **not** commit. Do **not** write production code.
 
 ## Self-check
 - Each test asserts on observable behavior, not internals.
@@ -34,7 +25,7 @@ Test placement: `tests/unit/` and `tests/integration/`. Use `describe`, `it`, `e
 
 ## Output (use these headings)
 - **Behaviors covered** — one line each
-- **Test files** — added/modified, with the behavior each pins down
+- **Test files** — added/modified
 - **Test run** — failing tests and reasons
 - **Type-check** — output
 - **Open questions for reviewer** — anything ambiguous you resolved one way
