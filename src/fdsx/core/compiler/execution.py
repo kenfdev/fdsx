@@ -23,6 +23,7 @@ from fdsx.core.extraction import extract_value
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
 
 if TYPE_CHECKING:
+    from fdsx.core.extraction_fallback import ResolvedFallback
     from fdsx.logging.stream_logger import StreamLogger
     from fdsx.models.flow import ExtractRule
 
@@ -53,6 +54,15 @@ class ExecutionConfig:
         summary_callback: Optional callback for summary lines that should be
             visible even in quiet mode. When ``None``, ``stream_logger.on_summary``
             is used.
+        resolved_fallback: Pre-resolved fallback for this state's extract rule, or
+            ``None`` if no fallback applies (no rule fallback, no workflow override,
+            no global default, or workflow disable).
+        flow_profiles: Serialised workflow-level profiles dict (``Flow.profiles``),
+            passed through for profile resolution inside ``execute_default_fallback``.
+            ``None`` when the flow defines no profiles.
+        config_profiles: Serialised config-level profiles dict (``FdsxConfig.profiles``
+            serialised to plain dicts), passed for profile resolution. ``None`` when
+            the global config defines no profiles.
     """
 
     provider: ProviderBase
@@ -66,6 +76,9 @@ class ExecutionConfig:
     stream_logger: "StreamLogger"
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None
     summary_callback: Callable[[str], None] | None = None
+    resolved_fallback: "ResolvedFallback | None" = None
+    flow_profiles: "dict[str, dict[str, Any]] | None" = None
+    config_profiles: "dict[str, dict[str, Any]] | None" = None
 
 
 @dataclass
@@ -156,6 +169,9 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         config.extract,
                         get_provider,
                         source_provider=config.provider_name,
+                        resolved_fallback=config.resolved_fallback,
+                        flow_profiles=config.flow_profiles,
+                        config_profiles=config.config_profiles,
                     )
                     if extracted is not None:
                         break

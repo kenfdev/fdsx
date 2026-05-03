@@ -132,7 +132,7 @@ def execute_default_fallback(
         model = profile_data.get("model")
 
     prompt = _build_default_fallback_prompt(output, rule, config.extra_instructions)
-    log.debug("default_fallback_prompt", prompt=prompt)
+    log.debug("default_fallback_prompt", prompt_len=len(prompt))
 
     try:
         provider = provider_factory(provider_name)
@@ -180,7 +180,7 @@ def execute_default_fallback(
         return None
 
     llm_output: str = result.stdout.strip()
-    log.debug("default_fallback_raw_response", response=llm_output)
+    log.debug("default_fallback_raw_response", response_len=len(llm_output))
 
     if llm_output == "NONE":
         log.info(

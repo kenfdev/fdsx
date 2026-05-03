@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.types import Send
 
+from fdsx.core.extraction_fallback import resolve_fallback
 from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
@@ -120,6 +121,22 @@ def _create_branch_executor(
         stream_logger = StreamLogger(
             branch_log_name, log_dir, quiet=quiet, iteration=iteration
         )
+        branch_resolved_fallback = None
+        if branch.extract is not None and config is not None:
+            _flow_ef = getattr(flow, "extraction_fallback", None)
+            if (
+                branch.extract.fallback is not None
+                or config.extraction_fallback is not None
+                or (_flow_ef is not None and _flow_ef is not False)
+            ):
+                branch_resolved_fallback = resolve_fallback(
+                    branch.extract, flow, config
+                )
+        branch_config_profiles = (
+            {k: v.model_dump() for k, v in config.profiles.items()}
+            if config is not None and config.profiles
+            else None
+        )
         exec_config = ExecutionConfig(
             provider=provider,
             provider_name=branch.provider,
@@ -132,6 +149,9 @@ def _create_branch_executor(
             stream_logger=stream_logger,
             on_process_start=on_process_start,
             summary_callback=stream_logger.on_summary,
+            resolved_fallback=branch_resolved_fallback,
+            flow_profiles=getattr(flow, "profiles", None),
+            config_profiles=branch_config_profiles,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
