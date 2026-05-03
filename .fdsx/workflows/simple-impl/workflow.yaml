@@ -21,6 +21,21 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.plan_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is a planning agent's output. It was supposed to end with a routing tag but did not.
+
+          Decide which tag fits, based on whether the plan is actionable:
+          - STEP:1 = plan is ready and actionable
+          - STEP:2 = task is blocked / cannot produce an actionable plan
+
+          Reply with EXACTLY one of: STEP:1, STEP:2. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 2
     next: plan_route
 
@@ -46,6 +61,21 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.test_implement_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is a TDD test-implementer agent's output. It was supposed to end with a routing tag but did not.
+
+          Decide which tag fits:
+          - STEP:1 = tests were written and are failing for the right reason
+          - STEP:2 = the plan is unworkable or tooling is broken
+
+          Reply with EXACTLY one of: STEP:1, STEP:2. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 2
     next: test_implement_route
 
@@ -105,6 +135,21 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.apply_feedback_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is an apply-feedback agent's output. It was supposed to end with a routing tag but did not.
+
+          Decide which tag fits:
+          - STEP:1 = feedback was applied; tests are ready for re-review
+          - STEP:2 = feedback was missing/unreadable, or the change was unrecoverable
+
+          Reply with EXACTLY one of: STEP:1, STEP:2. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 2
     next: apply_feedback_route
 
@@ -130,6 +175,21 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.implement_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is an implementer agent's output. It was supposed to end with a routing tag but did not.
+
+          Decide which tag fits:
+          - STEP:1 = implementation is complete and tests pass
+          - STEP:2 = unrecoverable error during implementation
+
+          Reply with EXACTLY one of: STEP:1, STEP:2. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 2
     next: implement_route
 
@@ -155,6 +215,21 @@ states:
       strategy: [keyword, regex]
       pattern: "APPROVE|REJECT"
       result_path: $.review_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is a code-review agent's output. It was supposed to end with a verdict but did not.
+
+          Decide which verdict fits:
+          - APPROVE = no blocking issues
+          - REJECT = at least one blocking issue
+
+          Reply with EXACTLY one of: APPROVE, REJECT. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 2
     next: review_route
 
@@ -180,6 +255,21 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.replan_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is a replan agent's output. It was supposed to end with a routing tag but did not.
+
+          Decide which tag fits:
+          - STEP:1 = a fix plan is ready
+          - STEP:2 = blocked: non-convergent feedback or fundamental design issues
+
+          Reply with EXACTLY one of: STEP:1, STEP:2. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 2
     max_iterations: 3
     next: replan_route
@@ -206,6 +296,22 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2|STEP:3"
       result_path: $.fix_decision
+      fallback:
+        type: llm_classify
+        provider: claude
+        prompt: |
+          The text below is a fix agent's output. It was supposed to end with a routing tag but did not.
+
+          Decide which tag fits:
+          - STEP:1 = all fixes applied; build and tests pass
+          - STEP:2 = fixes attempted but build or tests still fail
+          - STEP:3 = cannot fix; issues are beyond this agent's capability
+
+          Reply with EXACTLY one of: STEP:1, STEP:2, STEP:3. No other text, no punctuation.
+
+          --- BEGIN OUTPUT ---
+          {output}
+          --- END OUTPUT ---
     retry: 0
     timeout_seconds: 1200
     next: fix_route

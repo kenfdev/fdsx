@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
 
@@ -13,7 +15,7 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-__all__ = ["ResolvedFallback", "resolve_fallback"]
+__all__ = ["ResolvedFallback", "execute_default_fallback", "resolve_fallback"]
 
 
 @dataclass(frozen=True)
@@ -45,3 +47,175 @@ def resolve_fallback(
 
     log.debug("fallback_resolved", source=None, reason="none_configured")
     return None
+
+
+def _build_default_fallback_prompt(
+    output: str,
+    rule: ExtractRule,
+    extra_instructions: str | None,
+) -> str:
+    strategies = ", ".join(rule.strategy)
+
+    if "keyword" in rule.strategy:
+        allowed = " | ".join(rule.pattern.split("|"))
+        rules_block = (
+            f"2. The token MUST be one of the following allowed values, exactly as listed\n"
+            f"   (case will be normalised): {allowed}\n"
+            f"   If none of the allowed values is supported by the output, respond with the\n"
+            f"   literal token NONE."
+        )
+    else:
+        rules_block = (
+            "2. If a value matching the requested shape can be recovered from the output,\n"
+            "   respond with that value alone. If no value can be recovered, respond with the\n"
+            "   literal token NONE."
+        )
+
+    extra_section = (
+        f"ADDITIONAL INSTRUCTIONS:\n{extra_instructions}\n\n"
+        if extra_instructions is not None
+        else ""
+    )
+
+    return (
+        f"You are a recovery extractor. A workflow tried to extract a value from a tool's\n"
+        f"output and every configured strategy missed. Your job is to recover the intended\n"
+        f"value or report that no value can be recovered.\n\n"
+        f"CONTEXT:\n"
+        f"STRATEGIES ATTEMPTED: {strategies}\n"
+        f"PATTERN: {rule.pattern}\n\n"
+        f"OUTPUT:\n"
+        f"{output}\n\n"
+        f"RULES:\n"
+        f"1. Respond with exactly one token. Do not include explanations, commentary, code\n"
+        f"   fences, or whitespace beyond the token itself.\n"
+        f"{rules_block}\n\n"
+        f"EXAMPLES:\n"
+        f"Example 1 — value recovered from noisy output:\n"
+        f"Output: The system reviewed the request. Decision: approved. Proceeding.\n"
+        f"Response: APPROVED\n\n"
+        f"Example 2 — value not present in output:\n"
+        f"Output: Process initiated. Awaiting further instructions from operator.\n"
+        f"Response: NONE\n\n"
+        f"OUTPUT FORMAT: a single line containing exactly one token from the allowed set,\n"
+        f"the recovered value, or NONE. No prose, no markdown, no quoting.\n\n"
+        f"{extra_section}"
+    )
+
+
+def execute_default_fallback(
+    output: str,
+    rule: ExtractRule,
+    resolved: ResolvedFallback,
+    merged_profiles: dict[str, dict[str, Any]],
+    source_provider: str,
+    provider_factory: Callable[[str], Any],
+) -> str | None:
+    config = cast(ExtractionFallback, resolved.config)
+
+    if config.provider is not None:
+        provider_name = config.provider
+        model = None
+    else:
+        profile_name = cast(str, config.profile)
+        profile_data = merged_profiles.get(profile_name)
+        if profile_data is None:
+            log.info(
+                "default_fallback_invoked",
+                source=resolved.source,
+                strategy_list=rule.strategy,
+                outcome="error",
+                error="profile_not_found",
+            )
+            return None
+        provider_name = profile_data["provider"]
+        model = profile_data.get("model")
+
+    prompt = _build_default_fallback_prompt(output, rule, config.extra_instructions)
+    log.debug("default_fallback_prompt", prompt=prompt)
+
+    try:
+        provider = provider_factory(provider_name)
+    except Exception:
+        log.info(
+            "default_fallback_invoked",
+            source=resolved.source,
+            strategy_list=rule.strategy,
+            outcome="error",
+            error="provider_init_failed",
+        )
+        return None
+
+    try:
+        result = provider.execute(
+            prompt=prompt, model=model, timeout=None, output_callback=None
+        )
+    except (TimeoutError, subprocess.TimeoutExpired):
+        log.info(
+            "default_fallback_invoked",
+            source=resolved.source,
+            strategy_list=rule.strategy,
+            outcome="error",
+            error="timeout",
+        )
+        return None
+    except Exception:
+        log.info(
+            "default_fallback_invoked",
+            source=resolved.source,
+            strategy_list=rule.strategy,
+            outcome="error",
+            error="provider_call_failed",
+        )
+        return None
+
+    if result.exit_code != 0:
+        log.info(
+            "default_fallback_invoked",
+            source=resolved.source,
+            strategy_list=rule.strategy,
+            outcome="error",
+            error="non_zero_exit",
+        )
+        return None
+
+    llm_output: str = result.stdout.strip()
+    log.debug("default_fallback_raw_response", response=llm_output)
+
+    if llm_output == "NONE":
+        log.info(
+            "default_fallback_invoked",
+            source=resolved.source,
+            strategy_list=rule.strategy,
+            outcome="rejected",
+            reason="model_returned_none",
+        )
+        return None
+
+    if "keyword" in rule.strategy:
+        keywords = rule.pattern.split("|")
+        llm_lower = llm_output.lower()
+        for keyword in keywords:
+            if keyword.lower() == llm_lower:
+                log.info(
+                    "default_fallback_invoked",
+                    source=resolved.source,
+                    strategy_list=rule.strategy,
+                    outcome="recovered",
+                )
+                return keyword
+        log.info(
+            "default_fallback_invoked",
+            source=resolved.source,
+            strategy_list=rule.strategy,
+            outcome="rejected",
+        )
+        return None
+
+    log.info(
+        "default_fallback_invoked",
+        source=resolved.source,
+        strategy_list=rule.strategy,
+        outcome="recovered",
+    )
+    return llm_output
