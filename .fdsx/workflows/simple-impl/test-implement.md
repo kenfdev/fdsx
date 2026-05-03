@@ -22,6 +22,11 @@ Follow the `/tdd` skill for what counts as a good test (behavior over implementa
 ## Routing
 - Tests written and failing for the right reason → `[STEP:1]`
 - Plan unworkable / tooling broken → `[STEP:2]`
+- TDD genuinely not applicable → `[STEP:3]` (skip RED, go straight to implement). All three must hold:
+  1. The plan changes only non-executable artifacts (prompts, docs, configs without behavior, generated assets) — no functions, classes, or modules under test.
+  2. The plan itself states no automated test harness exists or lists "automated tests" as out of scope.
+  3. The behaviors in the plan are LLM prompt-following / human-rubric checks, not assertions a test runner could make.
+  State each of the three conditions explicitly in your output before emitting `[STEP:3]`.
 
 ## Output (use these headings)
 - **Behaviors covered** — one line each
