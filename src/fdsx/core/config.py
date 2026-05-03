@@ -15,7 +15,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from fdsx.core.profiles import resolve_profiles_in_config
-from fdsx.models.flow import HookConfig, HookEntry, ProfileConfig
+from fdsx.models.flow import ExtractionFallback, HookConfig, HookEntry, ProfileConfig
 from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
@@ -194,6 +194,10 @@ class FdsxConfig(BaseModel):
     profiles: dict[str, ProfileConfig] | None = Field(
         default=None,
         description="Named provider/model profiles",
+    )
+    extraction_fallback: ExtractionFallback | None = Field(
+        default=None,
+        description="Global default extraction fallback applied when no per-rule fallback is set.",
     )
 
     @field_validator("workflows_dir")
