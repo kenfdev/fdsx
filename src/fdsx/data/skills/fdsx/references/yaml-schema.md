@@ -15,6 +15,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [IteratorTaskState](#iteratortaskstate)
 - [Branch (parallel)](#branch)
 - [ExtractRule](#extractrule)
+- [ExtractionFallback](#extractionfallback)
 - [ChoiceRule](#choicerule)
 - [AggregateRule](#aggregaterule)
 - [HookConfig](#hookconfig)
@@ -38,11 +39,14 @@ max_loop?: int                  # default: 10 — max loop iterations
 providers?: {name: {k: v}}      # optional — workflow-level provider configs
 hooks?: HookConfig              # optional — flow-level hooks (full HookConfig including workflow-scope keys)
 profiles?: {name: {k: v}}       # optional — raw provider/model/extras dicts
+extraction_fallback?: ExtractionFallback | false   # optional — false disables inherited fallback; omit to inherit from config
 ```
 
 **State** is a discriminated union on the `type` field: `TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState`.
 
 **Profiles at workflow level** are raw YAML dicts (`{provider, model, ...extras}`), not validated `ProfileConfig` objects. Profile resolution happens pre-validation: `profile` references in tasks/branches are expanded into `provider`/`model`/`provider_options` fields before Pydantic validation runs. Workflow-level profiles override config-level profiles (full replacement per name, not deep merge).
+
+**`extraction_fallback`** controls the global extraction fallback for the entire workflow. When set to `false`, it disables any config-level `extraction_fallback` for this workflow. When set to an `ExtractionFallback` object, it overrides the config-level fallback. When omitted (`null`/absent), the config-level `extraction_fallback` applies. See [Extraction Fallback Priority](#extraction-fallback-priority).
 
 **Validation:**
 - `start_at` must exist in `states`
@@ -257,13 +261,50 @@ extract:
   strategy: [string]            # required — non-empty list of: json, regex, keyword
   pattern: string               # required — extraction pattern
   result_path: string           # required — JSONPath for extracted value
-  fallback?:                    # optional — LLM classification fallback
+  fallback?:                    # optional — per-rule LLM classification fallback
     type: "llm_classify"
     provider: string            # required — claude|codex|opencode|gemini
     prompt: string              # required — classification prompt
 ```
 
-Fallback supports `profile: <name>` (XOR with `provider`), resolved pre-validation. When using `profile`, the `provider` field is populated from the profile during resolution.
+The `fallback` field uses `LLMClassifyFallback` and supports `profile: <name>` (XOR with `provider`), resolved pre-validation. When using `profile`, the `provider` field is populated from the profile during resolution.
+
+### Extraction Fallback Priority
+
+When all strategies in `strategy` fail, the engine attempts fallbacks in this order:
+
+1. **Per-rule fallback** (`extract.fallback`) — `LLMClassifyFallback` defined directly on the `ExtractRule`. Used first if present.
+2. **Flow-level fallback** (`Flow.extraction_fallback`) — if set to `false`, all fallback is disabled for this workflow; if set to an `ExtractionFallback` object, it is used.
+3. **Config-level fallback** (`FdsxConfig.extraction_fallback`) — applied when no flow-level override is present.
+4. **No fallback** — extraction returns `null` and the state records no extracted value.
+
+When `source_provider` is `"system"`, all LLM fallback is suppressed regardless of configuration (prevents exfiltration of local command output).
+
+---
+
+## ExtractionFallback
+
+Used at **flow level** (`Flow.extraction_fallback`) and in **config files** (`FdsxConfig.extraction_fallback`). Provides a global LLM-based extraction fallback applied when a per-rule `extract.fallback` is not configured.
+
+```yaml
+extraction_fallback:
+  provider?: string             # XOR with profile — claude|codex|opencode|gemini (system forbidden)
+  profile?: string              # XOR with provider — resolved from profiles
+  extra_instructions?: string   # optional — appended to the recovery prompt
+```
+
+**Mutual exclusion:** exactly one of `provider` or `profile` must be set. Setting both or neither raises a validation error.
+
+**At flow level**, the value may also be the literal `false` to explicitly disable any config-level fallback for the workflow:
+
+```yaml
+extraction_fallback: false      # disables config-level extraction_fallback for this workflow
+```
+
+**Validation:**
+- `provider` and `profile` are mutually exclusive (XOR) — exactly one must be provided
+- `provider` must be one of the LLM providers (`claude`, `codex`, `opencode`, `gemini`); `system` is forbidden
+- Uses `extra="forbid"` — unknown keys cause validation errors
 
 ---
 
@@ -546,6 +587,11 @@ run_hooks?:                     # run-level lifecycle hooks fired once per CLI i
 
 profiles?:
   <name>: ProfileConfig
+
+extraction_fallback?:           # absent by default — global LLM fallback when no per-rule fallback is set
+  provider?: string             # XOR with profile — claude|codex|opencode|gemini (system forbidden)
+  profile?: string              # XOR with provider — resolved from profiles
+  extra_instructions?: string   # optional — appended to the recovery prompt
 ```
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
@@ -555,3 +601,5 @@ Config uses `extra="forbid"` — unknown keys cause validation errors.
 Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
+
+**`extraction_fallback`** provides a project-wide default LLM fallback invoked when extraction strategies all fail and no per-rule `extract.fallback` is configured. It is overridden per-workflow via `Flow.extraction_fallback` (which may be set to `false` to disable it entirely for that workflow). See [Extraction Fallback Priority](#extraction-fallback-priority).
