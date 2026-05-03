@@ -152,13 +152,20 @@ class TestDetectAbortStatus:
 
     def test_abort_state_returns_aborted_status(self):
         """Last state starting with 'abort_' returns aborted status."""
+        from fdsx.core.engine import AbortInfo
+
         recorder = self._make_recorder()
         recorder.states = [
             {"name": "step1", "status": "completed"},
             {"name": "abort_design_issues", "status": "completed"},
         ]
         result = _detect_abort_status(recorder)
-        assert result == ("aborted", "abort_design_issues", "workflow aborted")
+        assert result == (
+            "aborted",
+            AbortInfo(
+                state_name="abort_design_issues", error_name=None, error_cause=None
+            ),
+        )
 
     def test_regular_state_returns_completed(self):
         """Last state not starting with 'abort_' returns completed status."""
@@ -168,14 +175,51 @@ class TestDetectAbortStatus:
             {"name": "step2", "status": "completed"},
         ]
         result = _detect_abort_status(recorder)
-        assert result == ("completed", None, None)
+        assert result == ("completed", None)
 
     def test_empty_states_returns_completed(self):
         """Empty recorder.states returns completed status."""
         recorder = self._make_recorder()
         recorder.states = []
         result = _detect_abort_status(recorder)
-        assert result == ("completed", None, None)
+        assert result == ("completed", None)
+
+    def test_fail_typed_entry_returns_abort_info_with_structured_fields(self):
+        """Last state with type='fail' returns AbortInfo with error_name and error_cause."""
+        from fdsx.core.engine import AbortInfo
+
+        recorder = self._make_recorder()
+        recorder.states = [
+            {"name": "step1", "status": "success"},
+            {
+                "name": "fail_node",
+                "type": "fail",
+                "status": "error",
+                "error_name": "SomeError",
+                "error_cause": "something bad happened",
+            },
+        ]
+        status, info = _detect_abort_status(recorder)
+        assert status == "aborted"
+        assert info == AbortInfo(
+            state_name="fail_node",
+            error_name="SomeError",
+            error_cause="something bad happened",
+        )
+
+    def test_fail_typed_entry_without_structured_fields_returns_abort_info_with_none_fields(
+        self,
+    ):
+        """Last state with type='fail' but no error_name/error_cause yields AbortInfo with None fields."""
+        from fdsx.core.engine import AbortInfo
+
+        recorder = self._make_recorder()
+        recorder.states = [{"name": "fail_node", "type": "fail", "status": "error"}]
+        status, info = _detect_abort_status(recorder)
+        assert status == "aborted"
+        assert info == AbortInfo(
+            state_name="fail_node", error_name=None, error_cause=None
+        )
 
 
 class TestErrorPathFallback:

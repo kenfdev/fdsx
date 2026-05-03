@@ -34,7 +34,7 @@ from .results import (
     _sanitize_state_for_log,
 )
 from .signals import SignalHandler
-from .validate import FlowValidationError
+from .validate import FailStateTermination, FlowValidationError
 
 logger = structlog.get_logger(__name__)
 
@@ -213,7 +213,8 @@ def run_flow(
                 last_state = final_state_info.values
 
         results = _extract_results(last_state, compiled.result_paths)
-        status, failed_state, error_msg = _detect_abort_status(recorder)
+        status, abort_info = _detect_abort_status(recorder)
+        failed_state = abort_info.state_name if abort_info is not None else None
         # T023: fire on_workflow_end with terminal status
         execute_workflow_hooks(
             collect_workflow_hooks(
@@ -234,10 +235,62 @@ def run_flow(
                 flow.name,
                 _calc_elapsed(recorder),
                 failed_state,
-                error_msg or "workflow aborted",
+                "workflow aborted",
+                error_name=abort_info.error_name if abort_info is not None else None,
+                error_cause=abort_info.error_cause if abort_info is not None else None,
             )
         else:
             display_completion_summary(flow.name, _calc_elapsed(recorder))
+        return FlowResult(results=results, status=status, abort_state=failed_state)
+    except FailStateTermination as fst:
+        if needs_checkpointer:
+            try:
+                _fst_state_info = compiled.graph.get_state(config)
+                _existing_meta = (
+                    _fst_state_info.values.get("_meta", {})
+                    if _fst_state_info.values
+                    else {}
+                )
+                compiled.graph.update_state(
+                    config,
+                    {
+                        "_meta": {
+                            **_existing_meta,
+                            "terminal_failure": {
+                                "state": fst.state_name,
+                                "error": fst.error,
+                                "cause": fst.cause,
+                            },
+                        }
+                    },
+                )
+            except Exception:
+                pass  # best-effort; do not mask the real termination
+        results = _extract_results(last_state, compiled.result_paths)
+        status, abort_info = _detect_abort_status(recorder)
+        failed_state = abort_info.state_name if abort_info is not None else None
+        execute_workflow_hooks(
+            collect_workflow_hooks(
+                "on_workflow_end",
+                global_hooks=fdsx_config.hooks,
+                project_hooks=None,
+                flow_hooks=flow.hooks,
+            ),
+            status=status,
+            event="on_workflow_end",
+            thread_id=thread_id,
+            flow_name=flow.name,
+        )
+        recorder.finalize(_sanitize_state_for_log(last_state), status)
+        recorder.save(base_dir=base_dir)
+        display_completion_summary(
+            flow.name,
+            _calc_elapsed(recorder),
+            failed_state,
+            "workflow aborted",
+            error_name=abort_info.error_name if abort_info is not None else None,
+            error_cause=abort_info.error_cause if abort_info is not None else None,
+        )
         return FlowResult(results=results, status=status, abort_state=failed_state)
     except Exception as e:
         if checkpoint_manager is not None:
@@ -248,7 +301,7 @@ def run_flow(
         recorder.finalize(_sanitize_state_for_log(last_state), "error")
         recorder.save(base_dir=base_dir)
         # T023: fire on_workflow_end with failed/aborted status on exception path
-        _abort_detect, _, _ = _detect_abort_status(recorder)
+        _abort_detect, _ = _detect_abort_status(recorder)
         _end_status = (
             "aborted"
             if _abort_detect == "aborted" or isinstance(e, HookAbortError)

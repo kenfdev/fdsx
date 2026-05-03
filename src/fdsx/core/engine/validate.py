@@ -12,6 +12,16 @@ class FlowValidationError(Exception):
     pass
 
 
+class FailStateTermination(Exception):
+    """Raised when a FailState is reached during flow execution."""
+
+    def __init__(self, state_name: str, error: str, cause: str) -> None:
+        super().__init__(f"Fail state '{state_name}': {error} — {cause}")
+        self.state_name = state_name
+        self.error = error
+        self.cause = cause
+
+
 def validate_flow(flow_path: Path) -> tuple[bool, list[str], str | None]:
     """Validate a flow without executing it.
 
