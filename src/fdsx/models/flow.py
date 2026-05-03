@@ -19,6 +19,38 @@ class LLMClassifyFallback(BaseModel):
         return self
 
 
+class ExtractionFallback(BaseModel):
+    """Global extraction fallback: retry extraction with a different provider or profile."""
+
+    provider: str | None = Field(default=None)
+    profile: str | None = Field(default=None)
+    extra_instructions: str | None = Field(default=None)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_provider_xor_profile(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            has_provider = values.get("provider") is not None
+            has_profile = values.get("profile") is not None
+            if has_provider and has_profile:
+                raise ValueError(
+                    "provider and profile are mutually exclusive in ExtractionFallback"
+                )
+            if not has_provider and not has_profile:
+                raise ValueError(
+                    "exactly one of provider or profile must be set in ExtractionFallback"
+                )
+        return values
+
+    @model_validator(mode="after")
+    def validate_provider_name(self) -> "ExtractionFallback":
+        if self.provider is not None:
+            validate_llm_provider(self.provider, "ExtractionFallback")
+        return self
+
+
 class ExtractRule(BaseModel):
     """Output extraction configuration."""
 
@@ -721,6 +753,10 @@ class Flow(BaseModel):
     )
     profiles: dict[str, dict[str, Any]] | None = Field(
         default=None, description="Workflow-level profile definitions"
+    )
+    extraction_fallback: ExtractionFallback | Literal[False] | None = Field(
+        default=None,
+        description="Global extraction fallback override. false=disable, None=inherit from config.",
     )
 
     @model_validator(mode="before")
