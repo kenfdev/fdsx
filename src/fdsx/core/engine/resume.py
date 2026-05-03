@@ -168,6 +168,37 @@ def resume_flow(
             compiled.graph.update_state(resume_config, {"_meta": updated_meta})
 
         state_info = compiled.graph.get_state(resume_config)
+
+        _terminal_failure = (
+            (state_info.values or {}).get("_meta", {}).get("terminal_failure")
+        )
+        if _terminal_failure is not None:
+            display_completion_summary(
+                recorder.flow_name,
+                _calc_elapsed(recorder),
+                _terminal_failure.get("state"),
+                "workflow aborted",
+                error_name=_terminal_failure.get("error"),
+                error_cause=_terminal_failure.get("cause"),
+            )
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks,
+                ),
+                status="aborted",
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
+            return FlowResult(
+                results={},
+                status="aborted",
+                abort_state=_terminal_failure.get("state"),
+            )
+
         with handler:
             if state_info.tasks:
                 payload = None

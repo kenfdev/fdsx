@@ -463,10 +463,11 @@ def analyze_variable_references(
                     f"in items_path but no preceding state sets a result_path for it"
                 )
 
+        from fdsx.models.flow import FailState as _FailState
+
         for var in prompt_vars:
-            if (
-                not _is_var_satisfied(var, available_vars.get(state_name, set()))
-                and state_name != flow.start_at
+            if not _is_var_satisfied(var, available_vars.get(state_name, set())) and (
+                state_name != flow.start_at or isinstance(state, _FailState)
             ):
                 errors.append(
                     f"State '{state_name}' references variable '{var}' "
