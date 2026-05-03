@@ -91,7 +91,10 @@ class TestRunHooksWiring:
 
         with (
             patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
-            patch("fdsx.cli.main.engine.run_flow"),
+            patch(
+                "fdsx.cli.main.engine.run_flow",
+                return_value=MagicMock(status="completed"),
+            ),
         ):
             runner.invoke(app, ["run", str(flow_path)])
 
@@ -225,7 +228,10 @@ class TestResumeHooksWiring:
 
         with (
             patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
-            patch("fdsx.cli.main.engine.resume_flow"),
+            patch(
+                "fdsx.cli.main.engine.resume_flow",
+                return_value=MagicMock(status="completed"),
+            ),
         ):
             runner.invoke(app, ["resume", "--thread-id", "test-thread"])
 

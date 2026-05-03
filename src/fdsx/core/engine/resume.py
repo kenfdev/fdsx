@@ -35,6 +35,7 @@ from .results import (
     _sanitize_state_for_log,
 )
 from .signals import SignalHandler
+from .validate import FailStateTermination
 
 
 def resume_flow(
@@ -167,6 +168,37 @@ def resume_flow(
             compiled.graph.update_state(resume_config, {"_meta": updated_meta})
 
         state_info = compiled.graph.get_state(resume_config)
+
+        _terminal_failure = (
+            (state_info.values or {}).get("_meta", {}).get("terminal_failure")
+        )
+        if _terminal_failure is not None:
+            display_completion_summary(
+                recorder.flow_name,
+                _calc_elapsed(recorder),
+                _terminal_failure.get("state"),
+                "workflow aborted",
+                error_name=_terminal_failure.get("error"),
+                error_cause=_terminal_failure.get("cause"),
+            )
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks,
+                ),
+                status="aborted",
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
+            return FlowResult(
+                results={},
+                status="aborted",
+                abort_state=_terminal_failure.get("state"),
+            )
+
         with handler:
             if state_info.tasks:
                 payload = None
@@ -217,7 +249,8 @@ def resume_flow(
         status: str = "completed"
         failed_state: str | None = None
         if recorder is not None:
-            status, failed_state, _ = _detect_abort_status(recorder)
+            status, abort_info = _detect_abort_status(recorder)
+            failed_state = abort_info.state_name if abort_info is not None else None
             # T024: fire on_workflow_end with terminal status on resume completion
             execute_workflow_hooks(
                 collect_workflow_hooks(
@@ -239,6 +272,12 @@ def resume_flow(
                     _calc_elapsed(recorder),
                     failed_state,
                     "workflow aborted",
+                    error_name=abort_info.error_name
+                    if abort_info is not None
+                    else None,
+                    error_cause=abort_info.error_cause
+                    if abort_info is not None
+                    else None,
                 )
             else:
                 display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
@@ -267,12 +306,68 @@ def resume_flow(
                 pass  # best-effort: do not raise if file is missing or index is invalid
 
         return FlowResult(results=results, status=status, abort_state=failed_state)
+    except FailStateTermination as fst:
+        if checkpoint_manager is not None:
+            try:
+                _fst_state_info = compiled.graph.get_state(resume_config)
+                _existing_meta = (
+                    _fst_state_info.values.get("_meta", {})
+                    if _fst_state_info.values
+                    else {}
+                )
+                compiled.graph.update_state(
+                    resume_config,
+                    {
+                        "_meta": {
+                            **_existing_meta,
+                            "terminal_failure": {
+                                "state": fst.state_name,
+                                "error": fst.error,
+                                "cause": fst.cause,
+                            },
+                        }
+                    },
+                )
+            except Exception:
+                pass
+        results = _extract_results(last_state, compiled.result_paths)
+        status = "aborted"
+        abort_info = None
+        failed_state = fst.state_name
+        if recorder is not None:
+            _, abort_info = _detect_abort_status(recorder)
+            failed_state = (
+                abort_info.state_name if abort_info is not None else fst.state_name
+            )
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks if flow is not None else None,
+                ),
+                status=status,
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
+            recorder.finalize(_sanitize_state_for_log(last_state), status)
+            recorder.save(base_dir=base_dir)
+            display_completion_summary(
+                recorder.flow_name,
+                _calc_elapsed(recorder),
+                failed_state,
+                "workflow aborted",
+                error_name=abort_info.error_name if abort_info is not None else None,
+                error_cause=abort_info.error_cause if abort_info is not None else None,
+            )
+        return FlowResult(results=results, status=status, abort_state=failed_state)
     except Exception as e:
         if recorder is not None:
             recorder.finalize(_sanitize_state_for_log(last_state), "error")
             recorder.save(base_dir=base_dir)
             # T024: fire on_workflow_end with failed/aborted status on exception path
-            _abort_detect, _, _ = _detect_abort_status(recorder)
+            _abort_detect, _ = _detect_abort_status(recorder)
             _end_status = (
                 "aborted"
                 if _abort_detect == "aborted" or isinstance(e, HookAbortError)

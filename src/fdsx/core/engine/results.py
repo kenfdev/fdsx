@@ -75,25 +75,47 @@ def _find_failed_state(recorder: RunRecorder) -> tuple[str, str] | None:
     return None
 
 
+@dataclass(frozen=True)
+class AbortInfo:
+    """Structured abort metadata returned by _detect_abort_status."""
+
+    state_name: str
+    error_name: str | None
+    error_cause: str | None
+
+
 def _detect_abort_status(
     recorder: RunRecorder,
-) -> tuple[str, str | None, str | None]:
+) -> tuple[str, AbortInfo | None]:
     """Detect if the workflow ended at an abort state.
 
     Args:
         recorder: The RunRecorder instance
 
     Returns:
-        Tuple of (status, failed_state_name, error_message):
-        - If last state name starts with "abort_": ("aborted", state_name, "workflow aborted")
-        - Otherwise: ("completed", None, None)
+        Tuple of (status, AbortInfo | None):
+        - If last state type=="fail": ("aborted", AbortInfo(...))
+        - If last state name starts with "abort_": ("aborted", AbortInfo(...))
+        - Otherwise: ("completed", None)
     """
     if recorder.states:
         last = recorder.states[-1]
         name = last.get("name", "")
+        if last.get("type") == "fail":
+            return (
+                "aborted",
+                AbortInfo(
+                    state_name=str(name),
+                    error_name=last.get("error_name"),
+                    error_cause=last.get("error_cause"),
+                ),
+            )
         if isinstance(name, str) and name.startswith("abort_"):
-            return ("aborted", name, "workflow aborted")
-    return ("completed", None, None)
+            return (
+                "aborted",
+                AbortInfo(state_name=name, error_name=None, error_cause=None),
+            )
+    return ("completed", None)
 
 
 @dataclass(frozen=True)

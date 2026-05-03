@@ -21,6 +21,15 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.plan_decision
+      fallback:
+        type: llm_classify
+        profile: behemoth
+        prompt: |
+          The agent above produced an implementation plan but did not emit a
+          required routing tag. Read the response and decide which tag applies.
+          Output exactly one of these tokens, with nothing else:
+            STEP:1  — a usable plan was produced (default when in doubt)
+            STEP:2  — the agent reported it is blocked / cannot plan
     retry: 2
     next: plan_route
 
@@ -46,6 +55,15 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.test_implement_decision
+      fallback:
+        type: llm_classify
+        profile: behemoth
+        prompt: |
+          The agent above wrote tests but did not emit a required routing tag.
+          Read the response and decide which tag applies. Output exactly one
+          of these tokens, with nothing else:
+            STEP:1  — failing tests were written for the right reason
+            STEP:2  — plan unworkable / tooling broken
     retry: 2
     next: test_implement_route
 
@@ -105,6 +123,15 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.apply_feedback_decision
+      fallback:
+        type: llm_classify
+        profile: behemoth
+        prompt: |
+          The agent above applied feedback to the failing tests but did not
+          emit a required routing tag. Read the response and decide which tag
+          applies. Output exactly one of these tokens, with nothing else:
+            STEP:1  — feedback applied; tests ready for re-review
+            STEP:2  — feedback missing/unreadable / unrecoverable
     retry: 2
     next: apply_feedback_route
 
@@ -130,6 +157,16 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.implement_decision
+      fallback:
+        type: llm_classify
+        profile: behemoth
+        prompt: |
+          The agent above implemented production code to turn failing tests
+          green but did not emit a required routing tag. Read the response
+          and decide which tag applies. Output exactly one of these tokens,
+          with nothing else:
+            STEP:1  — implementation complete and all tests pass
+            STEP:2  — unrecoverable error during implementation
     retry: 2
     next: implement_route
 
@@ -180,6 +217,15 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2"
       result_path: $.replan_decision
+      fallback:
+        type: llm_classify
+        profile: behemoth
+        prompt: |
+          The replanner above produced a fix plan but did not emit a required
+          routing tag. Read the response and decide which tag applies. Output
+          exactly one of these tokens, with nothing else:
+            STEP:1  — fix plan is ready
+            STEP:2  — blocked: non-convergent feedback or design issues
     retry: 2
     max_iterations: 3
     next: replan_route
@@ -206,6 +252,17 @@ states:
       strategy: [keyword, regex]
       pattern: "STEP:1|STEP:2|STEP:3"
       result_path: $.fix_decision
+      fallback:
+        type: llm_classify
+        profile: behemoth
+        prompt: |
+          The fix agent above attempted to apply fixes from the fix plan but
+          did not emit a required routing tag. Read the response and decide
+          which tag applies. Output exactly one of these tokens, with nothing
+          else:
+            STEP:1  — all fixes applied; build and tests pass
+            STEP:2  — fixes attempted but build or tests fail
+            STEP:3  — cannot fix (issues beyond this agent's capability)
     retry: 0
     timeout_seconds: 1200
     next: fix_route

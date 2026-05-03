@@ -270,7 +270,7 @@ def analyze_variable_references(
 
     def get_prompt_variables(state: State | Branch) -> set[str]:
         variables: set[str] = set()
-        from fdsx.models.flow import Branch, MapState, PassState, TaskState
+        from fdsx.models.flow import Branch, FailState, MapState, PassState, TaskState
 
         if isinstance(state, (TaskState, Branch)):
             prompt = state.prompt_template or ""
@@ -295,6 +295,8 @@ def analyze_variable_references(
                         var_path = var_path[2:]
                     variables.add(var_path)
             return variables
+        elif isinstance(state, FailState):
+            prompt = state.error + " " + state.cause
         else:
             return variables
 
@@ -310,7 +312,13 @@ def analyze_variable_references(
 
     def get_result_paths(state: State) -> set[str]:
         result_paths: set[str] = set()
-        from fdsx.models.flow import MapState, ParallelState, PassState, TaskState
+        from fdsx.models.flow import (
+            FailState,
+            MapState,
+            ParallelState,
+            PassState,
+            TaskState,
+        )
 
         if isinstance(state, TaskState):
             if state.result_path:
@@ -359,6 +367,8 @@ def analyze_variable_references(
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)
+        elif isinstance(state, FailState):
+            pass  # FailState writes no result paths
         return result_paths
 
     reachable_states = set()
@@ -453,10 +463,11 @@ def analyze_variable_references(
                     f"in items_path but no preceding state sets a result_path for it"
                 )
 
+        from fdsx.models.flow import FailState as _FailState
+
         for var in prompt_vars:
-            if (
-                not _is_var_satisfied(var, available_vars.get(state_name, set()))
-                and state_name != flow.start_at
+            if not _is_var_satisfied(var, available_vars.get(state_name, set())) and (
+                state_name != flow.start_at or isinstance(state, _FailState)
             ):
                 errors.append(
                     f"State '{state_name}' references variable '{var}' "

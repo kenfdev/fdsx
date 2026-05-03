@@ -17,6 +17,7 @@ from fdsx.core.hooks import (
 )
 from fdsx.models.flow import (
     ChoiceState,
+    FailState,
     Flow,
     HookEntry,
     MapState,
@@ -33,6 +34,7 @@ from .helpers import (
 from .map_iteration import _create_map_node
 from .nodes import (
     _create_choice_node,
+    _create_fail_node,
     _create_pass_node,
     _create_task_node,
     _create_wait_interrupt_node,
@@ -452,6 +454,20 @@ def compile_flow(
                 quiet,
                 on_process_start=on_process_start,
             )
+            graph.add_node(
+                state_name,
+                _wrap_with_hooks(
+                    node,
+                    state_name,
+                    on_state_start,
+                    on_state_end,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                ),
+            )  # type: ignore[call-overload]
+        elif isinstance(state, FailState):
+            on_state_start, on_state_end = _collect_state_hooks(state)
+            node = _create_fail_node(state_name, state, flow, recorder)
             graph.add_node(
                 state_name,
                 _wrap_with_hooks(

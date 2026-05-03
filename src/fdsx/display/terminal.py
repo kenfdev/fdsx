@@ -357,6 +357,8 @@ def display_completion_summary(
     elapsed_seconds: float,
     failed_state: str | None = None,
     error: str | None = None,
+    error_name: str | None = None,
+    error_cause: str | None = None,
 ) -> None:
     """Display workflow completion summary to stderr.
 
@@ -368,6 +370,8 @@ def display_completion_summary(
         elapsed_seconds: Total elapsed time in seconds
         failed_state: Name of the failed state (None on success)
         error: Error message (None on success)
+        error_name: Structured error name from a fail state (None if not a fail state)
+        error_cause: Structured error cause from a fail state (None if not a fail state)
     """
     flow_name_safe = _sanitize_output(flow_name)
     time_str = _format_elapsed(elapsed_seconds)
@@ -378,11 +382,19 @@ def display_completion_summary(
         )
     else:
         failed_state_safe = _sanitize_output(failed_state)
-        error_str = _sanitize_output(error) if error else "unknown error"
-        print(
-            f"✗ Workflow '{flow_name_safe}' failed at state '{failed_state_safe}' — {error_str}",
-            file=sys.stderr,
-        )
+        if error_name is not None and error_cause is not None:
+            print(
+                f"✗ Workflow '{flow_name_safe}' aborted at state '{failed_state_safe}'"
+                f" — Error: {_sanitize_output(error_name)}"
+                f" — Cause: {_sanitize_output(error_cause)}",
+                file=sys.stderr,
+            )
+        else:
+            error_str = _sanitize_output(error) if error else "unknown error"
+            print(
+                f"✗ Workflow '{flow_name_safe}' failed at state '{failed_state_safe}' — {error_str}",
+                file=sys.stderr,
+            )
 
 
 def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> str:

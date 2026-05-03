@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from fdsx.core import engine
+from fdsx.core.engine import AbortInfo
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 from tests import FIXTURES_DIR
 
@@ -92,7 +93,12 @@ class TestResumeUpdatesTaskEntry:
         # Patch _detect_abort_status to simulate an aborted flow
         with patch(
             "fdsx.core.engine.resume._detect_abort_status",
-            return_value=("aborted", "abort_blocked", "workflow aborted"),
+            return_value=(
+                "aborted",
+                AbortInfo(
+                    state_name="abort_blocked", error_name=None, error_cause=None
+                ),
+            ),
         ):
             result = engine.resume_flow(thread_id, base_dir=base_dir)
 
