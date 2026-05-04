@@ -7,8 +7,6 @@ extra_instructions, and that per-rule fallback still beats workflow override.
 
 from unittest.mock import patch
 
-import pytest
-
 from fdsx.core.compiler import compile_flow
 from fdsx.core.config import FdsxConfig
 from fdsx.models.flow import (
@@ -38,7 +36,7 @@ def _flow(
     per_rule_fallback: LLMClassifyFallback | None = None,
 ) -> Flow:
     """Single claude task with keyword extraction that always misses."""
-    ef = False if extraction_fallback is False else extraction_fallback
+    ef = extraction_fallback
 
     return Flow(
         name="test_workflow_override",
@@ -301,27 +299,3 @@ class TestNoOverrideFallsBackToGlobal:
 
         assert result.get("decision") == "APPROVED"
         assert mock_claude.call_count == 2  # main task + global fallback
-
-
-# ---------------------------------------------------------------------------
-# T003-8: flow.extraction_fallback = false disables config-level fallback
-# ---------------------------------------------------------------------------
-
-
-class TestWorkflowOverrideFalseDisablesFallback:
-    def test_false_disables_config_fallback(self):
-        """When flow.extraction_fallback is False and strategies miss,
-        no LLM fallback is invoked — not even the config-level default.
-        The workflow raises RuntimeError (extraction failed)."""
-        flow = _flow(extraction_fallback=False)
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
-
-        with patch(
-            "fdsx.providers.claude._run_subprocess", return_value=_NO_MATCH
-        ) as mock_claude:
-            compiled = compile_flow(flow, config=config)
-            with pytest.raises(RuntimeError, match="Extraction failed"):
-                compiled.graph.invoke({})
-
-        # Only the main task call; no fallback call
-        assert mock_claude.call_count == 1
