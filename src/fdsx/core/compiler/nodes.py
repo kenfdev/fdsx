@@ -31,6 +31,7 @@ from fdsx.providers.base import get_provider
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
+    build_escalation_target,
 )
 
 if TYPE_CHECKING:
@@ -51,6 +52,7 @@ def _create_task_node(
     merged_options = _merge_provider_options(
         config, flow, state.provider, state.provider_options, state_name=state_name
     )
+    esc_target = build_escalation_target(config, flow, state.provider)
     node_flow_profiles: dict[str, Any] | None = getattr(flow, "profiles", None)
     node_resolved_fallback = None
     if state.extract is not None and config is not None:
@@ -138,6 +140,16 @@ def _create_task_node(
             flow_profiles=node_flow_profiles,
             config_profiles=node_config_profiles,
             on_fallback=_on_fallback,
+            escalation=esc_target,
+            on_escalation_activated=(
+                (
+                    lambda: recorder.record_state_escalation(
+                        state_name, esc_target.provider_name, esc_target.model
+                    )
+                )
+                if recorder is not None and esc_target is not None
+                else None
+            ),
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
@@ -148,8 +160,12 @@ def _create_task_node(
             terminal.display_state_error(state_name, last_error)
             if recorder is not None:
                 recorder.record_state_error(state_name, last_error)
+            orig = state.provider
+            last = exec_result.last_provider_name or orig
+            annotation = f" (escalated from {orig})" if last != orig else ""
             raise RuntimeError(
-                f"Provider {state.provider} failed after {max_retries + 1} attempts with exit code {result.exit_code}: {_sanitize_output(last_error)}"
+                f"Provider {last} failed after {max_retries + 1} attempts{annotation} "
+                f"with exit code {result.exit_code}: {_sanitize_output(last_error)}"
             )
 
         partial: dict[str, Any] = {}
