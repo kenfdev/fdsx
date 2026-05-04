@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fdsx.core.extraction_fallback import resolve_fallback
+from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
     resolve_jsonpath,
     resolve_template,
@@ -17,6 +17,7 @@ from fdsx.core.variables import (
 )
 from fdsx.display.terminal import (
     _sanitize_output,
+    display_fallback,
     display_map_complete,
     display_map_iteration,
     display_map_iteration_complete,
@@ -229,6 +230,26 @@ def _create_map_node(
                     if config is not None and config.profiles
                     else None
                 )
+
+                def _on_fallback(event: FallbackEvent, _idx: int = idx) -> None:
+                    if recorder is not None:
+                        recorder.record_fallback_invocation(
+                            state_name=state_name,
+                            source=event.source,
+                            outcome=event.outcome,
+                            pattern=event.pattern,
+                            value_preview=event.value_preview,
+                            error_kind=event.error_kind,
+                            iter_index=_idx,
+                        )
+                    display_fallback(
+                        state_name=state_name,
+                        source=event.source,
+                        outcome=event.outcome,
+                        value_preview=event.value_preview,
+                        error_kind=event.error_kind,
+                    )
+
                 exec_config = ExecutionConfig(
                     provider=provider,
                     provider_name=iter_state.provider,
@@ -244,6 +265,7 @@ def _create_map_node(
                     resolved_fallback=iter_resolved_fallback,
                     flow_profiles=getattr(flow, "profiles", None),
                     config_profiles=iter_config_profiles,
+                    on_fallback=_on_fallback,
                 )
                 exec_result = execute_with_retry(exec_config)
                 result = exec_result.result

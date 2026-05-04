@@ -1,13 +1,20 @@
 import json
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from fdsx.core.extraction_fallback import ResolvedFallback, execute_default_fallback
+from fdsx.core.extraction_fallback import (
+    FallbackEvent,
+    ResolvedFallback,
+    execute_default_fallback,
+)
 from fdsx.core.profiles import merge_profiles
 from fdsx.models.flow import ExtractionFallback, ExtractRule, LLMClassifyFallback
+
+if TYPE_CHECKING:
+    pass
 
 log = structlog.get_logger(__name__)
 
@@ -21,6 +28,8 @@ def extract_value(
     resolved_fallback: ResolvedFallback | None = None,
     flow_profiles: dict[str, dict[str, Any]] | None = None,
     config_profiles: dict[str, dict[str, Any]] | None = None,
+    on_fallback: Callable[[FallbackEvent], None] | None = None,
+    state_name: str = "",
 ) -> Any | None:
     """Extract a value from output using the specified extraction rule.
 
@@ -69,7 +78,12 @@ def extract_value(
             extract_rule.pattern if "keyword" in extract_rule.strategy else None
         )
         return _execute_llm_fallback(
-            output, extract_rule.fallback, provider_factory, pattern=validation_pattern
+            output,
+            extract_rule.fallback,
+            provider_factory,
+            pattern=validation_pattern,
+            on_fallback=on_fallback,
+            state_name=state_name,
         )
 
     if (
@@ -85,6 +99,8 @@ def extract_value(
             merged,
             source_provider or "",
             provider_factory,
+            on_fallback=on_fallback,
+            state_name=state_name,
         )
 
     return None
@@ -287,6 +303,8 @@ def _execute_llm_fallback(
     fallback: LLMClassifyFallback,
     provider_factory: Callable[[str], Any] | None,
     pattern: str | None = None,
+    on_fallback: Callable[[FallbackEvent], None] | None = None,
+    state_name: str = "",
 ) -> str | None:
     """Execute LLM-based classification fallback.
 
@@ -297,6 +315,8 @@ def _execute_llm_fallback(
         pattern: Optional pipe-delimited keywords to validate LLM output against.
                  If provided, the LLM response must exactly match one of the keywords
                  (case-insensitive); unrecognised responses are rejected.
+        on_fallback: Optional callback invoked once per terminal outcome.
+        state_name: Name of the calling state (for the FallbackEvent).
 
     Returns:
         The classification result, or None if the LLM call failed or the result
@@ -307,9 +327,28 @@ def _execute_llm_fallback(
     if fallback.provider == "system":
         return None  # system provider not allowed for LLM classification (defense-in-depth)
 
+    _pattern_str = pattern or ""
+
     try:
         provider = provider_factory(fallback.provider)
     except Exception:
+        log.info(
+            "extraction_fallback_invoked",
+            source="rule",
+            outcome="error",
+            error_kind="provider_init_failed",
+            state_name=state_name,
+        )
+        if on_fallback:
+            on_fallback(
+                FallbackEvent(
+                    source="rule",
+                    outcome="error",
+                    state_name=state_name,
+                    pattern=_pattern_str,
+                    error_kind="provider_init_failed",
+                )
+            )
         return None
 
     prompt = fallback.prompt.replace("{output}", output)
@@ -324,18 +363,104 @@ def _execute_llm_fallback(
             output_callback=None,
         )
 
-        if result.exit_code == 0:
-            llm_output = result.stdout.strip()
-            if pattern:
-                keywords = pattern.split("|")
-                llm_lower = llm_output.lower()
-                for keyword in keywords:
-                    if keyword.lower() == llm_lower:
-                        return keyword
-                return None  # LLM output not in allowed set
-            return llm_output
+        if result.exit_code != 0:
+            log.info(
+                "extraction_fallback_invoked",
+                source="rule",
+                outcome="error",
+                error_kind="non_zero_exit",
+                state_name=state_name,
+            )
+            if on_fallback:
+                on_fallback(
+                    FallbackEvent(
+                        source="rule",
+                        outcome="error",
+                        state_name=state_name,
+                        pattern=_pattern_str,
+                        error_kind="non_zero_exit",
+                    )
+                )
+            return None
+
+        llm_output = result.stdout.strip()
+        if pattern:
+            keywords = pattern.split("|")
+            llm_lower = llm_output.lower()
+            for keyword in keywords:
+                if keyword.lower() == llm_lower:
+                    log.info(
+                        "extraction_fallback_invoked",
+                        source="rule",
+                        outcome="recovered",
+                        value_preview=keyword,
+                        state_name=state_name,
+                    )
+                    if on_fallback:
+                        on_fallback(
+                            FallbackEvent(
+                                source="rule",
+                                outcome="recovered",
+                                state_name=state_name,
+                                pattern=_pattern_str,
+                                value_preview=keyword,
+                            )
+                        )
+                    return keyword
+            log.info(
+                "extraction_fallback_invoked",
+                source="rule",
+                outcome="rejected",
+                value_preview=llm_output,
+                state_name=state_name,
+            )
+            if on_fallback:
+                on_fallback(
+                    FallbackEvent(
+                        source="rule",
+                        outcome="rejected",
+                        state_name=state_name,
+                        pattern=_pattern_str,
+                        value_preview=llm_output,
+                    )
+                )
+            return None
+        log.info(
+            "extraction_fallback_invoked",
+            source="rule",
+            outcome="recovered",
+            value_preview=llm_output,
+            state_name=state_name,
+        )
+        if on_fallback:
+            on_fallback(
+                FallbackEvent(
+                    source="rule",
+                    outcome="recovered",
+                    state_name=state_name,
+                    pattern=_pattern_str,
+                    value_preview=llm_output,
+                )
+            )
+        return llm_output
 
     except Exception:
-        pass
+        log.info(
+            "extraction_fallback_invoked",
+            source="rule",
+            outcome="error",
+            error_kind="provider_call_failed",
+            state_name=state_name,
+        )
+        if on_fallback:
+            on_fallback(
+                FallbackEvent(
+                    source="rule",
+                    outcome="error",
+                    state_name=state_name,
+                    pattern=_pattern_str,
+                    error_kind="provider_call_failed",
+                )
+            )
 
     return None

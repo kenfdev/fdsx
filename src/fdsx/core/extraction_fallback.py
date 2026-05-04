@@ -15,7 +15,24 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-__all__ = ["ResolvedFallback", "execute_default_fallback", "resolve_fallback"]
+__all__ = [
+    "FallbackEvent",
+    "ResolvedFallback",
+    "execute_default_fallback",
+    "resolve_fallback",
+]
+
+
+@dataclass(frozen=True)
+class FallbackEvent:
+    source: str
+    outcome: str
+    state_name: str
+    pattern: str
+    value_preview: str | None = None
+    error_kind: str | None = None
+    branch_index: int | None = None
+    iter_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +127,8 @@ def execute_default_fallback(
     merged_profiles: dict[str, dict[str, Any]],
     source_provider: str,
     provider_factory: Callable[[str], Any],
+    on_fallback: Callable[[FallbackEvent], None] | None = None,
+    state_name: str = "",
 ) -> str | None:
     config = cast(ExtractionFallback, resolved.config)
 
@@ -121,12 +140,21 @@ def execute_default_fallback(
         profile_data = merged_profiles.get(profile_name)
         if profile_data is None:
             log.info(
-                "default_fallback_invoked",
+                "extraction_fallback_invoked",
                 source=resolved.source,
                 strategy_list=rule.strategy,
                 outcome="error",
                 error="profile_not_found",
             )
+            event = FallbackEvent(
+                source=resolved.source,
+                outcome="error",
+                state_name=state_name,
+                pattern=rule.pattern,
+                error_kind="profile_not_found",
+            )
+            if on_fallback:
+                on_fallback(event)
             return None
         provider_name = profile_data["provider"]
         model = profile_data.get("model")
@@ -138,12 +166,21 @@ def execute_default_fallback(
         provider = provider_factory(provider_name)
     except Exception:
         log.info(
-            "default_fallback_invoked",
+            "extraction_fallback_invoked",
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="error",
             error="provider_init_failed",
         )
+        event = FallbackEvent(
+            source=resolved.source,
+            outcome="error",
+            state_name=state_name,
+            pattern=rule.pattern,
+            error_kind="provider_init_failed",
+        )
+        if on_fallback:
+            on_fallback(event)
         return None
 
     try:
@@ -152,31 +189,58 @@ def execute_default_fallback(
         )
     except (TimeoutError, subprocess.TimeoutExpired):
         log.info(
-            "default_fallback_invoked",
+            "extraction_fallback_invoked",
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="error",
             error="timeout",
         )
+        event = FallbackEvent(
+            source=resolved.source,
+            outcome="error",
+            state_name=state_name,
+            pattern=rule.pattern,
+            error_kind="timeout",
+        )
+        if on_fallback:
+            on_fallback(event)
         return None
     except Exception:
         log.info(
-            "default_fallback_invoked",
+            "extraction_fallback_invoked",
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="error",
             error="provider_call_failed",
         )
+        event = FallbackEvent(
+            source=resolved.source,
+            outcome="error",
+            state_name=state_name,
+            pattern=rule.pattern,
+            error_kind="provider_call_failed",
+        )
+        if on_fallback:
+            on_fallback(event)
         return None
 
     if result.exit_code != 0:
         log.info(
-            "default_fallback_invoked",
+            "extraction_fallback_invoked",
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="error",
             error="non_zero_exit",
         )
+        event = FallbackEvent(
+            source=resolved.source,
+            outcome="error",
+            state_name=state_name,
+            pattern=rule.pattern,
+            error_kind="non_zero_exit",
+        )
+        if on_fallback:
+            on_fallback(event)
         return None
 
     llm_output: str = result.stdout.strip()
@@ -184,12 +248,21 @@ def execute_default_fallback(
 
     if llm_output == "NONE":
         log.info(
-            "default_fallback_invoked",
+            "extraction_fallback_invoked",
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="rejected",
             reason="model_returned_none",
         )
+        event = FallbackEvent(
+            source=resolved.source,
+            outcome="rejected",
+            state_name=state_name,
+            pattern=rule.pattern,
+            value_preview=llm_output,
+        )
+        if on_fallback:
+            on_fallback(event)
         return None
 
     if "keyword" in rule.strategy:
@@ -198,24 +271,51 @@ def execute_default_fallback(
         for keyword in keywords:
             if keyword.lower() == llm_lower:
                 log.info(
-                    "default_fallback_invoked",
+                    "extraction_fallback_invoked",
                     source=resolved.source,
                     strategy_list=rule.strategy,
                     outcome="recovered",
                 )
+                event = FallbackEvent(
+                    source=resolved.source,
+                    outcome="recovered",
+                    state_name=state_name,
+                    pattern=rule.pattern,
+                    value_preview=keyword,
+                )
+                if on_fallback:
+                    on_fallback(event)
                 return keyword
         log.info(
-            "default_fallback_invoked",
+            "extraction_fallback_invoked",
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="rejected",
         )
+        event = FallbackEvent(
+            source=resolved.source,
+            outcome="rejected",
+            state_name=state_name,
+            pattern=rule.pattern,
+            value_preview=llm_output,
+        )
+        if on_fallback:
+            on_fallback(event)
         return None
 
     log.info(
-        "default_fallback_invoked",
+        "extraction_fallback_invoked",
         source=resolved.source,
         strategy_list=rule.strategy,
         outcome="recovered",
     )
+    event = FallbackEvent(
+        source=resolved.source,
+        outcome="recovered",
+        state_name=state_name,
+        pattern=rule.pattern,
+        value_preview=llm_output,
+    )
+    if on_fallback:
+        on_fallback(event)
     return llm_output

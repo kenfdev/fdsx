@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,7 @@ class RunRecorder:
         self.completed_at: str | None = None
         self.final_variables: dict[str, Any] | None = None
         self._current_state: dict[str, Any] | None = None
+        self._lock: threading.Lock = threading.Lock()
 
     def record_state_start(self, state_name: str, state_type: str) -> None:
         """Append new state entry with name, type, started_at."""
@@ -133,6 +135,44 @@ class RunRecorder:
         state["variables_set"] = []
 
         self._current_state = None
+
+    def record_fallback_invocation(
+        self,
+        state_name: str,
+        source: str,
+        outcome: str,
+        pattern: str,
+        value_preview: str | None = None,
+        error_kind: str | None = None,
+        branch_index: int | None = None,
+        iter_index: int | None = None,
+    ) -> None:
+        """Append one fallback invocation record to the state's fallback_invocations list."""
+        record: dict[str, Any] = {
+            "source": source,
+            "outcome": outcome,
+            "state_name": state_name,
+            "pattern": pattern,
+        }
+        if value_preview is not None:
+            record["value_preview"] = value_preview[:200]
+        if error_kind is not None:
+            record["error_kind"] = error_kind
+        if branch_index is not None:
+            record["branch_index"] = branch_index
+        if iter_index is not None:
+            record["iter_index"] = iter_index
+
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is None:
+                state = {
+                    "name": state_name,
+                    "type": "unknown",
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                }
+                self.states.append(state)
+            state.setdefault("fallback_invocations", []).append(record)
 
     def record_map_start(self, state_name: str, item_count: int) -> None:
         """Record map state start with item count metadata.

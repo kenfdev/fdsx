@@ -691,3 +691,206 @@ class TestExecuteDefaultFallback:
         for entry in info_logs:
             assert entry.get("source") == resolved.source
             assert entry.get("strategy_list") == rule.strategy
+
+    # ------------------------------------------------------------------
+    # T005: on_fallback callback and structlog event rename
+    # ------------------------------------------------------------------
+
+    def test_on_fallback_called_once_on_recovered(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="APPROVED")
+        resolved = _make_resolved(provider="claude")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "recovered"
+        assert event.source == "global"
+
+    def test_on_fallback_called_once_on_rejected_keyword(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="MAYBE")
+        resolved = _make_resolved(provider="claude")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "rejected"
+
+    def test_on_fallback_called_once_on_model_returned_none(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="NONE")
+        resolved = _make_resolved(provider="claude")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "rejected"
+
+    def test_on_fallback_called_once_on_timeout(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        stub_provider = MagicMock()
+        stub_provider.execute.side_effect = TimeoutError("timed out")
+        factory = MagicMock(return_value=stub_provider)
+        resolved = _make_resolved(provider="claude")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "error"
+        assert event.error_kind == "timeout"
+
+    def test_on_fallback_called_once_on_provider_init_failed(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory = MagicMock(side_effect=RuntimeError("no binary"))
+        resolved = _make_resolved(provider="claude")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "error"
+        assert event.error_kind == "provider_init_failed"
+
+    def test_on_fallback_called_once_on_non_zero_exit(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="", exit_code=1)
+        resolved = _make_resolved(provider="claude")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "error"
+        assert event.error_kind == "non_zero_exit"
+
+    def test_on_fallback_called_once_on_profile_not_found(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory()
+        resolved = _make_resolved(profile="missing")
+        callback = MagicMock()
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.outcome == "error"
+        assert event.error_kind == "profile_not_found"
+
+    def test_structlog_event_renamed_to_extraction_fallback_invoked(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="APPROVED")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        info_events = [e["event"] for e in logs if e["log_level"] == "info"]
+        assert any(e == "extraction_fallback_invoked" for e in info_events), (
+            f"Expected 'extraction_fallback_invoked' but got: {info_events}"
+        )
+        assert not any(e == "default_fallback_invoked" for e in info_events), (
+            f"Found deprecated 'default_fallback_invoked' in logs: {info_events}"
+        )

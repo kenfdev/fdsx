@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.types import Send
 
-from fdsx.core.extraction_fallback import resolve_fallback
+from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
@@ -137,6 +137,26 @@ def _create_branch_executor(
             if config is not None and config.profiles
             else None
         )
+
+        def _on_fallback(event: FallbackEvent, _bi: int = branch_index) -> None:
+            if recorder is not None:
+                recorder.record_fallback_invocation(
+                    state_name=state_name,
+                    source=event.source,
+                    outcome=event.outcome,
+                    pattern=event.pattern,
+                    value_preview=event.value_preview,
+                    error_kind=event.error_kind,
+                    branch_index=_bi,
+                )
+            terminal.display_fallback(
+                state_name=state_name,
+                source=event.source,
+                outcome=event.outcome,
+                value_preview=event.value_preview,
+                error_kind=event.error_kind,
+            )
+
         exec_config = ExecutionConfig(
             provider=provider,
             provider_name=branch.provider,
@@ -152,6 +172,7 @@ def _create_branch_executor(
             resolved_fallback=branch_resolved_fallback,
             flow_profiles=getattr(flow, "profiles", None),
             config_profiles=branch_config_profiles,
+            on_fallback=_on_fallback,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result

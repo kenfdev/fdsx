@@ -23,7 +23,7 @@ from fdsx.core.extraction import extract_value
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
 
 if TYPE_CHECKING:
-    from fdsx.core.extraction_fallback import ResolvedFallback
+    from fdsx.core.extraction_fallback import FallbackEvent, ResolvedFallback
     from fdsx.logging.stream_logger import StreamLogger
     from fdsx.models.flow import ExtractRule
 
@@ -79,6 +79,7 @@ class ExecutionConfig:
     resolved_fallback: "ResolvedFallback | None" = None
     flow_profiles: "dict[str, dict[str, Any]] | None" = None
     config_profiles: "dict[str, dict[str, Any]] | None" = None
+    on_fallback: "Callable[[FallbackEvent], None] | None" = None
 
 
 @dataclass
@@ -172,6 +173,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         resolved_fallback=config.resolved_fallback,
                         flow_profiles=config.flow_profiles,
                         config_profiles=config.config_profiles,
+                        on_fallback=config.on_fallback,
                     )
                     if extracted is not None:
                         break

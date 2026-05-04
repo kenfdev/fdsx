@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from langgraph.types import interrupt
 
-from fdsx.core.extraction_fallback import resolve_fallback
+from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
@@ -67,6 +67,24 @@ def _create_task_node(
         else None
     )
 
+    def _on_fallback(event: FallbackEvent) -> None:
+        if recorder is not None:
+            recorder.record_fallback_invocation(
+                state_name=state_name,
+                source=event.source,
+                outcome=event.outcome,
+                pattern=event.pattern,
+                value_preview=event.value_preview,
+                error_kind=event.error_kind,
+            )
+        terminal.display_fallback(
+            state_name=state_name,
+            source=event.source,
+            outcome=event.outcome,
+            value_preview=event.value_preview,
+            error_kind=event.error_kind,
+        )
+
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.compiler.execution import ExecutionConfig, execute_with_retry
         from fdsx.logging.stream_logger import StreamLogger
@@ -119,6 +137,7 @@ def _create_task_node(
             resolved_fallback=node_resolved_fallback,
             flow_profiles=node_flow_profiles,
             config_profiles=node_config_profiles,
+            on_fallback=_on_fallback,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
