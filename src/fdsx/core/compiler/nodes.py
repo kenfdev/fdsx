@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from langgraph.types import interrupt
 
 from fdsx.core.extraction_fallback import resolve_fallback
@@ -19,6 +20,7 @@ from fdsx.display import terminal
 from fdsx.display.terminal import _sanitize_output
 from fdsx.models.flow import (
     ChoiceState,
+    FailState,
     Flow,
     PassState,
     TaskState,
@@ -142,11 +144,19 @@ def _create_task_node(
                     f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
                 )
             partial = set_jsonpath(state.extract.result_path, partial, extracted)
-            partial = set_jsonpath(state.result_path, partial, result.stdout.strip())
-            variables_set = [state.extract.result_path, state.result_path]
+            variables_set: list[str] = [state.extract.result_path]
+            if state.result_path is not None:
+                partial = set_jsonpath(
+                    state.result_path, partial, result.stdout.strip()
+                )
+                variables_set.append(state.result_path)
         else:
-            partial = set_jsonpath(state.result_path, partial, result.stdout.strip())
-            variables_set = [state.result_path]
+            variables_set = []
+            if state.result_path is not None:
+                partial = set_jsonpath(
+                    state.result_path, partial, result.stdout.strip()
+                )
+                variables_set = [state.result_path]
 
         if state.result_file:
             run_dir = state_dict.get("_meta", {}).get("run_dir", "")
@@ -241,6 +251,52 @@ def _create_pass_node(
 
         partial["_state_iterations"] = iters
         return partial
+
+    return node
+
+
+def _create_fail_node(
+    state_name: str,
+    state: FailState,
+    flow: Flow,
+    recorder: Any = None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Create a LangGraph node function for a Fail state."""
+    from fdsx.core.engine.validate import FailStateTermination
+
+    log = structlog.get_logger(__name__)
+
+    def node(state_dict: dict[str, Any]) -> dict[str, Any]:
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iters[state_name] = iters.get(state_name, 0) + 1
+
+        terminal.display_state_start(state_name, "fail")
+        if recorder is not None:
+            recorder.record_state_start(state_name, "fail")
+
+        resolved_error = resolve_template(state.error, state_dict)
+        resolved_cause = resolve_template(state.cause, state_dict)
+
+        log.error(
+            "fail_state_entered",
+            state=state_name,
+            error=resolved_error,
+            cause=resolved_cause,
+        )
+        if recorder is not None:
+            recorder.record_state_error(
+                state_name,
+                f"{resolved_error}: {resolved_cause}",
+                state_type="fail",
+                error_name=resolved_error,
+                error_cause=resolved_cause,
+            )
+        terminal.display_state_error(state_name, f"{resolved_error}: {resolved_cause}")
+        raise FailStateTermination(
+            state_name=state_name,
+            error=resolved_error,
+            cause=resolved_cause,
+        )
 
     return node
 

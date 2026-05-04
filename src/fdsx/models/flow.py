@@ -392,7 +392,7 @@ class TaskState(BaseModel):
         default=None, description="Prompt file path (exclusive with prompt_template)"
     )
     command: str | None = Field(default=None, description="Command for system provider")
-    result_path: str = Field(..., description="JSONPath for result")
+    result_path: str | None = Field(default=None, description="JSONPath for result")
     result_file: str | None = Field(
         default=None,
         description="Top-level JSONPath variable to store the absolute path of a result file",
@@ -444,7 +444,7 @@ class TaskState(BaseModel):
 
     @model_validator(mode="after")
     def validate_extract_path_no_overlap(self) -> "TaskState":
-        if self.extract is None:
+        if self.extract is None or self.result_path is None:
             return self
         rp = self.result_path
         if rp.startswith("$."):
@@ -700,8 +700,38 @@ class MapState(BaseModel):
         return self
 
 
+class FailState(BaseModel):
+    """Fail state - terminates the flow with an error."""
+
+    type: Literal["fail"] = "fail"
+    error: str = Field(..., min_length=1, description="Error name")
+    cause: str = Field(..., min_length=1, description="Error cause description")
+    hooks: StateHookConfig | None = Field(
+        default=None, description="Hook configuration"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_disallowed_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if "next" in values:
+            raise ValueError("fail state cannot declare a successor; remove `next`")
+        if "end" in values:
+            raise ValueError("fail state cannot declare `end`; it terminates on entry")
+        if "max_iterations" in values:
+            raise ValueError(
+                "fail state terminates on entry; `max_iterations` is meaningless"
+            )
+        return values
+
+
 State = Annotated[
-    TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState,
+    TaskState
+    | ChoiceState
+    | ParallelState
+    | PassState
+    | WaitState
+    | MapState
+    | FailState,
     Field(discriminator="type"),
 ]
 
@@ -777,6 +807,8 @@ class Flow(BaseModel):
                 state = self.states.get(current)
                 if state is None:
                     continue
+                if isinstance(state, FailState):
+                    return True
                 next_states = get_next_states(state, include_end_sentinel=True)
                 stack.extend(next_states - visited)
             return False

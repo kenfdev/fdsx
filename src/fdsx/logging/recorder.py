@@ -93,7 +93,13 @@ class RunRecorder:
         self._current_state = None
 
     def record_state_error(
-        self, state_name: str, error: str, state_type: str | None = None
+        self,
+        state_name: str,
+        error: str,
+        state_type: str | None = None,
+        *,
+        error_name: str | None = None,
+        error_cause: str | None = None,
     ) -> None:
         """Update the state entry with status="error" and error message."""
         state = self._find_state_by_name(state_name)
@@ -117,6 +123,10 @@ class RunRecorder:
 
         state["status"] = "error"
         state["error"] = error
+        if error_name is not None:
+            state["error_name"] = error_name
+        if error_cause is not None:
+            state["error_cause"] = error_cause
         state["completed_at"] = completed_at
         state["duration_seconds"] = duration_seconds
         state["output_preview"] = ""

@@ -70,7 +70,8 @@ CORRECTION REQUIRED
 Your previous response could not be parsed as valid JSON.
 Parse error: {first_err}
 Previous response preview: {response_preview}
-Please output ONLY a valid JSON array of file groups with no additional text or explanations.
+Please output a PROPOSED PARTITION: preamble followed by a valid JSON array
+inside a ```json fenced block, with no other text.
 """
 
 
@@ -176,15 +177,15 @@ def _build_task_split_prompt(
     extra_instructions: str | None = None,
     single_task: bool = False,
 ) -> str:
-    """Build the prompt for the task splitter LLM.
+    """Build the splitter prompt.
 
-    Args:
-        task_content: The content of the task file
-        state_names: List of state names in the workflow (optional for standalone split)
-        input_vars: Set of input variable names (optional for standalone split)
-        extra_instructions: Additional instructions to append to the prompt
-        single_task: If True, prepend a CRITICAL directive requiring exactly one group
-            containing exactly one task object.
+    When ``single_task=False``, the prompt biases toward single-file output and
+    instructs the LLM to emit a human-readable ``PROPOSED PARTITION:`` preamble
+    before the JSON.  Assumes task content is a structured spec with a
+    ``User Stories`` / ``Functional Requirements`` section; collapses to one file
+    when that structure is absent.  Note: ``extra_instructions`` is an explicit
+    override and may contradict the default rules; the user is responsible for
+    consistency.
     """
     states_desc = ", ".join(state_names) if state_names else "any workflow"
     input_vars_desc = ", ".join(input_vars) if input_vars else "task"
@@ -202,81 +203,83 @@ def _build_task_split_prompt(
         else ""
     )
 
-    prompt = f"""You are a dependency-aware task splitter. Given a batch of work, analyze dependencies and group related changes into feature-level tasks.
-{single_task_directive}
-The workflow has these states: {states_desc}
-The workflow accepts these input variables: {input_vars_desc}
+    if not single_task:
+        rules_block = """RULES (in priority order):
+1. PR-sized: Each task file covers one PR-sized unit of work.
+2. Default 1:1: one task per user story — do not merge unrelated stories into one task.
+3. Sizing bias: if sizing is borderline, prefer one larger task over two smaller ones.
+4. Single-file default: by default, emit exactly one file group containing all tasks.
+5. Multi-file gate: emit multiple file groups only when ALL of the following hold:
+   - tasks are non-overlapping (no shared files, types, or infrastructure)
+   - free of cross-file dependencies (no file group depends on output of another)
+   - free of shared cross-cutting concerns (auth, logging, config, DB schema)
+6. Same-file rule: any cross-cutting concern MUST live in the same file group as its consumers.
+7. No cross-file ordering: file groups are unordered and run in parallel; never assume sequencing.
+8. No story splitting: a single user story is never split across file groups.
+9. Spec-only judgement: independence is judged from the spec alone — from the input alone,
+   never from an assumed codebase.
+10. Auto-collapse: if any rule 5-9 cannot be satisfied, collapse to one file.
 
-TASK CONTENT:
-{task_content}
+INPUT SHAPE:
+This prompt expects the task content to contain a User Stories / Functional Requirements section.
+Absent that structure, collapse to one file.
 
-DEPENDENCY RULES:
-1. Same-file grouping: changes touching the same files → same group (e.g., model + tests for that model)
-2. Import/dependency grouping: changes sharing imports or dependencies → same group (e.g., shared types used by multiple features)
-3. Foundational-first: shared, foundational work ordered first within its group (e.g., define shared types before using them)
-4. Independent-separate: truly independent features → separate groups for parallel execution
+"""
+        output_format = """OUTPUT FORMAT:
+Output a PROPOSED PARTITION: preamble (plain text, no backtick literals):
+  PROPOSED PARTITION:
+  - file_count: <N>
+  - per_file_summary: <one line per file group>
+  - independence_rationale: <only when N > 1; why the groups are provably independent>
+  - collapse_reason: <only when N == 1; why all stories collapsed to one file>
 
-INSTRUCTIONS:
-- Create feature-level tasks with numbered sub-steps (e.g., "Implement user authentication\\n1. Add user model\\n2. Add login endpoint\\n3. Write tests")
-- Avoid micro-tasks (single file operations, one-off commands, trivially small changes)
-- Output ONLY valid JSON in the format described below
+Then output the JSON inside a ```json ... ``` fenced block.
 
-EXAMPLES:
-BAD (micro-tasks — too granular):
-[
-  [{{"description": "Create models/user.py"}}],
-  [{{"description": "Add User class to models/user.py"}}],
-  [{{"description": "Create routes/user.py"}}],
-  [{{"description": "Add /users endpoint to routes/user.py"}}],
-  [{{"description": "Write tests for User model"}}]
-]
+IMPORTANT: Output ONLY the PROPOSED PARTITION preamble then the JSON fence.
+No other text or commentary."""
+        examples_block = """EXAMPLES:
 
-BAD (incorrectly split dependent work — model and routes in separate groups when they share files):
-[
-  [{{"description": "Define User model with id, name, email fields"}}],
-  [{{"description": "Implement user routes\\n1. Add GET /users\\n2. Add POST /users"}}]
-]
+Example A — interdependent user stories → single file (collapse_reason populated):
+PROPOSED PARTITION:
+- file_count: 1
+- per_file_summary: All user stories collapsed into one task file
+- collapse_reason: Stories share the same data model and UI layer; splitting would
+  create a cross-file dependency on the schema migration in story 1.
 
-GOOD (feature-level with sub-steps):
+```json
 [
   [
-    {{
-      "description": "Implement User model\\n1. Create models/user.py\\n2. Define User class with id, name, email fields\\n3. Add validation methods"
-    }}
-  ],
-  [
-    {{
-      "description": "Implement user API endpoints\\n1. Create routes/user.py\\n2. Add GET /users endpoint\\n3. Add POST /users endpoint\\n4. Write tests for all endpoints"
-    }}
+    {{"description": "Implement user authentication\\n1. Add User model\\n2. Add login endpoint\\n3. Add session handling"}},
+    {{"description": "Implement user profile page\\n1. Read user from session\\n2. Render profile template"}}
   ]
 ]
+```
 
-GOOD (dependency-aware with foundational task first — shared types → then consumers):
+Example B — independent feature areas → multi-file (independence_rationale populated):
+PROPOSED PARTITION:
+- file_count: 2
+- per_file_summary:
+  - File 1: Billing dashboard (read-only analytics, no shared models)
+  - File 2: Email notification service (background worker, separate DB table)
+- independence_rationale: Billing and notifications touch separate DB tables, separate
+  UI surfaces, and have no shared business logic. Neither depends on the other's output.
+
+```json
 [
   [
-    {{
-      "description": "Define shared types\\n1. Create shared/types.py\\n2. Define User, Product, Order types\\n3. Export from __init__.py"
-    }}
+    {{"description": "Build billing dashboard\\n1. Add BillingRecord model\\n2. Render monthly chart"}}
   ],
   [
-    {{
-      "description": "Implement user feature\\n1. Create models/user.py using shared types\\n2. Create routes/user.py\\n3. Write tests"
-    }}
-  ],
-  [
-    {{
-      "description": "Implement product feature\\n1. Create models/product.py using shared types\\n2. Create routes/product.py\\n3. Write tests"
-    }}
+    {{"description": "Build email notification service\\n1. Add Notification model\\n2. Add worker task"}}
   ]
 ]
-{extra_section}
-JSON HYGIENE:
-- Escape special characters: use \\" for quotes, \\\\ for backslashes, \\n for newlines
-- Keep code snippets short and single-line; avoid multi-line blocks that can break JSON
-- Prefer concise prose + step bullets over reproducing code verbatim
-- Always output valid JSON (arrays and objects only, no trailing commas)
+```
 
-OUTPUT FORMAT:
+"""
+    else:
+        rules_block = ""
+        examples_block = ""
+        output_format = """OUTPUT FORMAT:
 Return a JSON array of file groups. Each group is an array of task objects that belong in the same file.
 ```json
 [
@@ -286,14 +289,29 @@ Return a JSON array of file groups. Each group is an array of task objects that 
   [
     {{"description": "Step 1 of related work"}},
     {{"description": "Step 2 that depends on step 1"}}
-  ],
-  [
-    {{"description": "Independent feature B\\n1. Step one\\n2. Step two"}}
   ]
 ]
 ```
 
 IMPORTANT: Output ONLY the JSON array, no additional text, explanations, or markdown formatting."""
+
+    prompt = f"""You are a task partitioner that converts a finalized feature spec into
+PR-sized task files for parallel execution. You judge independence
+from the spec alone — never from any assumed codebase.
+
+{single_task_directive}The workflow has these states: {states_desc}
+The workflow accepts these input variables: {input_vars_desc}
+
+TASK CONTENT:
+{task_content}
+
+{rules_block}JSON HYGIENE:
+- Escape special characters: use \\" for quotes, \\\\ for backslashes, \\n for newlines
+- Keep code snippets short and single-line; avoid multi-line blocks that can break JSON
+- Prefer concise prose + step bullets over reproducing code verbatim
+- Always output valid JSON (arrays and objects only, no trailing commas)
+
+{extra_section}{examples_block}{output_format}"""
 
     return prompt
 

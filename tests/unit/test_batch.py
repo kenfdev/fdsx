@@ -326,11 +326,6 @@ class TestBuildTaskSplitPrompt:
         assert "any workflow" in prompt
         assert "task" in prompt
 
-    def test_build_prompt_independent_tasks_go_in_separate_groups(self):
-        prompt = _build_task_split_prompt("test content", None, None)
-
-        assert "independent" in prompt.lower() and "separate groups" in prompt.lower()
-
 
 class TestTaskSplitterConfigValidation:
     def test_task_splitter_config_rejects_system_provider(self):

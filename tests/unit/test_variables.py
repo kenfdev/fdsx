@@ -981,3 +981,55 @@ class TestMapVariableAnalysis:
         errors = analyze_variable_references(flow)
         assert len(errors) == 1
         assert "undefined_var" in errors[0]
+
+
+class TestFailStateVariableAnalysis:
+    def test_undefined_var_in_fail_error_is_rejected(self):
+        from fdsx.models.flow import FailState
+
+        flow = Flow(
+            name="fail-undef-var",
+            description="FailState referencing an undefined variable in error",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    next="terminal",
+                ),
+                "terminal": FailState(
+                    type="fail",
+                    error="{$.undefined_var} caused failure",
+                    cause="undefined variable referenced",
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) >= 1
+        assert any("undefined_var" in e for e in errors)
+
+    def test_valid_cause_reference_to_preceding_task_passes(self):
+        from fdsx.models.flow import FailState
+
+        flow = Flow(
+            name="fail-valid-ref",
+            description="FailState referencing a variable written by a preceding TaskState",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="terminal",
+                ),
+                "terminal": FailState(
+                    type="fail",
+                    error="Processing failed",
+                    cause="Error: {$.result}",
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert len(errors) == 0

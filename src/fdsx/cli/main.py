@@ -279,8 +279,12 @@ def run(
             assert workflow is not None
             if current_thread_id is None:
                 current_thread_id = generate_thread_id()
-            engine.run_flow(workflow, inputs, current_thread_id, base_dir, quiet=quiet)
-            execute_run_hooks(_end_hooks, status="completed", event="on_run_end")
+            result = engine.run_flow(
+                workflow, inputs, current_thread_id, base_dir, quiet=quiet
+            )
+            execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
+            if result.status == "aborted":
+                raise typer.Exit(code=1)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
@@ -485,8 +489,10 @@ def resume(
     )
     execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
     try:
-        engine.resume_flow(thread_id, base_dir)
-        execute_run_hooks(_end_hooks, status="completed", event="on_run_end")
+        result = engine.resume_flow(thread_id, base_dir)
+        execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
+        if result.status == "aborted":
+            raise typer.Exit(code=1)
     except RuntimeError as e:
         error_msg = str(e)
         execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
