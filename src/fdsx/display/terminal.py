@@ -117,6 +117,25 @@ def display_state_error(state_name: str, error: str) -> None:
     print(f"  Error: {_sanitize_output(error)}", file=sys.stderr)
 
 
+def display_fallback(
+    state_name: str,
+    source: str,
+    outcome: str,
+    value_preview: str | None = None,
+    error_kind: str | None = None,
+) -> None:
+    state = _sanitize_output(state_name)
+    source_safe = _sanitize_output(source)
+    if outcome == "error":
+        outcome_text = f"error({error_kind})"
+    elif value_preview is not None:
+        preview = _sanitize_output(value_preview)
+        outcome_text = f"{outcome}: {preview}"
+    else:
+        outcome_text = outcome
+    print(f"[{state}] ↩ fallback({source_safe}) → {outcome_text}", file=sys.stderr)
+
+
 def display_output_line(line: str) -> None:
     """Display LLM output line to terminal.
 
