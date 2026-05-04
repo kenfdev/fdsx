@@ -198,6 +198,16 @@ class TestResolveFallback:
 
         assert result is None
 
+    def test_flow_disabled_with_rule_fallback_returns_rule(self):
+        from fdsx.core.extraction_fallback import resolve_fallback
+
+        rule = self._rule(with_fallback=True)  # has explicit LLMClassifyFallback
+        result = resolve_fallback(rule, self._flow(ef=False), self._cfg())
+
+        assert result is not None
+        assert result.source == "rule"
+        assert result.config is rule.fallback
+
     def test_flow_override_returns_workflow_source(self):
         from fdsx.core.extraction_fallback import ResolvedFallback, resolve_fallback
         from fdsx.models.flow import ExtractionFallback

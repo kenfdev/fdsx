@@ -149,6 +149,38 @@ extraction_fallback:
 extraction_fallback: false
 ```
 
+```yaml
+# Workflow that disables the inherited global fallback but keeps a per-rule override:
+name: review-workflow
+extraction_fallback: false        # global config-level fallback suppressed for this workflow
+start_at: classify
+states:
+  classify:
+    type: task
+    provider: claude
+    prompt_template: "Classify the output"
+    result_path: "$.task_result"
+    extract:
+      strategy: [keyword]
+      pattern: "APPROVED|REJECTED"
+      result_path: "$.decision"
+      # no fallback: — disable wins, no LLM recovery attempted
+    end: true
+  classify_with_recovery:
+    type: task
+    provider: claude
+    prompt_template: "Classify the output"
+    result_path: "$.task_result"
+    extract:
+      strategy: [keyword]
+      pattern: "APPROVED|REJECTED"
+      result_path: "$.decision"
+      fallback:                    # per-rule fallback fires normally despite workflow disable
+        provider: claude
+        prompt: "Classify as APPROVED or REJECTED: {output}"
+    end: true
+```
+
 `ExtractionFallback` fields:
 - `provider` — LLM provider (`claude`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`.
 - `profile` — named profile. XOR with `provider`. Exactly one of `provider` or `profile` must be set.
