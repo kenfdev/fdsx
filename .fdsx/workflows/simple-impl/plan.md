@@ -20,10 +20,6 @@ If a Previous Response exists, this is a replan after rejection — incorporate 
 
 For small tasks (1–2 files, no design choices), skip design sections in the output.
 
-## Routing
-- Plan ready → `[STEP:1]`
-- Blocked → `[STEP:2]`
-
 ## Output
 
 ```markdown
@@ -52,3 +48,12 @@ For small tasks (1–2 files, no design choices), skip design sections in the ou
 ## Open questions (if any)
 - <only items requiring user input>
 ```
+
+## Routing tag (MANDATORY)
+
+You MUST end your response with exactly one of these two tags on its own line, after all other content:
+
+`STEP:1` — plan is ready and actionable
+`STEP:2` — blocked; cannot produce an actionable plan
+
+Do NOT omit the tag. Do NOT rephrase it. Do NOT wrap it in extra markdown. The very last non-empty line of your response must be exactly `STEP:1` or `STEP:2`.

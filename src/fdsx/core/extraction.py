@@ -5,7 +5,9 @@ from typing import Any
 
 import structlog
 
-from fdsx.models.flow import ExtractRule, LLMClassifyFallback
+from fdsx.core.extraction_fallback import ResolvedFallback, execute_default_fallback
+from fdsx.core.profiles import merge_profiles
+from fdsx.models.flow import ExtractionFallback, ExtractRule, LLMClassifyFallback
 
 log = structlog.get_logger(__name__)
 
@@ -16,6 +18,9 @@ def extract_value(
     provider_factory: Callable[[str], Any] | None = None,
     state_dict: dict[str, Any] | None = None,
     source_provider: str | None = None,
+    resolved_fallback: ResolvedFallback | None = None,
+    flow_profiles: dict[str, dict[str, Any]] | None = None,
+    config_profiles: dict[str, dict[str, Any]] | None = None,
 ) -> Any | None:
     """Extract a value from output using the specified extraction rule.
 
@@ -26,6 +31,9 @@ def extract_value(
         state_dict: Optional state dictionary (reserved for future use)
         source_provider: The provider that generated the output. When "system",
             LLM fallback is suppressed to prevent exfiltration of local command output.
+        resolved_fallback: Pre-resolved fallback config from the node factory.
+        flow_profiles: Profile definitions from the flow YAML.
+        config_profiles: Profile definitions from the global FdsxConfig.
 
     Returns:
         The extracted value as a string, or None if extraction failed
@@ -50,9 +58,10 @@ def extract_value(
         output_preview=output[:500],
     )
 
+    if source_provider == "system":
+        return None
+
     if extract_rule.fallback is not None:
-        if source_provider == "system":
-            return None
         # Only validate LLM output against pattern when keyword strategy is
         # configured, because only keyword patterns are pipe-delimited allowlists.
         # For json (field name) and regex (regex pattern), pattern has different semantics.
@@ -61,6 +70,21 @@ def extract_value(
         )
         return _execute_llm_fallback(
             output, extract_rule.fallback, provider_factory, pattern=validation_pattern
+        )
+
+    if (
+        resolved_fallback is not None
+        and isinstance(resolved_fallback.config, ExtractionFallback)
+        and provider_factory is not None
+    ):
+        merged = merge_profiles(config_profiles, flow_profiles)
+        return execute_default_fallback(
+            output,
+            extract_rule,
+            resolved_fallback,
+            merged,
+            source_provider or "",
+            provider_factory,
         )
 
     return None

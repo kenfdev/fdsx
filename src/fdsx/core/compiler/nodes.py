@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from langgraph.types import interrupt
 
+from fdsx.core.extraction_fallback import resolve_fallback
 from fdsx.core.variables import (
     resolve_template,
     resolve_template_shell_safe,
@@ -49,6 +50,21 @@ def _create_task_node(
     """Create a LangGraph node function for a Task state."""
     merged_options = _merge_provider_options(
         config, flow, state.provider, state.provider_options, state_name=state_name
+    )
+    node_flow_profiles: dict[str, Any] | None = getattr(flow, "profiles", None)
+    node_resolved_fallback = None
+    if state.extract is not None and config is not None:
+        _flow_ef = getattr(flow, "extraction_fallback", None)
+        if (
+            state.extract.fallback is not None
+            or config.extraction_fallback is not None
+            or (_flow_ef is not None and _flow_ef is not False)
+        ):
+            node_resolved_fallback = resolve_fallback(state.extract, flow, config)
+    node_config_profiles = (
+        {k: v.model_dump() for k, v in config.profiles.items()}
+        if config is not None and config.profiles
+        else None
     )
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -100,6 +116,9 @@ def _create_task_node(
             stream_logger=stream_logger,
             on_process_start=on_process_start,
             summary_callback=stream_logger.on_summary,
+            resolved_fallback=node_resolved_fallback,
+            flow_profiles=node_flow_profiles,
+            config_profiles=node_config_profiles,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result

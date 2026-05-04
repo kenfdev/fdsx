@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fdsx.core.extraction_fallback import resolve_fallback
 from fdsx.core.variables import (
     resolve_jsonpath,
     resolve_template,
@@ -212,6 +213,22 @@ def _create_map_node(
                     quiet=quiet,
                     iteration=iteration,
                 )
+                iter_resolved_fallback = None
+                if iter_state.extract is not None and config is not None:
+                    _flow_ef = getattr(flow, "extraction_fallback", None)
+                    if (
+                        iter_state.extract.fallback is not None
+                        or config.extraction_fallback is not None
+                        or (_flow_ef is not None and _flow_ef is not False)
+                    ):
+                        iter_resolved_fallback = resolve_fallback(
+                            iter_state.extract, flow, config
+                        )
+                iter_config_profiles = (
+                    {k: v.model_dump() for k, v in config.profiles.items()}
+                    if config is not None and config.profiles
+                    else None
+                )
                 exec_config = ExecutionConfig(
                     provider=provider,
                     provider_name=iter_state.provider,
@@ -224,6 +241,9 @@ def _create_map_node(
                     stream_logger=stream_logger,
                     on_process_start=on_process_start,
                     summary_callback=stream_logger.on_summary,
+                    resolved_fallback=iter_resolved_fallback,
+                    flow_profiles=getattr(flow, "profiles", None),
+                    config_profiles=iter_config_profiles,
                 )
                 exec_result = execute_with_retry(exec_config)
                 result = exec_result.result

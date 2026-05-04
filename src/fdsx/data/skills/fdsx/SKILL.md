@@ -8,7 +8,7 @@ description: >
   fdsx CLI commands, debugging workflow validation errors, or asking about fdsx
   YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative agent
   workflow", "multi-step AI pipeline", "provider options", "checkpoint resume",
-  "map state", "iterator".
+  "map state", "iterator", "extraction fallback".
 ---
 
 # fdsx Workflow Authoring Guide
@@ -123,13 +123,36 @@ extract:
   strategy: [keyword]           # tried in order: json, regex, keyword
   pattern: "APPROVED|REJECTED"
   result_path: $.decision
-  fallback:                     # optional LLM classification fallback
+  fallback:                     # optional per-rule LLM classification fallback
     type: llm_classify
     provider: claude            # or use profile: <name> (XOR with provider)
     prompt: "Classify as APPROVED or REJECTED"
 ```
 
 `result_path` and `extract.result_path` must not overlap. Branch `extract.result_path` must not use reserved keys: `output`, `exit_code`, `error`.
+
+### Global Extraction Fallback
+
+When per-rule `fallback:` is not set, fdsx can fall back to a global extraction recovery LLM. This is configured at three levels (highest priority wins):
+
+1. **Per-rule `fallback:`** — `LLMClassifyFallback` on the individual `extract:` block (described above).
+2. **Flow-level `extraction_fallback:`** — overrides the config-level fallback for this workflow. Set to `false` to disable the inherited fallback entirely for this workflow.
+3. **Config-level `extraction_fallback:`** — project-wide default in `.fdsx/config.yaml`.
+
+```yaml
+# In workflow YAML (flow level):
+extraction_fallback:
+  provider: claude              # or use profile: <name> (XOR with provider)
+  extra_instructions: "Always return one of: APPROVED, REJECTED"
+
+# To disable inherited config-level fallback for this workflow:
+extraction_fallback: false
+```
+
+`ExtractionFallback` fields:
+- `provider` — LLM provider (`claude`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`.
+- `profile` — named profile. XOR with `provider`. Exactly one of `provider` or `profile` must be set.
+- `extra_instructions` — optional string appended to the recovery prompt.
 
 ## CLI Commands
 
@@ -249,6 +272,9 @@ task_splitter:                  # must be explicitly present to enable batch spl
   provider: claude
   model: claude-sonnet-4-6
   extra_instructions: "..."
+extraction_fallback:            # global default when no per-rule fallback is configured
+  provider: claude              # or use profile: <name> (XOR with provider)
+  extra_instructions: "..."     # optional instructions appended to recovery prompt
 hooks:                          # global hooks applied to all flows
   on_state_start:
     - command: "echo starting"
@@ -266,6 +292,8 @@ profiles:                       # named provider/model bundles
 ```
 
 Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+
+`extraction_fallback` at config level sets the project-wide default recovery LLM for extraction failures. Individual workflows can override it with their own `extraction_fallback:` field or disable it with `extraction_fallback: false`.
 
 `hooks` at config level supports all four lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) and are prepended to flow-level and state-level hooks.
 
@@ -324,5 +352,6 @@ Inside iterator states, `{item}` refers to the current array element. Use `{item
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
+- `extraction_fallback` at flow level must have exactly one of `provider` or `profile` set (XOR); `system` is forbidden as provider. Set to `false` to disable config-level inheritance.
 - `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, and `map` states; `pass` state `hooks` accepts all four keys (workflow-scope keys are silently ignored at runtime)
 - `on_run_start` and `on_run_end` are forbidden in flow YAML (`Flow.hooks`) and all state `hooks` blocks — they are only valid in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml` under the `run_hooks:` key

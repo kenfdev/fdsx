@@ -245,3 +245,439 @@ class TestResolveFallback:
         assert result1 == result2
         assert result1 is not None
         assert result1.source == "workflow"
+
+
+# ---------------------------------------------------------------------------
+# _build_default_fallback_prompt
+# ---------------------------------------------------------------------------
+
+
+def _keyword_rule():
+    from fdsx.models.flow import ExtractRule
+
+    return ExtractRule(
+        strategy=["keyword"], pattern="APPROVED|REJECTED", result_path="$.out"
+    )
+
+
+def _regex_rule():
+    from fdsx.models.flow import ExtractRule
+
+    return ExtractRule(strategy=["regex"], pattern=r"\d+", result_path="$.val")
+
+
+def _multi_strategy_rule():
+    from fdsx.models.flow import ExtractRule
+
+    return ExtractRule(
+        strategy=["keyword", "regex"], pattern="YES|NO", result_path="$.ans"
+    )
+
+
+class TestDefaultFallbackPrompt:
+    def test_role_line_present(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        result = _build_default_fallback_prompt("some output", _keyword_rule(), None)
+        assert result.startswith("You are a recovery extractor.")
+
+    def test_strategies_attempted_lists_all_strategies(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        rule = _multi_strategy_rule()
+        result = _build_default_fallback_prompt("output text", rule, None)
+        assert "keyword, regex" in result
+
+    def test_pattern_present_verbatim(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        rule = _keyword_rule()
+        result = _build_default_fallback_prompt("output text", rule, None)
+        assert rule.pattern in result
+
+    def test_raw_output_under_output_header(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        raw = "This is the raw tool output"
+        result = _build_default_fallback_prompt(raw, _keyword_rule(), None)
+        assert "OUTPUT:" in result
+        output_section_start = result.index("OUTPUT:")
+        assert raw in result[output_section_start:]
+
+    def test_keyword_strategy_lists_allowed_values(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        rule = _keyword_rule()
+        result = _build_default_fallback_prompt("output", rule, None)
+        assert "APPROVED | REJECTED" in result
+
+    def test_non_keyword_strategy_no_allowed_values_block(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        rule = _regex_rule()
+        result = _build_default_fallback_prompt("output", rule, None)
+        assert "APPROVED | REJECTED" not in result
+        assert "NONE" in result
+
+    def test_extra_instructions_block_appended_when_set(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        result = _build_default_fallback_prompt(
+            "output", _keyword_rule(), "Always prefer APPROVED."
+        )
+        assert "ADDITIONAL INSTRUCTIONS:" in result
+        assert "Always prefer APPROVED." in result
+
+    def test_no_extra_instructions_block_when_none(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        result = _build_default_fallback_prompt("output", _keyword_rule(), None)
+        assert "ADDITIONAL INSTRUCTIONS:" not in result
+
+    def test_examples_section_present(self):
+        from fdsx.core.extraction_fallback import _build_default_fallback_prompt
+
+        result = _build_default_fallback_prompt("some output", _keyword_rule(), None)
+        assert "EXAMPLES:" in result
+
+
+# ---------------------------------------------------------------------------
+# execute_default_fallback
+# ---------------------------------------------------------------------------
+
+
+def _make_resolved(provider=None, profile=None, extra_instructions=None):
+    from fdsx.core.extraction_fallback import ResolvedFallback
+    from fdsx.models.flow import ExtractionFallback
+
+    if provider is not None:
+        cfg = ExtractionFallback(provider=provider)
+    else:
+        cfg = ExtractionFallback(profile=profile)
+    if extra_instructions is not None:
+        cfg = cfg.model_copy(update={"extra_instructions": extra_instructions})
+    return ResolvedFallback(config=cfg, source="global")
+
+
+def _make_factory(stdout="APPROVED", exit_code=0):
+    from unittest.mock import MagicMock
+
+    from fdsx.providers.base import ProviderResult
+
+    stub_provider = MagicMock()
+    stub_provider.execute.return_value = ProviderResult(
+        exit_code=exit_code, stdout=stdout, stderr=""
+    )
+    factory = MagicMock(return_value=stub_provider)
+    return factory, stub_provider
+
+
+class TestExecuteDefaultFallback:
+    def _keyword_rule(self):
+        from fdsx.models.flow import ExtractRule
+
+        return ExtractRule(
+            strategy=["keyword"], pattern="APPROVED|REJECTED", result_path="$.out"
+        )
+
+    def _regex_rule(self):
+        from fdsx.models.flow import ExtractRule
+
+        return ExtractRule(strategy=["regex"], pattern=r"\d+", result_path="$.val")
+
+    def test_provider_keyword_exact_match_returns_value(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="APPROVED")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result == "APPROVED"
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(entry.get("outcome") == "recovered" for entry in info_logs)
+
+    def test_provider_keyword_lowercase_normalised(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="approved")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result == "APPROVED"
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(entry.get("outcome") == "recovered" for entry in info_logs)
+
+    def test_provider_keyword_out_of_set_returns_none(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="MAYBE")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(entry.get("outcome") == "rejected" for entry in info_logs)
+
+    def test_non_keyword_strategy_verbatim_passthrough(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="42")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._regex_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result == "42"
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(entry.get("outcome") == "recovered" for entry in info_logs)
+
+    def test_none_sentinel_returns_none(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="NONE")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(
+            entry.get("outcome") == "rejected"
+            and entry.get("reason") == "model_returned_none"
+            for entry in info_logs
+        )
+
+    def test_whitespace_stripped_from_response(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="  value  ")
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._regex_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result == "value"
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(entry.get("outcome") == "recovered" for entry in info_logs)
+
+    def test_non_zero_exit_returns_none(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="", exit_code=1)
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(
+            entry.get("outcome") == "error" and entry.get("error") == "non_zero_exit"
+            for entry in info_logs
+        )
+
+    def test_timeout_error_returns_none(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        stub_provider = MagicMock()
+        stub_provider.execute.side_effect = TimeoutError("timed out")
+        factory = MagicMock(return_value=stub_provider)
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(
+            entry.get("outcome") == "error" and entry.get("error") == "timeout"
+            for entry in info_logs
+        )
+
+    def test_provider_factory_raises_returns_none(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory = MagicMock(side_effect=RuntimeError("no binary"))
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(
+            entry.get("outcome") == "error"
+            and entry.get("error") == "provider_init_failed"
+            for entry in info_logs
+        )
+
+    def test_profile_resolution_success(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="42")
+        resolved = _make_resolved(profile="fast")
+        merged = {"fast": {"provider": "opencode", "model": "gpt-4o"}}
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._regex_rule(),
+                resolved=resolved,
+                merged_profiles=merged,
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result == "42"
+        factory.assert_called_once_with("opencode")
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(entry.get("outcome") == "recovered" for entry in info_logs)
+
+    def test_profile_not_found_returns_none(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory()
+        resolved = _make_resolved(profile="missing")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(
+            entry.get("outcome") == "error"
+            and entry.get("error") == "profile_not_found"
+            for entry in info_logs
+        )
+
+    def test_provider_execute_raises_returns_none(self):
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        stub_provider = MagicMock()
+        stub_provider.execute.side_effect = RuntimeError("unexpected provider error")
+        factory = MagicMock(return_value=stub_provider)
+        resolved = _make_resolved(provider="claude")
+        with structlog.testing.capture_logs() as logs:
+            result = execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        assert result is None
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert any(
+            entry.get("outcome") == "error"
+            and entry.get("error") == "provider_call_failed"
+            for entry in info_logs
+        )
+
+    def test_info_logs_carry_source_and_strategy_list(self):
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import execute_default_fallback
+
+        factory, _ = _make_factory(stdout="APPROVED")
+        resolved = _make_resolved(provider="claude")
+        rule = self._keyword_rule()
+        with structlog.testing.capture_logs() as logs:
+            execute_default_fallback(
+                output="text",
+                rule=rule,
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="system",
+                provider_factory=factory,
+            )
+        info_logs = [entry for entry in logs if entry["log_level"] == "info"]
+        assert info_logs, "expected at least one INFO log"
+        for entry in info_logs:
+            assert entry.get("source") == resolved.source
+            assert entry.get("strategy_list") == rule.strategy
