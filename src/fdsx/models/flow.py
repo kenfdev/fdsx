@@ -779,7 +779,10 @@ class Flow(BaseModel):
         default=None,
         description="Global extraction fallback override. false=disable, None=inherit from config.",
     )
-    retry_escalation: EscalationConfig | None = None
+    retry_escalation: EscalationConfig | Literal[False] | None = Field(
+        default=None,
+        description="Workflow-level retry escalation override. false = disable inherited global default; None = inherit from config.",
+    )
 
     @model_validator(mode="before")
     @classmethod

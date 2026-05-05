@@ -327,6 +327,8 @@ Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with
 
 `extraction_fallback` at config level sets the project-wide default recovery LLM for extraction failures. Individual workflows can override it with their own `extraction_fallback:` field or disable it with `extraction_fallback: false`.
 
+`retry_escalation` at config level sets the project-wide default escalation target used when a workflow AI task exhausts its primary-provider retries. Individual workflows can override it with their own `retry_escalation:` field (full `provider` + `model` object) or opt out entirely with `retry_escalation: false`. When a workflow omits `retry_escalation`, the config-level value is inherited automatically.
+
 `hooks` at config level supports all four lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) and are prepended to flow-level and state-level hooks.
 
 `run_hooks` is a separate key from `hooks` and only supports `on_run_start` and `on_run_end`.

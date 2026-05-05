@@ -8,6 +8,7 @@ from langgraph.managed import RemainingSteps
 
 from fdsx.core.config import _deep_merge
 from fdsx.models.flow import (
+    EscalationConfig,
     Flow,
     MapState,
     ParallelState,
@@ -39,8 +40,14 @@ def build_escalation_target(
     original_provider_name: str,
 ) -> "EscalationTarget | None":
     """Build an EscalationTarget from flow.retry_escalation, or None if not applicable."""
-    esc = getattr(flow, "retry_escalation", None)
-    if esc is None:
+    flow_esc = getattr(flow, "retry_escalation", None)
+    if flow_esc is False:
+        return None
+    elif isinstance(flow_esc, EscalationConfig):
+        esc = flow_esc
+    elif config is not None and isinstance(config.retry_escalation, EscalationConfig):
+        esc = config.retry_escalation
+    else:
         return None
     if original_provider_name == "system":
         return None

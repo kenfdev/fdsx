@@ -94,3 +94,40 @@ class TestRetryEscalationPreflightRejection:
         assert result.returncode == 0, (
             f"expected exit code 0, got {result.returncode}\nstderr: {result.stderr}"
         )
+
+
+class TestGlobalConfigRetryEscalation:
+    """E2E tests for retry_escalation declared in .fdsx/config.yaml (T002)."""
+
+    def test_global_config_missing_model_exits_code_2(self, tmp_cwd):
+        """config.yaml with retry_escalation missing model: exits 2 and names retry_escalation."""
+        (tmp_cwd / ".fdsx" / "config.yaml").write_text(
+            "retry_escalation:\n  provider: claude\n"
+        )
+        flow_content = (
+            "name: global-config-test\ndescription: test\nstart_at: step1\n" + _TASK
+        )
+        (tmp_cwd / "flow.yaml").write_text(flow_content)
+        result = run_fdsx(["run", str(tmp_cwd / "flow.yaml")], cwd=tmp_cwd)
+        assert result.returncode == 2, (
+            f"expected exit code 2, got {result.returncode}\nstderr: {result.stderr}"
+        )
+        assert "retry_escalation" in result.stderr, (
+            f"expected 'retry_escalation' in stderr: {result.stderr!r}"
+        )
+
+    def test_global_config_valid_escalation_exits_0(self, tmp_cwd):
+        """config.yaml with valid retry_escalation + system task exits 0."""
+        (tmp_cwd / ".fdsx" / "config.yaml").write_text(
+            "retry_escalation:\n  provider: claude\n  model: claude-sonnet-4-6\n"
+        )
+        flow_content = (
+            "name: global-config-valid-test\n"
+            "description: test\n"
+            "start_at: step1\n" + _TASK
+        )
+        (tmp_cwd / "flow.yaml").write_text(flow_content)
+        result = run_fdsx(["run", str(tmp_cwd / "flow.yaml")], cwd=tmp_cwd)
+        assert result.returncode == 0, (
+            f"expected exit code 0, got {result.returncode}\nstderr: {result.stderr}"
+        )

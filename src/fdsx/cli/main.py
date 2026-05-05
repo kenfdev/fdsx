@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 import typer
 import typer.core
+from pydantic import ValidationError as PydanticValidationError
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
@@ -195,7 +196,11 @@ def run(
     Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
     Use --auto-workflow to skip the confirmation UI.
     In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
-    config = load_config()
+    try:
+        config = load_config()
+    except PydanticValidationError as e:
+        typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     if tasks_dir is not None:
         if input_vars is not None:
             typer.echo(
