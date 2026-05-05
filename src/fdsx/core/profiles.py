@@ -221,22 +221,7 @@ def resolve_profiles_in_flow(
                     )
                     errors.extend(fallback_errors)
 
-    errors.extend(_resolve_escalation_profile(data, merged_profiles))
-
     return data, errors
-
-
-def _resolve_escalation_profile(
-    flow_data: dict[str, Any],
-    merged_profiles: dict[str, dict[str, Any]],
-) -> list[str]:
-    """Resolve retry_escalation.profile to provider+model in flow_data."""
-    esc = flow_data.get("retry_escalation")
-    if not isinstance(esc, dict):
-        return []
-    if "profile" not in esc:
-        return []
-    return _resolve_profile_on_dict(esc, "retry_escalation", merged_profiles)
 
 
 def resolve_profiles_in_config(

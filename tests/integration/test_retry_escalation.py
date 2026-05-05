@@ -79,26 +79,6 @@ retry_escalation:
   model: gpt-4o
 """
 
-_PROFILE_ESCALATION = """\
-name: profile-escalation-test
-description: Escalation via flow-level profile
-start_at: step1
-states:
-  step1:
-    type: task
-    provider: claude
-    model: claude-sonnet-4-6
-    prompt_template: do the thing
-    result_path: $.result
-    retry: 2
-    end: true
-profiles:
-  my-esc:
-    provider: codex
-    model: gpt-4o
-retry_escalation:
-  profile: my-esc
-"""
 
 _PARALLEL_WITH_ESCALATION = """\
 name: parallel-escalation-test
@@ -214,25 +194,6 @@ class TestRetryEscalationBasic:
 
         assert result.results["result"] == "claude result"
         assert call_count[0] == 1
-
-    def test_profile_shape_escalation(self, tmp_path):
-        """retry_escalation.profile resolves at load time; escalated retry uses codex."""
-        path = _write_yaml(tmp_path, _PROFILE_ESCALATION)
-        codex_calls: list = []
-
-        def codex_side(args, **kwargs):
-            codex_calls.append(args)
-            return SUCCESS_CODEX
-
-        with (
-            patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
-            patch("fdsx.providers.codex._run_subprocess", side_effect=codex_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
-        ):
-            result = run_flow(path, base_dir=tmp_path)
-
-        assert len(codex_calls) >= 1, "escalated codex provider was never called"
-        assert result.results["result"] == "escalated result"
 
     def test_system_task_never_escalates(self, tmp_path):
         """Tasks with provider:system are not escalated regardless of retry_escalation."""

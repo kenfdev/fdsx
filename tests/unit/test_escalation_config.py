@@ -11,7 +11,11 @@ from fdsx.models.flow import EscalationConfig
 
 
 class TestEscalationConfigXOR:
-    """EscalationConfig enforces XOR: either profile OR provider+model."""
+    """EscalationConfig requires explicit provider+model; profile field is forbidden."""
+
+    def test_profile_field_is_rejected_as_extra(self) -> None:
+        with pytest.raises(ValidationError, match="extra"):
+            EscalationConfig(profile="p")
 
     def test_both_profile_and_provider_raises(self):
         with pytest.raises(ValidationError):
@@ -20,12 +24,6 @@ class TestEscalationConfigXOR:
     def test_provider_without_model_raises(self):
         with pytest.raises(ValidationError):
             EscalationConfig(provider="claude")
-
-    def test_profile_only_is_valid(self):
-        cfg = EscalationConfig(profile="my-profile")
-        assert cfg.profile == "my-profile"
-        assert cfg.provider is None
-        assert cfg.model is None
 
     def test_provider_and_model_is_valid(self):
         cfg = EscalationConfig(provider="claude", model="claude-3")
@@ -46,8 +44,3 @@ class TestEscalationConfigXOR:
         """system is not a valid LLM escalation target."""
         with pytest.raises(ValidationError):
             EscalationConfig(provider="system", model="m")
-
-    def test_profile_and_model_without_provider_raises(self):
-        """profile + model without provider mixes shapes and must be rejected."""
-        with pytest.raises(ValidationError):
-            EscalationConfig(profile="p", model="m")

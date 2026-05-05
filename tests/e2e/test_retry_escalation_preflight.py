@@ -38,8 +38,20 @@ def tmp_cwd(tmp_path: Path) -> Path:
 
 
 class TestRetryEscalationPreflightRejection:
-    def test_both_profile_and_provider_exits_code_2(self, tmp_cwd):
-        """YAML with both profile and provider set must be rejected at load time."""
+    def test_profile_field_is_rejected_with_clear_error(self, tmp_cwd):
+        """YAML with only profile: foo must be rejected; stderr names 'profile' or 'retry_escalation'."""
+        content = _yaml("  profile: foo\n")
+        (tmp_cwd / "flow.yaml").write_text(content)
+        result = run_fdsx(["run", str(tmp_cwd / "flow.yaml")], cwd=tmp_cwd)
+        assert result.returncode == 2, (
+            f"expected exit code 2, got {result.returncode}\nstderr: {result.stderr}"
+        )
+        assert "profile" in result.stderr or "retry_escalation" in result.stderr, (
+            f"expected 'profile' or 'retry_escalation' in stderr: {result.stderr!r}"
+        )
+
+    def test_profile_field_is_rejected_when_provider_set_too(self, tmp_cwd):
+        """YAML with both profile and provider set must be rejected (extra-field guard catches profile)."""
         content = _yaml("  profile: p\n  provider: claude\n  model: claude-3-haiku\n")
         (tmp_cwd / "flow.yaml").write_text(content)
         result = run_fdsx(["run", str(tmp_cwd / "flow.yaml")], cwd=tmp_cwd)
@@ -54,20 +66,6 @@ class TestRetryEscalationPreflightRejection:
         result = run_fdsx(["run", str(tmp_cwd / "flow.yaml")], cwd=tmp_cwd)
         assert result.returncode == 2, (
             f"expected exit code 2, got {result.returncode}\nstderr: {result.stderr}"
-        )
-
-    def test_unknown_profile_exits_code_2_with_retry_escalation_in_stderr(
-        self, tmp_cwd
-    ):
-        """YAML with retry_escalation.profile referencing a missing profile must be rejected."""
-        content = _yaml("  profile: missing-profile\n")
-        (tmp_cwd / "flow.yaml").write_text(content)
-        result = run_fdsx(["run", str(tmp_cwd / "flow.yaml")], cwd=tmp_cwd)
-        assert result.returncode == 2, (
-            f"expected exit code 2, got {result.returncode}\nstderr: {result.stderr}"
-        )
-        assert "retry_escalation" in result.stderr, (
-            f"expected 'retry_escalation' in stderr: {result.stderr!r}"
         )
 
     def test_unknown_provider_exits_code_2(self, tmp_cwd):
