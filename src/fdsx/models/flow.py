@@ -289,6 +289,27 @@ class ProfileConfig(BaseModel):
         return self
 
 
+class EscalationConfig(BaseModel):
+    """Workflow-level retry escalation: substitute a different provider on retries."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str | None = None
+    model: str | None = None
+    provider_options: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "EscalationConfig":
+        if self.provider is None:
+            raise ValueError("retry_escalation: 'provider' is required")
+        if self.model is None:
+            raise ValueError(
+                "retry_escalation: 'model' is required when 'provider' is set"
+            )
+        validate_llm_provider(self.provider, "retry_escalation")
+        return self
+
+
 class Branch(BaseModel):
     """Parallel branch definition."""
 
@@ -757,6 +778,10 @@ class Flow(BaseModel):
     extraction_fallback: ExtractionFallback | Literal[False] | None = Field(
         default=None,
         description="Global extraction fallback override. false=disable, None=inherit from config.",
+    )
+    retry_escalation: EscalationConfig | Literal[False] | None = Field(
+        default=None,
+        description="Workflow-level retry escalation override. false = disable inherited global default; None = inherit from config.",
     )
 
     @model_validator(mode="before")

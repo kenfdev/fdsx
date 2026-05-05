@@ -40,6 +40,7 @@ providers?: {name: {k: v}}      # optional — workflow-level provider configs
 hooks?: HookConfig              # optional — flow-level hooks (full HookConfig including workflow-scope keys)
 profiles?: {name: {k: v}}       # optional — raw provider/model/extras dicts
 extraction_fallback?: ExtractionFallback | false   # optional — false disables inherited fallback; omit to inherit from config
+retry_escalation?: EscalationConfig | false        # optional — false disables inherited global default; omit to inherit from config
 ```
 
 **State** is a discriminated union on the `type` field: `TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState`.
@@ -47,6 +48,8 @@ extraction_fallback?: ExtractionFallback | false   # optional — false disables
 **Profiles at workflow level** are raw YAML dicts (`{provider, model, ...extras}`), not validated `ProfileConfig` objects. Profile resolution happens pre-validation: `profile` references in tasks/branches are expanded into `provider`/`model`/`provider_options` fields before Pydantic validation runs. Workflow-level profiles override config-level profiles (full replacement per name, not deep merge).
 
 **`extraction_fallback`** controls the global extraction fallback for the entire workflow. When set to `false`, it disables any config-level `extraction_fallback` for this workflow. When set to an `ExtractionFallback` object, it overrides the config-level fallback. When omitted (`null`/absent), the config-level `extraction_fallback` applies. See [Extraction Fallback Priority](#extraction-fallback-priority).
+
+**`retry_escalation`** controls the retry escalation target for the entire workflow. When set to `false`, it disables any config-level `retry_escalation` for this workflow. When set to an `EscalationConfig` object (`provider` + `model`), it overrides the config-level target. When omitted (`null`/absent), the config-level `retry_escalation` applies.
 
 **Validation:**
 - `start_at` must exist in `states`
@@ -592,6 +595,11 @@ extraction_fallback?:           # absent by default — global LLM fallback when
   provider?: string             # XOR with profile — claude|codex|opencode|gemini (system forbidden)
   profile?: string              # XOR with provider — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
+
+retry_escalation?:              # absent by default — global escalation target for all flows
+  provider: string              # required — claude|codex|opencode|gemini (system forbidden)
+  model: string                 # required — exact model string for the escalation provider
+  provider_options?: {k: v}     # optional — passed to the escalation provider
 ```
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
@@ -602,4 +610,6 @@ Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 
-**`extraction_fallback`** provides a project-wide default LLM fallback invoked when extraction strategies all fail and no per-rule `extract.fallback` is configured. It is overridden per-workflow via `Flow.extraction_fallback` (which may be set to `false` to disable it entirely for that workflow). See [Extraction Fallback Priority](#extraction-fallback-priority).
+**`extraction_fallback`** provides a project-wide default LLM fallback invoked when extraction strategies all fail and no per-rule `extract.fallback` is configured. It is overridden per-workflow via `Flow.extraction_fallback` (which may be set to `false` to disable it entirely for that workflow). See [Extraction Fallback Priority](#extraction-fallback-priority). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.
+
+**`retry_escalation`** provides a project-wide default escalation target invoked when a workflow AI task exhausts its primary-provider retries. It is overridden per-workflow via `Flow.retry_escalation` (which may be set to `false` to disable it entirely for that workflow). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.

@@ -52,6 +52,17 @@ class RunRecorder:
         }
         self.states.append(self._current_state)
 
+    def record_state_escalation(
+        self, state_name: str, target_provider: str, target_model: str
+    ) -> None:
+        """Record that escalation fired for a state (idempotent)."""
+        state = self._find_state_by_name(state_name)
+        if state is None:
+            return
+        state["escalation_activated"] = True
+        state["escalation_provider"] = target_provider
+        state["escalation_model"] = target_model
+
     def record_state_complete(
         self,
         state_name: str,

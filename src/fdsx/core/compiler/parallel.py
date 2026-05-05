@@ -21,8 +21,10 @@ from fdsx.models.flow import Flow, ParallelState
 from fdsx.providers.base import get_provider
 
 from .helpers import (
+    EscalationTarget,
     _check_max_iterations,
     _merge_provider_options,
+    build_escalation_target,
 )
 
 if TYPE_CHECKING:
@@ -78,12 +80,18 @@ def _create_branch_executor(
     Never raises: all errors are captured in the result dict (exit_code != 0).
     """
 
+    branch_esc_targets = [
+        build_escalation_target(config, flow, branch.provider)
+        for branch in state.branches
+    ]
+
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
         from fdsx.core.compiler.execution import ExecutionConfig, execute_with_retry
         from fdsx.logging.stream_logger import StreamLogger
 
         branch_index: int = state_dict.get("_branch_index", 0)
         branch = state.branches[branch_index]
+        esc_target = branch_esc_targets[branch_index]
 
         start_time = time.time()
         terminal.display_branch_start(
@@ -157,6 +165,16 @@ def _create_branch_executor(
                 error_kind=event.error_kind,
             )
 
+        on_esc = None
+        if esc_target is not None:
+            _target = esc_target
+            _bidx = branch_index
+
+            def on_esc(_t: EscalationTarget = _target, _i: int = _bidx) -> None:
+                terminal.display_branch_escalation(
+                    state_name, _i, _t.provider_name, _t.model
+                )
+
         exec_config = ExecutionConfig(
             provider=provider,
             provider_name=branch.provider,
@@ -173,6 +191,8 @@ def _create_branch_executor(
             flow_profiles=getattr(flow, "profiles", None),
             config_profiles=branch_config_profiles,
             on_fallback=_on_fallback,
+            escalation=esc_target,
+            on_escalation_activated=on_esc,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
@@ -188,11 +208,18 @@ def _create_branch_executor(
                 provider=branch.provider,
                 model=branch.model,
             )
+            orig = branch.provider
+            last = exec_result.last_provider_name or orig
+            annotation = f" (escalated from {orig})" if last != orig else ""
             branch_result: dict[str, Any] = {
                 "index": branch_index,
                 "output": result.stdout.strip(),
                 "exit_code": result.exit_code,
-                "error": _sanitize_output(last_error),
+                "error": (
+                    f"Provider {last} failed after {max_retries + 1} attempts{annotation}: {_sanitize_output(last_error)}"
+                    if annotation
+                    else _sanitize_output(last_error)
+                ),
                 "_duration": duration,
             }
         elif branch.extract and extracted is None:

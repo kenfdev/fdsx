@@ -1,5 +1,6 @@
 """Helper utilities for the compiler package."""
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 import structlog
@@ -7,6 +8,7 @@ from langgraph.managed import RemainingSteps
 
 from fdsx.core.config import _deep_merge
 from fdsx.models.flow import (
+    EscalationConfig,
     Flow,
     MapState,
     ParallelState,
@@ -14,11 +16,55 @@ from fdsx.models.flow import (
     TaskState,
     WaitState,
 )
+from fdsx.providers.base import ProviderBase
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class EscalationTarget:
+    """Pre-built escalation provider for use in execute_with_retry."""
+
+    provider: ProviderBase
+    provider_name: str
+    model: str
+    options: dict[str, Any] | None
+
+
+def build_escalation_target(
+    config: "FdsxConfig | None",
+    flow: Flow,
+    original_provider_name: str,
+) -> "EscalationTarget | None":
+    """Build an EscalationTarget from flow.retry_escalation, or None if not applicable."""
+    flow_esc = getattr(flow, "retry_escalation", None)
+    if flow_esc is False:
+        return None
+    elif isinstance(flow_esc, EscalationConfig):
+        esc = flow_esc
+    elif config is not None and isinstance(config.retry_escalation, EscalationConfig):
+        esc = config.retry_escalation
+    else:
+        return None
+    if original_provider_name == "system":
+        return None
+    if esc.provider is None or esc.model is None:
+        return None
+    from fdsx.providers.base import get_provider
+
+    merged = _merge_provider_options(
+        config, flow, esc.provider, esc.provider_options, state_name="retry_escalation"
+    )
+    effective = dict(merged) if merged else None
+    return EscalationTarget(
+        provider=get_provider(esc.provider, effective),
+        provider_name=esc.provider,
+        model=esc.model,
+        options=effective,
+    )
 
 
 def _top_level_key(path: str) -> str | None:

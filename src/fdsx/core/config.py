@@ -15,7 +15,13 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from fdsx.core.profiles import resolve_profiles_in_config
-from fdsx.models.flow import ExtractionFallback, HookConfig, HookEntry, ProfileConfig
+from fdsx.models.flow import (
+    EscalationConfig,
+    ExtractionFallback,
+    HookConfig,
+    HookEntry,
+    ProfileConfig,
+)
 from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
@@ -36,6 +42,11 @@ _HOOK_LIST_KEYS: frozenset[str] = frozenset(
 
 # Keys whose dict values are shallow-merged instead of deep-merged
 _SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
+
+# Keys whose dict values are fully replaced by the override (no field-level merging)
+_FULL_REPLACE_KEYS: frozenset[str] = frozenset(
+    {"retry_escalation", "extraction_fallback"}
+)
 
 
 class TaskSplitterConfig(BaseModel):
@@ -199,6 +210,10 @@ class FdsxConfig(BaseModel):
         default=None,
         description="Global default extraction fallback applied when no per-rule fallback is set.",
     )
+    retry_escalation: EscalationConfig | None = Field(
+        default=None,
+        description="Global default retry escalation applied when no workflow-level escalation is set.",
+    )
 
     @field_validator("workflows_dir")
     @classmethod
@@ -247,7 +262,9 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     for key, override_val in override.items():
         base_val = result.get(key)
         if isinstance(base_val, dict) and isinstance(override_val, dict):
-            if key in _SHALLOW_MERGE_KEYS:
+            if key in _FULL_REPLACE_KEYS:
+                result[key] = override_val
+            elif key in _SHALLOW_MERGE_KEYS:
                 result[key] = {**base_val, **override_val}
             else:
                 result[key] = _deep_merge(base_val, override_val)

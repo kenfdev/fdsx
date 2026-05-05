@@ -21,6 +21,7 @@ from fdsx.display.terminal import (
     display_map_complete,
     display_map_iteration,
     display_map_iteration_complete,
+    display_map_iteration_escalation,
     display_map_iteration_failed,
     display_map_start,
 )
@@ -31,8 +32,10 @@ from fdsx.models.flow import (
 from fdsx.providers.base import get_provider
 
 from .helpers import (
+    EscalationTarget,
     _check_max_iterations,
     _merge_provider_options,
+    build_escalation_target,
 )
 
 if TYPE_CHECKING:
@@ -250,6 +253,24 @@ def _create_map_node(
                         error_kind=event.error_kind,
                     )
 
+                iter_esc_target = build_escalation_target(
+                    config, flow, iter_state.provider
+                )
+                on_iter_esc = None
+                if iter_esc_target is not None:
+                    _target = iter_esc_target
+                    _idx = idx
+                    _total = len(items)
+
+                    def on_iter_esc(
+                        _t: EscalationTarget = _target,
+                        _i: int = _idx,
+                        _tot: int = _total,
+                    ) -> None:
+                        display_map_iteration_escalation(
+                            state_name, _i, _tot, _t.provider_name, _t.model
+                        )
+
                 exec_config = ExecutionConfig(
                     provider=provider,
                     provider_name=iter_state.provider,
@@ -266,6 +287,8 @@ def _create_map_node(
                     flow_profiles=getattr(flow, "profiles", None),
                     config_profiles=iter_config_profiles,
                     on_fallback=_on_fallback,
+                    escalation=iter_esc_target,
+                    on_escalation_activated=on_iter_esc,
                 )
                 exec_result = execute_with_retry(exec_config)
                 result = exec_result.result
@@ -274,6 +297,9 @@ def _create_map_node(
 
                 if result.exit_code != 0:
                     stream_logger.close()
+                    orig = iter_state.provider
+                    last = exec_result.last_provider_name or orig
+                    annotation = f" (escalated from {orig})" if last != orig else ""
                     if state.fail_fast:
                         display_map_iteration_failed(
                             state_name,
@@ -292,9 +318,15 @@ def _create_map_node(
                                 state_name,
                                 f"iteration {idx} failed: {_sanitize_output(last_error)}",
                             )
-                        raise RuntimeError(
-                            f"Map state '{state_name}': iteration {idx} failed: {_sanitize_output(last_error)}"
-                        )
+                        if annotation:
+                            raise RuntimeError(
+                                f"Map state '{state_name}': iteration {idx} failed: "
+                                f"Provider {last}{annotation}: {_sanitize_output(last_error)}"
+                            )
+                        else:
+                            raise RuntimeError(
+                                f"Map state '{state_name}': iteration {idx} failed: {_sanitize_output(last_error)}"
+                            )
                     else:
                         display_map_iteration_failed(
                             state_name,

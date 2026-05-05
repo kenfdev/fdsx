@@ -23,6 +23,7 @@ from fdsx.core.extraction import extract_value
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
 
 if TYPE_CHECKING:
+    from fdsx.core.compiler.helpers import EscalationTarget
     from fdsx.core.extraction_fallback import FallbackEvent, ResolvedFallback
     from fdsx.logging.stream_logger import StreamLogger
     from fdsx.models.flow import ExtractRule
@@ -80,6 +81,8 @@ class ExecutionConfig:
     flow_profiles: "dict[str, dict[str, Any]] | None" = None
     config_profiles: "dict[str, dict[str, Any]] | None" = None
     on_fallback: "Callable[[FallbackEvent], None] | None" = None
+    escalation: "EscalationTarget | None" = None
+    on_escalation_activated: Callable[[], None] | None = None
 
 
 @dataclass
@@ -97,6 +100,7 @@ class ExecutionResult:
     result: ProviderResult
     extracted: Any | None
     last_error: str
+    last_provider_name: str = ""
 
 
 # Sentinel used as the initial last_error before any attempt
@@ -131,16 +135,35 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     last_error = _NO_ATTEMPTS_ERROR
     result = ProviderResult(exit_code=1, stdout="", stderr="")
     extracted: Any | None = None
+    escalation_notified = False
+    last_used_provider_name = config.provider_name
+    active_model: str | None = None
 
     try:
         for attempt in range(config.max_retries + 1):
             if attempt > 0:
                 time.sleep(min(2 ** (attempt - 1), 30))
+
+            if attempt > 0 and config.escalation is not None:
+                active_provider = config.escalation.provider
+                active_provider_name = config.escalation.provider_name
+                active_model = config.escalation.model
+                if not escalation_notified:
+                    escalation_notified = True
+                    if config.on_escalation_activated is not None:
+                        config.on_escalation_activated()
+            else:
+                active_provider = config.provider
+                active_provider_name = config.provider_name
+                active_model = config.model
+
+            last_used_provider_name = active_provider_name
+
             try:
-                if config.provider_name == "system":
-                    result = config.provider.execute(
+                if active_provider_name == "system":
+                    result = active_provider.execute(
                         prompt="",
-                        model=config.model,
+                        model=active_model,
                         timeout=config.timeout_seconds,
                         command=config.command,
                         output_callback=config.stream_logger.on_stdout,
@@ -149,9 +172,9 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         summary_callback=config.summary_callback,
                     )
                 else:
-                    result = config.provider.execute(
+                    result = active_provider.execute(
                         prompt=config.prompt,
-                        model=config.model,
+                        model=active_model,
                         timeout=config.timeout_seconds,
                         output_callback=config.stream_logger.on_stdout,
                         stderr_callback=config.stream_logger.on_stderr,
@@ -169,7 +192,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         result.stdout.strip(),
                         config.extract,
                         get_provider,
-                        source_provider=config.provider_name,
+                        source_provider=active_provider_name,
                         resolved_fallback=config.resolved_fallback,
                         flow_profiles=config.flow_profiles,
                         config_profiles=config.config_profiles,
@@ -178,7 +201,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                     if extracted is not None:
                         break
                     last_error = "Extraction failed: all strategies returned None"
-                    if config.provider_name == "system":
+                    if active_provider_name == "system":
                         break
                 else:
                     break
@@ -187,4 +210,9 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     finally:
         config.stream_logger.close()
 
-    return ExecutionResult(result=result, extracted=extracted, last_error=last_error)
+    return ExecutionResult(
+        result=result,
+        extracted=extracted,
+        last_error=last_error,
+        last_provider_name=last_used_provider_name,
+    )
