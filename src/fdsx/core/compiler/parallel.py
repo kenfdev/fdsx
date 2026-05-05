@@ -21,6 +21,7 @@ from fdsx.models.flow import Flow, ParallelState
 from fdsx.providers.base import get_provider
 
 from .helpers import (
+    EscalationTarget,
     _check_max_iterations,
     _merge_provider_options,
     build_escalation_target,
@@ -164,6 +165,16 @@ def _create_branch_executor(
                 error_kind=event.error_kind,
             )
 
+        on_esc = None
+        if esc_target is not None:
+            _target = esc_target
+            _bidx = branch_index
+
+            def on_esc(_t: EscalationTarget = _target, _i: int = _bidx) -> None:
+                terminal.display_branch_escalation(
+                    state_name, _i, _t.provider_name, _t.model
+                )
+
         exec_config = ExecutionConfig(
             provider=provider,
             provider_name=branch.provider,
@@ -181,6 +192,7 @@ def _create_branch_executor(
             config_profiles=branch_config_profiles,
             on_fallback=_on_fallback,
             escalation=esc_target,
+            on_escalation_activated=on_esc,
         )
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result

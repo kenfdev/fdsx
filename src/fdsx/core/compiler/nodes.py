@@ -38,6 +38,21 @@ if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
 
 
+def _make_escalation_callback(
+    state_name: str, esc_target: Any, recorder: Any
+) -> Callable[[], None]:
+    def _cb() -> None:
+        terminal.display_state_escalation(
+            state_name, esc_target.provider_name, esc_target.model
+        )
+        if recorder is not None:
+            recorder.record_state_escalation(
+                state_name, esc_target.provider_name, esc_target.model
+            )
+
+    return _cb
+
+
 def _create_task_node(
     state_name: str,
     state: TaskState,
@@ -142,12 +157,8 @@ def _create_task_node(
             on_fallback=_on_fallback,
             escalation=esc_target,
             on_escalation_activated=(
-                (
-                    lambda: recorder.record_state_escalation(
-                        state_name, esc_target.provider_name, esc_target.model
-                    )
-                )
-                if recorder is not None and esc_target is not None
+                _make_escalation_callback(state_name, esc_target, recorder)
+                if esc_target is not None
                 else None
             ),
         )

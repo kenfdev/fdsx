@@ -274,6 +274,46 @@ def display_map_iteration_complete(
     print(line, file=sys.stderr)
 
 
+def display_state_escalation(
+    state_name: str, target_provider: str, target_model: str | None
+) -> None:
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    s_name = _sanitize_output(state_name)
+    s_prov = _sanitize_output(target_provider)
+    model_part = f"/{_sanitize_output(target_model)}" if target_model else ""
+    print(
+        f"[{timestamp}] ↑ {s_name} escalated to {s_prov}{model_part}", file=sys.stderr
+    )
+
+
+def display_branch_escalation(
+    state_name: str, branch_index: int, target_provider: str, target_model: str | None
+) -> None:
+    display_index = branch_index + 1
+    s_prov = _sanitize_output(target_provider)
+    model_part = f"/{_sanitize_output(target_model)}" if target_model else ""
+    print(
+        f"  [branch-{display_index}] ↑ escalated to {s_prov}{model_part}",
+        file=sys.stderr,
+    )
+
+
+def display_map_iteration_escalation(
+    state_name: str,
+    index: int,
+    total: int,
+    target_provider: str,
+    target_model: str | None,
+) -> None:
+    display_index = index + 1
+    s_prov = _sanitize_output(target_provider)
+    model_part = f"/{_sanitize_output(target_model)}" if target_model else ""
+    print(
+        f"  [iter-{display_index}/{total}] ↑ escalated to {s_prov}{model_part}",
+        file=sys.stderr,
+    )
+
+
 def display_map_iteration_failed(
     state_name: str,
     index: int,
