@@ -96,6 +96,72 @@ class TestRetryEscalationPreflightRejection:
         )
 
 
+class TestProjectScopeRetryEscalation:
+    """E2E tests for retry_escalation when both global and project configs are present (T003).
+
+    Verifies that .fdsx/config.yaml (project scope) is validated and applied correctly
+    when a global config also declares retry_escalation.
+    """
+
+    def test_project_config_missing_model_exits_code_2(self, tmp_path, monkeypatch):
+        """Project .fdsx/config.yaml with retry_escalation missing model → exit 2."""
+        xdg_dir = tmp_path / "xdg"
+        fdsx_global_dir = xdg_dir / "fdsx"
+        fdsx_global_dir.mkdir(parents=True)
+        (fdsx_global_dir / "config.yaml").write_text(
+            "retry_escalation:\n  provider: claude\n  model: claude-sonnet-4-6\n"
+        )
+
+        project_cwd = tmp_path / "proj"
+        (project_cwd / ".fdsx").mkdir(parents=True)
+        (project_cwd / ".fdsx" / "config.yaml").write_text(
+            "retry_escalation:\n  provider: codex\n"
+        )
+        flow_content = (
+            "name: proj-scope-missing-model\ndescription: test\nstart_at: step1\n"
+            + _TASK
+        )
+        (project_cwd / "flow.yaml").write_text(flow_content)
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_dir))
+        result = run_fdsx(["run", str(project_cwd / "flow.yaml")], cwd=project_cwd)
+        assert result.returncode == 2, (
+            f"expected exit code 2, got {result.returncode}\nstderr: {result.stderr}"
+        )
+        assert "retry_escalation" in result.stderr, (
+            f"expected 'retry_escalation' in stderr: {result.stderr!r}"
+        )
+
+    def test_project_config_overrides_global_and_exits_0(self, tmp_path, monkeypatch):
+        """Project config overrides global retry_escalation (with provider_options) → exit 0."""
+        xdg_dir = tmp_path / "xdg"
+        fdsx_global_dir = xdg_dir / "fdsx"
+        fdsx_global_dir.mkdir(parents=True)
+        (fdsx_global_dir / "config.yaml").write_text(
+            "retry_escalation:\n"
+            "  provider: claude\n"
+            "  model: claude-opus-4-7\n"
+            "  provider_options:\n"
+            "    permission_mode: bypassPermissions\n"
+        )
+
+        project_cwd = tmp_path / "proj"
+        (project_cwd / ".fdsx").mkdir(parents=True)
+        (project_cwd / ".fdsx" / "config.yaml").write_text(
+            "retry_escalation:\n  provider: claude\n  model: claude-sonnet-4-6\n"
+        )
+        flow_content = (
+            "name: proj-scope-override\ndescription: test\nstart_at: step1\n" + _TASK
+        )
+        (project_cwd / "flow.yaml").write_text(flow_content)
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_dir))
+        result = run_fdsx(["run", str(project_cwd / "flow.yaml")], cwd=project_cwd)
+        assert result.returncode == 0, (
+            f"expected exit code 0, got {result.returncode}\nstderr: {result.stderr}"
+        )
+
+
 class TestGlobalConfigRetryEscalation:
     """E2E tests for retry_escalation declared in .fdsx/config.yaml (T002)."""
 
