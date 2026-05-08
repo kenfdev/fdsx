@@ -11,6 +11,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [PassState](#passstate)
 - [WaitState](#waitstate)
 - [MapState](#mapstate)
+- [FailState](#failstate)
 - [IteratorDef](#iteratordef)
 - [IteratorTaskState](#iteratortaskstate)
 - [Branch (parallel)](#branch)
@@ -43,7 +44,7 @@ extraction_fallback?: ExtractionFallback | false   # optional — false disables
 retry_escalation?: EscalationConfig | false        # optional — false disables inherited global default; omit to inherit from config
 ```
 
-**State** is a discriminated union on the `type` field: `TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState`.
+**State** is a discriminated union on the `type` field: `TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState | FailState`.
 
 **Profiles at workflow level** are raw YAML dicts (`{provider, model, ...extras}`), not validated `ProfileConfig` objects. Profile resolution happens pre-validation: `profile` references in tasks/branches are expanded into `provider`/`model`/`provider_options` fields before Pydantic validation runs. Workflow-level profiles override config-level profiles (full replacement per name, not deep merge).
 
@@ -54,7 +55,7 @@ retry_escalation?: EscalationConfig | false        # optional — false disables
 **Validation:**
 - `start_at` must exist in `states`
 - All `next` references across all states must exist in `states`
-- At least one path from `start_at` must reach termination (`end: true`)
+- At least one path from `start_at` must reach termination (`end: true` or a `fail` state)
 - `task_splitter` field is rejected (removed; configure in config.yaml instead)
 
 ---
@@ -68,7 +69,7 @@ model?: string                  # required for LLM providers, forbidden for syst
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
 command?: string                # required for system, forbidden for LLM providers
-result_path: string             # required — JSONPath for output (e.g. $.plan)
+result_path?: string            # optional — JSONPath for output (e.g. $.plan)
 result_file?: string            # optional — top-level $.varname only (no nesting)
 extract?: ExtractRule           # optional — output extraction
 max_iterations?: int            # optional — >=1, max times state can be entered
@@ -85,7 +86,7 @@ end?: bool                      # XOR with next — terminate flow
 **Validation:**
 - `prompt_template` and `prompt_file` are mutually exclusive
 - `next` and `end` are mutually exclusive
-- `result_path` and `extract.result_path` must not overlap
+- `result_path` and `extract.result_path` must not overlap (when both are set)
 - `result_file` must match `$.varname` (no dots or brackets after `$.`)
 - System provider: requires `command`, forbids `prompt_template`/`prompt_file`/`model`
 - LLM providers: require `model` + (`prompt_template` or `prompt_file`), forbid `command`
@@ -188,6 +189,25 @@ end?: bool                      # XOR with next — terminate flow
 
 ---
 
+## FailState
+
+```yaml
+type: "fail"                    # literal discriminator
+error: string                   # required — min 1 char — error name
+cause: string                   # required — min 1 char — error cause description
+hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
+```
+
+**Behavior:** When a `FailState` is entered, the flow terminates immediately with an aborted status. The `error` and `cause` fields are recorded in the checkpoint and displayed in the completion summary.
+
+**Validation:**
+- `next` is forbidden — `FailState` cannot declare a successor
+- `end` is forbidden — `FailState` terminates on entry and does not use `end`
+- `max_iterations` is forbidden — `FailState` terminates on entry; iteration is meaningless
+- A `fail` state constitutes a valid termination path for flow termination validation (alongside `end: true`)
+
+---
+
 ## IteratorDef
 
 Used inside `MapState.iterator`:
@@ -223,7 +243,7 @@ timeout_seconds?: int           # optional — per-state timeout override
 provider_options?: {k: v}       # optional — per-task provider option overrides
 ```
 
-**Differences from TaskState:** Has a required `name` field. Does not support `max_iterations`, `hooks`, `next`, or `end` (iteration order is determined by list position).
+**Differences from TaskState:** Has a required `name` field. Does not support `max_iterations`, `hooks`, `next`, or `end` (iteration order is determined by list position). `result_path` is required (not optional).
 
 **Profile shorthand:** Use `profile: <name>` instead of `provider`/`model`. Resolved pre-validation; XOR with explicit provider/model.
 
@@ -417,7 +437,7 @@ Each command receives:
 
 ## StateHookConfig
 
-Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `WaitState`, `MapState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` are explicitly forbidden.
+Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `WaitState`, `MapState`, `FailState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` are explicitly forbidden.
 
 ```yaml
 hooks:
@@ -597,7 +617,8 @@ profiles?:
 
 extraction_fallback?:           # absent by default — global LLM fallback when no per-rule fallback is set
   provider?: string             # XOR with profile — claude|codex|opencode|gemini (system forbidden)
-  profile?: string              # XOR with provider — resolved from profiles
+  model?: string                # required when provider is set
+  profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
 
 retry_escalation?:              # absent by default — global escalation target for all flows

@@ -4,11 +4,11 @@ description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
   configuring fdsx providers (claude, codex, opencode, gemini), setting up
-  profiles, adding hooks, using choice/parallel/loop/wait/pass/map states, running
-  fdsx CLI commands, debugging workflow validation errors, or asking about fdsx
-  YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative agent
-  workflow", "multi-step AI pipeline", "provider options", "checkpoint resume",
-  "map state", "iterator", "extraction fallback".
+  profiles, adding hooks, using choice/parallel/loop/wait/pass/map/fail states,
+  running fdsx CLI commands, debugging workflow validation errors, or asking
+  about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
+  agent workflow", "multi-step AI pipeline", "provider options", "checkpoint
+  resume", "map state", "iterator", "extraction fallback".
 ---
 
 # fdsx Workflow Authoring Guide
@@ -58,8 +58,9 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 | `pass` | Data transformation / aggregation | `parameters`, `aggregate` |
 | `wait` | Human input via terminal prompt | `mode: prompt`, `message`, `choices`, `result_path` |
 | `map` | Iterate over an array, execute sub-workflow per item | `items_path`, `iterator`, `result_path`, `fail_fast` |
+| `fail` | Terminate the flow with a named error | `error`, `cause` |
 
-Every state except `choice` supports `next` (go to state) or `end: true` (terminate flow). These are mutually exclusive.
+States that support routing use either `next` (go to state) or `end: true` (terminate flow) — these are mutually exclusive. `choice` uses `choices`/`default` instead. `fail` supports neither `next` nor `end` (it always terminates on entry).
 
 ## Providers
 
@@ -309,7 +310,8 @@ task_splitter:                  # must be explicitly present to enable batch spl
   model: claude-sonnet-4-6
   extra_instructions: "..."
 extraction_fallback:            # global default when no per-rule fallback is configured
-  provider: claude              # or use profile: <name> (XOR with provider)
+  provider: claude              # or use profile: <name> (XOR with provider + model)
+  model: claude-sonnet-4-6
   extra_instructions: "..."     # optional instructions appended to recovery prompt
 hooks:                          # global hooks applied to all flows
   on_state_start:
@@ -380,13 +382,42 @@ states:
 
 Inside iterator states, `{item}` refers to the current array element. Use `{item.field}` for nested access.
 
+**Hard stop with named error:**
+Use a `fail` state to terminate with a structured error when a condition is unrecoverable:
+
+```yaml
+states:
+  check:
+    type: choice
+    choices:
+      - variable: $.status
+        operator: equals
+        value: "invalid"
+        next: abort
+    default: process
+
+  abort:
+    type: fail
+    error: "InvalidInput"
+    cause: "Input status was invalid; cannot proceed."
+
+  process:
+    type: task
+    provider: claude
+    model: claude-sonnet-4-6
+    prompt_template: "Process: {task}"
+    result_path: $.result
+    end: true
+```
+
 ## Validation Rules
 
 - `start_at` must reference an existing state name
 - All `next` references must point to existing states
-- Flow must have at least one path to termination (`end: true`)
+- Flow must have at least one path to termination (`end: true` or a `fail` state)
 - `prompt_template` and `prompt_file` are mutually exclusive
 - `next` and `end` are mutually exclusive
+- `fail` state forbids `next`, `end`, and `max_iterations`
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
