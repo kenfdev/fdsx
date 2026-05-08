@@ -36,7 +36,7 @@ class TestExtractionFallbackValidation:
     def test_provider_only_is_valid(self):
         from fdsx.models.flow import ExtractionFallback
 
-        fb = ExtractionFallback(provider="claude")
+        fb = ExtractionFallback(provider="claude", model="claude-sonnet-4-6")
         assert fb.profile is None
 
     def test_profile_only_is_valid(self):
@@ -66,13 +66,17 @@ class TestExtractionFallbackValidation:
     def test_extra_instructions_defaults_to_none(self):
         from fdsx.models.flow import ExtractionFallback
 
-        fb = ExtractionFallback(provider="claude")
+        fb = ExtractionFallback(provider="claude", model="claude-sonnet-4-6")
         assert fb.extra_instructions is None
 
     def test_extra_instructions_accepted_with_valid_provider(self):
         from fdsx.models.flow import ExtractionFallback
 
-        fb = ExtractionFallback(provider="claude", extra_instructions="append this")
+        fb = ExtractionFallback(
+            provider="claude",
+            model="claude-sonnet-4-6",
+            extra_instructions="append this",
+        )
         assert fb.extra_instructions == "append this"
 
     def test_extra_unknown_keys_rejected(self):
@@ -103,7 +107,11 @@ class TestFlowExtractionFallbackField:
     def test_field_mapping_gives_extraction_fallback_instance(self):
         from fdsx.models.flow import ExtractionFallback
 
-        flow = Flow(**_minimal_flow(extraction_fallback={"provider": "claude"}))
+        flow = Flow(
+            **_minimal_flow(
+                extraction_fallback={"provider": "claude", "model": "claude-sonnet-4-6"}
+            )
+        )
         assert isinstance(flow.extraction_fallback, ExtractionFallback)
         assert flow.extraction_fallback.provider == "claude"
 
@@ -129,7 +137,9 @@ class TestFdsxConfigExtractionFallbackField:
     def test_field_mapping_gives_extraction_fallback_instance(self):
         from fdsx.models.flow import ExtractionFallback
 
-        cfg = FdsxConfig(extraction_fallback={"provider": "opencode"})
+        cfg = FdsxConfig(
+            extraction_fallback={"provider": "opencode", "model": "claude-sonnet-4-6"}
+        )
         assert isinstance(cfg.extraction_fallback, ExtractionFallback)
         assert cfg.extraction_fallback.provider == "opencode"
 
@@ -139,7 +149,13 @@ class TestFdsxConfigExtractionFallbackField:
 
     def test_field_extra_unknown_keys_rejected(self):
         with pytest.raises(ValidationError, match=r"extraction_fallback\.bogus"):
-            FdsxConfig(extraction_fallback={"provider": "claude", "bogus": "val"})
+            FdsxConfig(
+                extraction_fallback={
+                    "provider": "claude",
+                    "model": "claude-sonnet-4-6",
+                    "bogus": "val",
+                }
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +170,9 @@ class TestResolveFallback:
         from fdsx.models.flow import ExtractRule, LLMClassifyFallback
 
         fb = (
-            LLMClassifyFallback(provider="claude", prompt="classify")
+            LLMClassifyFallback(
+                provider="claude", model="claude-sonnet-4-6", prompt="classify"
+            )
             if with_fallback
             else None
         )
@@ -193,7 +211,7 @@ class TestResolveFallback:
         from fdsx.models.flow import ExtractionFallback
 
         rule = self._rule(with_fallback=False)
-        global_ef = ExtractionFallback(provider="claude")
+        global_ef = ExtractionFallback(provider="claude", model="claude-sonnet-4-6")
         result = resolve_fallback(rule, self._flow(ef=False), self._cfg(ef=global_ef))
 
         assert result is None
@@ -213,7 +231,7 @@ class TestResolveFallback:
         from fdsx.models.flow import ExtractionFallback
 
         rule = self._rule(with_fallback=False)
-        flow_ef = ExtractionFallback(provider="opencode")
+        flow_ef = ExtractionFallback(provider="opencode", model="claude-sonnet-4-6")
         result = resolve_fallback(rule, self._flow(ef=flow_ef), self._cfg())
 
         assert result is not None
@@ -225,7 +243,7 @@ class TestResolveFallback:
         from fdsx.models.flow import ExtractionFallback
 
         rule = self._rule(with_fallback=False)
-        global_ef = ExtractionFallback(provider="claude")
+        global_ef = ExtractionFallback(provider="claude", model="claude-sonnet-4-6")
         result = resolve_fallback(rule, self._flow(ef=None), self._cfg(ef=global_ef))
 
         assert result is not None
@@ -245,7 +263,7 @@ class TestResolveFallback:
         from fdsx.models.flow import ExtractionFallback
 
         rule = self._rule(with_fallback=False)
-        flow_ef = ExtractionFallback(provider="claude")
+        flow_ef = ExtractionFallback(provider="claude", model="claude-sonnet-4-6")
         flow = self._flow(ef=flow_ef)
         cfg = self._cfg()
 
@@ -361,7 +379,7 @@ def _make_resolved(provider=None, profile=None, extra_instructions=None):
     from fdsx.models.flow import ExtractionFallback
 
     if provider is not None:
-        cfg = ExtractionFallback(provider=provider)
+        cfg = ExtractionFallback(provider=provider, model="claude-sonnet-4-6")
     else:
         cfg = ExtractionFallback(profile=profile)
     if extra_instructions is not None:
@@ -894,3 +912,248 @@ class TestExecuteDefaultFallback:
         assert not any(e == "default_fallback_invoked" for e in info_events), (
             f"Found deprecated 'default_fallback_invoked' in logs: {info_events}"
         )
+
+    def test_model_is_passed_to_provider_execute(self):
+        # Executor must read config.model and forward it to provider.execute().
+        # Currently extraction_fallback.py hard-codes model=None on the provider branch.
+        # FAILS RED: execute receives model=None instead of "claude-sonnet-4-6".
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import (
+            ResolvedFallback,
+            execute_default_fallback,
+        )
+        from fdsx.models.flow import ExtractionFallback
+
+        factory, mock_provider = _make_factory(stdout="APPROVED")
+        # model_construct bypasses Pydantic validation so we can attach the model
+        # field before it exists in the schema.
+        cfg = ExtractionFallback.model_construct(
+            provider="claude", model="claude-sonnet-4-6"
+        )
+        resolved = ResolvedFallback(config=cfg, source="global")
+
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="claude",
+                provider_factory=factory,
+            )
+
+        mock_provider.execute.assert_called_once()
+        call_kwargs = mock_provider.execute.call_args
+        passed_model = (
+            call_kwargs.kwargs.get("model")
+            if call_kwargs.kwargs
+            else (call_kwargs.args[1] if len(call_kwargs.args) > 1 else None)
+        )
+        assert passed_model == "claude-sonnet-4-6", (
+            f"Expected model='claude-sonnet-4-6' forwarded to provider.execute, got: {passed_model!r}"
+        )
+
+    def test_fallback_event_carries_provider_and_model_on_success(self):
+        # FallbackEvent must expose provider and model so display/recorder can use them.
+        # FAILS RED: FallbackEvent dataclass has no provider/model fields yet.
+        from unittest.mock import MagicMock
+
+        import structlog.testing
+
+        from fdsx.core.extraction_fallback import (
+            ResolvedFallback,
+            execute_default_fallback,
+        )
+        from fdsx.models.flow import ExtractionFallback
+
+        factory, _ = _make_factory(stdout="APPROVED")
+        cfg = ExtractionFallback.model_construct(
+            provider="claude", model="claude-sonnet-4-6"
+        )
+        resolved = ResolvedFallback(config=cfg, source="global")
+        callback = MagicMock()
+
+        with structlog.testing.capture_logs():
+            execute_default_fallback(
+                output="text",
+                rule=self._keyword_rule(),
+                resolved=resolved,
+                merged_profiles={},
+                source_provider="claude",
+                provider_factory=factory,
+                on_fallback=callback,
+            )
+
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event.provider == "claude", (
+            f"Expected event.provider='claude', got: {event.provider!r}"
+        )
+        assert event.model == "claude-sonnet-4-6", (
+            f"Expected event.model='claude-sonnet-4-6', got: {event.model!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# ExtractionFallback — new model field and updated XOR rules (RED)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractionFallbackModelField:
+    """Tests for the new `model` field on ExtractionFallback and revised XOR rules.
+
+    All tests in this class FAIL in RED because the model field does not yet
+    exist and the XOR validator does not yet require model alongside provider.
+    """
+
+    def test_provider_and_model_constructs_successfully(self):
+        # FAILS RED: ExtractionFallback has extra="forbid" and no model field.
+        # ValidationError: Extra inputs are not permitted for 'model'.
+        from fdsx.models.flow import ExtractionFallback
+
+        fb = ExtractionFallback(provider="claude", model="claude-sonnet-4-6")
+        assert fb.model == "claude-sonnet-4-6"
+        assert fb.provider == "claude"
+
+    def test_provider_without_model_raises(self):
+        # FAILS RED: ExtractionFallback(provider="claude") currently succeeds.
+        # After GREEN the XOR validator requires model when provider is set.
+        from fdsx.models.flow import ExtractionFallback
+
+        with pytest.raises(ValidationError, match="model"):
+            ExtractionFallback(provider="claude")
+
+    def test_profile_and_model_raises(self):
+        # FAILS RED: model is extra and rejected before the new XOR check fires,
+        # so the test cannot distinguish the intended error from the extra-field error.
+        # After GREEN ExtractionFallback accepts model and the XOR raises the right message.
+        from fdsx.models.flow import ExtractionFallback
+
+        with pytest.raises(ValidationError, match=r"mutually exclusive|profile"):
+            ExtractionFallback(profile="fast", model="claude-sonnet-4-6")
+
+    def test_all_three_raises(self):
+        # FAILS RED: same extra-field problem as above.
+        # After GREEN the XOR check fires and raises the right message.
+        from fdsx.models.flow import ExtractionFallback
+
+        with pytest.raises(ValidationError, match=r"mutually exclusive|profile"):
+            ExtractionFallback(
+                profile="fast", provider="claude", model="claude-sonnet-4-6"
+            )
+
+    def test_empty_raises_mentioning_provider_and_profile(self):
+        # Already covered by test_neither_provider_nor_profile_rejected, but the
+        # new error message must mention both options.  FAILS RED when the message
+        # changes from "provider or profile" to include "model" wording.
+        from fdsx.models.flow import ExtractionFallback
+
+        with pytest.raises(ValidationError, match=r"provider|profile"):
+            ExtractionFallback()
+
+
+# ---------------------------------------------------------------------------
+# LLMClassifyFallback — new model + profile fields and XOR rules (RED)
+# ---------------------------------------------------------------------------
+
+
+class TestLLMClassifyFallbackValidation:
+    """Tests for the new model and profile fields on LLMClassifyFallback.
+
+    All tests that assert a NEW constraint FAIL in RED because the fields do
+    not yet exist and no XOR validator is wired.
+    """
+
+    def test_provider_and_model_constructs_successfully(self):
+        # FAILS RED: model is silently dropped (no model_config extra="forbid"),
+        # so fb.model raises AttributeError or returns wrong value.
+        from fdsx.models.flow import LLMClassifyFallback
+
+        fb = LLMClassifyFallback(
+            provider="claude", model="claude-sonnet-4-6", prompt="classify this"
+        )
+        assert fb.model == "claude-sonnet-4-6"
+
+    def test_profile_only_constructs_successfully(self):
+        # FAILS RED: provider is currently required (Field(...)); passing only
+        # profile raises ValidationError "Field required".
+        from fdsx.models.flow import LLMClassifyFallback
+
+        fb = LLMClassifyFallback(profile="fast", prompt="classify this")
+        assert fb.profile == "fast"
+        assert fb.provider is None
+
+    def test_provider_without_model_raises(self):
+        # FAILS RED: LLMClassifyFallback(provider="claude", prompt="x") currently
+        # succeeds; after GREEN the XOR validator requires model.
+        from fdsx.models.flow import LLMClassifyFallback
+
+        with pytest.raises(ValidationError, match="model"):
+            LLMClassifyFallback(provider="claude", prompt="classify this")
+
+    def test_profile_and_provider_raises(self):
+        # FAILS RED: profile and model are silently ignored (no extra="forbid"),
+        # so the construction currently succeeds.  After GREEN the XOR raises.
+        from fdsx.models.flow import LLMClassifyFallback
+
+        with pytest.raises(ValidationError, match=r"mutually exclusive|profile"):
+            LLMClassifyFallback(
+                profile="fast",
+                provider="claude",
+                model="claude-sonnet-4-6",
+                prompt="classify this",
+            )
+
+    def test_profile_and_model_raises(self):
+        # FAILS RED: model is silently ignored; profile is silently ignored.
+        # Construction currently succeeds (uses required provider from Field(...)).
+        # After GREEN, profile+model without provider raises XOR error.
+        from fdsx.models.flow import LLMClassifyFallback
+
+        with pytest.raises(ValidationError, match=r"mutually exclusive|profile"):
+            LLMClassifyFallback(
+                profile="fast",
+                model="claude-sonnet-4-6",
+                prompt="classify this",
+            )
+
+
+# ---------------------------------------------------------------------------
+# FallbackEvent — new provider / model fields (RED)
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackEventFields:
+    """FallbackEvent must expose provider and model after the plan is implemented.
+
+    Both tests FAIL RED because the frozen dataclass has no such fields yet.
+    """
+
+    def test_event_exposes_provider_and_model(self):
+        # FAILS RED: frozen dataclass raises TypeError for unexpected kwargs.
+        from fdsx.core.extraction_fallback import FallbackEvent
+
+        event = FallbackEvent(
+            source="global",
+            outcome="recovered",
+            state_name="step1",
+            pattern="APPROVED|REJECTED",
+            provider="claude",
+            model="claude-sonnet-4-6",
+        )
+        assert event.provider == "claude"
+        assert event.model == "claude-sonnet-4-6"
+
+    def test_event_provider_model_default_none(self):
+        # FAILS RED: FallbackEvent has no provider/model attributes; AttributeError.
+        from fdsx.core.extraction_fallback import FallbackEvent
+
+        event = FallbackEvent(
+            source="global",
+            outcome="recovered",
+            state_name="step1",
+            pattern="APPROVED|REJECTED",
+        )
+        assert event.provider is None
+        assert event.model is None

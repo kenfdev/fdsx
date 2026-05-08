@@ -87,7 +87,11 @@ class TestGlobalFallbackAudit:
         stderr contains ↩ fallback(global) → recovered:"""
         recorder = _make_recorder()
         flow = _single_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         responses = [
             ProviderResult(exit_code=0, stdout="processing complete", stderr=""),
@@ -111,9 +115,9 @@ class TestGlobalFallbackAudit:
         )
 
         captured = capsys.readouterr()
-        assert "↩ fallback(global) → recovered:" in captured.err, (
-            f"Expected fallback line in stderr, got: {captured.err!r}"
-        )
+        assert (
+            "↩ fallback(global)[claude:claude-sonnet-4-6] → recovered:" in captured.err
+        ), f"Expected fallback line in stderr, got: {captured.err!r}"
 
 
 class TestWorkflowOverrideAudit:
@@ -121,7 +125,9 @@ class TestWorkflowOverrideAudit:
         """When extraction_fallback is set on the flow (workflow level), record has source=workflow."""
         recorder = _make_recorder()
         flow = _single_task_flow(
-            extraction_fallback=ExtractionFallback(provider="claude")
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
         )
         # No global config fallback; flow-level override fires
         config = FdsxConfig()
@@ -149,6 +155,7 @@ class TestPerRuleFallbackAudit:
             result_path="$.decision",
             fallback=LLMClassifyFallback(
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Please classify the following output as APPROVED or REJECTED.",
             ),
         )
@@ -173,7 +180,11 @@ class TestRejectedOutcomeAudit:
         """When fallback returns out-of-set value, outcome=rejected and no error_kind key."""
         recorder = _make_recorder()
         flow = _single_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         responses = [
             ProviderResult(exit_code=0, stdout="missed", stderr=""),
@@ -196,7 +207,11 @@ class TestTimeoutFallbackAudit:
         """When fallback provider times out, outcome=error, error_kind=timeout."""
         recorder = _make_recorder()
         flow = _single_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         stub_provider = MagicMock()
         stub_provider.execute.side_effect = [
@@ -231,7 +246,11 @@ class TestFallbackDisabledAudit:
         """extraction_fallback: false on the flow disables fallback; key absent from state."""
         recorder = _make_recorder()
         flow = _single_task_flow(extraction_fallback=False)
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         responses = [
             ProviderResult(exit_code=0, stdout="missed", stderr=""),
@@ -252,7 +271,11 @@ class TestAllStrategiesHitAudit:
         """When extraction succeeds on first try, fallback_invocations absent and no ↩ line in stderr."""
         recorder = _make_recorder()
         flow = _single_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="codex"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            )
+        )
 
         main_response = ProviderResult(
             exit_code=0, stdout="The decision is APPROVED", stderr=""
@@ -292,7 +315,11 @@ class TestSystemProviderMissAudit:
             start_at="classify",
             states={"classify": system_task},
         )
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         with patch("fdsx.providers.claude._run_subprocess") as mock_claude:
             compiled = compile_flow(flow, config=config, recorder=recorder)
@@ -337,7 +364,11 @@ class TestMapStateFallbackAudit:
             start_at="map_classify",
             states={"map_classify": map_state},
         )
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         # item 0: main task matches → no fallback
         # item 1: main task misses → fallback fires → REJECTED recovered
@@ -403,7 +434,11 @@ class TestParallelBranchFallbackAudit:
             start_at="parallel_classify",
             states={"parallel_classify": parallel_state},
         )
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="codex"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            )
+        )
 
         missed = ProviderResult(exit_code=0, stdout="no keyword here", stderr="")
         recovered = ProviderResult(exit_code=0, stdout="APPROVED", stderr="")

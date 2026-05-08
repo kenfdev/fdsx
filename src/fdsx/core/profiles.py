@@ -130,12 +130,20 @@ def _resolve_fallback_profile(
     if "profile" not in fallback:
         return errors
 
+    profile_name = fallback["profile"]
+
     fallback_errors = _resolve_profile_on_dict(
         fallback,
         f"{label}, extract.fallback",
         merged_profiles,
     )
     errors.extend(fallback_errors)
+
+    if not fallback_errors and "model" not in fallback:
+        errors.append(
+            f"profile '{profile_name}' used in {label}, extract.fallback must have both 'provider' and 'model'"
+        )
+
     return errors
 
 
@@ -166,6 +174,22 @@ def resolve_profiles_in_flow(
         return data, ["'profiles' must be a YAML mapping, not a list or scalar"]
 
     merged_profiles = merge_profiles(config_profiles, workflow_profiles)
+
+    # Validate flow-level extraction_fallback profile if present
+    flow_fallback = data.get("extraction_fallback")
+    if isinstance(flow_fallback, dict) and "profile" in flow_fallback:
+        profile_name = flow_fallback["profile"]
+        fb_errors = _resolve_profile_on_dict(
+            flow_fallback,
+            "flow extraction_fallback",
+            merged_profiles,
+        )
+        if not fb_errors and "model" not in flow_fallback:
+            fb_errors.append(
+                f"profile '{profile_name}' used in flow extraction_fallback"
+                f" must have both 'provider' and 'model'"
+            )
+        errors.extend(fb_errors)
 
     states = data.get("states", {})
     if not isinstance(states, dict):
@@ -243,7 +267,7 @@ def resolve_profiles_in_config(
     if profiles is None or not isinstance(profiles, dict):
         profiles = {}
 
-    for config_key in ("task_splitter", "workflow_selector"):
+    for config_key in ("task_splitter", "workflow_selector", "extraction_fallback"):
         config_item = data.get(config_key)
         if not isinstance(config_item, dict):
             continue
@@ -256,6 +280,10 @@ def resolve_profiles_in_config(
             f"config.{config_key}",
             profiles,
         )
+        if not config_errors and "model" not in config_item:
+            config_errors.append(
+                f"profile used in config.{config_key} must have both 'provider' and 'model'"
+            )
         errors.extend(config_errors)
 
     return data, errors

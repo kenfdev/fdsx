@@ -33,6 +33,8 @@ class FallbackEvent:
     error_kind: str | None = None
     branch_index: int | None = None
     iter_index: int | None = None
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,7 +136,7 @@ def execute_default_fallback(
 
     if config.provider is not None:
         provider_name = config.provider
-        model = None
+        model = config.model
     else:
         profile_name = cast(str, config.profile)
         profile_data = merged_profiles.get(profile_name)
@@ -145,6 +147,8 @@ def execute_default_fallback(
                 strategy_list=rule.strategy,
                 outcome="error",
                 error="profile_not_found",
+                provider=None,
+                model=None,
             )
             event = FallbackEvent(
                 source=resolved.source,
@@ -171,6 +175,8 @@ def execute_default_fallback(
             strategy_list=rule.strategy,
             outcome="error",
             error="provider_init_failed",
+            provider=provider_name,
+            model=model,
         )
         event = FallbackEvent(
             source=resolved.source,
@@ -178,6 +184,8 @@ def execute_default_fallback(
             state_name=state_name,
             pattern=rule.pattern,
             error_kind="provider_init_failed",
+            provider=provider_name,
+            model=model,
         )
         if on_fallback:
             on_fallback(event)
@@ -194,6 +202,8 @@ def execute_default_fallback(
             strategy_list=rule.strategy,
             outcome="error",
             error="timeout",
+            provider=provider_name,
+            model=model,
         )
         event = FallbackEvent(
             source=resolved.source,
@@ -201,6 +211,8 @@ def execute_default_fallback(
             state_name=state_name,
             pattern=rule.pattern,
             error_kind="timeout",
+            provider=provider_name,
+            model=model,
         )
         if on_fallback:
             on_fallback(event)
@@ -212,6 +224,8 @@ def execute_default_fallback(
             strategy_list=rule.strategy,
             outcome="error",
             error="provider_call_failed",
+            provider=provider_name,
+            model=model,
         )
         event = FallbackEvent(
             source=resolved.source,
@@ -219,6 +233,8 @@ def execute_default_fallback(
             state_name=state_name,
             pattern=rule.pattern,
             error_kind="provider_call_failed",
+            provider=provider_name,
+            model=model,
         )
         if on_fallback:
             on_fallback(event)
@@ -231,6 +247,8 @@ def execute_default_fallback(
             strategy_list=rule.strategy,
             outcome="error",
             error="non_zero_exit",
+            provider=provider_name,
+            model=model,
         )
         event = FallbackEvent(
             source=resolved.source,
@@ -238,6 +256,8 @@ def execute_default_fallback(
             state_name=state_name,
             pattern=rule.pattern,
             error_kind="non_zero_exit",
+            provider=provider_name,
+            model=model,
         )
         if on_fallback:
             on_fallback(event)
@@ -253,6 +273,8 @@ def execute_default_fallback(
             strategy_list=rule.strategy,
             outcome="rejected",
             reason="model_returned_none",
+            provider=provider_name,
+            model=model,
         )
         event = FallbackEvent(
             source=resolved.source,
@@ -260,6 +282,8 @@ def execute_default_fallback(
             state_name=state_name,
             pattern=rule.pattern,
             value_preview=llm_output,
+            provider=provider_name,
+            model=model,
         )
         if on_fallback:
             on_fallback(event)
@@ -275,6 +299,8 @@ def execute_default_fallback(
                     source=resolved.source,
                     strategy_list=rule.strategy,
                     outcome="recovered",
+                    provider=provider_name,
+                    model=model,
                 )
                 event = FallbackEvent(
                     source=resolved.source,
@@ -282,6 +308,8 @@ def execute_default_fallback(
                     state_name=state_name,
                     pattern=rule.pattern,
                     value_preview=keyword,
+                    provider=provider_name,
+                    model=model,
                 )
                 if on_fallback:
                     on_fallback(event)
@@ -291,6 +319,8 @@ def execute_default_fallback(
             source=resolved.source,
             strategy_list=rule.strategy,
             outcome="rejected",
+            provider=provider_name,
+            model=model,
         )
         event = FallbackEvent(
             source=resolved.source,
@@ -298,6 +328,8 @@ def execute_default_fallback(
             state_name=state_name,
             pattern=rule.pattern,
             value_preview=llm_output,
+            provider=provider_name,
+            model=model,
         )
         if on_fallback:
             on_fallback(event)
@@ -308,6 +340,8 @@ def execute_default_fallback(
         source=resolved.source,
         strategy_list=rule.strategy,
         outcome="recovered",
+        provider=provider_name,
+        model=model,
     )
     event = FallbackEvent(
         source=resolved.source,
@@ -315,6 +349,8 @@ def execute_default_fallback(
         state_name=state_name,
         pattern=rule.pattern,
         value_preview=llm_output,
+        provider=provider_name,
+        model=model,
     )
     if on_fallback:
         on_fallback(event)

@@ -100,6 +100,8 @@ def _create_task_node(
             outcome=event.outcome,
             value_preview=event.value_preview,
             error_kind=event.error_kind,
+            provider=event.provider,
+            model=event.model,
         )
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
