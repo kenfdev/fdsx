@@ -87,7 +87,11 @@ class TestGlobalDefaultFallback:
         """When all strategies miss and a global extraction_fallback is set, the
         LLM fallback is invoked and the recovered value is stored in result_path."""
         flow = _claude_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         # Call 1: main task — output has no keyword
         # Call 2: global default fallback — should return APPROVED
@@ -117,7 +121,11 @@ class TestSystemProviderGuard:
         that claude was never called.
         """
         flow = _system_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         with patch("fdsx.providers.claude._run_subprocess") as mock_claude:
             compiled = compile_flow(flow, config=config)
@@ -141,7 +149,11 @@ class TestOutOfSetResponse:
         workflow ultimately fails — proving the response was filtered, not skipped.
         """
         flow = _claude_task_flow()
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         # Call 1: main task misses keyword
         # Call 2: fallback returns MAYBE (outside APPROVED|REJECTED)
@@ -172,7 +184,11 @@ class TestStrategiesHit:
         fallback is not invoked at all."""
         flow = _claude_task_flow()
         # Use codex as fallback provider so we can mock it independently
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="codex"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            )
+        )
 
         main_task = ProviderResult(
             exit_code=0, stdout="The decision is APPROVED", stderr=""
@@ -205,11 +221,16 @@ class TestPerRuleFallbackWins:
             extra_extract_kwargs={
                 "fallback": LLMClassifyFallback(
                     provider="claude",
+                    model="claude-sonnet-4-6",
                     prompt="Classify as APPROVED or REJECTED: {output}",
                 )
             }
         )
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="codex"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            )
+        )
 
         # Call 1: main task misses keyword
         # Call 2: per-rule claude fallback returns APPROVED

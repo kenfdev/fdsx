@@ -68,7 +68,11 @@ def _flow(
 class TestDisableSuppressesGlobalDefault:
     def test_false_disables_config_fallback(self):
         flow = _flow(extraction_fallback=False)
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         with patch(
             "fdsx.providers.claude._run_subprocess",
@@ -92,10 +96,15 @@ class TestPerRuleStillFiresWhenDisabled:
             extraction_fallback=False,
             per_rule_fallback=LLMClassifyFallback(
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify as APPROVED or REJECTED: {output}",
             ),
         )
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="codex"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            )
+        )
 
         claude_responses = [_NO_MATCH, _APPROVED]
 
@@ -121,7 +130,11 @@ class TestPerRuleStillFiresWhenDisabled:
 
 class TestRemovingDisableRestoresInheritance:
     def test_toggling_disable_off_restores_global_default(self):
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         # Phase A — disabled: extraction fails
         with patch(

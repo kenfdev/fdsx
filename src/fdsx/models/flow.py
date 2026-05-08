@@ -10,12 +10,42 @@ class LLMClassifyFallback(BaseModel):
     """LLM-based classification fallback."""
 
     type: Literal["llm_classify"] = "llm_classify"
-    provider: str = Field(..., description="LLM provider")
+    provider: str | None = Field(default=None, description="LLM provider")
+    model: str | None = Field(default=None, description="Model name")
+    profile: str | None = Field(default=None, description="Provider profile name")
     prompt: str = Field(..., description="Classification prompt")
 
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_provider_xor_profile(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            has_provider = values.get("provider") is not None
+            has_model = values.get("model") is not None
+            has_profile = values.get("profile") is not None
+            if has_profile and (has_provider or has_model):
+                raise ValueError(
+                    "llm_classify fallback: profile and provider/model are mutually exclusive"
+                )
+            if not has_profile:
+                if has_provider and not has_model:
+                    raise ValueError(
+                        "llm_classify fallback: provider requires model; "
+                        "example: provider: claude, model: claude-sonnet-4-6"
+                    )
+                if has_model and not has_provider:
+                    raise ValueError("llm_classify fallback: model requires provider")
+                if not has_provider and not has_model:
+                    raise ValueError(
+                        "llm_classify fallback: exactly one of (provider + model) or profile must be set"
+                    )
+        return values
+
     @model_validator(mode="after")
-    def validate_provider(self) -> "LLMClassifyFallback":
-        validate_llm_provider(self.provider, "LLM classify fallback")
+    def validate_provider_name(self) -> "LLMClassifyFallback":
+        if self.provider is not None:
+            validate_llm_provider(self.provider, "LLM classify fallback")
         return self
 
 
@@ -23,6 +53,7 @@ class ExtractionFallback(BaseModel):
     """Global extraction fallback: retry extraction with a different provider or profile."""
 
     provider: str | None = Field(default=None)
+    model: str | None = Field(default=None)
     profile: str | None = Field(default=None)
     extra_instructions: str | None = Field(default=None)
 
@@ -33,15 +64,24 @@ class ExtractionFallback(BaseModel):
     def validate_provider_xor_profile(cls, values: Any) -> Any:
         if isinstance(values, dict):
             has_provider = values.get("provider") is not None
+            has_model = values.get("model") is not None
             has_profile = values.get("profile") is not None
-            if has_provider and has_profile:
+            if has_profile and (has_provider or has_model):
                 raise ValueError(
                     "provider and profile are mutually exclusive in ExtractionFallback"
                 )
-            if not has_provider and not has_profile:
-                raise ValueError(
-                    "exactly one of provider or profile must be set in ExtractionFallback"
-                )
+            if not has_profile:
+                if has_provider and not has_model:
+                    raise ValueError(
+                        "ExtractionFallback: provider requires model; "
+                        "example: provider: claude, model: claude-sonnet-4-6"
+                    )
+                if has_model and not has_provider:
+                    raise ValueError("ExtractionFallback: model requires provider")
+                if not has_provider and not has_model:
+                    raise ValueError(
+                        "exactly one of provider or profile must be set in ExtractionFallback"
+                    )
         return values
 
     @model_validator(mode="after")

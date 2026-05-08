@@ -360,6 +360,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )
@@ -385,6 +386,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )
@@ -410,6 +412,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )
@@ -445,6 +448,7 @@ class TestLLMFallback:
         fallback = LLMClassifyFallback(
             type="llm_classify",
             provider="claude",
+            model="claude-sonnet-4-6",
             prompt="Classify: {output}",
         )
 
@@ -467,6 +471,7 @@ class TestLLMFallback:
         fallback = LLMClassifyFallback(
             type="llm_classify",
             provider="claude",
+            model="claude-sonnet-4-6",
             prompt="Classify: {output}",
         )
 
@@ -491,6 +496,7 @@ class TestLLMFallback:
         fallback = LLMClassifyFallback(
             type="llm_classify",
             provider="claude",
+            model="claude-sonnet-4-6",
             prompt="Classify: {output}",
         )
 
@@ -516,6 +522,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )
@@ -538,6 +545,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )
@@ -562,6 +570,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )
@@ -598,6 +607,7 @@ class TestLLMFallback:
             fallback=LLMClassifyFallback(
                 type="llm_classify",
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             ),
         )

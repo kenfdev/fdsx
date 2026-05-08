@@ -324,7 +324,7 @@ def _execute_llm_fallback(
     """
     if provider_factory is None:
         return None
-    if fallback.provider == "system":
+    if not fallback.provider or fallback.provider == "system":
         return None  # system provider not allowed for LLM classification (defense-in-depth)
 
     _pattern_str = pattern or ""
@@ -338,6 +338,8 @@ def _execute_llm_fallback(
             outcome="error",
             error_kind="provider_init_failed",
             state_name=state_name,
+            provider=fallback.provider,
+            model=fallback.model,
         )
         if on_fallback:
             on_fallback(
@@ -347,6 +349,8 @@ def _execute_llm_fallback(
                     state_name=state_name,
                     pattern=_pattern_str,
                     error_kind="provider_init_failed",
+                    provider=fallback.provider,
+                    model=fallback.model,
                 )
             )
         return None
@@ -358,7 +362,7 @@ def _execute_llm_fallback(
 
         result: ProviderResult = provider.execute(
             prompt=prompt,
-            model=None,
+            model=fallback.model,
             timeout=None,
             output_callback=None,
         )
@@ -370,6 +374,8 @@ def _execute_llm_fallback(
                 outcome="error",
                 error_kind="non_zero_exit",
                 state_name=state_name,
+                provider=fallback.provider,
+                model=fallback.model,
             )
             if on_fallback:
                 on_fallback(
@@ -379,6 +385,8 @@ def _execute_llm_fallback(
                         state_name=state_name,
                         pattern=_pattern_str,
                         error_kind="non_zero_exit",
+                        provider=fallback.provider,
+                        model=fallback.model,
                     )
                 )
             return None
@@ -395,6 +403,8 @@ def _execute_llm_fallback(
                         outcome="recovered",
                         value_preview=keyword,
                         state_name=state_name,
+                        provider=fallback.provider,
+                        model=fallback.model,
                     )
                     if on_fallback:
                         on_fallback(
@@ -404,6 +414,8 @@ def _execute_llm_fallback(
                                 state_name=state_name,
                                 pattern=_pattern_str,
                                 value_preview=keyword,
+                                provider=fallback.provider,
+                                model=fallback.model,
                             )
                         )
                     return keyword
@@ -413,6 +425,8 @@ def _execute_llm_fallback(
                 outcome="rejected",
                 value_preview=llm_output,
                 state_name=state_name,
+                provider=fallback.provider,
+                model=fallback.model,
             )
             if on_fallback:
                 on_fallback(
@@ -422,6 +436,8 @@ def _execute_llm_fallback(
                         state_name=state_name,
                         pattern=_pattern_str,
                         value_preview=llm_output,
+                        provider=fallback.provider,
+                        model=fallback.model,
                     )
                 )
             return None
@@ -431,6 +447,8 @@ def _execute_llm_fallback(
             outcome="recovered",
             value_preview=llm_output,
             state_name=state_name,
+            provider=fallback.provider,
+            model=fallback.model,
         )
         if on_fallback:
             on_fallback(
@@ -440,6 +458,8 @@ def _execute_llm_fallback(
                     state_name=state_name,
                     pattern=_pattern_str,
                     value_preview=llm_output,
+                    provider=fallback.provider,
+                    model=fallback.model,
                 )
             )
         return llm_output
@@ -451,6 +471,8 @@ def _execute_llm_fallback(
             outcome="error",
             error_kind="provider_call_failed",
             state_name=state_name,
+            provider=fallback.provider,
+            model=fallback.model,
         )
         if on_fallback:
             on_fallback(
@@ -460,6 +482,8 @@ def _execute_llm_fallback(
                     state_name=state_name,
                     pattern=_pattern_str,
                     error_kind="provider_call_failed",
+                    provider=fallback.provider,
+                    model=fallback.model,
                 )
             )
 

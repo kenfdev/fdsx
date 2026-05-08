@@ -125,7 +125,8 @@ extract:
   result_path: $.decision
   fallback:                     # optional per-rule LLM classification fallback
     type: llm_classify
-    provider: claude            # or use profile: <name> (XOR with provider)
+    provider: claude            # or use profile: <name> (XOR with provider + model)
+    model: claude-sonnet-4-6
     prompt: "Classify as APPROVED or REJECTED"
 ```
 
@@ -142,7 +143,8 @@ When per-rule `fallback:` is not set, fdsx can fall back to a global extraction 
 ```yaml
 # In workflow YAML (flow level):
 extraction_fallback:
-  provider: claude              # or use profile: <name> (XOR with provider)
+  provider: claude              # or use profile: <name> (XOR with provider + model)
+  model: claude-sonnet-4-6
   extra_instructions: "Always return one of: APPROVED, REJECTED"
 
 # To disable inherited config-level fallback for this workflow:
@@ -177,13 +179,15 @@ states:
       result_path: "$.decision"
       fallback:                    # per-rule fallback fires normally despite workflow disable
         provider: claude
+        model: claude-sonnet-4-6
         prompt: "Classify as APPROVED or REJECTED: {output}"
     end: true
 ```
 
 `ExtractionFallback` fields:
-- `provider` — LLM provider (`claude`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`.
-- `profile` — named profile. XOR with `provider`. Exactly one of `provider` or `profile` must be set.
+- `provider` — LLM provider (`claude`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
+- `model` — model string passed to the provider binary. Required when `provider` is set.
+- `profile` — named profile. XOR with `provider` + `model`. Exactly one of `provider + model` or `profile` must be set.
 - `extra_instructions` — optional string appended to the recovery prompt.
 
 ## CLI Commands
@@ -386,6 +390,6 @@ Inside iterator states, `{item}` refers to the current array element. Use `{item
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
-- `extraction_fallback` at flow level must have exactly one of `provider` or `profile` set (XOR); `system` is forbidden as provider. Set to `false` to disable config-level inheritance.
+- `extraction_fallback` at flow level must have exactly one of `provider + model` or `profile` set (XOR); `provider` requires `model` and vice versa; `system` is forbidden as provider. Set to `false` to disable config-level inheritance.
 - `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, and `map` states; `pass` state `hooks` accepts all four keys (workflow-scope keys are silently ignored at runtime)
 - `on_run_start` and `on_run_end` are forbidden in flow YAML (`Flow.hooks`) and all state `hooks` blocks — they are only valid in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml` under the `run_hooks:` key

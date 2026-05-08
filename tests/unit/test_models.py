@@ -231,6 +231,7 @@ class TestLLMClassifyFallbackValidation:
             LLMClassifyFallback(
                 type="llm_classify",
                 provider="system",
+                model="claude-sonnet-4-6",
                 prompt="Classify: {output}",
             )
 

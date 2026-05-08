@@ -266,11 +266,13 @@ extract:
   result_path: string           # required — JSONPath for extracted value
   fallback?:                    # optional — per-rule LLM classification fallback
     type: "llm_classify"
-    provider: string            # required — claude|codex|opencode|gemini
+    provider?: string           # XOR with profile — claude|codex|opencode|gemini
+    model?: string              # required when provider is set
+    profile?: string            # XOR with provider+model
     prompt: string              # required — classification prompt
 ```
 
-The `fallback` field uses `LLMClassifyFallback` and supports `profile: <name>` (XOR with `provider`), resolved pre-validation. When using `profile`, the `provider` field is populated from the profile during resolution.
+The `fallback` field uses `LLMClassifyFallback` and supports `profile: <name>` (XOR with `provider + model`), resolved pre-validation. When using `profile`, the `provider` and `model` fields are populated from the profile during resolution. When using `provider` directly, `model` is required.
 
 ### Extraction Fallback Priority
 
@@ -292,11 +294,12 @@ Used at **flow level** (`Flow.extraction_fallback`) and in **config files** (`Fd
 ```yaml
 extraction_fallback:
   provider?: string             # XOR with profile — claude|codex|opencode|gemini (system forbidden)
-  profile?: string              # XOR with provider — resolved from profiles
+  model?: string                # required when provider is set
+  profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
 ```
 
-**Mutual exclusion:** exactly one of `provider` or `profile` must be set. Setting both or neither raises a validation error.
+**Mutual exclusion:** exactly one of `provider + model` or `profile` must be set. Setting both or neither raises a validation error.
 
 **At flow level**, the value may also be the literal `false` to explicitly disable any config-level fallback for the workflow:
 
@@ -305,7 +308,8 @@ extraction_fallback: false      # disables config-level extraction_fallback for 
 ```
 
 **Validation:**
-- `provider` and `profile` are mutually exclusive (XOR) — exactly one must be provided
+- `provider + model` and `profile` are mutually exclusive (XOR) — exactly one group must be provided
+- When `provider` is set, `model` is required; `provider` without `model` raises a validation error
 - `provider` must be one of the LLM providers (`claude`, `codex`, `opencode`, `gemini`); `system` is forbidden
 - Uses `extra="forbid"` — unknown keys cause validation errors
 

@@ -123,6 +123,8 @@ def display_fallback(
     outcome: str,
     value_preview: str | None = None,
     error_kind: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> None:
     state = _sanitize_output(state_name)
     source_safe = _sanitize_output(source)
@@ -133,7 +135,15 @@ def display_fallback(
         outcome_text = f"{outcome}: {preview}"
     else:
         outcome_text = outcome
-    print(f"[{state}] ↩ fallback({source_safe}) → {outcome_text}", file=sys.stderr)
+    provider_segment = (
+        f"[{_sanitize_spinner_text(provider)}:{_sanitize_spinner_text(model or '')}]"
+        if provider is not None
+        else ""
+    )
+    print(
+        f"[{state}] ↩ fallback({source_safe}){provider_segment} → {outcome_text}",
+        file=sys.stderr,
+    )
 
 
 def display_output_line(line: str) -> None:

@@ -163,6 +163,8 @@ def _create_branch_executor(
                 outcome=event.outcome,
                 value_preview=event.value_preview,
                 error_kind=event.error_kind,
+                provider=event.provider,
+                model=event.model,
             )
 
         on_esc = None

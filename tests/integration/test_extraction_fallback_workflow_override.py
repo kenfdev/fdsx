@@ -74,8 +74,16 @@ class TestWorkflowOverrideProvider:
         """When flow.extraction_fallback.provider = 'codex' and
         config.extraction_fallback.provider = 'claude', the codex subprocess is
         called for the fallback and claude is called only for the main task."""
-        flow = _flow(extraction_fallback=ExtractionFallback(provider="codex"))
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        flow = _flow(
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            )
+        )
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         # Call 1 (claude): main task — no keyword match
         # Call 1 (codex): fallback — returns APPROVED
@@ -111,7 +119,11 @@ class TestWorkflowOverrideProfile:
             extraction_fallback=ExtractionFallback(profile="fast-llm"),
             profiles={"fast-llm": {"provider": "codex", "model": _CODEX_MODEL}},
         )
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         claude_responses = [_NO_MATCH]
         codex_response = _APPROVED
@@ -141,7 +153,9 @@ class TestWorkflowOverrideProfile:
             profiles={
                 "shared-model": ProfileConfig(provider="codex", model=_CODEX_MODEL)
             },
-            extraction_fallback=ExtractionFallback(provider="claude"),
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            ),
         )
 
         claude_responses = [_NO_MATCH]
@@ -171,7 +185,9 @@ class TestWorkflowOverrideProfile:
         )
         config = FdsxConfig(
             profiles={"shared-model": ProfileConfig(provider="claude", model=_MODEL)},
-            extraction_fallback=ExtractionFallback(provider="claude"),
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            ),
         )
 
         # If flow profile wins (codex): claude called 1x (main task), codex called 1x
@@ -207,7 +223,9 @@ class TestWorkflowOverrideExtraInstructions:
         instructions = "Use formal language and return uppercase only"
         flow = _flow(
             extraction_fallback=ExtractionFallback(
-                provider="claude", extra_instructions=instructions
+                provider="claude",
+                model="claude-sonnet-4-6",
+                extra_instructions=instructions,
             )
         )
         config = FdsxConfig()
@@ -250,9 +268,12 @@ class TestPerRuleWinsOverWorkflowOverride:
         flow.extraction_fallback.provider = 'codex', the per-rule claude
         fallback is used and codex is never called."""
         flow = _flow(
-            extraction_fallback=ExtractionFallback(provider="codex"),
+            extraction_fallback=ExtractionFallback(
+                provider="codex", model="claude-sonnet-4-6"
+            ),
             per_rule_fallback=LLMClassifyFallback(
                 provider="claude",
+                model="claude-sonnet-4-6",
                 prompt="Classify as APPROVED or REJECTED: {output}",
             ),
         )
@@ -287,7 +308,11 @@ class TestNoOverrideFallsBackToGlobal:
         config.extraction_fallback.provider = 'claude', the config default
         fires and the recovered value is stored in result_path."""
         flow = _flow(extraction_fallback=None)
-        config = FdsxConfig(extraction_fallback=ExtractionFallback(provider="claude"))
+        config = FdsxConfig(
+            extraction_fallback=ExtractionFallback(
+                provider="claude", model="claude-sonnet-4-6"
+            )
+        )
 
         responses = [_NO_MATCH, _APPROVED]
 
