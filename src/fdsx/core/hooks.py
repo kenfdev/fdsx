@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from fdsx.core.config import RunHookConfig
 from fdsx.logging.recorder import FDSX_DIR_NAME, RUNS_DIR_NAME
-from fdsx.models.flow import HookConfig, HookEntry
+from fdsx.models.flow import HookConfig, HookEntry, WaitStateHookConfig
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ ENV_FLOW_NAME = "FDSX_FLOW_NAME"
 ENV_HOOKS = "FDSX_HOOKS"
 
 
-class HookAbortError(Exception):
+class HookAbortError(RuntimeError):
     """Raised when a hook with on_failure='abort' exits with a non-zero code."""
 
     def __init__(self, command: str, return_code: int) -> None:
@@ -58,7 +58,8 @@ def execute_hooks(
     data_path: Path,
     thread_id: str,
     flow_name: str,
-    event: Literal["on_state_start", "on_state_end"],
+    event: Literal["on_state_start", "on_state_end", "on_wait_start", "on_wait_end"],
+    extra_env: dict[str, str] | None = None,
 ) -> None:
     """Execute a flat list of hook commands in order.
 
@@ -88,6 +89,7 @@ def execute_hooks(
         ENV_THREAD_ID: thread_id,
         ENV_FLOW_NAME: flow_name,
         ENV_HOOKS: event,
+        **(extra_env or {}),
     }
 
     # Build positional arg suffix (safely quoted)
@@ -334,7 +336,7 @@ def collect_hooks(
     global_hooks: HookConfig | None,
     project_hooks: HookConfig | None,
     flow_hooks: HookConfig | None,
-    state_hooks: HookConfig | None,
+    state_hooks: HookConfig | WaitStateHookConfig | None,
 ) -> list[HookEntry]:
     """Collect and merge hooks from all configuration levels for a given event.
 
@@ -355,4 +357,35 @@ def collect_hooks(
     for hook_config in (global_hooks, project_hooks, flow_hooks, state_hooks):
         if hook_config is not None:
             result.extend(getattr(hook_config, event))
+    return result
+
+
+def collect_wait_hooks(
+    event: Literal["on_wait_start", "on_wait_end"],
+    *,
+    global_hooks: HookConfig | None,
+    project_hooks: HookConfig | None,
+    flow_hooks: HookConfig | None,
+    state_hooks: WaitStateHookConfig | None,
+) -> list[HookEntry]:
+    """Collect and merge wait hooks from all configuration levels.
+
+    Merges in order: global → project → flow → state.
+
+    Args:
+        event: "on_wait_start" or "on_wait_end".
+        global_hooks: Hook config from global ~/.config/fdsx/config.yaml.
+        project_hooks: Hook config from project .fdsx/config.yaml.
+        flow_hooks: Hook config from the flow definition.
+        state_hooks: Wait-specific hook config from the individual wait state.
+
+    Returns:
+        Concatenated list of HookEntry objects in global → project → flow → state order.
+    """
+    result: list[HookEntry] = []
+    for hook_config in (global_hooks, project_hooks, flow_hooks):
+        if hook_config is not None:
+            result.extend(getattr(hook_config, event, []))
+    if state_hooks is not None:
+        result.extend(getattr(state_hooks, event, []))
     return result

@@ -37,6 +37,8 @@ _HOOK_LIST_KEYS: frozenset[str] = frozenset(
         "on_workflow_end",
         "on_run_start",
         "on_run_end",
+        "on_wait_start",
+        "on_wait_end",
     }
 )
 

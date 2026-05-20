@@ -162,6 +162,12 @@ class HookConfig(BaseModel):
     on_workflow_end: list[HookEntry] = Field(
         default_factory=list, description="Hooks to run when the workflow ends"
     )
+    on_wait_start: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run before wait state suspends"
+    )
+    on_wait_end: list[HookEntry] = Field(
+        default_factory=list, description="Hooks to run after wait state resumes"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -266,6 +272,62 @@ class StateHookConfig(BaseModel):
                 "configuration, not in flow or state YAML."
             )
         return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_wait_hooks(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for key in ("on_wait_start", "on_wait_end"):
+                if key in data:
+                    raise ValueError(
+                        f"'{key}' is only valid on wait states, not on this state type"
+                    )
+        return data
+
+
+class WaitStateHookConfig(BaseModel):
+    """Hook configuration for wait states (includes on_wait_start / on_wait_end)."""
+
+    on_state_start: list[HookEntry] = Field(default_factory=list)
+    on_state_end: list[HookEntry] = Field(default_factory=list)
+    on_wait_start: list[HookEntry] = Field(default_factory=list)
+    on_wait_end: list[HookEntry] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_keys(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if "on_start" in values:
+            raise ValueError(
+                "Hook key 'on_start' has been renamed to 'on_state_start'. "
+                "Update the YAML file and retry."
+            )
+        if "on_complete" in values:
+            raise ValueError(
+                "Hook key 'on_complete' has been renamed to 'on_state_end'. "
+                "Update the YAML file and retry."
+            )
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_workflow_and_run_hooks(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        for key in ("on_workflow_start", "on_workflow_end"):
+            if key in data:
+                raise ValueError(
+                    f"Hook key '{key}' is only valid at flow/project/global scope, "
+                    "not in state blocks."
+                )
+        for key in ("on_run_start", "on_run_end"):
+            if key in data:
+                raise ValueError(
+                    f"Hook key '{key}' may only appear in global or project "
+                    "configuration, not in flow or state YAML."
+                )
+        return data
 
 
 class ChoiceRule(BaseModel):
@@ -612,7 +674,7 @@ class WaitState(BaseModel):
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
-    hooks: StateHookConfig | None = Field(
+    hooks: WaitStateHookConfig | None = Field(
         default=None, description="Hook configuration"
     )
     next: str | None = Field(

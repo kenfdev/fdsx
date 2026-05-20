@@ -1,5 +1,6 @@
 """Node factory functions for the compiler package."""
 
+import json
 import subprocess
 import time
 from collections.abc import Callable
@@ -10,6 +11,12 @@ import structlog
 from langgraph.types import interrupt
 
 from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
+from fdsx.core.hooks import (
+    INPUT_FILENAME,
+    OUTPUT_FILENAME,
+    execute_hooks,
+    write_hook_data,
+)
 from fdsx.core.variables import (
     _strip_reserved_keys,
     inject_builtin_vars,
@@ -24,6 +31,7 @@ from fdsx.models.flow import (
     ChoiceState,
     FailState,
     Flow,
+    HookEntry,
     PassState,
     TaskState,
     WaitState,
@@ -354,7 +362,10 @@ def _create_fail_node(
 
 
 def _create_wait_notify_node(
-    state_name: str, state: WaitState, recorder: Any = None
+    state_name: str,
+    state: WaitState,
+    recorder: Any = None,
+    on_wait_start_hooks: list[HookEntry] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the pre-interrupt notify node for a Wait state.
 
@@ -377,13 +388,41 @@ def _create_wait_notify_node(
             from fdsx.notify.webhook import send_notification
 
             send_notification(state.notify, state_dict)
+
+        if on_wait_start_hooks:
+            resolved_message = resolve_template(
+                state.message, inject_builtin_vars(state_dict)
+            )
+            data_path = write_hook_data(
+                state_dict,
+                state_name=state_name,
+                filename=INPUT_FILENAME,
+                thread_id=recorder.thread_id if recorder is not None else "",
+            )
+            execute_hooks(
+                on_wait_start_hooks,
+                state_name=state_name,
+                status="starting",
+                data_path=data_path,
+                thread_id=recorder.thread_id if recorder is not None else "",
+                flow_name=recorder.flow_name if recorder is not None else "",
+                event="on_wait_start",
+                extra_env={
+                    "FDSX_WAIT_MESSAGE": resolved_message,
+                    "FDSX_WAIT_CHOICES": json.dumps(state.choices),
+                },
+            )
+
         return {"_state_iterations": iters}
 
     return node
 
 
 def _create_wait_interrupt_node(
-    state_name: str, state: WaitState, recorder: Any = None
+    state_name: str,
+    state: WaitState,
+    recorder: Any = None,
+    on_wait_end_hooks: list[HookEntry] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the interrupt node for a Wait state.
 
@@ -406,6 +445,24 @@ def _create_wait_interrupt_node(
         )
 
         partial: dict[str, Any] = set_jsonpath(state.result_path, {}, user_selection)
+
+        if on_wait_end_hooks:
+            data_path = write_hook_data(
+                {**state_dict, **partial},
+                state_name=state_name,
+                filename=OUTPUT_FILENAME,
+                thread_id=recorder.thread_id if recorder is not None else "",
+            )
+            execute_hooks(
+                on_wait_end_hooks,
+                state_name=state_name,
+                status="completed",
+                data_path=data_path,
+                thread_id=recorder.thread_id if recorder is not None else "",
+                flow_name=recorder.flow_name if recorder is not None else "",
+                event="on_wait_end",
+                extra_env={"FDSX_WAIT_SELECTION": str(user_selection)},
+            )
 
         if recorder is not None:
             recorder.record_state_complete(

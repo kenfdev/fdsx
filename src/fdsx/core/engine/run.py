@@ -326,6 +326,8 @@ def run_flow(
         display_completion_summary(
             flow.name, _calc_elapsed(recorder), failed_state_name, error_message
         )
+        if isinstance(e, HookAbortError):
+            raise
         raise RuntimeError(f"Flow execution failed: {e}") from e
     finally:
         if checkpoint_manager is not None:
