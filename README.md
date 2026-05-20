@@ -15,11 +15,12 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Parallel execution with branch aggregation
 - Map state for iterating over arrays with sub-workflows
 - Persistent batch task processing with crash-resilient resume
-- Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
+- Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, Cursor, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
-- Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end) at flow and state level
+- Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end) at global, project, flow, and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
+- Global and per-flow extraction fallback and retry escalation
 - Workflow auto-selection via LLM-based matching
 
 ## Installation
@@ -86,7 +87,7 @@ max_loop: 10                    # (int, default: 10) max times any state can be 
 # Extra fields beyond provider/model are passed as provider_options.
 profiles:
   smarty:
-    provider: claude            # (string, REQUIRED) one of: claude, codex, opencode, gemini
+    provider: claude            # (string, REQUIRED) one of: claude, codex, opencode, gemini, cursor
     model: claude-opus-4-6      # (string, REQUIRED) model name
   doer:
     provider: opencode
@@ -117,6 +118,27 @@ hooks:
     - command: "echo 'Workflow done'"
       on_failure: warn
 
+# --- Per-flow extraction fallback (optional) ---
+# Overrides the global config-level extraction_fallback for this workflow.
+# Set to false to disable an inherited global fallback.
+extraction_fallback:
+  provider: claude                      # (string, REQUIRED*) LLM provider
+  model: claude-sonnet-4-6             # (string, REQUIRED when provider is set)
+  # profile: smarty                    # (string, optional) mutually exclusive with provider/model
+  extra_instructions: "..."            # (string, optional) appended to the fallback prompt
+# extraction_fallback: false           # set false to disable inherited global config fallback
+
+# --- Per-flow retry escalation (optional) ---
+# When a task exhausts its retries, substitute a different provider/model.
+# Overrides the global config-level retry_escalation for this workflow.
+# Set to false to disable an inherited global escalation.
+retry_escalation:
+  provider: claude                      # (string, REQUIRED) escalation provider
+  model: claude-opus-4-6               # (string, REQUIRED) escalation model
+  provider_options:                     # (map, optional) extra options passed to the escalation provider
+    permission_mode: bypassPermissions
+# retry_escalation: false              # set false to disable inherited global config escalation
+
 # ============================================================
 # States — the execution graph
 # ============================================================
@@ -130,7 +152,7 @@ states:
 
     # --- Provider (pick ONE approach) ---
     # Approach A: explicit provider + model
-    provider: claude                    # (string, REQUIRED*) one of: claude, codex, opencode, gemini, system
+    provider: claude                    # (string, REQUIRED*) one of: claude, codex, opencode, gemini, cursor, system
     model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
     # Approach B: profile reference (mutually exclusive with provider/model)
     # profile: smarty
@@ -158,9 +180,10 @@ states:
       # --- LLM fallback when extraction strategies all fail (optional) ---
       fallback:
         type: llm_classify              # (literal, REQUIRED) only "llm_classify" supported
-        provider: claude                # (string, REQUIRED) LLM provider for classification
+        provider: claude                # (string, REQUIRED when not using profile) LLM provider for classification
+        model: claude-sonnet-4-6        # (string, REQUIRED when provider is set)
         prompt: "Classify as APPROVED or NEEDS_FIX"  # (string, REQUIRED)
-        # Alternatively, use a profile reference (mutually exclusive with provider):
+        # Alternatively, use a profile reference (mutually exclusive with provider/model):
         # profile: smarty
 
     # --- Execution control ---
@@ -325,6 +348,17 @@ states:
     hooks:                              # (optional) on_state_start / on_state_end only
     next: post_approval                 # next / end — same rules as task
     # end: true
+
+  # ----------------------------------------------------------
+  # fail — terminate the flow with an error
+  # ----------------------------------------------------------
+  fatal_error:
+    type: fail                          # (REQUIRED) literal "fail"
+    error: "TaskFailed"                 # (string, REQUIRED, min 1 char) error name
+    cause: "Task could not complete."   # (string, REQUIRED, min 1 char) error cause description
+    hooks:                              # (optional) on_state_start / on_state_end only
+                                        # Note: fail has no next, end, or max_iterations —
+                                        # it terminates the flow immediately on entry
 ```
 
 ### Hook Environment
@@ -340,7 +374,7 @@ Every hook command receives context via **environment variables** and **position
 | `FDSX_DATA_PATH` | Path to the state data JSON file | `.fdsx/runs/<thread_id>/hooks/plan/input.json` |
 | `FDSX_THREAD_ID` | Current run thread ID | `abc123` |
 | `FDSX_FLOW_NAME` | Name of the flow | `MyWorkflow` |
-| `FDSX_HOOKS` | Lifecycle event name that triggered the hook | `on_state_start`, `on_workflow_end` |
+| `FDSX_HOOKS` | Lifecycle event name that triggered the hook | `on_state_start`, `on_workflow_end`, `on_run_start`, `on_run_end` |
 
 **Positional arguments** (appended to your command):
 
@@ -371,7 +405,10 @@ hooks:
 
 **Merge order:** Hooks from multiple levels are concatenated (not replaced) in this order: global config → project config → flow → state. All hooks at every level run.
 
-**Hook scope:** `on_state_start` and `on_state_end` are valid at all levels (global config, project config, flow, and individual states). `on_workflow_start` and `on_workflow_end` are only valid at global config, project config, and flow scope — placing them inside a state's `hooks:` block will raise a validation error (the one exception is `pass` states, which accept all hook keys).
+**Hook scope:**
+- `on_state_start` and `on_state_end` are valid at all levels (global config, project config, flow, and individual states).
+- `on_workflow_start` and `on_workflow_end` are only valid at global config, project config, and flow scope — placing them inside a state's `hooks:` block will raise a validation error (the one exception is `pass` states, which accept all hook keys).
+- `on_run_start` and `on_run_end` fire once per CLI invocation (wrapping the entire `fdsx run` or `fdsx resume` call). They are only valid in global config (`~/.config/fdsx/config.yaml`) and project config (`.fdsx/config.yaml`) under the `run_hooks:` key — placing them in flow or state YAML will raise a validation error.
 
 ### Variable References
 
@@ -441,7 +478,7 @@ auto_workflow: false              # (bool, default: false) skip interactive conf
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
   profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude") one of: claude, codex, opencode, gemini
+  # provider: claude              # (string, default: "claude") one of: claude, codex, opencode, gemini, cursor
   # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.
@@ -453,6 +490,24 @@ task_splitter:
   # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
   extra_instructions: |           # (string, optional) appended to the split prompt
     Group related tasks together.
+
+# --- Global extraction fallback (optional) ---
+# Applied when extraction strategies all fail and no per-rule fallback is configured.
+# Can be overridden per workflow via the flow-level extraction_fallback field.
+extraction_fallback:
+  provider: claude                # (string, REQUIRED when not using profile)
+  model: claude-sonnet-4-6        # (string, REQUIRED when provider is set)
+  # profile: smarty               # (string, optional) mutually exclusive with provider/model
+  extra_instructions: "..."       # (string, optional)
+
+# --- Global retry escalation (optional) ---
+# When a task exhausts its retries, substitute a different provider/model.
+# Can be overridden per workflow via the flow-level retry_escalation field.
+retry_escalation:
+  provider: claude                # (string, REQUIRED) escalation provider
+  model: claude-opus-4-6          # (string, REQUIRED) escalation model
+  provider_options:               # (map, optional) extra options for the escalation provider
+    permission_mode: bypassPermissions
 
 # --- Provider-specific defaults (optional) ---
 # Applied to all workflows using that provider.
@@ -492,6 +547,12 @@ providers:
     policy: []                           # (list of strings, default: []) policy files to apply
     inactivity_timeout: 600              # (int, optional)
 
+  cursor:
+    force: false                         # (bool, default: false)
+    sandbox: "enabled"                   # (string, optional) one of: enabled, disabled
+    approve_mcps: false                  # (bool, default: false)
+    inactivity_timeout: 600              # (int, optional)
+
 # --- Global hooks (optional) ---
 # Merged with flow-level hooks (config hooks run first).
 hooks:
@@ -506,6 +567,18 @@ hooks:
       on_failure: warn
   on_workflow_end:
     - command: "echo 'global workflow done'"
+      on_failure: warn
+
+# --- Run-level hooks (optional) ---
+# Fire once per CLI invocation (once per `fdsx run` or `fdsx resume` call),
+# regardless of how many workflows or tasks are executed inside that invocation.
+# Only valid here (global/project config) — not in flow or state YAML.
+run_hooks:
+  on_run_start:
+    - command: "echo 'run starting'"
+      on_failure: warn
+  on_run_end:
+    - command: "echo 'run done'"
       on_failure: warn
 ```
 
