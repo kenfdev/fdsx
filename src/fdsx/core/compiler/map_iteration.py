@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
+    _strip_reserved_keys,
+    inject_builtin_vars,
     resolve_jsonpath,
     resolve_template,
     resolve_template_shell_safe,
@@ -162,7 +164,7 @@ def _create_map_node(
                     0,
                     0,
                 )
-            return partial
+            return _strip_reserved_keys(partial)
 
         results: list[Any] = []
         n_failed = 0
@@ -193,11 +195,12 @@ def _create_map_node(
                     state_name=f"{state_name}.{iter_state.name}",
                 )
 
+                iter_vars_ctx = inject_builtin_vars(iter_context)
                 resolved_prompt = resolve_template(
-                    iter_state.prompt_template or "", iter_context
+                    iter_state.prompt_template or "", iter_vars_ctx
                 )
                 resolved_command = resolve_template_shell_safe(
-                    iter_state.command or "", iter_context
+                    iter_state.command or "", iter_vars_ctx
                 )
 
                 effective_options = dict(merged_options) if merged_options else None
@@ -205,7 +208,7 @@ def _create_map_node(
                     for key in ("system_prompt", "append_system_prompt"):
                         if effective_options.get(key):
                             effective_options[key] = resolve_template(
-                                effective_options[key], iter_context
+                                effective_options[key], iter_vars_ctx
                             )
                 provider = get_provider(iter_state.provider, effective_options)
 
@@ -457,6 +460,6 @@ def _create_map_node(
                 f"Map state '{state_name}': {n_failed} of {len(items)} iterations failed"
             )
 
-        return partial
+        return _strip_reserved_keys(partial)
 
     return node

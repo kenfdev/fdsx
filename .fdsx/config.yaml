@@ -11,8 +11,8 @@ profiles:
     provider: codex
     model: gpt-5.5
   generalist:
-    provider: opencode
-    model: opencode-go/minimax-m2.7
+    provider: claude
+    model: claude-sonnet-4-6
   behemoth:
     provider: claude
     model: claude-haiku-4-5
@@ -29,7 +29,7 @@ task_splitter:
     The smallest valid task is: write test + implement + verify.
     A single task does all three. It must not be smaller than this.
 workflow_selector:
-  profile: generalist
+  profile: smarty
 workflows_dir: .fdsx/workflows
 auto_workflow: false
 providers:

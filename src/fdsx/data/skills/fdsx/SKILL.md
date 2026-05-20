@@ -113,7 +113,7 @@ prompt_template: "Review this code: {implementation}"
 
 Variables resolve from `$.results.<state_name>.output` or from `--input` CLI arguments. Use `result_path: $.foo` to store a state's output at `$.foo`.
 
-Global variables automatically available in every state: `{task}` and `{source}` (injected at runtime for batch execution).
+Global variables automatically available in every state: `{task}` and `{source}` (injected at runtime for batch execution), and `{run_path}` (injected in all execution modes; resolves to the absolute path of the current run directory, e.g. `.fdsx/runs/<thread-id>`).
 
 ## Extraction
 

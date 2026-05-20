@@ -11,7 +11,7 @@ from fdsx.models.flow import Branch, Flow, ParallelState, State
 RESULT_FILE_DATA_DIR = "data"
 
 # Global variables automatically available in every state (injected at runtime by the runner)
-GLOBAL_TASK_VARS: set[str] = {"task", "source"}
+GLOBAL_TASK_VARS: set[str] = {"task", "source", "run_path"}
 
 
 def write_result_to_file(varname: str, value: Any, run_dir: Path) -> str:
@@ -77,6 +77,23 @@ def resolve_template_shell_safe(template: str, variables: dict[str, Any]) -> str
         return shlex.quote(str(value))
 
     return pattern.sub(replace_match, template)
+
+
+def inject_builtin_vars(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of state_dict with run_path derived from _meta.run_dir.
+
+    Always overrides any existing run_path to prevent user or state-result spoofing.
+    Returns the original dict unchanged if _meta.run_dir is absent.
+    """
+    run_dir = state_dict.get("_meta", {}).get("run_dir", "")
+    if not run_dir:
+        return state_dict
+    return {**state_dict, "run_path": str(run_dir).rstrip("/")}
+
+
+def _strip_reserved_keys(partial: dict[str, Any]) -> dict[str, Any]:
+    """Remove internal engine keys from a node's output partial."""
+    return {k: v for k, v in partial.items() if k != "_meta"}
 
 
 def resolve_jsonpath(path: str, data: dict[str, Any]) -> Any:
