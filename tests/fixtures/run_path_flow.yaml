@@ -1,0 +1,16 @@
+name: Run Path File Handoff Flow
+description: Two-state flow that writes and reads a file via {run_path}
+start_at: write
+states:
+  write:
+    type: task
+    provider: system
+    command: "mkdir -p {run_path} && printf 'hello' > {run_path}/artifact.txt && echo {run_path}"
+    result_path: $.write_path
+    next: read
+  read:
+    type: task
+    provider: system
+    command: "cat {run_path}/artifact.txt"
+    result_path: $.content
+    end: true

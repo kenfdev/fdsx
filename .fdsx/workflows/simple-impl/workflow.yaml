@@ -24,6 +24,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is a planning agent's output. It was supposed to end with a routing tag but did not.
 
@@ -64,6 +65,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is a TDD test-implementer agent's output. It was supposed to end with a routing tag but did not.
 
@@ -138,6 +140,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is an apply-feedback agent's output. It was supposed to end with a routing tag but did not.
 
@@ -178,6 +181,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is an implementer agent's output. It was supposed to end with a routing tag but did not.
 
@@ -218,6 +222,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is a code-review agent's output. It was supposed to end with a verdict but did not.
 
@@ -258,6 +263,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is a replan agent's output. It was supposed to end with a routing tag but did not.
 
@@ -299,6 +305,7 @@ states:
       fallback:
         type: llm_classify
         provider: claude
+        model: claude-haiku-4-5-20251001
         prompt: |
           The text below is a fix agent's output. It was supposed to end with a routing tag but did not.
 

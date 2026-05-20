@@ -155,7 +155,8 @@ def run_flow(
 
     if inputs:
         for key, value in inputs.items():
-            initial_state[key] = value
+            if key != "_meta":
+                initial_state[key] = value
 
     parallel_extra = sum(
         len(s.branches) + 1

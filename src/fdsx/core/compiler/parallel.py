@@ -10,6 +10,8 @@ from langgraph.types import Send
 
 from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
+    _strip_reserved_keys,
+    inject_builtin_vars,
     resolve_template,
     resolve_template_shell_safe,
     set_jsonpath,
@@ -101,8 +103,9 @@ def _create_branch_executor(
             model=branch.model,
         )
 
-        resolved_prompt = resolve_template(branch.prompt_template or "", state_dict)
-        resolved_command = resolve_template_shell_safe(branch.command or "", state_dict)
+        vars_ctx = inject_builtin_vars(state_dict)
+        resolved_prompt = resolve_template(branch.prompt_template or "", vars_ctx)
+        resolved_command = resolve_template_shell_safe(branch.command or "", vars_ctx)
 
         merged_options = _merge_provider_options(
             config,
@@ -116,7 +119,7 @@ def _create_branch_executor(
             for key in ("system_prompt", "append_system_prompt"):
                 if effective_options.get(key):
                     effective_options[key] = resolve_template(
-                        effective_options[key], state_dict
+                        effective_options[key], vars_ctx
                     )
         provider = get_provider(branch.provider, effective_options)
 
@@ -259,7 +262,7 @@ def _create_branch_executor(
                 branch.extract.result_path, branch_result, extracted
             )
 
-        return {f"_br_{state_name}": [branch_result]}
+        return _strip_reserved_keys({f"_br_{state_name}": [branch_result]})
 
     return node
 
@@ -400,6 +403,6 @@ def _create_collector_node(
         # The custom _parallel_branch_reducer treats [] as a reset signal.
         partial[f"_br_{state_name}"] = []
 
-        return partial
+        return _strip_reserved_keys(partial)
 
     return node

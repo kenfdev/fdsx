@@ -11,6 +11,8 @@ from langgraph.types import interrupt
 
 from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
+    _strip_reserved_keys,
+    inject_builtin_vars,
     resolve_template,
     resolve_template_shell_safe,
     set_jsonpath,
@@ -119,15 +121,16 @@ def _create_task_node(
         if recorder is not None:
             recorder.record_state_start(state_name, "task")
 
-        resolved_prompt = resolve_template(state.prompt_template or "", state_dict)
-        resolved_command = resolve_template_shell_safe(state.command or "", state_dict)
+        vars_ctx = inject_builtin_vars(state_dict)
+        resolved_prompt = resolve_template(state.prompt_template or "", vars_ctx)
+        resolved_command = resolve_template_shell_safe(state.command or "", vars_ctx)
 
         effective_options = dict(merged_options) if merged_options else None
         if effective_options:
             for key in ("system_prompt", "append_system_prompt"):
                 if effective_options.get(key):
                     effective_options[key] = resolve_template(
-                        effective_options[key], state_dict
+                        effective_options[key], vars_ctx
                     )
         provider = get_provider(state.provider, effective_options)
 
@@ -228,7 +231,7 @@ def _create_task_node(
             )
 
         partial["_state_iterations"] = iters
-        return partial
+        return _strip_reserved_keys(partial)
 
     return node
 
@@ -271,7 +274,7 @@ def _create_pass_node(
         if state.parameters:
             for target, source in state.parameters.items():
                 if isinstance(source, str):
-                    value = resolve_template(source, state_dict)
+                    value = resolve_template(source, inject_builtin_vars(state_dict))
                 else:
                     value = source
                 state_dict = set_jsonpath(
@@ -298,7 +301,7 @@ def _create_pass_node(
             recorder.record_state_complete(state_name, "success", "", variables_set)
 
         partial["_state_iterations"] = iters
-        return partial
+        return _strip_reserved_keys(partial)
 
     return node
 
@@ -322,8 +325,9 @@ def _create_fail_node(
         if recorder is not None:
             recorder.record_state_start(state_name, "fail")
 
-        resolved_error = resolve_template(state.error, state_dict)
-        resolved_cause = resolve_template(state.cause, state_dict)
+        vars_ctx = inject_builtin_vars(state_dict)
+        resolved_error = resolve_template(state.error, vars_ctx)
+        resolved_cause = resolve_template(state.cause, vars_ctx)
 
         log.error(
             "fail_state_entered",
@@ -389,7 +393,9 @@ def _create_wait_interrupt_node(
     """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
-        resolved_message = resolve_template(state.message, state_dict)
+        resolved_message = resolve_template(
+            state.message, inject_builtin_vars(state_dict)
+        )
 
         user_selection = interrupt(
             {
@@ -410,6 +416,6 @@ def _create_wait_interrupt_node(
                 state_type="wait",
             )
 
-        return partial
+        return _strip_reserved_keys(partial)
 
     return node

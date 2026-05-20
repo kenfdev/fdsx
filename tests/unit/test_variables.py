@@ -1033,3 +1033,77 @@ class TestFailStateVariableAnalysis:
         )
         errors = analyze_variable_references(flow)
         assert len(errors) == 0
+
+
+class TestInjectBuiltinVars:
+    """U007–U010: inject_builtin_vars derives run_path from _meta.run_dir."""
+
+    def test_basic_injects_run_path_from_meta(self):
+        """U007: state dict with _meta.run_dir produces run_path at the top level."""
+        from fdsx.core.variables import inject_builtin_vars
+
+        state = {"_meta": {"run_dir": "/tmp/runs/abc"}, "other": "value"}
+        result = inject_builtin_vars(state)
+        assert result["run_path"] == "/tmp/runs/abc"
+
+    def test_strips_trailing_slash(self):
+        """U008: trailing slash in _meta.run_dir is removed from run_path."""
+        from fdsx.core.variables import inject_builtin_vars
+
+        state = {"_meta": {"run_dir": "/tmp/runs/abc/"}}
+        result = inject_builtin_vars(state)
+        assert result["run_path"] == "/tmp/runs/abc"
+
+    def test_missing_meta_returns_unchanged(self):
+        """U009: absent _meta key → no run_path injected, original dict returned."""
+        from fdsx.core.variables import inject_builtin_vars
+
+        state = {"other": "value"}
+        result = inject_builtin_vars(state)
+        assert "run_path" not in result
+
+    def test_overrides_existing_run_path(self):
+        """U010: existing top-level run_path is overwritten by _meta.run_dir value."""
+        from fdsx.core.variables import inject_builtin_vars
+
+        state = {"_meta": {"run_dir": "/tmp/runs/abc"}, "run_path": "user-value"}
+        result = inject_builtin_vars(state)
+        assert result["run_path"] == "/tmp/runs/abc"
+
+    def test_does_not_mutate_original_dict(self):
+        """inject_builtin_vars must return a new dict, not modify the input."""
+        from fdsx.core.variables import inject_builtin_vars
+
+        state = {"_meta": {"run_dir": "/tmp/runs/abc"}}
+        inject_builtin_vars(state)
+        assert "run_path" not in state
+
+
+class TestAnalyzeVariableReferencesRunPath:
+    """U011: static analysis accepts {run_path} without generating errors."""
+
+    def test_run_path_in_non_start_state_produces_no_error(self):
+        """U011: {run_path} in a non-start state is not flagged as an undefined variable."""
+        flow = Flow(
+            name="Run Path Var Flow",
+            description="Test flow for run_path static analysis",
+            start_at="start",
+            states={
+                "start": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    next="use_path",
+                ),
+                "use_path": TaskState(
+                    type="task",
+                    provider="system",
+                    command="cat {run_path}/artifact.txt",
+                    result_path="$.content",
+                    end=True,
+                ),
+            },
+        )
+        errors = analyze_variable_references(flow)
+        assert errors == [], f"Unexpected errors: {errors}"
