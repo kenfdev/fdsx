@@ -1,10 +1,9 @@
 """Integration tests for {run_path} global template variable."""
 
-import yaml
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
+import yaml
 
 from fdsx.core.engine import run_flow
 from fdsx.logging.recorder import RUNS_DIR_NAME

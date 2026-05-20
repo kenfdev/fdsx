@@ -1036,7 +1036,7 @@ class TestFailStateVariableAnalysis:
 
 
 class TestInjectBuiltinVars:
-    """U007–U010: inject_builtin_vars derives run_path from _meta.run_dir."""
+    """U007-U010: inject_builtin_vars derives run_path from _meta.run_dir."""
 
     def test_basic_injects_run_path_from_meta(self):
         """U007: state dict with _meta.run_dir produces run_path at the top level."""
