@@ -216,11 +216,11 @@ When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`,
 
 ## Hooks
 
-Shell commands that run at lifecycle events. There are three scopes with different behaviors:
+Shell commands that run at lifecycle events. There are four scopes with different behaviors:
 
 ### State-scope hooks (`on_state_start`, `on_state_end`)
 
-Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks on `task`, `choice`, `parallel`, `wait`, and `map` states **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start` or `on_workflow_end` in those state blocks raises a validation error. **Exception:** `pass` state `hooks` blocks use the full `HookConfig` and accept all four keys (workflow-scope keys are silently ignored at runtime).
+Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks on `task`, `choice`, `parallel`, `map`, and `fail` states **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start`, `on_workflow_end`, `on_wait_start`, or `on_wait_end` in those state blocks raises a validation error. **Exception:** `pass` state `hooks` blocks use the full `HookConfig` and accept all six keys (workflow-scope and wait-scope keys are silently ignored at runtime). **Wait state exception:** `wait` state `hooks` blocks use `WaitStateHookConfig`, which accepts `on_state_start`, `on_state_end`, `on_wait_start`, and `on_wait_end` — but not `on_workflow_start` or `on_workflow_end`.
 
 ```yaml
 hooks:
@@ -243,6 +243,44 @@ Each state-scope hook command receives:
 Hook data files are written to `.fdsx/runs/<thread-id>/hooks/<state-name>/input.json` (before execution) and `output.json` (after execution).
 
 State-scope hooks respect `on_failure: abort` — a non-zero exit with `abort` policy raises an error and stops the workflow. `warn` (default) logs a warning and continues.
+
+### Wait-scope hooks (`on_wait_start`, `on_wait_end`)
+
+Run when a `wait` state suspends (before prompting the user) and resumes (after the user provides input). Can be defined at flow level, config level, or in a `wait` state's `hooks` block.
+
+```yaml
+states:
+  approval:
+    type: wait
+    mode: prompt
+    message: "Approve this change?"
+    choices: [APPROVED, REJECTED]
+    result_path: $.decision
+    hooks:
+      on_wait_start:
+        - command: "notify.sh 'Waiting for approval'"
+          on_failure: warn
+      on_wait_end:
+        - command: "notify.sh 'Decision received'"
+    next: process
+```
+
+**`on_wait_start`** fires before the wait state suspends and the user prompt is displayed.
+
+**`on_wait_end`** fires after the user provides input and the wait state resumes execution.
+
+Each wait-scope hook command receives the same positional arguments and environment variables as state-scope hooks:
+
+- **Positional arguments:** `$1=state_name`, `$2=status`, `$3=data_path`
+- **Environment variables:** `FDSX_STATE_NAME`, `FDSX_STATUS`, `FDSX_DATA_PATH`, `FDSX_THREAD_ID`, `FDSX_FLOW_NAME`, `FDSX_HOOKS`
+
+`FDSX_STATUS` values: `starting` (on_wait_start), `completed` or `failed` (on_wait_end).
+
+`FDSX_HOOKS` contains `on_wait_start` or `on_wait_end`.
+
+Wait-scope hooks respect `on_failure: abort` — a non-zero exit with `abort` policy raises an error and stops the workflow. `warn` (default) logs a warning and continues.
+
+Hook merging: global → project → flow → state (same order as state-scope hooks).
 
 ### Workflow-scope hooks (`on_workflow_start`, `on_workflow_end`)
 
@@ -318,6 +356,10 @@ hooks:                          # global hooks applied to all flows
     - command: "echo starting"
   on_workflow_end:
     - command: "notify.sh"
+  on_wait_start:
+    - command: "echo wait starting"
+  on_wait_end:
+    - command: "echo wait ended"
 run_hooks:                      # run-level hooks fired once per CLI invocation
   on_run_start:
     - command: "echo CLI starting"
@@ -335,7 +377,7 @@ Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with
 
 `retry_escalation` at config level sets the project-wide default escalation target used when a workflow AI task exhausts its primary-provider retries. Individual workflows can override it with their own `retry_escalation:` field (full `provider` + `model` object) or opt out entirely with `retry_escalation: false`. When a workflow omits `retry_escalation`, the config-level value is inherited automatically. When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.
 
-`hooks` at config level supports all four lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`) and are prepended to flow-level and state-level hooks.
+`hooks` at config level supports all six lifecycle keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_wait_start`, `on_wait_end`) and are prepended to flow-level and state-level hooks.
 
 `run_hooks` is a separate key from `hooks` and only supports `on_run_start` and `on_run_end`.
 
@@ -422,5 +464,6 @@ states:
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
 - Map iterator states must all have `type: task` and unique `name` fields
 - `extraction_fallback` at flow level must have exactly one of `provider + model` or `profile` set (XOR); `provider` requires `model` and vice versa; `system` is forbidden as provider. Set to `false` to disable config-level inheritance.
-- `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, and `map` states; `pass` state `hooks` accepts all four keys (workflow-scope keys are silently ignored at runtime)
+- `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, `map`, and `fail` states; `pass` state `hooks` accepts all six keys (workflow-scope and wait-scope keys are silently ignored at runtime)
+- `on_wait_start` and `on_wait_end` are only valid on `wait` state `hooks` blocks and at flow/config level; using them on `task`, `choice`, `parallel`, `map`, or `fail` state `hooks` blocks raises a validation error (`pass` state accepts them via `HookConfig` but silently ignores them at runtime)
 - `on_run_start` and `on_run_end` are forbidden in flow YAML (`Flow.hooks`) and all state `hooks` blocks — they are only valid in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml` under the `run_hooks:` key

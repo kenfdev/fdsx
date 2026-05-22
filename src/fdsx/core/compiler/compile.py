@@ -12,6 +12,7 @@ from fdsx.core.hooks import (
     INPUT_FILENAME,
     OUTPUT_FILENAME,
     collect_hooks,
+    collect_wait_hooks,
     execute_hooks,
     write_hook_data,
 )
@@ -415,9 +416,25 @@ def compile_flow(
             )  # type: ignore[call-overload]
         elif state.type == "wait":
             on_state_start, on_state_end = _collect_state_hooks(state)
+            on_wait_start = collect_wait_hooks(
+                "on_wait_start",
+                global_hooks=config_hooks,
+                project_hooks=None,
+                flow_hooks=flow.hooks,
+                state_hooks=state.hooks,
+            )
+            on_wait_end = collect_wait_hooks(
+                "on_wait_end",
+                global_hooks=config_hooks,
+                project_hooks=None,
+                flow_hooks=flow.hooks,
+                state_hooks=state.hooks,
+            )
             # WaitState is split into two nodes: notify (pre-interrupt) and interrupt.
             # on_state_start hooks fire in the notify node; on_state_end hooks fire in the interrupt node.
-            notify_node = _create_wait_notify_node(state_name, state, recorder)
+            notify_node = _create_wait_notify_node(
+                state_name, state, recorder, on_wait_start
+            )
             graph.add_node(
                 state_name,
                 _wrap_with_hooks(
@@ -429,7 +446,9 @@ def compile_flow(
                     fdsx_base_dir=fdsx_base_dir,
                 ),
             )  # type: ignore[call-overload]
-            interrupt_node = _create_wait_interrupt_node(state_name, state, recorder)
+            interrupt_node = _create_wait_interrupt_node(
+                state_name, state, recorder, on_wait_end
+            )
             graph.add_node(
                 f"_{state_name}_int",
                 _wrap_with_hooks(

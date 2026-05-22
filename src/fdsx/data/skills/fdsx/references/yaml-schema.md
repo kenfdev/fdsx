@@ -21,6 +21,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [AggregateRule](#aggregaterule)
 - [HookConfig](#hookconfig)
 - [StateHookConfig](#statehookconfig)
+- [WaitStateHookConfig](#waitstatehookconfig)
 - [RunHookConfig](#runhookconfig)
 - [ProfileConfig](#profileconfig)
 - [Provider Options](#provider-options)
@@ -149,7 +150,7 @@ choices: [string]               # required — min 1 item, user selection option
 result_path: string             # required — JSONPath for selection result
 notify?: NotifyConfig           # optional — webhook notification
 max_iterations?: int            # optional — >=1
-hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
+hooks?: WaitStateHookConfig     # optional — per-state hooks (on_state_start/on_state_end/on_wait_start/on_wait_end)
 next?: string                   # XOR with end
 end?: bool                      # XOR with next
 ```
@@ -366,7 +367,7 @@ aggregate:
 
 ## HookConfig
 
-Used at **flow level** (`Flow.hooks`), in **config files** (under `hooks:`), and in `PassState.hooks`. Supports all four state/workflow lifecycle events.
+Used at **flow level** (`Flow.hooks`), in **config files** (under `hooks:`), and in `PassState.hooks`. Supports all state/workflow/wait lifecycle events.
 
 ```yaml
 hooks:
@@ -382,6 +383,12 @@ hooks:
   on_workflow_end:              # optional — hooks run once when the workflow ends
     - command: string
       on_failure: string        # note: ignored for workflow-scope hooks (always warn-only)
+  on_wait_start:                # optional — hooks run before a wait state suspends
+    - command: string
+      on_failure: string
+  on_wait_end:                  # optional — hooks run after a wait state resumes
+    - command: string
+      on_failure: string
 ```
 
 **Legacy keys rejected:** `on_start` and `on_complete` raise a validation error. Use `on_state_start` and `on_state_end`.
@@ -389,6 +396,8 @@ hooks:
 **Run-scope keys rejected:** `on_run_start` and `on_run_end` raise a validation error when used in `Flow.hooks` (flow YAML). These keys are only valid in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml` under the separate `run_hooks:` key — see [RunHookConfig](#runhookconfig).
 
 **Workflow-scope key restriction:** `on_workflow_start` and `on_workflow_end` are **only valid** at flow level, project config, and global config scope. Using them inside a state's `hooks` block raises a validation error (except in `PassState`, which uses the full `HookConfig` — see [PassState](#passstate)).
+
+**Wait-scope key restriction:** `on_wait_start` and `on_wait_end` in `HookConfig` are honoured at flow level and config level (they fire for all wait states). At per-state level, only `WaitState.hooks` (typed as `WaitStateHookConfig`) accepts these keys; other state types using `StateHookConfig` will raise a validation error if they include `on_wait_start` or `on_wait_end`.
 
 ---
 
@@ -435,9 +444,33 @@ Each command receives:
 
 ---
 
+### Wait Hook Behavior (`on_wait_start` / `on_wait_end`)
+
+**`on_wait_start`** fires in the wait state's notify node, before the interrupt suspends and control is handed to the user. It fires on both fresh runs and resumes.
+
+**`on_wait_end`** fires in the wait state's interrupt node, after the user provides input and execution resumes.
+
+These hooks can be defined at flow level (`Flow.hooks`), in config files (under `hooks:`), and at the state level (only on `WaitState.hooks` via `WaitStateHookConfig`). They are collected and merged in global → project → flow → state order.
+
+Each command receives:
+
+**Positional arguments:** `$1=state_name`, `$2=status`, `$3=data_path`
+
+**Environment variables:**
+- `FDSX_STATE_NAME` — current wait state name
+- `FDSX_STATUS` — lifecycle status: `starting` (on_wait_start), `completed` (on_wait_end)
+- `FDSX_DATA_PATH` — path to the state data JSON file
+- `FDSX_THREAD_ID` — current run thread ID
+- `FDSX_FLOW_NAME` — name of the flow
+- `FDSX_HOOKS` — lifecycle event name: `on_wait_start` or `on_wait_end`
+
+**Failure policy:** Follows the same `on_failure: abort|warn` policy as state-scope hooks.
+
+---
+
 ## StateHookConfig
 
-Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `WaitState`, `MapState`, `FailState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` are explicitly forbidden.
+Used by **most state types** (`TaskState`, `ChoiceState`, `ParallelState`, `MapState`, `FailState`) for per-state hook configuration. Identical to `HookConfig` except that `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, and `on_wait_end` are explicitly forbidden.
 
 ```yaml
 hooks:
@@ -449,7 +482,37 @@ hooks:
       on_failure: string
 ```
 
-**Rejected keys:** `on_start`, `on_complete` (legacy), `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` all raise a validation error when used inside a state's `hooks` block. Workflow-scope keys (`on_workflow_start`, `on_workflow_end`) are only valid at flow level or in config files. Run-scope keys (`on_run_start`, `on_run_end`) are only valid in config files under the `run_hooks:` key.
+**Rejected keys:** `on_start`, `on_complete` (legacy), `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, and `on_wait_end` all raise a validation error when used inside a non-wait state's `hooks` block.
+
+- Workflow-scope keys (`on_workflow_start`, `on_workflow_end`) are only valid at flow level or in config files.
+- Run-scope keys (`on_run_start`, `on_run_end`) are only valid in config files under the `run_hooks:` key.
+- Wait-scope keys (`on_wait_start`, `on_wait_end`) are only valid on `WaitState.hooks` (via `WaitStateHookConfig`) or at flow/config level.
+
+---
+
+## WaitStateHookConfig
+
+Used exclusively by **`WaitState.hooks`** for per-state hook configuration on wait states. Extends state-scope hooks with `on_wait_start` and `on_wait_end`.
+
+```yaml
+hooks:
+  on_state_start:               # optional — hooks run before wait state execution
+    - command: string           # required — shell command (min 1 char)
+      on_failure: string        # default: "warn" — abort|warn
+  on_state_end:                 # optional — hooks run after wait state completes
+    - command: string
+      on_failure: string
+  on_wait_start:                # optional — hooks run before the wait interrupt suspends
+    - command: string
+      on_failure: string
+  on_wait_end:                  # optional — hooks run after the wait interrupt resumes
+    - command: string
+      on_failure: string
+```
+
+**Rejected keys:** `on_start`, `on_complete` (legacy), `on_workflow_start`, `on_workflow_end`, `on_run_start`, and `on_run_end` all raise a validation error. Workflow-scope and run-scope keys are not valid at state level for any state type.
+
+**Accepted keys unique to wait states:** `on_wait_start` and `on_wait_end`. These are rejected by `StateHookConfig` (used by all other state types) with the error: `"'{key}' is only valid on wait states, not on this state type"`.
 
 ---
 
@@ -467,7 +530,7 @@ run_hooks:
       on_failure: string        # note: on_failure is ignored; run hooks are always warn-only
 ```
 
-**Scope:** `run_hooks` is a **separate top-level key** in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml`. It is distinct from `hooks:` (which contains state/workflow lifecycle events). Using `on_run_start`/`on_run_end` inside `hooks:` raises a validation error.
+**Scope:** `run_hooks` is a **separate top-level key** in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml`. It is distinct from `hooks:` (which contains state/workflow/wait lifecycle events). Using `on_run_start`/`on_run_end` inside `hooks:` raises a validation error.
 
 **`on_run_start`** fires once at the start of a `fdsx run` or `fdsx resume` CLI invocation, before any workflow or checkpoint logic executes.
 
@@ -604,8 +667,9 @@ providers?:
   opencode?: OpenCodeOptions
   gemini?: GeminiOptions
 
-hooks?: HookConfig              # workflow/state lifecycle hooks applied to all flows
-                                # accepts: on_state_start, on_state_end, on_workflow_start, on_workflow_end
+hooks?: HookConfig              # workflow/state/wait lifecycle hooks applied to all flows
+                                # accepts: on_state_start, on_state_end, on_workflow_start,
+                                #          on_workflow_end, on_wait_start, on_wait_end
                                 # does NOT accept: on_run_start, on_run_end (use run_hooks: instead)
 
 run_hooks?:                     # run-level lifecycle hooks fired once per CLI invocation
@@ -629,7 +693,7 @@ retry_escalation?:              # absent by default — global escalation target
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
 
-**Hook merging:** During global → project config deep merge, all six hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level.
+**Hook merging:** During global → project config deep merge, all eight hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, `on_wait_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level. Wait-scope hooks (`on_wait_start`, `on_wait_end`) merge at global → project → flow → state (wait states only) level.
 
 Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
 
