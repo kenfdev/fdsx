@@ -18,7 +18,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
-- Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end) at global, project, flow, and state level
+- Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Global and per-flow extraction fallback and retry escalation
 - Workflow auto-selection via LLM-based matching
@@ -117,6 +117,12 @@ hooks:
   on_workflow_end:                       # fires once when the workflow finishes (all terminal paths)
     - command: "echo 'Workflow done'"
       on_failure: warn
+  on_wait_start:                         # fires before a wait state suspends for user input
+    - command: "echo 'Waiting for input'"
+      on_failure: warn
+  on_wait_end:                           # fires after a wait state resumes (user has responded)
+    - command: "echo 'Input received'"
+      on_failure: warn
 
 # --- Per-flow extraction fallback (optional) ---
 # Overrides the global config-level extraction_fallback for this workflow.
@@ -197,7 +203,8 @@ states:
       permission_mode: dontAsk
 
     # --- State-level hooks (optional) ---
-    # Note: on_workflow_start and on_workflow_end are NOT valid here; use flow-level hooks.
+    # Note: on_workflow_start, on_workflow_end, on_wait_start, and on_wait_end are NOT valid
+    # here; use flow-level hooks (on_wait_start/on_wait_end are only valid on wait states).
     hooks:
       on_state_start:
         - command: "echo 'task starting'"
@@ -317,7 +324,8 @@ states:
 
     max_iterations: 3                   # (int, optional)
     hooks:                              # (optional) pass states accept all hook keys including
-                                        #   on_workflow_start and on_workflow_end
+                                        #   on_workflow_start, on_workflow_end, on_wait_start,
+                                        #   and on_wait_end
     next: review_route                  # next / end — same rules as task
     # end: true
 
@@ -345,7 +353,10 @@ states:
                                         # Non-2xx responses are logged as warnings, never fail the flow
 
     max_iterations: 1                   # (int, optional)
-    hooks:                              # (optional) on_state_start / on_state_end only
+    hooks:                              # (optional) on_state_start / on_state_end /
+                                        #   on_wait_start / on_wait_end
+                                        # on_wait_start fires before the prompt is shown
+                                        # on_wait_end fires after the user selects a choice
     next: post_approval                 # next / end — same rules as task
     # end: true
 
@@ -374,7 +385,7 @@ Every hook command receives context via **environment variables** and **position
 | `FDSX_DATA_PATH` | Path to the state data JSON file | `.fdsx/runs/<thread_id>/hooks/plan/input.json` |
 | `FDSX_THREAD_ID` | Current run thread ID | `abc123` |
 | `FDSX_FLOW_NAME` | Name of the flow | `MyWorkflow` |
-| `FDSX_HOOKS` | Lifecycle event name that triggered the hook | `on_state_start`, `on_workflow_end`, `on_run_start`, `on_run_end` |
+| `FDSX_HOOKS` | Lifecycle event name that triggered the hook | `on_state_start`, `on_workflow_end`, `on_wait_start`, `on_wait_end`, `on_run_start`, `on_run_end` |
 
 **Positional arguments** (appended to your command):
 
@@ -409,6 +420,7 @@ hooks:
 - `on_state_start` and `on_state_end` are valid at all levels (global config, project config, flow, and individual states).
 - `on_workflow_start` and `on_workflow_end` are only valid at global config, project config, and flow scope — placing them inside a state's `hooks:` block will raise a validation error (the one exception is `pass` states, which accept all hook keys).
 - `on_run_start` and `on_run_end` fire once per CLI invocation (wrapping the entire `fdsx run` or `fdsx resume` call). They are only valid in global config (`~/.config/fdsx/config.yaml`) and project config (`.fdsx/config.yaml`) under the `run_hooks:` key — placing them in flow or state YAML will raise a validation error.
+- `on_wait_start` and `on_wait_end` are only valid on `wait` states and at global config, project config, and flow scope (inside `hooks:`). Placing them inside any non-wait state's `hooks:` block raises a validation error. `on_wait_start` fires before the wait prompt is shown to the user; `on_wait_end` fires after the user selects a choice and execution resumes.
 
 ### Variable References
 
@@ -569,6 +581,12 @@ hooks:
       on_failure: warn
   on_workflow_end:
     - command: "echo 'global workflow done'"
+      on_failure: warn
+  on_wait_start:
+    - command: "echo 'global wait state entered'"
+      on_failure: warn
+  on_wait_end:
+    - command: "echo 'global wait state resumed'"
       on_failure: warn
 
 # --- Run-level hooks (optional) ---
