@@ -1,0 +1,36 @@
+name: Cursor Agent Test - Write, Run, Review
+description: Cursor agent writes a simple program, it gets executed, then reviewed
+start_at: write_program
+
+states:
+  write_program:
+    type: task
+    provider: cursor
+    model: auto
+    prompt_template: |
+      Write a Python script that prints the FizzBuzz sequence from 1 to 30.
+      Output ONLY the raw Python code — no markdown, no code fences, no explanation.
+      The output must be directly executable by `python3`.
+    result_file: $.program_file
+    next: run_program
+
+  run_program:
+    type: task
+    provider: system
+    command: "python3 {program_file}"
+    result_path: $.execution_output
+    next: review
+
+  review:
+    type: task
+    provider: cursor
+    model: auto
+    prompt_template: |
+      Review the Python program at {program_file} and its execution output below.
+
+      Execution output:
+      {execution_output}
+
+      Give a short review: is the output correct, and is the code well-written?
+    result_path: $.review
+    end: true

@@ -25,6 +25,7 @@ from fdsx.models.flow import (
 from fdsx.models.validators import validate_llm_provider, validate_profile_name
 from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
+from fdsx.providers.cursor import CursorOptions
 from fdsx.providers.gemini import GeminiOptions
 from fdsx.providers.opencode import OpenCodeOptions
 
@@ -137,6 +138,10 @@ class ProviderConfigs(BaseModel):
     claude: ClaudeOptions | None = Field(
         default=None,
         description="Claude provider options",
+    )
+    cursor: CursorOptions | None = Field(
+        default=None,
+        description="Cursor provider options",
     )
     codex: CodexOptions | None = Field(
         default=None,

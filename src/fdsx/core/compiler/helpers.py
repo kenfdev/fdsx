@@ -161,14 +161,16 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     """Extract all result_path fields from a flow."""
     paths = []
     for _state_name, state in flow.states.items():
-        if isinstance(state, TaskState) and state.result_path:
-            paths.append(state.result_path)
-            if state.extract:
-                paths.append(state.extract.result_path)
+        if isinstance(state, TaskState):
+            if state.result_path:
+                paths.append(state.result_path)
+                if state.extract:
+                    paths.append(state.extract.result_path)
             if state.result_file:
                 paths.append(state.result_file)
-        elif isinstance(state, ParallelState) and state.result_path:
-            paths.append(state.result_path)
+        elif isinstance(state, ParallelState):
+            if state.result_path:
+                paths.append(state.result_path)
             if state.result_file:
                 paths.append(state.result_file)
         elif isinstance(state, PassState) and state.aggregate:
@@ -226,22 +228,24 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
 
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
     for _state_name, state in flow.states.items():
-        if isinstance(state, TaskState) and state.result_path:
-            k = _top_level_key(state.result_path)
-            if k:
-                annotations.setdefault(k, Any)
-            if state.extract:
-                k = _top_level_key(state.extract.result_path)
+        if isinstance(state, TaskState):
+            if state.result_path:
+                k = _top_level_key(state.result_path)
                 if k:
                     annotations.setdefault(k, Any)
+                if state.extract:
+                    k = _top_level_key(state.extract.result_path)
+                    if k:
+                        annotations.setdefault(k, Any)
             if state.result_file:
                 k = _top_level_key(state.result_file)
                 if k:
                     annotations.setdefault(k, Any)
-        elif isinstance(state, ParallelState) and state.result_path:
-            k = _top_level_key(state.result_path)
-            if k:
-                annotations.setdefault(k, Any)
+        elif isinstance(state, ParallelState):
+            if state.result_path:
+                k = _top_level_key(state.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
             if state.result_file:
                 k = _top_level_key(state.result_file)
                 if k:

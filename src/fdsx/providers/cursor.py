@@ -240,6 +240,15 @@ class CursorProvider(ProviderBase):
                     return
                 message = event.get("message", {})
                 content_list = message.get("content", [])
+                # Collect text from this event first so we can detect the
+                # cursor agent's "final complete" repeat: it resends the full
+                # accumulated text as a second assistant event without
+                # model_call_id after the streaming partial events.
+                event_text = "".join(
+                    p.get("text", "") for p in content_list if p.get("type") == "text"
+                )
+                if event_text and text_parts and event_text == "".join(text_parts):
+                    return
                 for part in content_list:
                     part_type = part.get("type")
                     if part_type == "text":
