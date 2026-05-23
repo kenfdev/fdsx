@@ -3,7 +3,7 @@ name: fdsx
 description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
-  configuring fdsx providers (claude, codex, opencode, gemini), setting up
+  configuring fdsx providers (claude, cursor, codex, opencode, gemini), setting up
   profiles, adding hooks, using choice/parallel/loop/wait/pass/map/fail states,
   running fdsx CLI commands, debugging workflow validation errors, or asking
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
@@ -13,7 +13,7 @@ description: >
 
 # fdsx Workflow Authoring Guide
 
-fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `codex`, `opencode`, `gemini`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
+fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
 
 ## Quick Start
 
@@ -70,7 +70,7 @@ States that support routing use either `next` (go to state) or `end: true` (term
 | `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
 | `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
-| `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` | **Note:** Not available in YAML workflows — use `get_provider("cursor")` directly. |
+| `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` |
 | `system` | `sh -c <command>` | `command` | (none) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
@@ -186,7 +186,7 @@ states:
 ```
 
 `ExtractionFallback` fields:
-- `provider` — LLM provider (`claude`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
+- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
 - `model` — model string passed to the provider binary. Required when `provider` is set.
 - `profile` — named profile. XOR with `provider` + `model`. Exactly one of `provider + model` or `profile` must be set.
 - `extra_instructions` — optional string appended to the recovery prompt.

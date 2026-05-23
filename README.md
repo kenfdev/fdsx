@@ -15,7 +15,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Parallel execution with branch aggregation
 - Map state for iterating over arrays with sub-workflows
 - Persistent batch task processing with crash-resilient resume
-- Multiple LLM provider support (Claude, Codex, Gemini, OpenCode, and system commands)
+- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
@@ -87,17 +87,22 @@ max_loop: 10                    # (int, default: 10) max times any state can be 
 # Extra fields beyond provider/model are passed as provider_options.
 profiles:
   smarty:
-    provider: claude            # (string, REQUIRED) one of: claude, codex, opencode, gemini
+    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini
     model: claude-opus-4-6      # (string, REQUIRED) model name
   doer:
     provider: opencode
     model: opencode-go/minimax-m2.7
+  cursor_coder:
+    provider: cursor
+    model: claude-sonnet-4-6
 
 # --- Workflow-level provider configs (optional) ---
 # Applied to all states using this provider. Overridden by per-task provider_options.
 providers:
   claude:
     permission_mode: bypassPermissions
+  cursor:
+    approve_mcps: true
   codex:
     full_auto: true
 
@@ -158,7 +163,7 @@ states:
 
     # --- Provider (pick ONE approach) ---
     # Approach A: explicit provider + model
-    provider: claude                    # (string, REQUIRED*) one of: claude, codex, opencode, gemini, system
+    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, system
     model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
     # Approach B: profile reference (mutually exclusive with provider/model)
     # profile: smarty
@@ -482,6 +487,9 @@ profiles:
   doer:
     provider: opencode
     model: opencode-go/minimax-m2.7
+  cursor_agent:
+    provider: cursor
+    model: claude-sonnet-4-6
 
 # --- Workflows directory ---
 workflows_dir: .fdsx/workflows    # (string, default: ".fdsx/workflows")
@@ -498,7 +506,7 @@ auto_workflow: false              # (bool, default: false) skip interactive conf
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
   profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude") one of: claude, codex, opencode, gemini
+  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini
   # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.
@@ -543,6 +551,12 @@ providers:
     disallowed_tools: []                 # (list of strings, default: []) tool denylist
     system_prompt: "Custom system prompt"  # (string, optional) override the default system prompt
     append_system_prompt: "Extra instructions"  # (string, optional) append to the default system prompt
+    inactivity_timeout: 600              # (int, optional) seconds before killing inactive subprocess
+
+  cursor:
+    force: false                         # (bool, default: false) pass --force to the agent CLI
+    sandbox: enabled                     # (string, optional) one of: enabled, disabled
+    approve_mcps: false                  # (bool, default: false) pass --approve-mcps to the agent CLI
     inactivity_timeout: 600              # (int, optional) seconds before killing inactive subprocess
 
   codex:
@@ -648,6 +662,9 @@ profiles:
   planner:
     provider: claude
     model: claude-sonnet-4-6
+  coder:
+    provider: cursor
+    model: claude-sonnet-4-6
 
 states:
   plan:
@@ -663,8 +680,7 @@ states:
 
   implement:
     type: task
-    provider: opencode
-    model: opencode/minimax-m2.5-free
+    profile: coder
     prompt_template: |
       You are an implementation agent. Follow this plan exactly.
 
