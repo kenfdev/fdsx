@@ -266,6 +266,44 @@ class TestResultEvent:
         assert received == []
 
 
+class TestDuplicateFinalMessage:
+    """cursor agent sends a 'final complete' assistant event that repeats all streaming text."""
+
+    def test_duplicate_final_event_not_redisplayed(self) -> None:
+        """Second assistant event with full accumulated text is silently skipped."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, get_result, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_assistant_text_line("Hello world"))
+        cb(_build_assistant_text_line("Hello world"))  # cursor's final complete repeat
+        flush()
+
+        assert received == ["Hello world"]
+        assert get_result() == "Hello world"
+
+    def test_duplicate_multi_chunk_final_event_not_redisplayed(self) -> None:
+        """Final event repeating full streamed text is skipped after multi-chunk streaming."""
+        received: list[str] = []
+        provider = _make_provider()
+        cb, get_result, flush = provider._make_stream_callback(received.append)
+
+        cb(_build_assistant_text_line("Hello"))
+        cb(_build_assistant_text_line(" world"))
+        # cursor sends the full accumulated text as the final assistant event
+        full = json.dumps(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Hello world"}]},
+            }
+        )
+        cb(full)
+        flush()
+
+        assert "".join(received) == "Hello world"
+        assert get_result() == "Hello world"
+
+
 class TestGetResult:
     """get_result() returns accumulated text_parts as fallback stdout."""
 

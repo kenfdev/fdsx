@@ -46,7 +46,7 @@ class TestSelectProviders:
             _patch_console(_mock_console()),
         ):
             result = select_providers()
-        assert result == ["claude", "gemini"]
+        assert result == ["claude", "cursor"]
 
     def test_empty_input_retries_then_succeeds(self):
         """Empty input triggers retry; '1' on second attempt returns first provider."""
@@ -64,7 +64,7 @@ class TestSelectProviders:
         """Out-of-range number triggers retry; '1' on third attempt succeeds."""
         with (
             patch(
-                "fdsx.cli.init_interactive._input", side_effect=["0", "5", "1"]
+                "fdsx.cli.init_interactive._input", side_effect=["0", "6", "1"]
             ) as mock_input,
             _patch_console(_mock_console()),
         ):

@@ -152,6 +152,55 @@ class TestParallelResultFileIntegration:
         )
 
 
+class TestResultFileWithoutResultPath:
+    """Regression: result_file without result_path must still propagate the path to downstream states."""
+
+    def test_result_file_only_propagates_to_downstream(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """result_file without result_path: file path variable must be available downstream.
+
+        Previously, _build_state_schema only registered result_file keys when result_path
+        was also present on the same state, causing LangGraph to silently drop the channel
+        and leaving the variable unresolved (literal {var}) in downstream commands.
+        """
+        monkeypatch.chdir(tmp_path)
+
+        flow_yaml = tmp_path / "result_file_only_flow.yaml"
+        flow_yaml.write_text(
+            "name: Result File Only Flow\n"
+            "description: result_file without result_path must be accessible downstream\n"
+            "start_at: write_state\n"
+            "states:\n"
+            "  write_state:\n"
+            "    type: task\n"
+            "    provider: system\n"
+            "    command: \"echo 'hello from file'\"\n"
+            "    result_file: $.written_file\n"
+            "    next: read_state\n"
+            "  read_state:\n"
+            "    type: task\n"
+            "    provider: system\n"
+            '    command: "cat {written_file}"\n'
+            "    result_path: $.content\n"
+            "    end: true\n",
+            encoding="utf-8",
+        )
+
+        thread_id = "test-result-file-only"
+        result = engine.run_flow(flow_yaml, thread_id=thread_id, base_dir=tmp_path)
+
+        assert isinstance(result, FlowResult)
+        assert "written_file" in result.results, (
+            f"result_file variable missing: {result.results}"
+        )
+        assert Path(result.results["written_file"]).is_absolute()
+        assert "content" in result.results, (
+            f"downstream state result missing: {result.results}"
+        )
+        assert "hello from file" in result.results["content"]
+
+
 class TestResultFileRegression:
     """T019: Regression test — no data/ directory when result_file is not used."""
 
