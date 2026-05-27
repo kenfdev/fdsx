@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 import typer
@@ -55,7 +56,7 @@ class _FdsxGroup(typer.core.TyperGroup):
     group args by the time the callback runs.
     """
 
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
         if ctx.obj is None:
             ctx.obj = {}
         if isinstance(ctx.obj, dict):
