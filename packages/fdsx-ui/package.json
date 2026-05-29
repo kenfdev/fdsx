@@ -63,13 +63,13 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/supertest": "7.2.0",
-    "@vitejs/plugin-react": "6.0.1",
+    "@vitejs/plugin-react": "6.0.2",
     "jsdom": "29.1.1",
     "supertest": "7.2.2",
-    "tsx": "4.21.0",
+    "tsx": "4.22.3",
     "typescript": "6.0.3",
-    "vite": "8.0.10",
-    "vitest": "4.1.5"
+    "vite": "8.0.14",
+    "vitest": "4.1.7"
   },
   "bin": {
     "fdsx-ui": "./dist/server/server/cli.js"
