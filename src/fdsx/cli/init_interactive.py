@@ -37,6 +37,10 @@ _PROFILE_ORDER: list[str] = [
     "behemoth",
 ]
 
+INIT_SELECTABLE_PROVIDERS = frozenset(
+    provider for provider in VALID_PROVIDERS if provider != "pi"
+)
+
 _console = Console(stderr=True)
 
 
@@ -55,7 +59,7 @@ def select_providers() -> list[str]:
     table.add_column("#", style="dim", width=4)
     table.add_column("Provider")
 
-    providers = sorted(VALID_PROVIDERS)
+    providers = sorted(INIT_SELECTABLE_PROVIDERS)
     for i, provider in enumerate(providers, start=1):
         table.add_row(str(i), provider)
 
