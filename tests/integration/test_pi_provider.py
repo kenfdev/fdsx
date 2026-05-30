@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from fdsx.core.config import FdsxConfig
+from fdsx.core.engine import run_flow
 from fdsx.core.loader import load_flow
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
@@ -312,3 +313,68 @@ states:
         )
         assert config.task_splitter is not None
         assert config.task_splitter.provider == "pi"
+
+
+class TestPiDefaultsInWorkflowExecution:
+    """Verify inherited pi defaults reach execution through run_flow()."""
+
+    def test_run_flow_converts_inherited_pi_defaults_to_subprocess_args(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A provider: pi flow uses configured pi defaults as CLI flags."""
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        base_dir = tmp_path / ".fdsx"
+        base_dir.mkdir()
+        (base_dir / "config.yaml").write_text(
+            """
+providers:
+  pi:
+    allowed_tools:
+      - read
+      - bash
+    inactivity_timeout: 12
+"""
+        )
+        flow_path = _write_flow(
+            tmp_path / "pi-flow.yaml",
+            """
+name: Pi Defaults Execution
+description: pi defaults reach subprocess args
+start_at: direct
+version: '1.0'
+states:
+  direct:
+    type: task
+    provider: pi
+    model: gpt-4o
+    prompt_template: Hello from flow
+    result_path: $.direct
+    end: true
+""",
+        )
+
+        with (
+            patch("fdsx.providers.pi.shutil.which", return_value="/usr/bin/pi"),
+            patch(
+                "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+            ) as run,
+        ):
+            result = run_flow(
+                flow_path,
+                base_dir=base_dir,
+                thread_id="pi-defaults-test",
+                quiet=True,
+            )
+
+        assert result.results["direct"] == "ok"
+        args = run.call_args.kwargs["args"]
+        assert args == [
+            "pi",
+            "-p",
+            "Hello from flow",
+            "--model",
+            "gpt-4o",
+            "--tools",
+            "read,bash",
+        ]
+        assert run.call_args.kwargs["inactivity_timeout"] == 12

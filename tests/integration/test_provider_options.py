@@ -7,6 +7,9 @@ Tests verify that provider options flow correctly through:
 
 from unittest.mock import patch
 
+import pytest
+from pydantic import ValidationError
+
 from fdsx.core.compiler import _merge_provider_options, compile_flow
 from fdsx.core.config import FdsxConfig, ProviderConfigs
 from fdsx.models.flow import Branch, Flow, ParallelState, TaskState
@@ -15,6 +18,7 @@ from fdsx.providers.claude import ClaudeOptions, ClaudeProvider
 from fdsx.providers.codex import CodexOptions, CodexProvider
 from fdsx.providers.gemini import GeminiOptions, GeminiProvider
 from fdsx.providers.opencode import OpenCodeOptions, OpenCodeProvider
+from fdsx.providers.pi import PiOptions, PiProvider
 from fdsx.providers.system import SystemProvider
 
 # ---------------------------------------------------------------------------
@@ -219,6 +223,46 @@ class TestConfigWorkflowMerge:
         assert isinstance(provider, GeminiProvider)
         assert provider.options.yolo is True
 
+    def test_pi_task_inherits_config_allowed_tools_and_inactivity_timeout(self):
+        """Config-level pi defaults are effective when the task has no options."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                pi=PiOptions(allowed_tools=["read", "bash"], inactivity_timeout=15),
+            )
+        )
+        flow = _make_single_task_flow(provider="pi", model="gpt-4o")
+
+        merged = _merge_provider_options(config, flow, "pi", None, state_name="step1")
+
+        assert merged is not None
+        provider = get_provider("pi", merged)
+        assert isinstance(provider, PiProvider)
+        assert provider.options.allowed_tools == ["read", "bash"]
+        assert provider.options.inactivity_timeout == 15
+
+    def test_pi_workflow_options_override_config_defaults(self):
+        """Workflow-level providers.pi values override config-level pi defaults."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                pi=PiOptions(allowed_tools=["read"], inactivity_timeout=15),
+            )
+        )
+        flow = _make_single_task_flow(
+            provider="pi",
+            model="gpt-4o",
+            flow_providers={
+                "pi": {"allowed_tools": ["write"], "inactivity_timeout": 20}
+            },
+        )
+
+        merged = _merge_provider_options(config, flow, "pi", None, state_name="step1")
+
+        assert merged is not None
+        provider = get_provider("pi", merged)
+        assert isinstance(provider, PiProvider)
+        assert provider.options.allowed_tools == ["write"]
+        assert provider.options.inactivity_timeout == 20
+
 
 # ---------------------------------------------------------------------------
 # T019-3: Task-level override
@@ -256,6 +300,141 @@ class TestTaskLevelOverride:
         assert isinstance(provider, ClaudeProvider)
         assert provider.options.permission_mode == "dontAsk"
 
+    def test_pi_task_options_override_config_and_workflow_defaults(self):
+        """Task-level pi provider_options win over config and workflow defaults."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                pi=PiOptions(allowed_tools=["read"], inactivity_timeout=15),
+            )
+        )
+        flow = _make_single_task_flow(
+            provider="pi",
+            model="gpt-4o",
+            flow_providers={
+                "pi": {"allowed_tools": ["write"], "inactivity_timeout": 20}
+            },
+            task_provider_options={
+                "allowed_tools": ["bash"],
+                "inactivity_timeout": 25,
+            },
+        )
+
+        merged = _merge_provider_options(
+            config,
+            flow,
+            "pi",
+            flow.states["step1"].provider_options,
+            state_name="step1",
+        )  # type: ignore[union-attr]
+
+        assert merged is not None
+        provider = get_provider("pi", merged)
+        assert isinstance(provider, PiProvider)
+        assert provider.options.allowed_tools == ["bash"]
+        assert provider.options.inactivity_timeout == 25
+
+    def test_pi_task_tool_lists_replace_inherited_lists(self):
+        """Task-level pi tool lists replace inherited lists instead of appending."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                pi=PiOptions(
+                    allowed_tools=["read"],
+                    disallowed_tools=["write"],
+                ),
+            )
+        )
+        flow = _make_single_task_flow(
+            provider="pi",
+            model="gpt-4o",
+            task_provider_options={
+                "allowed_tools": ["bash"],
+                "disallowed_tools": ["edit"],
+            },
+        )
+
+        merged = _merge_provider_options(
+            config,
+            flow,
+            "pi",
+            flow.states["step1"].provider_options,
+            state_name="step1",
+        )  # type: ignore[union-attr]
+
+        assert merged is not None
+        provider = get_provider("pi", merged)
+        assert isinstance(provider, PiProvider)
+        assert provider.options.allowed_tools == ["bash"]
+        assert provider.options.disallowed_tools == ["edit"]
+
+    def test_pi_task_empty_tool_lists_clear_inherited_lists(self):
+        """Task-level empty pi tool lists clear inherited tool restrictions."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                pi=PiOptions(
+                    allowed_tools=["read"],
+                    disallowed_tools=["write"],
+                ),
+            )
+        )
+        flow = _make_single_task_flow(
+            provider="pi",
+            model="gpt-4o",
+            task_provider_options={"allowed_tools": [], "disallowed_tools": []},
+        )
+
+        merged = _merge_provider_options(
+            config,
+            flow,
+            "pi",
+            flow.states["step1"].provider_options,
+            state_name="step1",
+        )  # type: ignore[union-attr]
+
+        assert merged is not None
+        provider = get_provider("pi", merged)
+        assert isinstance(provider, PiProvider)
+        assert provider.options.allowed_tools == []
+        assert provider.options.disallowed_tools == []
+
+
+class TestPiProviderOptionValidation:
+    """Pi defaults are validated after config/workflow/task inheritance."""
+
+    def test_config_unknown_pi_option_is_rejected(self):
+        """Config-level providers.pi rejects keys outside PiOptions."""
+        with pytest.raises(ValidationError, match="unknown_option"):
+            FdsxConfig(providers={"pi": {"unknown_option": True}})
+
+    def test_workflow_unknown_pi_option_is_rejected_during_merge(self):
+        """Workflow-level providers.pi rejects keys outside PiOptions."""
+        config = FdsxConfig()
+        flow = _make_single_task_flow(
+            provider="pi",
+            model="gpt-4o",
+            flow_providers={"pi": {"unknown_option": True}},
+        )
+
+        with pytest.raises(ValidationError, match="unknown_option"):
+            _merge_provider_options(config, flow, "pi", None, state_name="step1")
+
+    def test_inherited_pi_tool_conflicts_are_rejected_during_merge(self):
+        """Merged pi defaults cannot combine disable_tools with allowed_tools."""
+        config = FdsxConfig(providers=ProviderConfigs(pi=PiOptions(disable_tools=True)))
+        flow = _make_single_task_flow(
+            provider="pi",
+            model="gpt-4o",
+            task_provider_options={"allowed_tools": ["read"]},
+        )
+
+        with pytest.raises(ValidationError, match="disable_tools"):
+            _merge_provider_options(
+                config,
+                flow,
+                "pi",
+                flow.states["step1"].provider_options,
+                state_name="step1",
+            )  # type: ignore[union-attr]
+
 
 # ---------------------------------------------------------------------------
 # T019-4: Unchanged workflows without options
@@ -287,6 +466,47 @@ class TestUnchangedWorkflowsWithoutOptions:
         provider = get_provider("system", {"irrelevant": "value"})
         assert isinstance(provider, SystemProvider)
         # SystemProvider has no .options attribute — it should work fine
+        result = provider.execute(prompt="echo hello", command="echo hello")
+        assert result.exit_code == 0
+
+    def test_pi_without_any_defaults_produces_no_merged_options(self):
+        """A pi task with no defaults preserves the existing no-options behavior."""
+        config = FdsxConfig()
+        flow = _make_single_task_flow(provider="pi", model="gpt-4o")
+
+        merged = _merge_provider_options(config, flow, "pi", None, state_name="step1")
+
+        assert merged is None
+
+    def test_system_provider_ignores_configured_pi_defaults(self):
+        """Provider defaults for pi do not affect system provider execution."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                pi=PiOptions(allowed_tools=["read"], inactivity_timeout=15),
+            )
+        )
+        flow = Flow(
+            name="test",
+            description="System test flow",
+            start_at="step1",
+            states={
+                "step1": TaskState(
+                    type="task",
+                    provider="system",
+                    command="echo hello",
+                    result_path="$.result",
+                    end=True,
+                )
+            },
+        )
+
+        merged = _merge_provider_options(
+            config, flow, "system", None, state_name="step1"
+        )
+        provider = get_provider("system", merged)
+
+        assert merged is None
+        assert isinstance(provider, SystemProvider)
         result = provider.execute(prompt="echo hello", command="echo hello")
         assert result.exit_code == 0
 
