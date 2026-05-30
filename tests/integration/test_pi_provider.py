@@ -166,6 +166,62 @@ class TestPiProviderExecution:
 
         assert run.call_args.kwargs["inactivity_timeout"] == 10
 
+    def test_allowed_tools_are_passed_to_pi_subprocess_args(self) -> None:
+        """allowed_tools provider options are forwarded as pi --tools args."""
+        pi_options = _pi_symbol("PiOptions")
+        pi_provider = _pi_symbol("PiProvider")
+        provider = pi_provider(pi_options(allowed_tools=["read", "bash"]))
+
+        with patch(
+            "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+        ) as run:
+            provider.execute(prompt="hello")
+
+        assert run.call_args.kwargs["args"] == [
+            "pi",
+            "-p",
+            "hello",
+            "--tools",
+            "read,bash",
+        ]
+
+    def test_disallowed_tools_are_passed_to_pi_subprocess_args(self) -> None:
+        """disallowed_tools provider options are forwarded as pi --exclude-tools args."""
+        pi_options = _pi_symbol("PiOptions")
+        pi_provider = _pi_symbol("PiProvider")
+        provider = pi_provider(pi_options(disallowed_tools=["write", "edit"]))
+
+        with patch(
+            "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+        ) as run:
+            provider.execute(prompt="hello")
+
+        assert run.call_args.kwargs["args"] == [
+            "pi",
+            "-p",
+            "hello",
+            "--exclude-tools",
+            "write,edit",
+        ]
+
+    def test_disable_tools_is_passed_to_pi_subprocess_args(self) -> None:
+        """disable_tools provider option is forwarded as pi --no-tools."""
+        pi_options = _pi_symbol("PiOptions")
+        pi_provider = _pi_symbol("PiProvider")
+        provider = pi_provider(pi_options(disable_tools=True))
+
+        with patch(
+            "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+        ) as run:
+            provider.execute(prompt="hello")
+
+        assert run.call_args.kwargs["args"] == [
+            "pi",
+            "-p",
+            "hello",
+            "--no-tools",
+        ]
+
     def test_callbacks_are_forwarded_to_subprocess(self) -> None:
         """Output, stderr, and process-start callbacks are forwarded directly."""
         pi_provider = _pi_symbol("PiProvider")

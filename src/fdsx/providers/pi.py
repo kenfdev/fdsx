@@ -3,7 +3,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
@@ -27,10 +27,33 @@ class PiOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     inactivity_timeout: int | None = None
+    allowed_tools: list[str] = []
+    disallowed_tools: list[str] = []
+    disable_tools: bool = False
+
+    @model_validator(mode="after")
+    def validate_tool_restrictions(self) -> "PiOptions":
+        """Validate mutually exclusive pi tool restriction options."""
+        if self.disable_tools and self.allowed_tools:
+            raise ValueError("disable_tools cannot be combined with allowed_tools")
+        if self.disable_tools and self.disallowed_tools:
+            raise ValueError("disable_tools cannot be combined with disallowed_tools")
+        return self
 
     def to_cli_flags(self) -> list[str]:
         """Translate options to pi CLI flags."""
-        return []
+        flags: list[str] = []
+
+        if self.disable_tools:
+            flags.append("--no-tools")
+            return flags
+
+        if self.allowed_tools:
+            flags.extend(["--tools", ",".join(self.allowed_tools)])
+        if self.disallowed_tools:
+            flags.extend(["--exclude-tools", ",".join(self.disallowed_tools)])
+
+        return flags
 
 
 class PiProvider(ProviderBase):
@@ -67,6 +90,8 @@ class PiProvider(ProviderBase):
 
         if model:
             args.extend(["--model", model])
+
+        args.extend(self.options.to_cli_flags())
 
         effective_inactivity = (
             self.options.inactivity_timeout

@@ -48,6 +48,78 @@ class TestPiOptions:
 
         assert flags == []
 
+    def test_allowed_tools_emit_tools_cli_flag(self) -> None:
+        """allowed_tools emits pi's --tools flag with comma-separated tools."""
+        pi_options = _pi_symbol("PiOptions")
+
+        flags = pi_options(allowed_tools=["read", "bash"]).to_cli_flags()
+
+        assert flags == ["--tools", "read,bash"]
+
+    def test_disallowed_tools_emit_exclude_tools_cli_flag(self) -> None:
+        """disallowed_tools emits pi's --exclude-tools flag."""
+        pi_options = _pi_symbol("PiOptions")
+
+        flags = pi_options(disallowed_tools=["write", "edit"]).to_cli_flags()
+
+        assert flags == ["--exclude-tools", "write,edit"]
+
+    def test_disable_tools_emits_no_tools_cli_flag(self) -> None:
+        """disable_tools emits pi's --no-tools flag."""
+        pi_options = _pi_symbol("PiOptions")
+
+        flags = pi_options(disable_tools=True).to_cli_flags()
+
+        assert flags == ["--no-tools"]
+
+    def test_empty_tool_lists_emit_no_cli_flags(self) -> None:
+        """Empty allowed/disallowed tool lists do not emit pi tool flags."""
+        pi_options = _pi_symbol("PiOptions")
+
+        flags = pi_options(allowed_tools=[], disallowed_tools=[]).to_cli_flags()
+
+        assert flags == []
+
+    def test_allowed_and_disallowed_tools_emit_flags_in_stable_order(self) -> None:
+        """Allow and exclude flags can be combined in stable CLI order."""
+        pi_options = _pi_symbol("PiOptions")
+
+        flags = pi_options(
+            allowed_tools=["read", "bash"],
+            disallowed_tools=["write", "edit"],
+        ).to_cli_flags()
+
+        assert flags == [
+            "--tools",
+            "read,bash",
+            "--exclude-tools",
+            "write,edit",
+        ]
+
+    def test_disable_tools_rejects_allowed_tools(self) -> None:
+        """disable_tools cannot be combined with allowed_tools."""
+        pi_options = _pi_symbol("PiOptions")
+
+        with pytest.raises(ValidationError) as exc_info:
+            pi_options(disable_tools=True, allowed_tools=["read"])
+
+        message = str(exc_info.value)
+        assert "disable_tools" in message
+        assert "allowed_tools" in message
+        assert "cannot be combined" in message
+
+    def test_disable_tools_rejects_disallowed_tools(self) -> None:
+        """disable_tools cannot be combined with disallowed_tools."""
+        pi_options = _pi_symbol("PiOptions")
+
+        with pytest.raises(ValidationError) as exc_info:
+            pi_options(disable_tools=True, disallowed_tools=["write"])
+
+        message = str(exc_info.value)
+        assert "disable_tools" in message
+        assert "disallowed_tools" in message
+        assert "cannot be combined" in message
+
 
 class TestPiProviderFactory:
     """Tests for get_provider('pi') factory behavior."""
