@@ -65,6 +65,9 @@ class PiProvider(ProviderBase):
             args.append(prompt)
             stdin_data = None
 
+        if model:
+            args.extend(["--model", model])
+
         effective_inactivity = (
             self.options.inactivity_timeout
             if self.options.inactivity_timeout is not None

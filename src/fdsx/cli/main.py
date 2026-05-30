@@ -1,9 +1,11 @@
+import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO, cast
 
 import click
+import structlog
 import typer
 import typer.core
 from pydantic import ValidationError as PydanticValidationError
@@ -46,6 +48,24 @@ from fdsx.models.init import InitConfig
 EXEMPT_SUBCOMMANDS = frozenset({"init", "validate"})
 
 _RAW_ARGS_KEY = "_fdsx_raw_args"
+
+
+class _CurrentStderr:
+    def write(self, message: str) -> int:
+        return sys.stderr.write(message)
+
+    def flush(self) -> None:
+        sys.stderr.flush()
+
+
+def _configure_structlog_for_cli() -> None:
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        logger_factory=structlog.PrintLoggerFactory(
+            file=cast(TextIO, _CurrentStderr())
+        ),
+        cache_logger_on_first_use=True,
+    )
 
 
 class _FdsxGroup(typer.core.TyperGroup):
@@ -110,6 +130,8 @@ def main(
         help="Run in interactive mode (enables TTY detection if not explicitly set).",
     ),
 ) -> None:
+    _configure_structlog_for_cli()
+
     if ci and interactive:
         typer.echo(
             "Error: --ci and --interactive are mutually exclusive",

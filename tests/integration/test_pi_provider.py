@@ -73,19 +73,72 @@ class TestPiProviderExecution:
         assert run.call_args.kwargs["args"] == ["pi", "-p"]
         assert run.call_args.kwargs["stdin_data"] == prompt
 
-    def test_model_argument_is_ignored_by_pi_execution(self) -> None:
-        """Passing model=... does not emit --model or the model value."""
+    def test_model_argument_is_passed_as_model_flag(self) -> None:
+        """Passing model=... emits --model with the requested model."""
         pi_provider = _pi_symbol("PiProvider")
         provider = pi_provider()
 
-        with patch(
-            "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
-        ) as run:
-            provider.execute(prompt="hello", model="pi-large")
+        with (
+            patch("fdsx.providers.pi.shutil.which", return_value="/usr/bin/pi"),
+            patch(
+                "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+            ) as run,
+        ):
+            provider.execute(prompt="hello", model="some-model")
+
+        args = run.call_args.kwargs["args"]
+        assert "--model" in args
+        assert args[args.index("--model") + 1] == "some-model"
+
+    def test_provider_slash_model_id_is_forwarded_verbatim(self) -> None:
+        """Provider-qualified model ids are forwarded without normalization."""
+        pi_provider = _pi_symbol("PiProvider")
+        provider = pi_provider()
+
+        with (
+            patch("fdsx.providers.pi.shutil.which", return_value="/usr/bin/pi"),
+            patch(
+                "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+            ) as run,
+        ):
+            provider.execute(prompt="hello", model="openai/gpt-4o")
+
+        args = run.call_args.kwargs["args"]
+        assert "--model" in args
+        assert args[args.index("--model") + 1] == "openai/gpt-4o"
+
+    def test_shorthand_model_id_is_forwarded_verbatim(self) -> None:
+        """Shorthand model ids are forwarded without provider prefix changes."""
+        pi_provider = _pi_symbol("PiProvider")
+        provider = pi_provider()
+
+        with (
+            patch("fdsx.providers.pi.shutil.which", return_value="/usr/bin/pi"),
+            patch(
+                "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+            ) as run,
+        ):
+            provider.execute(prompt="hello", model="gpt-4o")
+
+        args = run.call_args.kwargs["args"]
+        assert "--model" in args
+        assert args[args.index("--model") + 1] == "gpt-4o"
+
+    def test_model_flag_is_absent_when_model_is_none(self) -> None:
+        """Omitting model selection leaves the pi CLI args without --model."""
+        pi_provider = _pi_symbol("PiProvider")
+        provider = pi_provider()
+
+        with (
+            patch("fdsx.providers.pi.shutil.which", return_value="/usr/bin/pi"),
+            patch(
+                "fdsx.providers.pi._run_subprocess", return_value=FAKE_SUCCESS
+            ) as run,
+        ):
+            provider.execute(prompt="hello", model=None)
 
         args = run.call_args.kwargs["args"]
         assert "--model" not in args
-        assert "pi-large" not in args
 
     def test_default_timeouts_are_passed_to_subprocess(self) -> None:
         """Default execution and inactivity timeouts are passed to _run_subprocess."""
