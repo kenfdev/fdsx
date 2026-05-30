@@ -636,6 +636,24 @@ When `output_callback` is provided, `--output-format stream-json --stream-partia
 
 **Requirements:** Cursor's `agent` CLI binary must be in `PATH`. If it is absent, `CursorProvider` raises `CursorProviderError` at execution time.
 
+### Pi
+
+```yaml
+provider_options:
+  allowed_tools?: [string]              # passed as --tools read,bash
+  disallowed_tools?: [string]           # passed as --exclude-tools write,edit
+  disable_tools?: bool                  # default: false — pass --no-tools
+  inactivity_timeout?: int              # default: 300
+```
+
+**Mutual exclusion:** `disable_tools` cannot be combined with non-empty `allowed_tools` or `disallowed_tools`.
+
+Example tool names include `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`; fdsx forwards names to pi without validating the current pi tool registry.
+
+CLI binary invoked: `pi -p <prompt> [--model <model>] [--tools <csv>] [--exclude-tools <csv>] [--no-tools]`
+
+**Requirements:** The `pi` CLI binary must be in `PATH`. If it is absent, `PiProvider` raises `PiProviderError` at execution time.
+
 All provider option models use `extra="forbid"` — unknown keys cause validation errors.
 
 ---
@@ -667,6 +685,7 @@ providers?:
   codex?: CodexOptions
   opencode?: OpenCodeOptions
   gemini?: GeminiOptions
+  pi?: PiOptions
 
 hooks?: HookConfig              # workflow/state/wait lifecycle hooks applied to all flows
                                 # accepts: on_state_start, on_state_end, on_workflow_start,

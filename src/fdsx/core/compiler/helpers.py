@@ -154,6 +154,11 @@ def _merge_provider_options(
                 )
                 del merged[field]
 
+    if provider_name == "pi":
+        from fdsx.providers.pi import PiOptions
+
+        PiOptions.model_validate(merged)
+
     return merged if merged else None
 
 

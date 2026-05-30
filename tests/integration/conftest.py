@@ -1,5 +1,6 @@
 """Integration test fixtures for cursor provider."""
 
+import importlib.util
 from unittest.mock import patch
 
 import pytest
@@ -27,4 +28,19 @@ def _mock_cursor_agent_binary(request):
         return
 
     with patch("fdsx.providers.cursor.shutil.which", return_value="/usr/bin/agent"):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _mock_pi_binary(request):
+    """Auto-mock 'pi' binary presence for pi provider integration tests."""
+    if "test_pi_provider" not in str(request.node.fspath):
+        yield
+        return
+
+    if importlib.util.find_spec("fdsx.providers.pi") is None:
+        yield
+        return
+
+    with patch("fdsx.providers.pi.shutil.which", return_value="/usr/bin/pi"):
         yield

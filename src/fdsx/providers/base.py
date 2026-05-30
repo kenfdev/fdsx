@@ -410,7 +410,7 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
     """Factory function to get a provider by name.
 
     Args:
-        name: Provider name (claude, codex, opencode, system).
+        name: Provider name (claude, codex, opencode, pi, system).
         options: Optional dict of provider-specific options. Converted to the
                  appropriate typed options model internally. Ignored for system provider.
 
@@ -434,6 +434,11 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
 
         opencode_opts = OpenCodeOptions.model_validate(options) if options else None
         return OpenCodeProvider(opencode_opts)
+    elif name == "pi":
+        from fdsx.providers.pi import PiOptions, PiProvider
+
+        pi_opts = PiOptions.model_validate(options) if options else None
+        return PiProvider(pi_opts)
     elif name == "codex":
         from fdsx.providers.codex import CodexOptions, CodexProvider
 
