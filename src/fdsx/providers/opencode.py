@@ -3,7 +3,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
@@ -20,12 +20,16 @@ class OpenCodeOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    variant: str | None = Field(default=None, min_length=1)
     permission: str | dict[str, Any] | None = None
     inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
-        """Translate options to OpenCode CLI flags (none currently defined)."""
-        return []
+        """Translate options to OpenCode CLI flags."""
+        flags: list[str] = []
+        if self.variant is not None:
+            flags.extend(["--variant", self.variant])
+        return flags
 
     def to_env(self) -> dict[str, str]:
         """Build extra environment variables for the OpenCode subprocess."""

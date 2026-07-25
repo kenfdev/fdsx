@@ -577,6 +577,7 @@ Options set via `provider_options` on tasks/branches, or globally in config. All
 
 ```yaml
 provider_options:
+  effort?: low|medium|high|xhigh|max
   permission_mode?: default|acceptEdits|bypassPermissions|dontAsk|plan|auto
   dangerously_skip_permissions?: bool   # default: false
   allowed_tools?: [string]
@@ -592,6 +593,7 @@ provider_options:
 
 ```yaml
 provider_options:
+  reasoning_effort?: low|medium|high|xhigh|max|ultra
   sandbox?: read-only|workspace-write|danger-full-access
   approval_policy?: untrusted|on-request|never
   full_auto?: bool                      # default: false
@@ -603,6 +605,7 @@ provider_options:
 
 ```yaml
 provider_options:
+  variant?: string                       # non-empty, passed as --variant
   permission?: string|{k: v}           # passed via OPENCODE_CONFIG_CONTENT env var
   inactivity_timeout?: int              # default: 300
 ```

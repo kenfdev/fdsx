@@ -72,6 +72,7 @@ class ClaudeOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     permission_mode: (
         Literal[
             "default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"
@@ -88,6 +89,8 @@ class ClaudeOptions(BaseModel):
     def to_cli_flags(self) -> list[str]:
         """Translate options to Claude CLI flags."""
         flags: list[str] = []
+        if self.effort is not None:
+            flags.extend(["--effort", self.effort])
         if self.permission_mode is not None:
             flags.extend(["--permission-mode", self.permission_mode])
         if self.dangerously_skip_permissions:

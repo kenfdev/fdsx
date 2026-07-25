@@ -544,6 +544,8 @@ retry_escalation:
 providers:
 
   claude:
+    effort: high                         # (string, optional) one of:
+                                         #   low, medium, high, xhigh, max
     permission_mode: bypassPermissions  # (string, optional) one of:
                                         #   default, acceptEdits, bypassPermissions, dontAsk, plan, auto
     dangerously_skip_permissions: true   # (bool, default: false)
@@ -560,6 +562,8 @@ providers:
     inactivity_timeout: 600              # (int, optional) seconds before killing inactive subprocess
 
   codex:
+    reasoning_effort: high               # (string, optional) one of:
+                                         #   low, medium, high, xhigh, max, ultra
     sandbox: workspace-write             # (string, optional) one of:
                                          #   read-only, workspace-write, danger-full-access
     approval_policy: never               # (string, optional) one of: untrusted, on-request, never
@@ -568,6 +572,7 @@ providers:
     inactivity_timeout: 600              # (int, optional)
 
   opencode:
+    variant: high                        # (string, optional) model-specific variant
     permission: "allow"                  # (string or map, optional)
                                          #   passed as OPENCODE_CONFIG_CONTENT env var
     inactivity_timeout: 600              # (int, optional)
