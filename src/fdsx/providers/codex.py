@@ -43,6 +43,9 @@ class CodexOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    reasoning_effort: (
+        Literal["low", "medium", "high", "xhigh", "max", "ultra"] | None
+    ) = None
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] | None = None
     approval_policy: Literal["untrusted", "on-request", "never"] | None = None
     full_auto: bool = False
@@ -52,6 +55,8 @@ class CodexOptions(BaseModel):
     def to_cli_flags(self) -> list[str]:
         """Translate options to Codex CLI flags."""
         flags: list[str] = []
+        if self.reasoning_effort is not None:
+            flags.extend(["-c", f'model_reasoning_effort="{self.reasoning_effort}"'])
         if self.sandbox is not None:
             flags.extend(["--sandbox", self.sandbox])
         if self.approval_policy is not None:

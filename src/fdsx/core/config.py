@@ -48,7 +48,7 @@ _SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
 
 # Keys whose dict values are fully replaced by the override (no field-level merging)
 _FULL_REPLACE_KEYS: frozenset[str] = frozenset(
-    {"retry_escalation", "extraction_fallback"}
+    {"task_splitter", "retry_escalation", "extraction_fallback"}
 )
 
 

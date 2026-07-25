@@ -985,3 +985,42 @@ class TestLoadConfigResolvesProfiles:
         assert cfg.task_splitter is not None
         assert cfg.task_splitter.provider == "codex"
         assert cfg.task_splitter.model == "codex-mini"
+
+    def test_project_task_splitter_profile_replaces_global_explicit_config(
+        self, tmp_path, monkeypatch
+    ):
+        """Project task_splitter does not inherit conflicting global fields."""
+        global_dir = tmp_path / "global" / "fdsx"
+        global_dir.mkdir(parents=True)
+        (global_dir / "config.yaml").write_text(
+            "task_splitter:\n"
+            "  provider: codex\n"
+            "  model: global-model\n"
+            "  extra_instructions: global instructions\n"
+        )
+
+        project_dir = tmp_path / "project"
+        project_config_dir = project_dir / ".fdsx"
+        project_config_dir.mkdir(parents=True)
+        (project_config_dir / "config.yaml").write_text(
+            "profiles:\n"
+            "  smarty:\n"
+            "    provider: claude\n"
+            "    model: project-model\n"
+            "task_splitter:\n"
+            "  profile: smarty\n"
+            "  extra_instructions: project instructions\n"
+        )
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "global"))
+
+        cfg = load_config(
+            project_dir=project_dir,
+            load_global=True,
+            load_project=True,
+        )
+
+        assert cfg.task_splitter is not None
+        assert cfg.task_splitter.provider == "claude"
+        assert cfg.task_splitter.model == "project-model"
+        assert cfg.task_splitter.extra_instructions == "project instructions"

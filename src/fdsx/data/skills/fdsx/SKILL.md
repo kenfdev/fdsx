@@ -66,9 +66,9 @@ States that support routing use either `next` (go to state) or `end: true` (term
 
 | Provider | CLI Command | Requires | Options Key |
 |----------|------------|----------|-------------|
-| `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools`, `system_prompt`, `append_system_prompt` |
-| `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
-| `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
+| `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `effort`, `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools`, `system_prompt`, `append_system_prompt` |
+| `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `reasoning_effort`, `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
+| `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `variant`, `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
 | `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` |
 | `system` | `sh -c <command>` | `command` | (none) |
@@ -371,7 +371,7 @@ profiles:                       # named provider/model bundles
     model: claude-haiku-4-5-20251001
 ```
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) configs declare `task_splitter`, the project block fully replaces the global one — fields are not merged.
 
 `extraction_fallback` at config level sets the project-wide default recovery LLM for extraction failures. Individual workflows can override it with their own `extraction_fallback:` field or disable it with `extraction_fallback: false`. When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.
 
