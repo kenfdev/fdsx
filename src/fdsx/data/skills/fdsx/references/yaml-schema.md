@@ -699,7 +699,7 @@ Config uses `extra="forbid"` — unknown keys cause validation errors.
 
 **Hook merging:** During global → project config deep merge, all eight hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, `on_wait_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level. Wait-scope hooks (`on_wait_start`, `on_wait_end`) merge at global → project → flow → state (wait states only) level.
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) configs declare `task_splitter`, the project block fully replaces the global one — fields are not merged.
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 

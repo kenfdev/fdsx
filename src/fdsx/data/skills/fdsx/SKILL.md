@@ -371,7 +371,7 @@ profiles:                       # named provider/model bundles
     model: claude-haiku-4-5-20251001
 ```
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) configs declare `task_splitter`, the project block fully replaces the global one — fields are not merged.
 
 `extraction_fallback` at config level sets the project-wide default recovery LLM for extraction failures. Individual workflows can override it with their own `extraction_fallback:` field or disable it with `extraction_fallback: false`. When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.
 
