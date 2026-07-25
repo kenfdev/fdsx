@@ -382,11 +382,12 @@ class TestHelpText:
         """Verify --tasks-dir option help mentions resume capability."""
         (tmp_path / ".fdsx").mkdir()
         runner = CliRunner()
-        result = runner.invoke(app, ["run", "--help"])
+        result = runner.invoke(app, ["run", "--help"], terminal_width=80)
 
         assert result.exit_code == 0
-        assert "persistent" in result.stdout
-        assert "resume support" in result.stdout
+        normalized_output = " ".join(result.stdout.split())
+        assert "persistent" in normalized_output
+        assert "resume support" in normalized_output
 
     def test_run_help_mentions_spinner_and_cui(self, tmp_path):
         """Verify run command help mentions spinner, CUI, and non-TTY behavior (T027)."""
