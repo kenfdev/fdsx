@@ -49,6 +49,7 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.4",
     "mypy>=1.10",
+    "types-jsonschema>=4",
     "types-PyYAML>=6",
     "pre-commit>=3",
     "pip-audit>=2",

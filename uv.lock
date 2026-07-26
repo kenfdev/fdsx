@@ -427,6 +427,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "types-jsonschema" },
     { name = "types-pyyaml" },
 ]
 
@@ -456,6 +457,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "structlog", specifier = ">=24" },
     { name = "typer", specifier = ">=0.9" },
+    { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "uuid-utils", specifier = ">=0.9" },
 ]
