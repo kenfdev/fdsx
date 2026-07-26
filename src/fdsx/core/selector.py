@@ -429,6 +429,7 @@ def resolve_workflow_for_task(
     selector_config: WorkflowSelectorConfig,
     auto_workflow: bool,
     config_profiles: dict[str, dict[str, Any]] | None = None,
+    available_workflows: list[tuple[Path, str, str]] | None = None,
 ) -> Path | None:
     """Resolve which workflow to use for a task via auto-discovery and LLM selection.
 
@@ -438,11 +439,14 @@ def resolve_workflow_for_task(
         selector_config: Configuration for the workflow selector LLM.
         auto_workflow: If True, skip confirmation prompt.
         config_profiles: Config-level profiles for resolving profile references.
+        available_workflows: Pre-discovered workflows from all configured scopes.
 
     Returns:
         Path to the selected workflow, or None if the user cancels manual pick.
     """
-    discovered = discover_workflows(workflows_dir, config_profiles=config_profiles)
+    discovered = available_workflows
+    if discovered is None:
+        discovered = discover_workflows(workflows_dir, config_profiles=config_profiles)
 
     if len(discovered) == 0:
         raise ValueError(

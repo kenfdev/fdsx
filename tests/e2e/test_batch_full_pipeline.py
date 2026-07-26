@@ -209,6 +209,7 @@ class TestFullPipelineE2E:
         workflow_yaml = yaml.dump(
             {
                 "name": "Test",
+                "description": "Test workflow",
                 "start_at": "s",
                 "states": {
                     "s": {

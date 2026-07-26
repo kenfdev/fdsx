@@ -111,6 +111,7 @@ class TestAutoSelectionSpinner:
         workflow_yaml = yaml.dump(
             {
                 "name": "Test",
+                "description": "Test workflow",
                 "start_at": "s",
                 "states": {
                     "s": {
@@ -163,6 +164,7 @@ class TestAutoSelectionSpinner:
         workflow_yaml = yaml.dump(
             {
                 "name": "Test",
+                "description": "Test workflow",
                 "start_at": "s",
                 "states": {
                     "s": {
@@ -218,6 +220,7 @@ class TestAutoSelectionSpinner:
         workflow_yaml = yaml.dump(
             {
                 "name": "Test",
+                "description": "Test workflow",
                 "start_at": "s",
                 "states": {
                     "s": {
@@ -262,6 +265,7 @@ class TestAutoSelectionSpinner:
         workflow_yaml = yaml.dump(
             {
                 "name": "Test",
+                "description": "Test workflow",
                 "start_at": "s",
                 "states": {
                     "s": {
