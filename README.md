@@ -648,6 +648,7 @@ run_hooks:
 | `fdsx resume --thread-id <id>` | Resume from checkpoint |
 | `fdsx resume --thread-id <id> --base-dir <dir>` | Resume with custom base directory |
 | `fdsx validate <workflow.yaml>` | Validate YAML syntax |
+| `fdsx resolve <workflow.yaml>` | Print normalized YAML with prompt files and referenced profiles resolved for inspection |
 | `fdsx list` | List recent runs |
 | `fdsx list --base-dir <dir>` | List runs from custom base directory |
 | `fdsx add <task_file>` | Add a task file to the batch execution queue (single task) |
