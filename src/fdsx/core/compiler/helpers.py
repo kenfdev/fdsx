@@ -212,7 +212,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     1. _br_{state_name} reducer channels (Annotated[list, _parallel_branch_reducer]) for each
        ParallelState — required for Send API fan-in accumulation.
     2. All result_path / extract / aggregate top-level keys as LastValue channels.
-    3. Input keys from --input CLI flags.
+    3. Built-in task inputs and keys from --input CLI flags.
     4. _meta internal key.
     5. remaining_steps managed channel for loop control.
 
@@ -273,7 +273,10 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
             if k:
                 annotations.setdefault(k, Any)
 
-    # 3. Input keys from --input CLI flags
+    # 3. Built-in task inputs and keys from --input CLI flags
+    annotations.setdefault("task", Any)
+    annotations.setdefault("source", Any)
+
     if input_keys:
         for key in input_keys:
             annotations.setdefault(key, Any)

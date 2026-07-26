@@ -139,6 +139,7 @@ def run_flow(
             "flow_path": str(flow_path),
             "flow_name": flow.name,
             "run_dir": str(run_dir),
+            "input_keys": sorted(inputs) if inputs else [],
             **(
                 {"task_file_path": str(task_file_path)}
                 if task_file_path is not None

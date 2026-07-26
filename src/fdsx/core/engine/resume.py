@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from langchain_core.runnables.config import RunnableConfig
 from langgraph.types import Command
 
 from fdsx.checkpoint.manager import CheckpointManager
@@ -76,6 +77,18 @@ def resume_flow(
 
     try:
         checkpointer = checkpoint_manager.get_checkpointer()
+        checkpoint_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        checkpoint_tuple = checkpointer.get_tuple(checkpoint_config)
+        input_keys: set[str] = set()
+        if checkpoint_tuple is not None:
+            channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+            checkpoint_meta = channel_values.get("_meta", {})
+            if isinstance(checkpoint_meta, dict):
+                stored_input_keys = checkpoint_meta.get("input_keys", [])
+                if isinstance(stored_input_keys, list):
+                    input_keys = {
+                        key for key in stored_input_keys if isinstance(key, str)
+                    }
 
         if flow_path is None or not flow_path.exists():
             # Read flow_path from run.json sidecar (written by RunRecorder on first run)
@@ -108,7 +121,11 @@ def resume_flow(
                 name: prof.model_dump() for name, prof in config.profiles.items()
             }
 
-        flow, errors = load_flow(flow_path, config_profiles=config_profiles)
+        flow, errors = load_flow(
+            flow_path,
+            input_keys=input_keys or None,
+            config_profiles=config_profiles,
+        )
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
@@ -140,6 +157,7 @@ def resume_flow(
 
         compiled = compile_flow(
             flow,
+            input_keys=input_keys or None,
             checkpointer=checkpointer,
             recorder=recorder,
             config=config,
