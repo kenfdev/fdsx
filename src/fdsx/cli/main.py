@@ -39,11 +39,12 @@ from fdsx.core.init import (
     scaffold,
 )
 from fdsx.core.mode import is_interactive, set_interactive_mode
+from fdsx.core.resolve import resolve_workflow_yaml
 from fdsx.core.thread_id import generate_thread_id
 from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
 from fdsx.models.init import InitConfig
 
-EXEMPT_SUBCOMMANDS = frozenset({"init", "validate"})
+EXEMPT_SUBCOMMANDS = frozenset({"init", "resolve", "validate"})
 
 _RAW_ARGS_KEY = "_fdsx_raw_args"
 
@@ -476,6 +477,24 @@ def validate(
         for error in errors:
             typer.echo(f"Error: {_sanitize_output(str(error))}", err=True)
         raise typer.Exit(code=2)
+
+
+@app.command()
+def resolve(
+    workflow: Path = typer.Argument(..., help="Path to the YAML workflow file"),
+) -> None:
+    """Print a resolved YAML workflow without executing it."""
+    try:
+        is_valid, errors, _flow_name = engine.validate_flow(workflow)
+    except ValueError as e:
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
+    if not is_valid:
+        for error in errors:
+            typer.echo(f"Error: {_sanitize_output(str(error))}", err=True)
+        raise typer.Exit(code=2)
+
+    typer.echo(resolve_workflow_yaml(workflow), nl=False)
 
 
 @app.command()
