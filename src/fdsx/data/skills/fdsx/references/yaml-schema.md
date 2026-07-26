@@ -15,6 +15,8 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [IteratorDef](#iteratordef)
 - [IteratorTaskState](#iteratortaskstate)
 - [Branch (parallel)](#branch)
+- [StructuredOutput](#structuredoutput)
+- [ParallelGate](#parallelgate)
 - [ExtractRule](#extractrule)
 - [ExtractionFallback](#extractionfallback)
 - [ChoiceRule](#choicerule)
@@ -37,7 +39,7 @@ description: string             # required — min 1 char
 start_at: string                # required — must match a key in states
 states: {name: State}           # required — map of state definitions
 version?: string                # optional
-max_loop?: int                  # default: 10 — max loop iterations
+max_loop?: int                  # default: 10 — terminal loop safety guard
 providers?: {name: {k: v}}      # optional — workflow-level provider configs
 hooks?: HookConfig              # optional — flow-level hooks (full HookConfig including workflow-scope keys)
 profiles?: {name: {k: v}}       # optional — raw provider/model/extras dicts
@@ -53,11 +55,19 @@ retry_escalation?: EscalationConfig | false        # optional — false disables
 
 **`retry_escalation`** controls the retry escalation target for the entire workflow. When set to `false`, it disables any config-level `retry_escalation` for this workflow. When set to an `EscalationConfig` object (`provider` + `model`), it overrides the config-level target. When omitted (`null`/absent), the config-level `retry_escalation` applies.
 
+Reaching `max_loop` is not successful completion. Execution stops with `FlowResult.status == "max_loop_reached"`, preserving partial result paths and checkpoint state. Workflow-end hooks receive that status, the CLI exits non-zero, and tasks-directory entries are marked failed.
+
 **Validation:**
 - `start_at` must exist in `states`
 - All `next` references across all states must exist in `states`
 - At least one path from `start_at` must reach termination (`end: true` or a `fail` state)
 - `task_splitter` field is rejected (removed; configure in config.yaml instead)
+
+**Built-in template variables:**
+- `{task}` — task description input
+- `{source}` — task source input
+- `{run_path}` — absolute current run directory
+- `{state.iteration}` — one-based execution count for the current state
 
 ---
 
@@ -73,6 +83,7 @@ command?: string                # required for system, forbidden for LLM provide
 result_path?: string            # optional — JSONPath for output (e.g. $.plan)
 result_file?: string            # optional — top-level $.varname only (no nesting)
 extract?: ExtractRule           # optional — output extraction
+structured_output?: StructuredOutput  # optional — validated JSON object/list
 max_iterations?: int            # optional — >=1, max times state can be entered
 retry?: int                     # default: 3
 timeout_seconds?: int           # optional — per-state timeout override
@@ -88,6 +99,7 @@ end?: bool                      # XOR with next — terminate flow
 - `prompt_template` and `prompt_file` are mutually exclusive
 - `next` and `end` are mutually exclusive
 - `result_path` and `extract.result_path` must not overlap (when both are set)
+- `structured_output` is mutually exclusive with `result_path` and `extract`
 - `result_file` must match `$.varname` (no dots or brackets after `$.`)
 - System provider: requires `command`, forbids `prompt_template`/`prompt_file`/`model`
 - LLM providers: require `model` + (`prompt_template` or `prompt_file`), forbid `command`
@@ -116,11 +128,20 @@ branches: [Branch]              # required — parallel branch definitions
 result_path: string             # required — JSONPath for results array
 result_file?: string            # optional — top-level $.varname only
 min_success?: int               # optional — minimum successful branches
+gate?: ParallelGate             # optional — required named-branch boolean gate
 max_iterations?: int            # optional — >=1
 hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end
 end?: bool                      # XOR with next
 ```
+
+**Validation:**
+- Branch `name` values must be unique within the parallel state
+- `gate` and `min_success` are mutually exclusive
+- Every `gate.required` entry must name an existing branch that configures `structured_output`
+- `gate.result_path` must be a single top-level state key
+
+With a gate, failures from branches not listed in `required` are retained as advisory error results and do not fail the parallel state. Required branch execution/validation failures and missing gate fields fail the parallel state.
 
 ---
 
@@ -261,12 +282,14 @@ provider_options?: {k: v}       # optional — per-task provider option override
 Used inside `ParallelState.branches`:
 
 ```yaml
+name?: string                   # optional — stable identity; required when referenced by a gate
 provider: string                # required — claude|cursor|codex|opencode|gemini|system
 model?: string                  # required for LLM providers
 prompt_template?: string        # XOR with prompt_file
 prompt_file?: string            # XOR with prompt_template
 command?: string                # required for system provider
 extract?: ExtractRule           # optional
+structured_output?: StructuredOutput  # optional — validated branch-local JSON
 retry?: int                     # default: 3
 timeout_seconds?: int           # optional
 provider_options?: {k: v}       # optional
@@ -274,7 +297,56 @@ provider_options?: {k: v}       # optional
 
 **Profile shorthand:** Use `profile: <name>` instead of `provider`/`model`. Resolved pre-validation; XOR with explicit provider/model.
 
-Same provider validation rules as TaskState. `extract.result_path` must not use reserved keys: `output`, `exit_code`, `error`.
+Same provider validation rules as TaskState. `extract.result_path` must not use reserved keys: `output`, `exit_code`, `error`. `structured_output` and `extract` are mutually exclusive. Parallel result entries include the configured branch `name`.
+
+---
+
+## StructuredOutput
+
+Used on `TaskState.structured_output` and `Branch.structured_output`:
+
+```yaml
+structured_output:
+  schema: string                # required — JSON Schema file relative to workflow YAML
+  result_path: string           # required — destination for parsed object/list
+  merge?:                       # optional — keyed list merge
+    strategy: "upsert"          # only supported strategy
+    key: string                 # required — stable object key, min 1 char
+```
+
+**Runtime behavior:**
+- Complete provider stdout is parsed as one JSON value; embedded fragments in prose are not extracted
+- One outer Markdown code fence around the complete JSON value is accepted
+- The parsed value must be an object or list and satisfy the schema
+- Schema files are loaded and the schema itself is validated at workflow-load time
+- Runtime parse/schema failures use the existing `retry` count and bounded validation feedback
+- The previous raw response is not copied into a retry prompt; raw output remains in run logs
+- The `system` provider is not retried after structured-output validation failure
+
+**Upsert behavior:**
+- `result_path` must be a single top-level state key when `merge` is configured
+- Existing state and each update batch must be lists of objects
+- Every object must contain `key`; duplicate key values in one update batch are rejected
+- Matching keys replace the complete object without changing its position
+- New keys append; omitted existing keys remain; deletion is not defined
+- Merge is scoped to one workflow run and survives checkpoint resume
+- Task producers sharing a merge-enabled state channel must declare identical merge configuration
+
+---
+
+## ParallelGate
+
+Used on `ParallelState.gate`:
+
+```yaml
+gate:
+  required: [string]            # required — non-empty unique branch-name list
+  field: string                 # required — branch-local JSONPath
+  expected: any                 # required — value each required branch must match
+  result_path: string           # required — top-level boolean state destination
+```
+
+The gate is `true` only when every required branch succeeds, produces schema-valid structured output, and has `expected` at `field`. A valid different value produces `false`. Required execution/validation failures or a missing field fail the parallel state. Unlisted branches are advisory and do not affect the gate.
 
 ---
 
@@ -435,7 +507,7 @@ Each command receives:
 - `FDSX_HOOKS` — lifecycle event name: `on_workflow_start` or `on_workflow_end`
 - `FDSX_STATUS` — lifecycle status:
   - `on_workflow_start`: always `starting`
-  - `on_workflow_end`: `completed`, `failed`, or `aborted`
+  - `on_workflow_end`: `completed`, `failed`, `aborted`, or `max_loop_reached`
 - `FDSX_FLOW_NAME` — name of the flow
 - `FDSX_THREAD_ID` — current run thread ID
 - `FDSX_STATE_NAME` and `FDSX_DATA_PATH` are **not set** for workflow hooks
@@ -544,7 +616,7 @@ Each command receives:
 - `FDSX_HOOKS` — lifecycle event name: `on_run_start` or `on_run_end`
 - `FDSX_STATUS` — lifecycle status:
   - `on_run_start`: always `starting`
-  - `on_run_end`: `completed`, `failed`, or `partial` (tasks-dir aggregate)
+  - `on_run_end`: `completed`, `failed`, `partial` (tasks-dir aggregate), or `max_loop_reached` (single-flow loop exhaustion)
 - `FDSX_STATE_NAME`, `FDSX_DATA_PATH`, `FDSX_FLOW_NAME`, and `FDSX_THREAD_ID` are **not set** for run hooks
 
 **Failure policy:** Always warn-only — `on_failure` is ignored. Non-zero exit codes and timeouts log a warning and never raise. Each hook has a 30-second subprocess timeout.
@@ -600,6 +672,10 @@ provider_options:
   dangerously_bypass_approvals_and_sandbox?: bool  # default: false
   inactivity_timeout?: int              # default: 300
 ```
+
+`approval_policy` is passed to `codex exec` as an inline
+`approval_policy="<value>"` configuration override. Codex does not expose an
+`--approval-policy` option on the `exec` subcommand.
 
 ### OpenCode
 

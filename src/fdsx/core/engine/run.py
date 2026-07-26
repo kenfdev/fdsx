@@ -139,6 +139,7 @@ def run_flow(
             "flow_path": str(flow_path),
             "flow_name": flow.name,
             "run_dir": str(run_dir),
+            "input_keys": sorted(inputs) if inputs else [],
             **(
                 {"task_file_path": str(task_file_path)}
                 if task_file_path is not None
@@ -215,6 +216,8 @@ def run_flow(
 
         results = _extract_results(last_state, compiled.result_paths)
         status, abort_info = _detect_abort_status(recorder)
+        if last_state.get("_meta", {}).get("terminal_status") == "max_loop_reached":
+            status = "max_loop_reached"
         failed_state = abort_info.state_name if abort_info is not None else None
         # T023: fire on_workflow_end with terminal status
         execute_workflow_hooks(
@@ -231,7 +234,14 @@ def run_flow(
         )
         recorder.finalize(_sanitize_state_for_log(last_state), status)
         recorder.save(base_dir=base_dir)
-        if failed_state is not None:
+        if status == "max_loop_reached":
+            display_completion_summary(
+                flow.name,
+                _calc_elapsed(recorder),
+                "max_loop",
+                "max_loop_reached",
+            )
+        elif failed_state is not None:
             display_completion_summary(
                 flow.name,
                 _calc_elapsed(recorder),

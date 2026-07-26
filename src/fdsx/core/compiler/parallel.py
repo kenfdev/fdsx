@@ -12,6 +12,7 @@ from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
     _strip_reserved_keys,
     inject_builtin_vars,
+    resolve_jsonpath,
     resolve_template,
     resolve_template_shell_safe,
     set_jsonpath,
@@ -103,7 +104,9 @@ def _create_branch_executor(
             model=branch.model,
         )
 
-        vars_ctx = inject_builtin_vars(state_dict)
+        iters = state_dict.get("_state_iterations", {})
+        iteration = iters.get(state_name, 1)
+        vars_ctx = inject_builtin_vars(state_dict, state_iteration=iteration)
         resolved_prompt = resolve_template(branch.prompt_template or "", vars_ctx)
         resolved_command = resolve_template_shell_safe(branch.command or "", vars_ctx)
 
@@ -125,8 +128,6 @@ def _create_branch_executor(
 
         max_retries = branch.retry if branch.retry is not None else 3
 
-        iters = state_dict.get("_state_iterations", {})
-        iteration = iters.get(state_name, 1)
         branch_log_name = f"{state_name}_branch{branch_index + 1}"
 
         stream_logger = StreamLogger(
@@ -189,6 +190,7 @@ def _create_branch_executor(
             timeout_seconds=branch.timeout_seconds,
             max_retries=max_retries,
             extract=branch.extract,
+            structured_output=branch.structured_output,
             stream_logger=stream_logger,
             on_process_start=on_process_start,
             summary_callback=stream_logger.on_summary,
@@ -202,7 +204,39 @@ def _create_branch_executor(
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
         extracted = exec_result.extracted
+        structured_value = exec_result.structured_value
         last_error = exec_result.last_error
+
+        if (
+            structured_value is not None
+            and branch.structured_output is not None
+            and branch.structured_output.merge is not None
+        ):
+            from fdsx.core.structured_output import (
+                StructuredOutputValidationError,
+                upsert_structured_items,
+            )
+
+            previous_results = resolve_jsonpath(state.result_path, state_dict)
+            previous_value: Any = None
+            if (
+                isinstance(previous_results, list)
+                and branch_index < len(previous_results)
+                and isinstance(previous_results[branch_index], dict)
+            ):
+                previous_value = resolve_jsonpath(
+                    branch.structured_output.result_path,
+                    previous_results[branch_index],
+                )
+            try:
+                structured_value = upsert_structured_items(
+                    previous_value,
+                    structured_value,
+                    branch.structured_output.merge.key,
+                )
+            except StructuredOutputValidationError as exc:
+                structured_value = None
+                last_error = str(exc)
 
         duration = time.time() - start_time
 
@@ -218,13 +252,29 @@ def _create_branch_executor(
             annotation = f" (escalated from {orig})" if last != orig else ""
             branch_result: dict[str, Any] = {
                 "index": branch_index,
-                "output": result.stdout.strip(),
+                "name": branch.name,
                 "exit_code": result.exit_code,
                 "error": (
                     f"Provider {last} failed after {max_retries + 1} attempts{annotation}: {_sanitize_output(last_error)}"
                     if annotation
                     else _sanitize_output(last_error)
                 ),
+                "_duration": duration,
+            }
+            if branch.structured_output is None:
+                branch_result["output"] = result.stdout.strip()
+        elif branch.structured_output is not None and structured_value is None:
+            terminal.display_branch_failed(
+                state_name=state_name,
+                branch_index=branch_index,
+                provider=branch.provider,
+                model=branch.model,
+            )
+            branch_result = {
+                "index": branch_index,
+                "name": branch.name,
+                "exit_code": 1,
+                "error": last_error,
                 "_duration": duration,
             }
         elif branch.extract and extracted is None:
@@ -236,6 +286,7 @@ def _create_branch_executor(
             )
             branch_result = {
                 "index": branch_index,
+                "name": branch.name,
                 "output": result.stdout.strip(),
                 "exit_code": 1,
                 "error": f"Extraction failed after {max_retries + 1} attempts: all strategies returned None",
@@ -251,15 +302,23 @@ def _create_branch_executor(
             )
             branch_result = {
                 "index": branch_index,
-                "output": result.stdout.strip(),
+                "name": branch.name,
                 "exit_code": 0,
                 "error": None,
                 "_duration": duration,
             }
+            if branch.structured_output is None:
+                branch_result["output"] = result.stdout.strip()
 
         if branch.extract and extracted is not None:
             branch_result = set_jsonpath(
                 branch.extract.result_path, branch_result, extracted
+            )
+        if branch.structured_output is not None and structured_value is not None:
+            branch_result = set_jsonpath(
+                branch.structured_output.result_path,
+                branch_result,
+                structured_value,
             )
 
         return _strip_reserved_keys({f"_br_{state_name}": [branch_result]})
@@ -323,12 +382,12 @@ def _create_collector_node(
             for r in sorted_results
         ]
 
+        successful = sum(1 for r in clean_results if r.get("exit_code") == 0)
+
         min_required = (
             state.min_success if state.min_success is not None else len(state.branches)
         )
-        successful = sum(1 for r in clean_results if r.get("exit_code") == 0)
-
-        if successful < min_required:
+        if state.gate is None and successful < min_required:
             failed_branches = [
                 f"branch {i}: {r.get('error', 'unknown error')}"
                 for i, r in enumerate(clean_results)
@@ -348,6 +407,26 @@ def _create_collector_node(
                 f"Failed branches: {'; '.join(failed_branches)}"
             )
 
+        gate_value: bool | None = None
+        if state.gate is not None:
+            gate_value = True
+            by_name = {result.get("name"): result for result in clean_results}
+            for branch_name in state.gate.required:
+                required_result = by_name[branch_name]
+                if required_result.get("exit_code") != 0:
+                    raise RuntimeError(
+                        f"Parallel state '{state_name}' required branch "
+                        f"'{branch_name}' failed: {required_result.get('error', '')}"
+                    )
+                actual = resolve_jsonpath(state.gate.field, required_result)
+                if actual is None:
+                    raise RuntimeError(
+                        f"Parallel state '{state_name}' required branch "
+                        f"'{branch_name}' omitted gate field '{state.gate.field}'"
+                    )
+                if actual != state.gate.expected:
+                    gate_value = False
+
         rp_key = _top_key(state.result_path)
         partial: dict[str, Any] = (
             {rp_key: state_dict.get(rp_key)}
@@ -355,6 +434,8 @@ def _create_collector_node(
             else {}
         )
         partial = set_jsonpath(state.result_path, partial, clean_results)
+        if state.gate is not None:
+            partial = set_jsonpath(state.gate.result_path, partial, gate_value)
 
         if state.result_file:
             run_dir = state_dict.get("_meta", {}).get("run_dir", "")
@@ -387,6 +468,8 @@ def _create_collector_node(
         terminal.display_state_complete(state_name, duration)
 
         recorded_paths = [state.result_path]
+        if state.gate is not None:
+            recorded_paths.append(state.gate.result_path)
         if state.result_file:
             recorded_paths.append(state.result_file)
 

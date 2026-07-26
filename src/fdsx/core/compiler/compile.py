@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 _WHITE = 0
 _GRAY = 1
 _BLACK = 2
+_MAX_LOOP_NODE = "__max_loop_reached__"
 
 
 def _get_all_next_state_names(state: Any, flow_states: dict[str, Any]) -> list[str]:
@@ -111,7 +112,7 @@ def _make_loop_guard(target: str, max_loop: int) -> Callable[[dict[str, Any]], s
     def route(state_dict: dict[str, Any]) -> str:
         iters = state_dict.get("_state_iterations", {})
         if iters.get(target, 0) >= max_loop:
-            return END
+            return _MAX_LOOP_NODE
         return target
 
     return route
@@ -129,7 +130,7 @@ def _wrap_routing_with_loop_guard(
         if destination in loop_back_targets:
             iters = state_dict.get("_state_iterations", {})
             if iters.get(destination, 0) >= max_loop:
-                return END
+                return _MAX_LOOP_NODE
         return destination
 
     return route
@@ -504,6 +505,18 @@ def compile_flow(
     loop_back_targets_by_source: dict[str, set[str]] = {}
     for src, tgt in loop_back_edges:
         loop_back_targets_by_source.setdefault(src, set()).add(tgt)
+    if loop_back_edges:
+
+        def mark_max_loop(state_dict: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "_meta": {
+                    **state_dict.get("_meta", {}),
+                    "terminal_status": "max_loop_reached",
+                }
+            }
+
+        graph.add_node(_MAX_LOOP_NODE, mark_max_loop)  # type: ignore[call-overload]
+        graph.add_edge(_MAX_LOOP_NODE, END)
 
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
@@ -517,10 +530,17 @@ def compile_flow(
             # Outgoing: collector → next state (NOT dispatch node)
             next_s = _get_next_state(state)
             if next_s:
-                graph.add_edge(
-                    f"_collect_{state_name}",
-                    END if next_s == "END" else next_s,
-                )
+                if next_s in loop_back_targets_by_source.get(state_name, set()):
+                    graph.add_conditional_edges(
+                        f"_collect_{state_name}",
+                        _make_loop_guard(next_s, flow.max_loop),
+                        {next_s: next_s, _MAX_LOOP_NODE: _MAX_LOOP_NODE},
+                    )
+                else:
+                    graph.add_edge(
+                        f"_collect_{state_name}",
+                        END if next_s == "END" else next_s,
+                    )
             continue  # Skip the regular edge-adding below for ParallelState
 
         if isinstance(state, WaitState):
@@ -529,10 +549,17 @@ def compile_flow(
             # already added in the node-registration loop above.
             next_s = _get_next_state(state)
             if next_s:
-                graph.add_edge(
-                    f"_{state_name}_int",
-                    END if next_s == "END" else next_s,
-                )
+                if next_s in loop_back_targets_by_source.get(state_name, set()):
+                    graph.add_conditional_edges(
+                        f"_{state_name}_int",
+                        _make_loop_guard(next_s, flow.max_loop),
+                        {next_s: next_s, _MAX_LOOP_NODE: _MAX_LOOP_NODE},
+                    )
+                else:
+                    graph.add_edge(
+                        f"_{state_name}_int",
+                        END if next_s == "END" else next_s,
+                    )
             continue  # Skip the regular edge-adding below for WaitState
 
         next_state = _get_next_state(state)
@@ -544,7 +571,7 @@ def compile_flow(
                 graph.add_conditional_edges(
                     state_name,
                     _make_loop_guard(next_state, flow.max_loop),
-                    {next_state: next_state, END: END},
+                    {next_state: next_state, _MAX_LOOP_NODE: _MAX_LOOP_NODE},
                 )
             else:
                 graph.add_edge(state_name, next_state)
@@ -561,7 +588,7 @@ def compile_flow(
                 routing_fn = _wrap_routing_with_loop_guard(
                     routing_fn, loop_back_targets, flow.max_loop
                 )
-                path_map[END] = END
+                path_map[_MAX_LOOP_NODE] = _MAX_LOOP_NODE
             graph.add_conditional_edges(
                 state_name,
                 routing_fn,

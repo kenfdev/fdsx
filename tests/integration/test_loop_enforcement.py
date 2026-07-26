@@ -16,3 +16,4 @@ class TestLoopEnforcement:
         assert "plan_output" in result.results, (
             "plan_output from last loop iteration must be present in partial results"
         )
+        assert result.status == "max_loop_reached"

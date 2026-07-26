@@ -420,12 +420,28 @@ class TestParallelBranchesWithMixedProviders:
         assert args[args.index("--variant") + 1] == "high"
         assert args[-1] == "do work"
 
-    def test_get_provider_codex_with_approval_policy(self):
-        """get_provider('codex', options) returns CodexProvider with correct options."""
+    def test_codex_approval_policy_uses_supported_config_override(self):
+        """Codex approval_policy reaches exec as a supported config override."""
         provider = get_provider("codex", {"approval_policy": "never"})
         assert isinstance(provider, CodexProvider)
         assert provider.options.approval_policy == "never"
-        assert "--approval-policy" in provider.options.to_cli_flags()
+
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            return FAKE_SUCCESS
+
+        with patch(
+            "fdsx.providers.codex._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(prompt="do work", model="gpt-5.6")
+
+        args = captured_args[0]
+        assert args[:2] == ["codex", "exec"]
+        config_index = args.index("-c")
+        assert args[config_index + 1] == 'approval_policy="never"'
+        assert "--approval-policy" not in args
 
     def test_merge_for_different_providers_are_independent(self):
         """Merging options for claude does not affect codex and vice versa."""

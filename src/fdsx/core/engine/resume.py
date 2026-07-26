@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from langchain_core.runnables.config import RunnableConfig
 from langgraph.types import Command
 
 from fdsx.checkpoint.manager import CheckpointManager
@@ -76,6 +77,18 @@ def resume_flow(
 
     try:
         checkpointer = checkpoint_manager.get_checkpointer()
+        checkpoint_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        checkpoint_tuple = checkpointer.get_tuple(checkpoint_config)
+        input_keys: set[str] = set()
+        if checkpoint_tuple is not None:
+            channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+            checkpoint_meta = channel_values.get("_meta", {})
+            if isinstance(checkpoint_meta, dict):
+                stored_input_keys = checkpoint_meta.get("input_keys", [])
+                if isinstance(stored_input_keys, list):
+                    input_keys = {
+                        key for key in stored_input_keys if isinstance(key, str)
+                    }
 
         if flow_path is None or not flow_path.exists():
             # Read flow_path from run.json sidecar (written by RunRecorder on first run)
@@ -108,7 +121,11 @@ def resume_flow(
                 name: prof.model_dump() for name, prof in config.profiles.items()
             }
 
-        flow, errors = load_flow(flow_path, config_profiles=config_profiles)
+        flow, errors = load_flow(
+            flow_path,
+            input_keys=input_keys or None,
+            config_profiles=config_profiles,
+        )
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
 
@@ -140,6 +157,7 @@ def resume_flow(
 
         compiled = compile_flow(
             flow,
+            input_keys=input_keys or None,
             checkpointer=checkpointer,
             recorder=recorder,
             config=config,
@@ -172,6 +190,24 @@ def resume_flow(
         _terminal_failure = (
             (state_info.values or {}).get("_meta", {}).get("terminal_failure")
         )
+        _terminal_status = (
+            (state_info.values or {}).get("_meta", {}).get("terminal_status")
+        )
+        if _terminal_status == "max_loop_reached":
+            results = _extract_results(dict(state_info.values), compiled.result_paths)
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks,
+                ),
+                status="max_loop_reached",
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
+            return FlowResult(results=results, status="max_loop_reached")
         if _terminal_failure is not None:
             display_completion_summary(
                 recorder.flow_name,
@@ -250,6 +286,8 @@ def resume_flow(
         failed_state: str | None = None
         if recorder is not None:
             status, abort_info = _detect_abort_status(recorder)
+            if last_state.get("_meta", {}).get("terminal_status") == "max_loop_reached":
+                status = "max_loop_reached"
             failed_state = abort_info.state_name if abort_info is not None else None
             # T024: fire on_workflow_end with terminal status on resume completion
             execute_workflow_hooks(
@@ -266,7 +304,14 @@ def resume_flow(
             )
             recorder.finalize(_sanitize_state_for_log(last_state), status)
             recorder.save(base_dir=base_dir)
-            if failed_state is not None:
+            if status == "max_loop_reached":
+                display_completion_summary(
+                    recorder.flow_name,
+                    _calc_elapsed(recorder),
+                    "max_loop",
+                    "max_loop_reached",
+                )
+            elif failed_state is not None:
                 display_completion_summary(
                     recorder.flow_name,
                     _calc_elapsed(recorder),
@@ -291,14 +336,18 @@ def resume_flow(
                 _task_file_path = Path(_task_file_path_str)
                 _task_file = load_task_file(_task_file_path)
                 _entry = _task_file.entries[_task_entry_index]
-                _new_status = "failed" if status == "aborted" else "completed"
+                _new_status = "completed" if status == "completed" else "failed"
                 _entry.status = cast(
                     Literal["pending", "running", "completed", "failed"], _new_status
                 )
                 _entry.thread_id = thread_id
                 _entry.error = (
-                    f"workflow aborted at state '{failed_state}'"
-                    if status == "aborted"
+                    (
+                        f"workflow aborted at state '{failed_state}'"
+                        if status == "aborted"
+                        else status
+                    )
+                    if status != "completed"
                     else None
                 )
                 save_task_file(_task_file_path, _task_file)

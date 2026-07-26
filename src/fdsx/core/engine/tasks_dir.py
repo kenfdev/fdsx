@@ -453,8 +453,12 @@ def run_tasks_dir(
                     task_file_path=file_path,
                     task_entry_index=entry_idx,
                 )
-                if flow_result.status == "aborted":
-                    error_msg = f"workflow aborted at state '{flow_result.abort_state}'"
+                if flow_result.status != "completed":
+                    error_msg = (
+                        f"workflow aborted at state '{flow_result.abort_state}'"
+                        if flow_result.status == "aborted"
+                        else flow_result.status
+                    )
                     _update_task_status(
                         file_path,
                         task_file,

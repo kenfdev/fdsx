@@ -290,7 +290,7 @@ def run(
                 workflow, inputs, current_thread_id, base_dir, quiet=quiet
             )
             execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
-            if result.status == "aborted":
+            if result.status != "completed":
                 raise typer.Exit(code=1)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
@@ -516,7 +516,7 @@ def resume(
     try:
         result = engine.resume_flow(thread_id, base_dir)
         execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
-        if result.status == "aborted":
+        if result.status != "completed":
             raise typer.Exit(code=1)
     except RuntimeError as e:
         error_msg = str(e)

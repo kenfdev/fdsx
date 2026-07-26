@@ -20,6 +20,11 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
+- Provider-independent JSON Schema validation for structured task and branch output
+- Stable keyed upsert merging for iterative structured ledgers
+- Named parallel branches with required-branch boolean gates
+- One-based state iteration values for loop-aware prompts
+- Explicit non-success outcomes when a workflow reaches `max_loop`
 - Global and per-flow extraction fallback and retry escalation
 - Workflow auto-selection via LLM-based matching
 
@@ -80,7 +85,7 @@ name: MyWorkflow                # (string, REQUIRED) human-readable flow name
 description: What this flow does # (string, REQUIRED) flow description
 start_at: first_state           # (string, REQUIRED) name of the initial state; must exist in `states`
 version: "1.0"                  # (string, optional) version identifier
-max_loop: 10                    # (int, default: 10) max times any state can be re-entered before aborting
+max_loop: 10                    # (int, default: 10) max loop iterations; exhaustion returns max_loop_reached
 
 # --- Profiles: named provider+model bundles (optional) ---
 # Define here or in .fdsx/config.yaml. Workflow-level overrides config-level.
@@ -181,6 +186,13 @@ states:
     result_path: $.plan                 # (string, REQUIRED) JSONPath where raw output is stored
     result_file: $.plan_ref             # (string, optional) stores absolute path of a result file
                                         #   must be a simple $.varname (no nesting)
+    # Alternatively, configure structured_output instead of result_path/extract:
+    # structured_output:
+    #   schema: schemas/plan.schema.json # relative to this workflow YAML
+    #   result_path: $.plan              # stores the parsed object/list, not a JSON string
+    #   merge:                            # optional; lists of objects only
+    #     strategy: upsert
+    #     key: id                        # replace by key, append new keys, retain omissions
 
     # --- Extraction: parse structured signals from LLM output (optional) ---
     extract:
@@ -248,7 +260,8 @@ states:
   parallel_review:
     type: parallel                      # (REQUIRED) literal "parallel"
     branches:                           # (list, REQUIRED) each branch is an independent execution
-      - provider: claude                # same provider rules as task
+      - name: quality                   # (string, optional) stable branch identity
+        provider: claude                # same provider rules as task
         model: claude-sonnet-4-6
         # Alternatively, use a profile reference (mutually exclusive with provider/model):
         # profile: smarty
@@ -265,7 +278,8 @@ states:
         provider_options:               # (map, optional) per-branch overrides
           permission_mode: plan
 
-      - provider: codex
+      - name: security
+        provider: codex
         model: gpt-5.4
         prompt_file: review-security.md
         extract:
@@ -276,6 +290,13 @@ states:
     result_path: $.reviews              # (string, REQUIRED) JSONPath for the results array
     result_file: $.reviews_ref          # (string, optional) path to result file
     min_success: 2                      # (int, optional) minimum branches that must succeed
+    # Or use a required-branch gate instead of min_success:
+    # Required branches must replace extract with structured_output.
+    # gate:
+    #   required: [quality, security]   # named branches with veto power
+    #   field: $.review.approved        # branch-local structured output field
+    #   expected: true
+    #   result_path: $.approved         # top-level boolean for a following choice
     max_iterations: 3                   # (int, optional)
     hooks:                              # (optional) on_state_start / on_state_end only
     next: aggregate_reviews             # next / end — same rules as task
@@ -377,6 +398,59 @@ states:
                                         # it terminates the flow immediately on entry
 ```
 
+### Structured Output and Convergence
+
+Task states and parallel branches can validate complete provider stdout against a JSON Schema before it enters workflow state:
+
+```yaml
+states:
+  update_ledger:
+    type: task
+    provider: claude
+    model: claude-sonnet-4-6
+    prompt_template: "Produce ledger update {state.iteration} as JSON"
+    structured_output:
+      schema: schemas/ledger.schema.json
+      result_path: $.ledger
+      merge:
+        strategy: upsert
+        key: id
+    next: review
+
+  review:
+    type: parallel
+    branches:
+      - name: security
+        provider: claude
+        model: claude-sonnet-4-6
+        prompt_template: "Review the ledger: {ledger}"
+        structured_output:
+          schema: schemas/review.schema.json
+          result_path: $.review
+      - name: style
+        provider: codex
+        model: gpt-5.4
+        prompt_template: "Give advisory feedback for: {ledger}"
+        structured_output:
+          schema: schemas/review.schema.json
+          result_path: $.review
+    result_path: $.reviews
+    gate:
+      required: [security]
+      field: $.review.approved
+      expected: true
+      result_path: $.approved
+    end: true
+```
+
+The schema path is relative to the workflow file and is loaded and checked before provider execution. Complete stdout must be one JSON object or list; a single outer Markdown code fence is allowed. Validation failures use the state's normal retry count and provide bounded corrective feedback. The `system` provider is not retried for a structured-output validation failure.
+
+`merge.strategy: upsert` requires a top-level result path and lists of objects containing the configured key. Matching objects are replaced in place, new keys append, and omitted existing objects remain. A batch with missing or duplicate keys is rejected.
+
+With `gate`, required named branches must execute successfully and provide schema-valid output. A valid value different from `expected` sets the boolean result to `false`; execution, validation, or missing-field failures on required branches fail the parallel state. Unlisted advisory branch failures remain in the results without blocking the gate. `gate` and `min_success` are mutually exclusive.
+
+Reaching `max_loop` returns `FlowResult.status == "max_loop_reached"`, preserves partial results and checkpoint state, passes that status to workflow-end hooks, produces a non-zero CLI exit, and marks tasks-directory entries failed.
+
 ### Hook Environment
 
 Every hook command receives context via **environment variables** and **positional arguments**.
@@ -386,7 +460,7 @@ Every hook command receives context via **environment variables** and **position
 | Variable | Description | Example |
 |---|---|---|
 | `FDSX_STATE_NAME` | Name of the current state | `plan` |
-| `FDSX_STATUS` | Lifecycle status | `starting`, `completed`, or `failed` |
+| `FDSX_STATUS` | Lifecycle status | `starting`, `completed`, `failed`, `aborted`, `partial`, or `max_loop_reached` depending on hook scope |
 | `FDSX_DATA_PATH` | Path to the state data JSON file | `.fdsx/runs/<thread_id>/hooks/plan/input.json` |
 | `FDSX_THREAD_ID` | Current run thread ID | `abc123` |
 | `FDSX_FLOW_NAME` | Name of the flow | `MyWorkflow` |
@@ -465,6 +539,7 @@ iterator:
 | `{task}` | Task description passed via `--input task=...` or from batch task entry |
 | `{source}` | Source origin passed via `--input source=...` or from batch task file |
 | `{run_path}` | Absolute path of the current run's data directory (`<base_dir>/runs/<thread_id>`). Read-only — cannot be overridden by `--input` or a state's `result_path`. Use it to share files between states: write to `{run_path}/artifact.txt` in one state and read from it in the next. |
+| `{state.iteration}` | One-based execution count for the current state. The first entry is `1`; loop re-entry increments it. |
 
 ## Project Configuration (`.fdsx/config.yaml`)
 

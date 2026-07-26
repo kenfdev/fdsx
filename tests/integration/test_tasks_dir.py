@@ -228,6 +228,30 @@ class TestUpdateTaskStatus:
 
 
 class TestRunTasksDir:
+    def test_max_loop_reached_marks_entry_failed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tasks_dir = Path(tmpdir)
+            flow_path = FIXTURES_DIR / "batch_flow.yaml"
+            task_path = tasks_dir / "001-loop.yaml"
+            save_task_file(
+                task_path, TaskFile(entries=[TaskEntry(description="looping task")])
+            )
+
+            with (
+                patch(
+                    "fdsx.core.engine.tasks_dir.run_flow",
+                    return_value=FlowResult(
+                        results={"partial": "work"}, status="max_loop_reached"
+                    ),
+                ),
+                patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
+            ):
+                results = engine.run_tasks_dir(flow_path, tasks_dir, auto_workflow=True)
+
+            assert results[0]["status"] == "failed"
+            assert "max_loop_reached" in results[0]["error"]
+            assert load_task_file(task_path).entries[0].status == "failed"
+
     def test_full_run_all_pending(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
