@@ -158,9 +158,9 @@ class TestCodexOptions:
         assert opts.to_cli_flags() == ["--sandbox", "workspace-write"]
 
     def test_codex_options_to_cli_flags_approval_policy(self):
-        """approval_policy maps to --approval-policy <value>."""
+        """approval_policy maps to a Codex config override."""
         opts = CodexOptions(approval_policy="on-request")
-        assert opts.to_cli_flags() == ["--approval-policy", "on-request"]
+        assert opts.to_cli_flags() == ["-c", 'approval_policy="on-request"']
 
     def test_codex_options_to_cli_flags_full_auto(self):
         """full_auto=True maps to --full-auto."""
@@ -201,8 +201,8 @@ class TestCodexOptions:
             'model_reasoning_effort="high"',
             "--sandbox",
             "workspace-write",
-            "--approval-policy",
-            "on-request",
+            "-c",
+            'approval_policy="on-request"',
             "--full-auto",
             "--dangerously-bypass-approvals-and-sandbox",
         ]

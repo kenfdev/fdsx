@@ -60,7 +60,7 @@ class CodexOptions(BaseModel):
         if self.sandbox is not None:
             flags.extend(["--sandbox", self.sandbox])
         if self.approval_policy is not None:
-            flags.extend(["--approval-policy", self.approval_policy])
+            flags.extend(["-c", f'approval_policy="{self.approval_policy}"'])
         if self.full_auto:
             flags.append("--full-auto")
         if self.dangerously_bypass_approvals_and_sandbox:

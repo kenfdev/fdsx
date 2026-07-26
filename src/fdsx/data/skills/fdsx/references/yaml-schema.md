@@ -601,6 +601,10 @@ provider_options:
   inactivity_timeout?: int              # default: 300
 ```
 
+`approval_policy` is passed to `codex exec` as an inline
+`approval_policy="<value>"` configuration override. Codex does not expose an
+`--approval-policy` option on the `exec` subcommand.
+
 ### OpenCode
 
 ```yaml
