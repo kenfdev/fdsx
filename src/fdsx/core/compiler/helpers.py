@@ -162,6 +162,8 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     paths = []
     for _state_name, state in flow.states.items():
         if isinstance(state, TaskState):
+            if state.structured_output:
+                paths.append(state.structured_output.result_path)
             if state.result_path:
                 paths.append(state.result_path)
                 if state.extract:
@@ -171,10 +173,14 @@ def _extract_result_paths(flow: Flow) -> list[str]:
         elif isinstance(state, ParallelState):
             if state.result_path:
                 paths.append(state.result_path)
+            if state.gate:
+                paths.append(state.gate.result_path)
             if state.result_file:
                 paths.append(state.result_file)
         elif isinstance(state, PassState) and state.aggregate:
             paths.append(state.aggregate.result_path)
+        elif isinstance(state, PassState) and state.parameters:
+            paths.extend(state.parameters)
         elif isinstance(state, (WaitState, MapState)) and state.result_path:
             paths.append(state.result_path)
     return paths
@@ -229,6 +235,10 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
     for _state_name, state in flow.states.items():
         if isinstance(state, TaskState):
+            if state.structured_output:
+                k = _top_level_key(state.structured_output.result_path)
+                if k:
+                    annotations.setdefault(k, Any)
             if state.result_path:
                 k = _top_level_key(state.result_path)
                 if k:
@@ -248,6 +258,10 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
                     annotations.setdefault(k, Any)
             if state.result_file:
                 k = _top_level_key(state.result_file)
+                if k:
+                    annotations.setdefault(k, Any)
+            if state.gate:
+                k = _top_level_key(state.gate.result_path)
                 if k:
                     annotations.setdefault(k, Any)
         elif isinstance(state, PassState):

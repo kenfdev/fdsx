@@ -110,6 +110,45 @@ class ExtractRule(BaseModel):
         return self
 
 
+class StructuredOutputMerge(BaseModel):
+    """Merge policy for repeated structured list output."""
+
+    strategy: Literal["upsert"] = "upsert"
+    key: str = Field(..., min_length=1, description="Stable object key")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StructuredOutput(BaseModel):
+    """Provider-independent JSON Schema output contract."""
+
+    schema_path: str = Field(
+        ..., alias="schema", serialization_alias="schema", min_length=1
+    )
+    result_path: str = Field(..., description="JSONPath for the validated value")
+    merge: StructuredOutputMerge | None = None
+    schema_document: Any | None = Field(default=None, exclude=True, repr=False)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    @model_validator(mode="after")
+    def validate_merge_path(self) -> "StructuredOutput":
+        if self.merge is None:
+            return self
+        path = (
+            self.result_path[2:]
+            if self.result_path.startswith("$.")
+            else self.result_path
+        )
+        parts = parse_jsonpath(path)
+        if len(parts) != 1 or not isinstance(parts[0], str):
+            raise ValueError(
+                "merge-enabled structured_output.result_path must be a single "
+                "top-level state key"
+            )
+        return self
+
+
 class WebhookConfig(BaseModel):
     """Webhook notification configuration."""
 
@@ -415,6 +454,7 @@ class EscalationConfig(BaseModel):
 class Branch(BaseModel):
     """Parallel branch definition."""
 
+    name: str | None = Field(default=None, min_length=1)
     provider: str = Field(..., description="Provider name")
     model: str | None = Field(
         default=None, description="Model name for non-system providers"
@@ -427,6 +467,9 @@ class Branch(BaseModel):
     )
     command: str | None = Field(default=None, description="Command for system provider")
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
+    structured_output: StructuredOutput | None = Field(
+        default=None, description="Validated structured output"
+    )
     retry: int = Field(default=3, description="Retry count")
     timeout_seconds: int | None = Field(default=None, description="Timeout in seconds")
     provider_options: dict[str, Any] | None = Field(
@@ -463,6 +506,12 @@ class Branch(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_structured_output_exclusive(self) -> "Branch":
+        if self.structured_output is not None and self.extract is not None:
+            raise ValueError("structured_output and extract are mutually exclusive")
+        return self
+
 
 class AggregateRule(BaseModel):
     """Aggregation rule for parallel results."""
@@ -473,6 +522,26 @@ class AggregateRule(BaseModel):
     match: str = Field(..., description="Match value")
     no_match: str = Field(..., description="Non-match value")
     result_path: str = Field(..., description="JSONPath for result")
+
+
+class ParallelGate(BaseModel):
+    """Boolean policy calculated from selected named parallel branches."""
+
+    required: list[str] = Field(..., min_length=1)
+    field: str = Field(..., min_length=1, description="Branch-local JSONPath")
+    expected: Any
+    result_path: str = Field(..., description="Top-level boolean result path")
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("result_path")
+    @classmethod
+    def validate_top_level_result_path(cls, value: str) -> str:
+        path = value[2:] if value.startswith("$.") else value
+        parts = parse_jsonpath(path)
+        if len(parts) != 1 or not isinstance(parts[0], str):
+            raise ValueError("gate.result_path must be a single top-level state key")
+        return value
 
 
 def _validate_result_file(v: str | None) -> str | None:
@@ -521,6 +590,9 @@ class TaskState(BaseModel):
         description="Top-level JSONPath variable to store the absolute path of a result file",
     )
     extract: ExtractRule | None = Field(default=None, description="Output extraction")
+    structured_output: StructuredOutput | None = Field(
+        default=None, description="Validated structured output"
+    )
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
@@ -585,6 +657,16 @@ class TaskState(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_structured_output_exclusive(self) -> "TaskState":
+        if self.structured_output is None:
+            return self
+        if self.result_path is not None or self.extract is not None:
+            raise ValueError(
+                "structured_output is mutually exclusive with result_path and extract"
+            )
+        return self
+
 
 class ChoiceState(BaseModel):
     """Choice state - branching based on variable values."""
@@ -611,6 +693,7 @@ class ParallelState(BaseModel):
         description="Top-level JSONPath variable to store the absolute path of a result file",
     )
     min_success: int | None = Field(default=None, description="Min successful branches")
+    gate: ParallelGate | None = Field(default=None, description="Required-branch gate")
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"
     )
@@ -631,6 +714,31 @@ class ParallelState(BaseModel):
     def validate_next_end_exclusive(self) -> "ParallelState":
         if self.next is not None and self.end is not None:
             raise ValueError("next and end are mutually exclusive")
+        return self
+
+    @model_validator(mode="after")
+    def validate_gate_configuration(self) -> "ParallelState":
+        names = [branch.name for branch in self.branches if branch.name is not None]
+        if len(names) != len(set(names)):
+            raise ValueError("parallel branch names must be unique")
+        if self.gate is None:
+            return self
+        if self.min_success is not None:
+            raise ValueError("gate and min_success are mutually exclusive")
+        known = set(names)
+        for required_name in self.gate.required:
+            if required_name not in known:
+                raise ValueError(f"gate references unknown branch '{required_name}'")
+            required_branch = next(
+                branch for branch in self.branches if branch.name == required_name
+            )
+            if required_branch.structured_output is None:
+                raise ValueError(
+                    f"gate required branch '{required_name}' must configure "
+                    "structured_output"
+                )
+        if len(self.gate.required) != len(set(self.gate.required)):
+            raise ValueError("gate.required branch names must be unique")
         return self
 
 
@@ -916,6 +1024,30 @@ class Flow(BaseModel):
             if ref not in self.states:
                 raise ValueError(f"next reference '{ref}' does not exist in states")
 
+        return self
+
+    @model_validator(mode="after")
+    def validate_structured_output_merge_channels(self) -> "Flow":
+        channels: dict[str, StructuredOutputMerge] = {}
+        contracts: list[StructuredOutput] = []
+        for state in self.states.values():
+            if isinstance(state, TaskState) and state.structured_output is not None:
+                contracts.append(state.structured_output)
+        for contract in contracts:
+            if contract.merge is None:
+                continue
+            path = (
+                contract.result_path[2:]
+                if contract.result_path.startswith("$.")
+                else contract.result_path
+            )
+            previous = channels.get(path)
+            if previous is not None and previous != contract.merge:
+                raise ValueError(
+                    f"structured output producers for '{path}' must use identical "
+                    "merge configuration"
+                )
+            channels[path] = contract.merge
         return self
 
     @model_validator(mode="after")

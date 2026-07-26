@@ -20,6 +20,7 @@ from fdsx.core.hooks import (
 from fdsx.core.variables import (
     _strip_reserved_keys,
     inject_builtin_vars,
+    resolve_jsonpath,
     resolve_template,
     resolve_template_shell_safe,
     set_jsonpath,
@@ -33,6 +34,7 @@ from fdsx.models.flow import (
     Flow,
     HookEntry,
     PassState,
+    StructuredOutput,
     TaskState,
     WaitState,
 )
@@ -93,6 +95,11 @@ def _create_task_node(
         if config is not None and config.profiles
         else None
     )
+    structured_output = (
+        state.structured_output
+        if isinstance(state.structured_output, StructuredOutput)
+        else None
+    )
 
     def _on_fallback(event: FallbackEvent) -> None:
         if recorder is not None:
@@ -129,7 +136,12 @@ def _create_task_node(
         if recorder is not None:
             recorder.record_state_start(state_name, "task")
 
-        vars_ctx = inject_builtin_vars(state_dict)
+        iters = dict(state_dict.get("_state_iterations", {}))
+        iteration = iters.get(state_name, 0) + 1
+        iters[state_name] = iteration
+        _check_max_iterations(state_name, state, iteration)
+
+        vars_ctx = inject_builtin_vars(state_dict, state_iteration=iteration)
         resolved_prompt = resolve_template(state.prompt_template or "", vars_ctx)
         resolved_command = resolve_template_shell_safe(state.command or "", vars_ctx)
 
@@ -144,11 +156,6 @@ def _create_task_node(
 
         max_retries = state.retry if state.retry is not None else 3
 
-        iters = dict(state_dict.get("_state_iterations", {}))
-        iteration = iters.get(state_name, 0) + 1
-        iters[state_name] = iteration
-        _check_max_iterations(state_name, state, iteration)
-
         stream_logger = StreamLogger(
             state_name, log_dir, quiet=quiet, iteration=iteration
         )
@@ -161,6 +168,7 @@ def _create_task_node(
             timeout_seconds=state.timeout_seconds,
             max_retries=max_retries,
             extract=state.extract,
+            structured_output=structured_output,
             stream_logger=stream_logger,
             on_process_start=on_process_start,
             summary_callback=stream_logger.on_summary,
@@ -178,6 +186,7 @@ def _create_task_node(
         exec_result = execute_with_retry(exec_config)
         result = exec_result.result
         extracted = exec_result.extracted
+        structured_value = exec_result.structured_value
         last_error = exec_result.last_error
 
         if result.exit_code != 0:
@@ -194,7 +203,28 @@ def _create_task_node(
 
         partial: dict[str, Any] = {}
 
-        if state.extract:
+        if structured_output is not None:
+            if structured_value is None:
+                terminal.display_state_error(state_name, last_error)
+                if recorder is not None:
+                    recorder.record_state_error(state_name, last_error)
+                from fdsx.core.structured_output import StructuredOutputValidationError
+
+                raise StructuredOutputValidationError(last_error)
+            if structured_output.merge is not None:
+                from fdsx.core.structured_output import upsert_structured_items
+
+                current = resolve_jsonpath(structured_output.result_path, state_dict)
+                structured_value = upsert_structured_items(
+                    current,
+                    structured_value,
+                    structured_output.merge.key,
+                )
+            partial = set_jsonpath(
+                structured_output.result_path, partial, structured_value
+            )
+            variables_set = [structured_output.result_path]
+        elif state.extract:
             if extracted is None:
                 terminal.display_state_error(state_name, last_error)
                 if recorder is not None:
@@ -203,7 +233,7 @@ def _create_task_node(
                     f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
                 )
             partial = set_jsonpath(state.extract.result_path, partial, extracted)
-            variables_set: list[str] = [state.extract.result_path]
+            variables_set = [state.extract.result_path]
             if state.result_path is not None:
                 partial = set_jsonpath(
                     state.result_path, partial, result.stdout.strip()

@@ -190,6 +190,24 @@ def resume_flow(
         _terminal_failure = (
             (state_info.values or {}).get("_meta", {}).get("terminal_failure")
         )
+        _terminal_status = (
+            (state_info.values or {}).get("_meta", {}).get("terminal_status")
+        )
+        if _terminal_status == "max_loop_reached":
+            results = _extract_results(dict(state_info.values), compiled.result_paths)
+            execute_workflow_hooks(
+                collect_workflow_hooks(
+                    "on_workflow_end",
+                    global_hooks=config.hooks,
+                    project_hooks=None,
+                    flow_hooks=flow.hooks,
+                ),
+                status="max_loop_reached",
+                event="on_workflow_end",
+                thread_id=thread_id,
+                flow_name=recorder.flow_name,
+            )
+            return FlowResult(results=results, status="max_loop_reached")
         if _terminal_failure is not None:
             display_completion_summary(
                 recorder.flow_name,
@@ -268,6 +286,8 @@ def resume_flow(
         failed_state: str | None = None
         if recorder is not None:
             status, abort_info = _detect_abort_status(recorder)
+            if last_state.get("_meta", {}).get("terminal_status") == "max_loop_reached":
+                status = "max_loop_reached"
             failed_state = abort_info.state_name if abort_info is not None else None
             # T024: fire on_workflow_end with terminal status on resume completion
             execute_workflow_hooks(
@@ -284,7 +304,14 @@ def resume_flow(
             )
             recorder.finalize(_sanitize_state_for_log(last_state), status)
             recorder.save(base_dir=base_dir)
-            if failed_state is not None:
+            if status == "max_loop_reached":
+                display_completion_summary(
+                    recorder.flow_name,
+                    _calc_elapsed(recorder),
+                    "max_loop",
+                    "max_loop_reached",
+                )
+            elif failed_state is not None:
                 display_completion_summary(
                     recorder.flow_name,
                     _calc_elapsed(recorder),
@@ -309,14 +336,18 @@ def resume_flow(
                 _task_file_path = Path(_task_file_path_str)
                 _task_file = load_task_file(_task_file_path)
                 _entry = _task_file.entries[_task_entry_index]
-                _new_status = "failed" if status == "aborted" else "completed"
+                _new_status = "completed" if status == "completed" else "failed"
                 _entry.status = cast(
                     Literal["pending", "running", "completed", "failed"], _new_status
                 )
                 _entry.thread_id = thread_id
                 _entry.error = (
-                    f"workflow aborted at state '{failed_state}'"
-                    if status == "aborted"
+                    (
+                        f"workflow aborted at state '{failed_state}'"
+                        if status == "aborted"
+                        else status
+                    )
+                    if status != "completed"
                     else None
                 )
                 save_task_file(_task_file_path, _task_file)

@@ -19,14 +19,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from jsonschema.validators import validator_for
+
 from fdsx.core.extraction import extract_value
+from fdsx.core.structured_output import (
+    StructuredOutputValidationError,
+    parse_structured_output,
+)
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
 
 if TYPE_CHECKING:
     from fdsx.core.compiler.helpers import EscalationTarget
     from fdsx.core.extraction_fallback import FallbackEvent, ResolvedFallback
     from fdsx.logging.stream_logger import StreamLogger
-    from fdsx.models.flow import ExtractRule
+    from fdsx.models.flow import ExtractRule, StructuredOutput
 
 
 @dataclass
@@ -75,6 +81,7 @@ class ExecutionConfig:
     max_retries: int
     extract: "ExtractRule | None"
     stream_logger: "StreamLogger"
+    structured_output: "StructuredOutput | None" = None
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None
     summary_callback: Callable[[str], None] | None = None
     resolved_fallback: "ResolvedFallback | None" = None
@@ -100,6 +107,7 @@ class ExecutionResult:
     result: ProviderResult
     extracted: Any | None
     last_error: str
+    structured_value: dict[str, Any] | list[Any] | None = None
     last_provider_name: str = ""
 
 
@@ -135,9 +143,11 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     last_error = _NO_ATTEMPTS_ERROR
     result = ProviderResult(exit_code=1, stdout="", stderr="")
     extracted: Any | None = None
+    structured_value: dict[str, Any] | list[Any] | None = None
     escalation_notified = False
     last_used_provider_name = config.provider_name
     active_model: str | None = None
+    validation_feedback: str | None = None
 
     try:
         for attempt in range(config.max_retries + 1):
@@ -172,8 +182,16 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         summary_callback=config.summary_callback,
                     )
                 else:
+                    active_prompt = config.prompt
+                    if validation_feedback is not None:
+                        active_prompt = (
+                            f"{config.prompt}\n\n"
+                            "Your previous response did not satisfy the required "
+                            "structured output contract. Correct this validation "
+                            f"error and return only the JSON value:\n{validation_feedback}"
+                        )
                     result = active_provider.execute(
-                        prompt=config.prompt,
+                        prompt=active_prompt,
                         model=active_model,
                         timeout=config.timeout_seconds,
                         output_callback=config.stream_logger.on_stdout,
@@ -187,6 +205,25 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                 continue
 
             if result.exit_code == 0:
+                if config.structured_output is not None:
+                    schema_document = config.structured_output.schema_document
+                    if schema_document is None:
+                        raise StructuredOutputValidationError(
+                            "Structured output schema was not loaded"
+                        )
+                    validator_class = validator_for(schema_document)
+                    validator = validator_class(schema_document)
+                    try:
+                        structured_value = parse_structured_output(
+                            result.stdout, validator
+                        )
+                    except StructuredOutputValidationError as exc:
+                        last_error = str(exc)[:1000]
+                        validation_feedback = last_error
+                        if active_provider_name == "system":
+                            break
+                        continue
+                    break
                 if config.extract:
                     extracted = extract_value(
                         result.stdout.strip(),
@@ -213,6 +250,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     return ExecutionResult(
         result=result,
         extracted=extracted,
+        structured_value=structured_value,
         last_error=last_error,
         last_provider_name=last_used_provider_name,
     )

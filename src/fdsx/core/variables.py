@@ -11,7 +11,7 @@ from fdsx.models.flow import Branch, Flow, ParallelState, State
 RESULT_FILE_DATA_DIR = "data"
 
 # Global variables automatically available in every state (injected at runtime by the runner)
-GLOBAL_TASK_VARS: set[str] = {"task", "source", "run_path"}
+GLOBAL_TASK_VARS: set[str] = {"task", "source", "run_path", "state.iteration"}
 
 
 def write_result_to_file(varname: str, value: Any, run_dir: Path) -> str:
@@ -79,16 +79,20 @@ def resolve_template_shell_safe(template: str, variables: dict[str, Any]) -> str
     return pattern.sub(replace_match, template)
 
 
-def inject_builtin_vars(state_dict: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of state_dict with run_path derived from _meta.run_dir.
+def inject_builtin_vars(
+    state_dict: dict[str, Any], *, state_iteration: int | None = None
+) -> dict[str, Any]:
+    """Return state with protected runtime template variables injected.
 
-    Always overrides any existing run_path to prevent user or state-result spoofing.
-    Returns the original dict unchanged if _meta.run_dir is absent.
+    ``run_path`` and ``state.iteration`` override user values to prevent spoofing.
     """
     run_dir = state_dict.get("_meta", {}).get("run_dir", "")
-    if not run_dir:
-        return state_dict
-    return {**state_dict, "run_path": str(run_dir).rstrip("/")}
+    builtins: dict[str, Any] = {}
+    if run_dir:
+        builtins["run_path"] = str(run_dir).rstrip("/")
+    if state_iteration is not None:
+        builtins["state"] = {"iteration": state_iteration}
+    return {**state_dict, **builtins}
 
 
 def _strip_reserved_keys(partial: dict[str, Any]) -> dict[str, Any]:
@@ -338,6 +342,11 @@ def analyze_variable_references(
         )
 
         if isinstance(state, TaskState):
+            if state.structured_output:
+                path = state.structured_output.result_path
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
             if state.result_path:
                 path = state.result_path
                 if path.startswith("$."):
@@ -359,6 +368,11 @@ def analyze_variable_references(
                 if path.startswith("$."):
                     path = path[2:]
                 result_paths.add(path)  # full path, not just root key
+            if state.gate:
+                path = state.gate.result_path
+                if path.startswith("$."):
+                    path = path[2:]
+                result_paths.add(path)
             if state.result_file:
                 path = state.result_file
                 if path.startswith("$."):
