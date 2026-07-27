@@ -445,6 +445,50 @@ class TestStructuredOutputCandidates:
 
         assert result.structured_value == {"approved": True}
 
+    def test_retry_feedback_preserves_final_message_schema_error(self):
+        from fdsx.core.compiler.execution import execute_with_retry
+
+        structured_output = MagicMock()
+        structured_output.schema_document = {
+            "type": "object",
+            "properties": {
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"consequence": {"type": "string"}},
+                        "required": ["consequence"],
+                    },
+                }
+            },
+            "required": ["findings"],
+        }
+        config, mock_provider, _ = _make_config(
+            max_retries=1,
+            structured_output=structured_output,
+        )
+        mock_provider.execute.side_effect = [
+            ProviderResult(
+                exit_code=0,
+                stdout='I will review this first.\n{"findings": [{}]}',
+                stderr="",
+                final_message='{"findings": [{}]}',
+            ),
+            ProviderResult(
+                exit_code=0,
+                stdout='{"findings": [{"consequence": "Data loss"}]}',
+                stderr="",
+                final_message='{"findings": [{"consequence": "Data loss"}]}',
+            ),
+        ]
+
+        with patch("fdsx.core.compiler.execution.time.sleep"):
+            result = execute_with_retry(config)
+
+        retry_prompt = mock_provider.execute.call_args_list[1].kwargs["prompt"]
+        assert "'consequence' is a required property" in retry_prompt
+        assert result.structured_value == {"findings": [{"consequence": "Data loss"}]}
+
 
 # ---------------------------------------------------------------------------
 # stream_logger lifecycle
