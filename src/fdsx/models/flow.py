@@ -1020,9 +1020,8 @@ class Flow(BaseModel):
         """Reject task_splitter field and provide migration guidance."""
         if "task_splitter" in values:
             raise ValueError(
-                "task_splitter has been removed from Flow model. "
-                "Configure task splitting in your fdsx config file instead. "
-                "See: https://fdsx.dev/docs/config#task-splitter"
+                "task_splitter has been removed. "
+                "fdsx add now queues each input file directly."
             )
         return values
 

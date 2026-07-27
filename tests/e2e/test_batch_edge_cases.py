@@ -14,8 +14,8 @@ from tests import FIXTURES_DIR
 class TestEdgeCases:
     """T42: Edge case handling."""
 
-    def test_empty_tasks_dir_error_via_cli(self, tmp_path):
-        """Empty tasks directory should produce a clear error via CLI."""
+    def test_empty_tasks_dir_succeeds_via_cli(self, tmp_path):
+        """An empty task queue is a successful no-op."""
         (tmp_path / ".fdsx").mkdir()
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
@@ -34,10 +34,8 @@ class TestEdgeCases:
             ],
         )
 
-        assert result.exit_code == 2, f"Expected exit code 2, got {result.exit_code}"
-        assert (
-            "no .yaml" in result.stderr.lower() or "empty" in result.stderr.lower()
-        ), f"Error should mention no YAML files: {result.stderr}"
+        assert result.exit_code == 0, result.stderr
+        assert "No tasks queued" in result.stderr
 
     def test_all_tasks_completed_multi_file_noop(self, tmp_path):
         """Multiple files with all entries completed should result in no run_flow calls."""

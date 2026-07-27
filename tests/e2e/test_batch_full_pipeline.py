@@ -1,7 +1,7 @@
 """E2E tests for full pipeline (T43), help text (T41/T27), and security sanitization."""
 
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import yaml
 from click import unstyle
@@ -9,10 +9,9 @@ from typer.testing import CliRunner
 
 from fdsx.cli.main import app
 from fdsx.core import engine
-from fdsx.core.batch import TASKS_DIR, split_tasks_to_groups, write_task_files
-from fdsx.core.config import TaskSplitterConfig
+from fdsx.core.batch import TASKS_DIR, write_task_files
 from fdsx.core.engine import FlowResult
-from fdsx.models.task import load_task_file, save_task_file
+from fdsx.models.task import TaskEntry, load_task_file, save_task_file
 from tests import FIXTURES_DIR
 
 
@@ -34,20 +33,12 @@ class TestFullPipelineE2E:
         tasks_dir.mkdir(parents=True)
         flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0,
-            stdout='[[{"description": "Implement feature A"}, {"description": "Implement feature B"}]]',
-            stderr="",
-        )
-
-        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
-
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            result_groups = split_tasks_to_groups(
-                "Implement features A and B",
-                task_splitter,
-            )
+        result_groups = [
+            [
+                TaskEntry(description="Implement feature A"),
+                TaskEntry(description="Implement feature B"),
+            ]
+        ]
 
         assert len(result_groups) == 1
         assert len(result_groups[0]) == 2
@@ -134,26 +125,18 @@ class TestFullPipelineE2E:
         assert task_file_final.entries[1].status == "completed"
         assert task_file_final.entries[1].description == "Implement feature B (edited)"
 
-    def test_e2e_split_helpers_then_run_via_cli(self, tmp_path):
-        """End-to-end: split helpers create files, then run command executes them via CLI."""
+    def test_e2e_task_helpers_then_run_via_cli(self, tmp_path):
+        """End-to-end: task helpers create files, then the CLI executes them."""
         tasks_dir = tmp_path / TASKS_DIR
         tasks_dir.mkdir(parents=True)
         flow_path = FIXTURES_DIR / "batch_flow.yaml"
 
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0,
-            stdout='[[{"description": "CLI test task 1"}, {"description": "CLI test task 2"}]]',
-            stderr="",
-        )
-
-        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
-
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            result_groups = split_tasks_to_groups(
-                "CLI test tasks",
-                task_splitter,
-            )
+        result_groups = [
+            [
+                TaskEntry(description="CLI test task 1"),
+                TaskEntry(description="CLI test task 2"),
+            ]
+        ]
         created_files = write_task_files(result_groups, tasks_dir)
 
         with (
@@ -227,20 +210,12 @@ class TestFullPipelineE2E:
         tasks_dir = tmp_path / TASKS_DIR
         tasks_dir.mkdir(parents=True)
 
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0,
-            stdout='[[{"description": "E2E Task 1"}, {"description": "E2E Task 2"}]]',
-            stderr="",
-        )
-
-        task_splitter = TaskSplitterConfig(provider="claude", model="claude-sonnet-4-6")
-
-        with patch("fdsx.core.batch.get_provider", return_value=mock_provider):
-            result_groups = split_tasks_to_groups(
-                "E2E test tasks",
-                task_splitter,
-            )
+        result_groups = [
+            [
+                TaskEntry(description="E2E Task 1"),
+                TaskEntry(description="E2E Task 2"),
+            ]
+        ]
 
         created_files = write_task_files(result_groups, tasks_dir)
         assert len(created_files) == 1
@@ -422,19 +397,6 @@ class TestHelpText:
         help_lower = result.stdout.lower()
         assert "skip" in help_lower and "confirmation" in help_lower
         assert "interactive" in help_lower or "workflow" in help_lower
-
-    def test_split_help_mentions_spinner(self, tmp_path):
-        """Verify split command help mentions spinner and non-TTY fallback (T027)."""
-        (tmp_path / ".fdsx").mkdir()
-        runner = CliRunner()
-        result = runner.invoke(app, ["add", "--split", "--help"])
-
-        assert result.exit_code == 0
-        assert "spinner" in result.stdout.lower() or "animated" in result.stdout.lower()
-        assert (
-            "non-tty" in result.stdout.lower()
-            or "noninteractive" in result.stdout.lower()
-        )
 
 
 class TestSecuritySanitization:

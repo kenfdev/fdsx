@@ -51,18 +51,6 @@ class TestGenerateConfigYaml:
         assert "    provider: gemini" in config_yaml
         assert "    model: gemini-model" in config_yaml
 
-    def test_task_splitter_with_generalist_profile(self):
-        """Generated YAML contains task_splitter section with profile: generalist."""
-        profile_assignments = {
-            name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
-            for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
-        }
-        providers = [ProviderSelection(provider="claude", model="claude-sonnet-4-7")]
-        config_yaml = generate_config_yaml(profile_assignments, providers)
-
-        assert "task_splitter:" in config_yaml
-        assert "  profile: generalist" in config_yaml
-
     def test_workflow_selector_with_generalist_profile(self):
         """Generated YAML contains workflow_selector section with profile: generalist."""
         profile_assignments = {

@@ -61,7 +61,7 @@ Reaching `max_loop` is not successful completion. Execution stops with `FlowResu
 - `start_at` must exist in `states`
 - All `next` references across all states must exist in `states`
 - At least one path from `start_at` must reach termination (`end: true` or a `fail` state)
-- `task_splitter` field is rejected (removed; configure in config.yaml instead)
+- `task_splitter` field is rejected because task splitting has been removed
 
 **Built-in template variables:**
 - `{task}` — task description input
@@ -736,12 +736,6 @@ All provider option models use `extra="forbid"` — unknown keys cause validatio
 `.fdsx/config.yaml` (project-level) or `~/.config/fdsx/config.yaml` (global). Project overrides global via deep merge.
 
 ```yaml
-task_splitter?:                 # absent by default; must be added to enable batch splitting
-  profile?: string              # XOR with provider/model
-  provider?: string             # default: claude (when task_splitter is present)
-  model?: string                # default: claude-sonnet-4-6 (when task_splitter is present)
-  extra_instructions?: string
-
 workflow_selector?:
   profile?: string              # XOR with provider/model
   provider?: string             # default: claude
@@ -787,7 +781,7 @@ Config uses `extra="forbid"` — unknown keys cause validation errors.
 
 **Hook merging:** During global → project config deep merge, all eight hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, `on_wait_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level. Wait-scope hooks (`on_wait_start`, `on_wait_end`) merge at global → project → flow → state (wait states only) level.
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) configs declare `task_splitter`, the project block fully replaces the global one — fields are not merged.
+`workflow_selector` supports `profile: <name>` (XOR with `provider`/`model`).
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 

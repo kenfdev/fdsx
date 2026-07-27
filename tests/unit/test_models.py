@@ -449,8 +449,8 @@ class TestTaskSplitterRemoval:
             )
 
     def test_task_splitter_migration_error_message(self):
-        """T9: Error message should guide users to config file."""
-        with pytest.raises(ValidationError, match="config"):
+        """T9: Error message should explain direct task queueing."""
+        with pytest.raises(ValidationError, match="queues each input file directly"):
             Flow(
                 name="Test Flow",
                 description="Test flow",
