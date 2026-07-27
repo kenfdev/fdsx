@@ -48,6 +48,8 @@ class CodexOptions(BaseModel):
     ) = None
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] | None = None
     approval_policy: Literal["untrusted", "on-request", "never"] | None = None
+    developer_instructions: str | None = None
+    agents_enabled: bool | None = None
     full_auto: bool = False
     dangerously_bypass_approvals_and_sandbox: bool = False
     inactivity_timeout: int | None = None
@@ -61,6 +63,14 @@ class CodexOptions(BaseModel):
             flags.extend(["--sandbox", self.sandbox])
         if self.approval_policy is not None:
             flags.extend(["-c", f'approval_policy="{self.approval_policy}"'])
+        if self.developer_instructions is not None:
+            # JSON strings are valid TOML basic strings and safely preserve quotes,
+            # newlines, backslashes, and Unicode in Codex's key=value override.
+            encoded = json.dumps(self.developer_instructions, ensure_ascii=False)
+            flags.extend(["-c", f"developer_instructions={encoded}"])
+        if self.agents_enabled is not None:
+            enabled = str(self.agents_enabled).lower()
+            flags.extend(["-c", f"agents.enabled={enabled}"])
         if self.full_auto:
             flags.append("--full-auto")
         if self.dangerously_bypass_approvals_and_sandbox:

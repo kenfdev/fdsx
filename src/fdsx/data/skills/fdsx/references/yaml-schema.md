@@ -668,6 +668,8 @@ provider_options:
   reasoning_effort?: low|medium|high|xhigh|max|ultra
   sandbox?: read-only|workspace-write|danger-full-access
   approval_policy?: untrusted|on-request|never
+  developer_instructions?: string       # additional Codex developer instructions
+  agents_enabled?: bool                 # maps to agents.enabled
   full_auto?: bool                      # default: false
   dangerously_bypass_approvals_and_sandbox?: bool  # default: false
   inactivity_timeout?: int              # default: 300
@@ -676,6 +678,16 @@ provider_options:
 `approval_policy` is passed to `codex exec` as an inline
 `approval_policy="<value>"` configuration override. Codex does not expose an
 `--approval-policy` option on the `exec` subcommand.
+
+`developer_instructions` is passed as the Codex
+`developer_instructions="<value>"` configuration override. It supports normal
+fdsx variable substitution. `agents_enabled` maps to the Codex
+`agents.enabled` configuration switch; set it to `false` to prevent the state
+from spawning subagents.
+
+Codex does not accept Claude's `system_prompt` or `append_system_prompt`
+options. Using either option with Codex raises a validation error directing the
+workflow author to `developer_instructions`.
 
 ### OpenCode
 

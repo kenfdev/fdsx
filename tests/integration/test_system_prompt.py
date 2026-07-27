@@ -1,9 +1,10 @@
-"""Integration tests for end-to-end system prompt wiring (T001 + T002).
+"""Integration tests for end-to-end provider instruction wiring (T001 + T002).
 
-Tests verify that system_prompt and append_system_prompt:
+Tests verify that provider-specific instruction options:
   - Flow from task state provider_options through merge to CLI invocation
-  - Are mutually exclusive after 3-level merge (config → workflow → task)
-  - Are warned-and-stripped for non-Claude providers
+  - Enforce Claude's system-prompt mutual exclusion after 3-level merge
+  - Reject Claude-only options on Codex with migration guidance
+  - Configure Codex developer instructions and multi-agent availability
   - Support variable substitution via {var} patterns
 """
 
@@ -11,7 +12,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import structlog.testing
 import yaml
 
 from fdsx.core.compiler.helpers import _merge_provider_options
@@ -190,13 +190,13 @@ class TestClaudeSystemPromptEndToEnd:
         assert args[idx + 1] == "Additional context."
 
 
-class TestNonClaudeProviderWarnAndStrip:
-    """Non-Claude providers warn once and strip system prompt fields."""
+class TestProviderSpecificInstructions:
+    """Provider-specific instruction fields are validated and reach their CLI."""
 
-    def test_codex_with_append_system_prompt_strips_flag(
-        self, tmp_path, monkeypatch, caplog
+    def test_codex_with_append_system_prompt_fails_with_migration_guidance(
+        self, tmp_path, monkeypatch
     ):
-        """Codex state with append_system_prompt logs warning and does not pass flag to CLI."""
+        """Codex append_system_prompt fails before execution and names its replacement."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".fdsx").mkdir()
 
@@ -221,17 +221,163 @@ class TestNonClaudeProviderWarnAndStrip:
         flow_path.write_text(flow_yaml)
 
         with (
-            structlog.testing.capture_logs() as log_output,
             patch("fdsx.providers.codex._run_subprocess") as fake_run,
+            pytest.raises(FlowValidationError) as exc_info,
         ):
-            fake_run.return_value = FAKE_SUCCESS
             run_flow(flow_path, base_dir=tmp_path)
 
-        assert any(r.get("event") == "provider_option_unsupported" for r in log_output)
-        assert fake_run.called, "codex _run_subprocess should have been called"
-        # _run_subprocess is called with keyword args, so args is in call_args.kwargs
-        args_list = fake_run.call_args.kwargs.get("args", [])
-        assert "--append-system-prompt" not in args_list
+        message = str(exc_info.value)
+        assert "append_system_prompt" in message
+        assert "developer_instructions" in message
+        fake_run.assert_not_called()
+
+    def test_codex_instructions_and_agent_switch_reach_cli(self, tmp_path, monkeypatch):
+        """Codex instructions resolve variables and disable multi-agent via -c."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        flow_dict = {
+            "name": "test-codex-instructions",
+            "description": "Test Codex developer instruction wiring",
+            "start_at": "review",
+            "states": {
+                "review": {
+                    "type": "task",
+                    "provider": "codex",
+                    "model": "gpt-5.6",
+                    "prompt_template": "review the change",
+                    "result_path": "$.result",
+                    "end": True,
+                    "provider_options": {
+                        "developer_instructions": (
+                            "Reviewer: {reviewer_name}\nDo not delegate."
+                        ),
+                        "agents_enabled": False,
+                    },
+                }
+            },
+        }
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(yaml.dump(flow_dict))
+
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS
+        ) as fake_run:
+            run_flow(
+                flow_path,
+                inputs={"reviewer_name": "Alice"},
+                base_dir=tmp_path,
+            )
+
+        args = fake_run.call_args.kwargs["args"]
+        config_overrides = [
+            args[index + 1] for index, value in enumerate(args) if value == "-c"
+        ]
+        assert (
+            'developer_instructions="Reviewer: Alice\\nDo not delegate."'
+            in config_overrides
+        )
+        assert "agents.enabled=false" in config_overrides
+
+    def test_parallel_codex_developer_instructions_resolve_variables(
+        self, tmp_path, monkeypatch
+    ):
+        """Parallel Codex branches resolve developer instruction variables."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        flow_dict = {
+            "name": "parallel-codex-instructions",
+            "description": "Test parallel Codex developer instructions",
+            "start_at": "review",
+            "states": {
+                "review": {
+                    "type": "parallel",
+                    "branches": [
+                        {
+                            "provider": "codex",
+                            "model": "gpt-5.6",
+                            "prompt_template": "review",
+                            "provider_options": {
+                                "developer_instructions": ("Reviewer: {reviewer_name}"),
+                            },
+                        }
+                    ],
+                    "result_path": "$.reviews",
+                    "end": True,
+                }
+            },
+        }
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(yaml.dump(flow_dict))
+
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS
+        ) as fake_run:
+            run_flow(
+                flow_path,
+                inputs={"reviewer_name": "Alice"},
+                base_dir=tmp_path,
+            )
+
+        args = fake_run.call_args.kwargs["args"]
+        config_overrides = [
+            args[index + 1] for index, value in enumerate(args) if value == "-c"
+        ]
+        assert 'developer_instructions="Reviewer: Alice"' in config_overrides
+
+    def test_map_codex_developer_instructions_resolve_item_variables(
+        self, tmp_path, monkeypatch
+    ):
+        """Map Codex iterator tasks resolve item variables in instructions."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        flow_dict = {
+            "name": "map-codex-instructions",
+            "description": "Test map Codex developer instructions",
+            "start_at": "review_items",
+            "states": {
+                "review_items": {
+                    "type": "map",
+                    "items_path": "$.items",
+                    "iterator": {
+                        "states": [
+                            {
+                                "type": "task",
+                                "name": "review",
+                                "provider": "codex",
+                                "model": "gpt-5.6",
+                                "prompt_template": "review {item.name}",
+                                "result_path": "$.review",
+                                "provider_options": {
+                                    "developer_instructions": ("Reviewer: {item.name}"),
+                                },
+                            }
+                        ]
+                    },
+                    "result_path": "$.reviews",
+                    "end": True,
+                }
+            },
+        }
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(yaml.dump(flow_dict))
+
+        with patch(
+            "fdsx.providers.codex._run_subprocess", return_value=FAKE_SUCCESS
+        ) as fake_run:
+            run_flow(
+                flow_path,
+                inputs={"items": [{"name": "Alice"}]},  # type: ignore[dict-item]
+                base_dir=tmp_path,
+            )
+
+        args = fake_run.call_args.kwargs["args"]
+        config_overrides = [
+            args[index + 1] for index, value in enumerate(args) if value == "-c"
+        ]
+        assert 'developer_instructions="Reviewer: Alice"' in config_overrides
 
 
 class TestSystemPromptVariableSubstitution:
