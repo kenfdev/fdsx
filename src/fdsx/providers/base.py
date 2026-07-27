@@ -29,11 +29,17 @@ DEFAULT_EXECUTION_TIMEOUT = 1800
 
 @dataclass
 class ProviderResult:
-    """Result from a provider execution."""
+    """Result from a provider execution.
+
+    ``stdout`` preserves the provider's complete normalized output.
+    ``final_message`` preserves the last complete agent message when the
+    provider's streaming protocol exposes message boundaries.
+    """
 
     exit_code: int
     stdout: str
     stderr: str
+    final_message: str | None = None
 
 
 class ProviderBase(Protocol):

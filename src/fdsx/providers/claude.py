@@ -121,6 +121,7 @@ class ClaudeProvider(ProviderBase):
         summary_callback: Callable[[str], None] | None = None,
         on_tool_start: Callable[[], None] | None = None,
         on_tool_end: Callable[[], None] | None = None,
+        final_message_callback: Callable[[str], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None], Callable[[], None]]:
         """Create a streaming callback that parses stream-json NDJSON lines.
 
@@ -138,6 +139,7 @@ class ClaudeProvider(ProviderBase):
           falling back to concatenated ``text_delta`` content on crash/missing
           result.
         - ``flush``: emits any remaining buffered text. Call after streaming ends.
+        - ``final_message_callback``: receives the result event's final text block.
         """
         text_parts: list[str] = []
         # Single-element list so the inner closure can rebind the value.
@@ -268,6 +270,8 @@ class ClaudeProvider(ProviderBase):
             elif event_type == _EVENT_RESULT:
                 _flush_buffer()
                 final_result[0] = event.get("result", "")
+                if final_message_callback is not None:
+                    final_message_callback(final_result[0] or "")
                 if completion_event is not None:
                     completion_event.set()
 
@@ -313,6 +317,8 @@ class ClaudeProvider(ProviderBase):
                 --include-partial-messages`` is appended to the CLI invocation
                 and ``ProviderResult.stdout`` is populated from the ``result``
                 event (falling back to concatenated ``text_delta`` content).
+                ``ProviderResult.final_message`` contains the result event's
+                final text block.
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
             summary_callback: Optional callback for summary lines ([tool: X],
@@ -346,6 +352,10 @@ class ClaudeProvider(ProviderBase):
             completion_event = threading.Event()
             suspend_fn: list[Callable[[], None] | None] = [None]
             resume_fn: list[Callable[[], None] | None] = [None]
+            final_message: list[str | None] = [None]
+
+            def capture_final_message(message: str) -> None:
+                final_message[0] = message
 
             def on_inactivity_hooks(
                 suspend: Callable[[], None], resume: Callable[[], None]
@@ -363,6 +373,7 @@ class ClaudeProvider(ProviderBase):
                 on_tool_end=lambda: (
                     resume_fn[0]() if resume_fn[0] is not None else None
                 ),
+                final_message_callback=capture_final_message,
             )
             result = _run_subprocess(
                 args=args,
@@ -382,6 +393,7 @@ class ClaudeProvider(ProviderBase):
                     exit_code=result.exit_code,
                     stdout=parsed_stdout,
                     stderr=result.stderr,
+                    final_message=final_message[0],
                 )
             return result
 
