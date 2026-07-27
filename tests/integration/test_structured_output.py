@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,6 +55,88 @@ def test_valid_structured_object_is_stored_as_workflow_state(tmp_path: Path) -> 
 
     fake = ProviderResult(exit_code=0, stdout='{"approved": true}', stderr="")
     with patch("fdsx.providers.claude._run_subprocess", return_value=fake):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {"approved": True}}
+
+
+def test_codex_structured_output_uses_final_agent_message(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, provider="codex", retry=0)
+    (tmp_path / "output.schema.json").write_text(
+        """
+{
+  "type": "object",
+  "required": ["approved"],
+  "properties": {"approved": {"type": "boolean"}}
+}
+""".strip()
+    )
+    messages = [
+        "I'll inspect the repository before producing the result.",
+        '{"approved": true}',
+    ]
+
+    def fake_run(**kwargs: object) -> ProviderResult:
+        output_callback = kwargs["output_callback"]
+        for index, message in enumerate(messages):
+            output_callback(  # type: ignore[operator]
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "id": f"item_{index}",
+                            "type": "agent_message",
+                            "text": message,
+                        },
+                    }
+                )
+            )
+        return ProviderResult(exit_code=0, stdout="<raw jsonl>", stderr="")
+
+    with patch("fdsx.providers.codex._run_subprocess", side_effect=fake_run):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {"approved": True}}
+
+
+def test_claude_structured_output_uses_final_result_message(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, retry=0)
+    (tmp_path / "output.schema.json").write_text(
+        """
+{
+  "type": "object",
+  "required": ["approved"],
+  "properties": {"approved": {"type": "boolean"}}
+}
+""".strip()
+    )
+    events = [
+        {
+            "type": "content_block_delta",
+            "delta": {
+                "type": "text_delta",
+                "text": "I'll inspect the repository first.\n",
+            },
+        },
+        {
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": '{"approved": true}'},
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": '{"approved": true}',
+        },
+    ]
+
+    def fake_run(**kwargs: object) -> ProviderResult:
+        output_callback = kwargs["output_callback"]
+        for event in events:
+            output_callback(json.dumps(event))  # type: ignore[operator]
+        return ProviderResult(exit_code=0, stdout="<raw ndjson>", stderr="")
+
+    with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run):
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 
     assert result.results == {"payload": {"approved": True}}

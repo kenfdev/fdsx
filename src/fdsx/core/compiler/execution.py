@@ -213,12 +213,29 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         )
                     validator_class = validator_for(schema_document)
                     validator = validator_class(schema_document)
-                    try:
-                        structured_value = parse_structured_output(
-                            result.stdout, validator
-                        )
-                    except StructuredOutputValidationError as exc:
-                        last_error = str(exc)[:1000]
+                    candidates = (
+                        [result.final_message]
+                        if result.final_message is not None
+                        else []
+                    )
+                    if result.stdout != result.final_message:
+                        candidates.append(result.stdout)
+                    validation_error: StructuredOutputValidationError | None = None
+                    for candidate in candidates:
+                        try:
+                            structured_value = parse_structured_output(
+                                candidate, validator
+                            )
+                        except StructuredOutputValidationError as exc:
+                            validation_error = exc
+                            continue
+                        break
+                    if structured_value is None:
+                        if validation_error is None:
+                            validation_error = StructuredOutputValidationError(
+                                "Provider returned no structured output candidate"
+                            )
+                        last_error = str(validation_error)[:1000]
                         validation_feedback = last_error
                         if active_provider_name == "system":
                             break

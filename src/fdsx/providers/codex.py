@@ -87,6 +87,7 @@ class CodexProvider(ProviderBase):
     def _make_stream_callback(
         self,
         output_callback: Callable[[str], None],
+        final_message_callback: Callable[[str], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None]]:
         """Create a streaming callback that parses Codex ``--json`` JSONL lines.
 
@@ -102,6 +103,8 @@ class CodexProvider(ProviderBase):
           complete. Concatenates all ``agent_message`` item texts. Returns
           ``None`` if no ``agent_message`` events were received (including
           partial collection on unexpected provider exit).
+        - ``final_message_callback``: receives each complete agent message so
+          the caller can preserve the last one separately from complete stdout.
 
         Event routing:
         - ``item.started`` + ``command_execution`` → ``[tool: {command}]``
@@ -143,6 +146,8 @@ class CodexProvider(ProviderBase):
                     text = item.get("text", "")
                     if text:
                         agent_message_parts.append(text)
+                        if final_message_callback is not None:
+                            final_message_callback(text)
                         output_callback(text)
                 elif item_type == _ITEM_TYPE_REASONING:
                     text = item.get("text", "")
@@ -186,7 +191,8 @@ class CodexProvider(ProviderBase):
                 When provided, ``--json`` is appended to the CLI invocation
                 and ``ProviderResult.stdout`` is populated from concatenated
                 ``agent_message`` item texts (falling back to partial content
-                on unexpected provider exit).
+                on unexpected provider exit). ``ProviderResult.final_message``
+                contains the last complete ``agent_message``.
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
             summary_callback: Optional callback for summary lines (ignored for Codex).
@@ -216,7 +222,15 @@ class CodexProvider(ProviderBase):
 
         if output_callback is not None:
             args.extend(_STREAM_FORMAT_FLAGS)
-            stream_callback, get_result = self._make_stream_callback(output_callback)
+            final_message: list[str | None] = [None]
+
+            def capture_final_message(message: str) -> None:
+                final_message[0] = message
+
+            stream_callback, get_result = self._make_stream_callback(
+                output_callback,
+                final_message_callback=capture_final_message,
+            )
             result = _run_subprocess(
                 args=args,
                 timeout=effective_timeout,
@@ -232,6 +246,7 @@ class CodexProvider(ProviderBase):
                     exit_code=result.exit_code,
                     stdout=parsed_stdout,
                     stderr=result.stderr,
+                    final_message=final_message[0],
                 )
             return result
 

@@ -23,6 +23,7 @@ def _make_config(
     timeout_seconds: int | None = None,
     max_retries: int = 3,
     extract=None,
+    structured_output=None,
     stream_logger=None,
 ):
     """Build an ExecutionConfig with sensible defaults."""
@@ -40,6 +41,7 @@ def _make_config(
             timeout_seconds=timeout_seconds,
             max_retries=max_retries,
             extract=extract,
+            structured_output=structured_output,
             stream_logger=mock_logger,
         ),
         mock_provider,
@@ -346,6 +348,26 @@ class TestExtraction:
         _, call_kwargs = mock_ev.call_args
         assert call_kwargs.get("source_provider") == "system"
 
+    def test_extraction_uses_complete_stdout_instead_of_final_message(self):
+        """Legacy extraction keeps receiving all streamed agent messages."""
+        extract_rule = self._make_extract_rule()
+        config, mock_provider, _ = _make_config(max_retries=0, extract=extract_rule)
+        mock_provider.execute.return_value = ProviderResult(
+            exit_code=0,
+            stdout="prefix\nvalue=42",
+            stderr="",
+            final_message="value=42",
+        )
+
+        with patch(
+            "fdsx.core.compiler.execution.extract_value", return_value="42"
+        ) as mock_extract:
+            from fdsx.core.compiler.execution import execute_with_retry
+
+            execute_with_retry(config)
+
+        assert mock_extract.call_args.args[0] == "prefix\nvalue=42"
+
     def test_system_provider_extraction_failure_no_retry(self):
         """When provider_name == 'system' and extraction fails, provider is called exactly once."""
         from fdsx.core.compiler.execution import execute_with_retry
@@ -365,6 +387,63 @@ class TestExtraction:
 
         assert result.extracted is None
         assert mock_provider.execute.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Structured output candidates
+# ---------------------------------------------------------------------------
+
+
+class TestStructuredOutputCandidates:
+    """Structured output prefers the final message without changing stdout."""
+
+    def _structured_output(self):
+        structured_output = MagicMock()
+        structured_output.schema_document = {
+            "type": "object",
+            "properties": {"approved": {"type": "boolean"}},
+            "required": ["approved"],
+        }
+        return structured_output
+
+    def test_final_message_is_parsed_before_complete_stdout(self):
+        from fdsx.core.compiler.execution import execute_with_retry
+
+        config, mock_provider, _ = _make_config(
+            max_retries=0,
+            structured_output=self._structured_output(),
+        )
+        mock_provider.execute.return_value = ProviderResult(
+            exit_code=0,
+            stdout='I will inspect this first.\n{"approved": true}',
+            stderr="",
+            final_message='{"approved": true}',
+        )
+
+        result = execute_with_retry(config)
+
+        assert result.structured_value == {"approved": True}
+        assert result.result.stdout == (
+            'I will inspect this first.\n{"approved": true}'
+        )
+
+    def test_complete_stdout_is_fallback_when_final_message_is_invalid(self):
+        from fdsx.core.compiler.execution import execute_with_retry
+
+        config, mock_provider, _ = _make_config(
+            max_retries=0,
+            structured_output=self._structured_output(),
+        )
+        mock_provider.execute.return_value = ProviderResult(
+            exit_code=0,
+            stdout='{"approved": true}',
+            stderr="",
+            final_message="Done.",
+        )
+
+        result = execute_with_retry(config)
+
+        assert result.structured_value == {"approved": True}
 
 
 # ---------------------------------------------------------------------------
