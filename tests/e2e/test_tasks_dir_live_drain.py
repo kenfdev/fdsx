@@ -75,9 +75,14 @@ def test_second_runner_cannot_drain_the_same_tasks_directory(tmp_path: Path) -> 
             text=True,
         )
         try:
-            _, second_stderr = second.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
-            second_stderr = ""
+            _, second_stderr = second.communicate(timeout=5)
+        except subprocess.TimeoutExpired as exc:
+            second.kill()
+            second_stdout, second_stderr = second.communicate()
+            raise AssertionError(
+                "Second runner did not reject the tasks-directory lock within "
+                f"5 seconds.\nstdout:\n{second_stdout}\nstderr:\n{second_stderr}"
+            ) from exc
         assert second.returncode == 1
         assert "already being drained by PID" in second_stderr
     finally:
