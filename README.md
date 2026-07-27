@@ -586,14 +586,6 @@ workflow_selector:
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.
 
-# --- Task splitter: LLM used by `fdsx add --split` ---
-task_splitter:
-  profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude")
-  # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
-  extra_instructions: |           # (string, optional) appended to the split prompt
-    Group related tasks together.
-
 # --- Global extraction fallback (optional) ---
 # Applied when extraction strategies all fail and no per-rule fallback is configured.
 # Can be overridden per workflow via the flow-level extraction_fallback field.
@@ -717,7 +709,7 @@ run_hooks:
 | `fdsx run` | Execute tasks from default tasks directory (`default_tasks_dir` or `.fdsx/tasks/`) |
 | `fdsx run <workflow.yaml>` | Execute a workflow |
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
-| `fdsx run --tasks-dir <dir>` | Persistent batch execution (workflow optional) |
+| `fdsx run --tasks-dir <dir>` | Drain queued tasks sequentially until the directory is empty (workflow optional) |
 | `fdsx run ... --quiet` | Suppress stderr streaming output |
 | `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
 | `fdsx run ... --confirm-workflow` | Show workflow confirmation UI (requires interactive mode) |
@@ -728,9 +720,13 @@ run_hooks:
 | `fdsx resolve <workflow.yaml>` | Print normalized YAML with prompt files and referenced profiles resolved for inspection |
 | `fdsx list` | List recent runs |
 | `fdsx list --base-dir <dir>` | List runs from custom base directory |
-| `fdsx add <task_file>` | Add a task file to the batch execution queue (single task) |
-| `fdsx add <task_file> --split` | Split a task file into individual task files |
-| `fdsx add <task_file> --split --force` | Clear existing tasks directory before splitting |
+| `fdsx add <task_file>...` | Append one or more files to the default task queue in argument order |
+
+`fdsx add` copies each source file verbatim into one queued task. It appends after
+existing active and completed sequence numbers and honors `default_tasks_dir`.
+`fdsx run` processes one task at a time, rescans for tasks added while it is active,
+and exits successfully when the queue is empty. Only one runner may drain a given
+tasks directory at a time.
 
 ## Example Workflow
 

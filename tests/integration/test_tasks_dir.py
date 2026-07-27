@@ -29,8 +29,7 @@ class TestTasksDirLoader:
     def test_load_tasks_dir_empty_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir)
-            with pytest.raises(ValueError, match=r"No .yaml or .yml files"):
-                engine.load_tasks_dir(tasks_dir)
+            assert engine.load_tasks_dir(tasks_dir) == []
 
     def test_load_tasks_dir_nonexistent_dir(self):
         with pytest.raises(FileNotFoundError):
@@ -133,8 +132,7 @@ class TestTasksDirLoader:
             subdir.mkdir()
             (subdir / "task.yaml").write_text("description: hidden task\n")
 
-            with pytest.raises(ValueError, match=r"No .yaml or .yml files"):
-                engine.load_tasks_dir(tasks_dir)
+            assert engine.load_tasks_dir(tasks_dir) == []
 
 
 class TestFilterActionableEntries:
@@ -1409,3 +1407,74 @@ states:
             f"thread_ids from on_workflow_start {start_thread_ids} must match "
             f"on_workflow_end {end_thread_ids}"
         )
+
+
+class TestLiveTasksDirDrain:
+    def test_runner_processes_task_added_while_it_is_active(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fdsx.providers.base import ProviderResult
+
+        monkeypatch.chdir(tmp_path)
+        tasks_dir = tmp_path / ".fdsx" / "tasks"
+        tasks_dir.mkdir(parents=True)
+        save_task_file(
+            tasks_dir / "001-first.yaml",
+            TaskFile(entries=[TaskEntry(description="first")]),
+        )
+        second_source = tmp_path / "second.md"
+        second_source.write_text("second")
+        added = False
+
+        def complete_provider_call(*args, **kwargs):
+            nonlocal added
+            if not added:
+                added = True
+                add_result = CliRunner().invoke(app, ["add", str(second_source)])
+                assert add_result.exit_code == 0, add_result.stderr
+            return ProviderResult(exit_code=0, stdout="done", stderr="")
+
+        with patch(
+            "fdsx.providers.system._run_subprocess",
+            side_effect=complete_provider_call,
+        ):
+            results = engine.run_tasks_dir(
+                FIXTURES_DIR / "batch_flow.yaml",
+                tasks_dir,
+                base_dir=tmp_path / ".fdsx",
+                auto_workflow=True,
+            )
+
+        assert [result["entry_description"] for result in results] == [
+            "first",
+            "second",
+        ]
+
+    def test_non_successful_workflow_stops_before_the_next_task(
+        self, tmp_path: Path
+    ) -> None:
+        from fdsx.providers.base import ProviderResult
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        for index in (1, 2):
+            save_task_file(
+                tasks_dir / f"{index:03d}-task.yaml",
+                TaskFile(entries=[TaskEntry(description=f"task {index}")]),
+            )
+
+        with patch(
+            "fdsx.providers.system._run_subprocess",
+            return_value=ProviderResult(exit_code=0, stdout="REJECTED", stderr=""),
+        ):
+            results = engine.run_tasks_dir(
+                FIXTURES_DIR / "loop_flow.yaml",
+                tasks_dir,
+                base_dir=tmp_path / ".fdsx",
+                auto_workflow=True,
+            )
+
+        assert [result["entry_description"] for result in results] == ["task 1"]
+        queued = engine.load_tasks_dir(tasks_dir)
+        assert queued[0][1].entries[0].status == "failed"
+        assert queued[1][1].entries[0].status == "pending"

@@ -22,12 +22,10 @@ from fdsx.cli.init_interactive import (
 )
 from fdsx.core import engine
 from fdsx.core.batch import (
-    COMPLETED_SUBDIR,
     TASKS_DIR,
-    split_tasks_to_groups,
-    write_task_files,
+    queue_task_files,
 )
-from fdsx.core.config import TaskSplitterConfig, load_config
+from fdsx.core.config import load_config
 from fdsx.core.engine import FlowValidationError
 from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
 from fdsx.core.init import (
@@ -41,7 +39,7 @@ from fdsx.core.init import (
 from fdsx.core.mode import is_interactive, set_interactive_mode
 from fdsx.core.resolve import resolve_workflow_yaml
 from fdsx.core.thread_id import generate_thread_id
-from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
+from fdsx.display.terminal import _sanitize_output, display_resume_command
 from fdsx.models.init import InitConfig
 
 EXEMPT_SUBCOMMANDS = frozenset({"init", "resolve", "validate"})
@@ -327,6 +325,8 @@ def _display_resume_on_error(
 
 def _compute_run_status(results: list[dict[str, object]]) -> str:
     """Compute aggregate status for a tasks-dir run from individual task results."""
+    if not results:
+        return "completed"
     statuses = {r.get("status") for r in results}
     if statuses == {"completed"}:
         return "completed"
@@ -573,81 +573,25 @@ def list_flows(
 
 @app.command()
 def add(
-    task_file: Path = typer.Argument(..., help="Path to the task file"),
-    split: bool = typer.Option(
-        False, "--split", help="Split the task file into multiple task files"
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Clear existing tasks directory before writing"
-    ),
+    task_files: list[Path] = typer.Argument(..., help="Paths to task files"),
 ) -> None:
-    """Add a task file to the batch execution queue.
-
-    When --split is specified, reads task_splitter configuration from .fdsx/config.yaml
-    (or defaults) and splits the task file into individual task files in .fdsx/tasks/.
-    Shows an animated spinner during LLM splitting. In non-interactive (non-TTY) terminals,
-    prints plain log lines instead of animation.
-    """
-    if not task_file.exists():
-        typer.echo(f"Error: Task file not found: {task_file}", err=True)
-        raise typer.Exit(code=2)
-
-    config = load_config()
-    task_splitter = config.task_splitter or TaskSplitterConfig()
-
-    tasks_dir = Path(TASKS_DIR)
-
-    if tasks_dir.exists() and any(
-        entry for entry in tasks_dir.iterdir() if entry.name != COMPLETED_SUBDIR
-    ):
-        if not force:
-            typer.echo(
-                f"Error: Tasks directory '{TASKS_DIR}' is not empty. "
-                "Use --force to clear and overwrite.",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        if tasks_dir.is_symlink():
-            typer.echo(
-                f"Error: Tasks directory '{TASKS_DIR}' is a symlink. Refusing to delete.",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        for f in tasks_dir.glob("*.yaml"):
-            f.unlink()
-        typer.echo(f"Cleared existing task files in {TASKS_DIR}/", err=True)
-
-    single_task = not split
-
+    """Append task files to the batch execution queue."""
     try:
-        task_content = task_file.read_text()
-
-        with Spinner("Splitting tasks...") as spinner:
-            groups = split_tasks_to_groups(
-                task_content,
-                task_splitter,
-                single_task=single_task,
-                progress=spinner.update,
-            )
-
-            if not groups:
-                typer.echo("No tasks were generated from the input file.", err=True)
-                return
-
-            spinner.update(f"Writing {len(groups)} task file(s)...")
-            created_files = write_task_files(groups, tasks_dir, source=str(task_file))
+        config = load_config()
+        tasks_dir = Path(config.default_tasks_dir or TASKS_DIR).expanduser()
+        created_files = queue_task_files(task_files, tasks_dir)
 
         typer.echo(
-            f"Created {len(created_files)} task file(s) in {TASKS_DIR}/", err=True
+            f"Created {len(created_files)} task file(s) in {tasks_dir}/", err=True
         )
         for f in created_files:
             typer.echo(f"  {f}", err=True)
 
-    except RuntimeError as e:
-        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=1) from None
     except ValueError as e:
-        typer.echo(f"Error parsing tasks: {_sanitize_output(str(e))}", err=True)
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
+    except (OSError, UnicodeError) as e:
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=1) from None
 
 

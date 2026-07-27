@@ -1,11 +1,10 @@
 from typing import ClassVar
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import yaml
 
-from fdsx.cli.main import app
 from fdsx.core import engine
-from fdsx.core.config import FdsxConfig, TaskSplitterConfig
+from fdsx.core.engine import FlowResult
 from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 
 
@@ -32,71 +31,6 @@ class _MockSpinner:
     def reset(cls) -> None:
         cls._started_messages = []
         cls._update_messages = []
-
-
-class TestSplitSpinner:
-    """Tests for spinner during fdsx split command."""
-
-    def test_split_spinner_messages(self, tmp_path, monkeypatch):
-        """Spinner messages appear during split: splitting + writing + completion."""
-        from typer.testing import CliRunner
-
-        task_file = tmp_path / "tasks.md"
-        task_file.write_text("Task 1\nTask 2\nTask 3")
-
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0,
-            stdout='[[{"description": "Task 1"}], [{"description": "Task 2"}], [{"description": "Task 3"}]]',
-            stderr="",
-        )
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / ".fdsx").mkdir(exist_ok=True)
-
-        with (
-            patch(
-                "fdsx.cli.main.load_config",
-                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ),
-            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
-        ):
-            runner = CliRunner()
-            result = runner.invoke(app, ["add", "--split", str(task_file)])
-
-        assert result.exit_code == 0, f"stderr: {result.stderr}"
-        assert "Splitting tasks..." in result.stderr
-        assert "Writing 3 task file(s)..." in result.stderr
-
-    def test_split_empty_result_no_spinner_crash(self, tmp_path, monkeypatch):
-        """Empty result from provider — spinner stops cleanly without crash."""
-        from typer.testing import CliRunner
-
-        task_file = tmp_path / "tasks.md"
-        task_file.write_text("Nothing to split")
-
-        mock_provider = MagicMock()
-        mock_provider.execute.return_value = MagicMock(
-            exit_code=0,
-            stdout="[]",
-            stderr="",
-        )
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / ".fdsx").mkdir(exist_ok=True)
-
-        with (
-            patch(
-                "fdsx.cli.main.load_config",
-                return_value=FdsxConfig(task_splitter=TaskSplitterConfig()),
-            ),
-            patch("fdsx.core.batch.get_provider", return_value=mock_provider),
-        ):
-            runner = CliRunner()
-            result = runner.invoke(app, ["add", "--split", str(task_file)])
-
-        assert result.exit_code == 0
-        assert "No tasks were generated" in result.stderr
 
 
 class TestAutoSelectionSpinner:
@@ -143,7 +77,10 @@ class TestAutoSelectionSpinner:
                 "fdsx.core.selector.resolve_workflow_for_task",
                 side_effect=mock_resolve,
             ),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             engine.run_tasks_dir(
@@ -193,7 +130,10 @@ class TestAutoSelectionSpinner:
                 "fdsx.core.selector.resolve_workflow_for_task",
                 return_value=workflows_dir / "test.yaml",
             ),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             engine.run_tasks_dir(
@@ -246,7 +186,10 @@ class TestAutoSelectionSpinner:
 
         with (
             patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_MockSpinner),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             engine.run_tasks_dir(
@@ -289,7 +232,10 @@ class TestAutoSelectionSpinner:
 
         with (
             patch("fdsx.core.engine.tasks_dir.Spinner", side_effect=_MockSpinner),
-            patch("fdsx.core.engine.tasks_dir.run_flow", return_value={"result": "ok"}),
+            patch(
+                "fdsx.core.engine.tasks_dir.run_flow",
+                return_value=FlowResult(results={"result": "ok"}, status="completed"),
+            ),
             patch("fdsx.core.engine.tasks_dir.display_tasks_dir_summary"),
         ):
             engine.run_tasks_dir(

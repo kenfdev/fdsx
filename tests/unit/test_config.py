@@ -13,44 +13,11 @@ from pydantic import ValidationError
 from fdsx.core.config import (
     FdsxConfig,
     ProviderConfigs,
-    TaskSplitterConfig,
     WorkflowSelectorConfig,
     _deep_merge,
     load_config,
 )
 from fdsx.models.flow import HookConfig, HookEntry
-
-
-class TestTaskSplitterConfigDefaults:
-    def test_default_provider(self):
-        cfg = TaskSplitterConfig()
-        assert cfg.provider == "claude"
-
-    def test_default_model(self):
-        cfg = TaskSplitterConfig()
-        assert cfg.model == "claude-sonnet-4-6"
-
-    def test_custom_values(self):
-        cfg = TaskSplitterConfig(provider="opencode", model="gpt-4o")
-        assert cfg.provider == "opencode"
-        assert cfg.model == "gpt-4o"
-
-    def test_invalid_provider_rejected(self):
-        with pytest.raises(ValidationError):
-            TaskSplitterConfig(provider="invalid")
-
-    def test_extra_instructions_parses(self):
-        cfg = TaskSplitterConfig(extra_instructions="foo")
-        assert cfg.extra_instructions == "foo"
-
-    def test_extra_instructions_defaults_none(self):
-        cfg = TaskSplitterConfig()
-        assert cfg.extra_instructions is None
-
-    def test_extra_instructions_with_profile(self):
-        cfg = TaskSplitterConfig(profile="smarty", extra_instructions="custom")
-        assert cfg.profile == "smarty"
-        assert cfg.extra_instructions == "custom"
 
 
 class TestWorkflowSelectorConfigDefaults:
@@ -86,10 +53,6 @@ class TestWorkflowSelectorConfigDefaults:
 
 
 class TestFdsxConfigDefaults:
-    def test_default_task_splitter(self):
-        cfg = FdsxConfig()
-        assert cfg.task_splitter is None
-
     def test_default_workflow_selector(self):
         cfg = FdsxConfig()
         assert isinstance(cfg.workflow_selector, WorkflowSelectorConfig)
@@ -129,31 +92,8 @@ class TestFdsxConfigDefaults:
 class TestLoadConfigNoFiles:
     def test_returns_defaults_when_no_files(self):
         cfg = load_config(load_global=False, load_project=False)
-        assert cfg.task_splitter is None
         assert cfg.workflow_selector.provider == "claude"
         assert cfg.auto_workflow is False
-
-
-class TestLoadConfigGlobal:
-    def test_loads_global_config(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / "fdsx"
-            config_dir.mkdir()
-            config_file = config_dir / "config.yaml"
-            config_file.write_text(yaml.dump({"task_splitter": {"provider": "codex"}}))
-
-            original_xdg = os.environ.get("XDG_CONFIG_HOME")
-            os.environ["XDG_CONFIG_HOME"] = tmpdir
-            try:
-                cfg = load_config(load_global=True, load_project=False)
-            finally:
-                if original_xdg is None:
-                    os.environ.pop("XDG_CONFIG_HOME", None)
-                else:
-                    os.environ["XDG_CONFIG_HOME"] = original_xdg
-
-            assert cfg.task_splitter.provider == "codex"
-            assert cfg.task_splitter.model == "claude-sonnet-4-6"
 
 
 class TestLoadConfigProject:
@@ -181,14 +121,14 @@ class TestLoadConfigMergePrecedence:
             config_dir.mkdir()
             global_file = config_dir / "config.yaml"
             global_file.write_text(
-                yaml.dump({"task_splitter": {"model": "global-model"}})
+                yaml.dump({"workflow_selector": {"model": "global-model"}})
             )
 
             fdsx_dir = project_dir / ".fdsx"
             fdsx_dir.mkdir()
             project_file = fdsx_dir / "config.yaml"
             project_file.write_text(
-                yaml.dump({"task_splitter": {"model": "project-model"}})
+                yaml.dump({"workflow_selector": {"model": "project-model"}})
             )
 
             original_xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -203,7 +143,7 @@ class TestLoadConfigMergePrecedence:
                 else:
                     os.environ["XDG_CONFIG_HOME"] = original_xdg
 
-            assert cfg.task_splitter.model == "project-model"
+            assert cfg.workflow_selector.model == "project-model"
 
     def test_global_overrides_defaults(self):
         """Global config overrides built-in defaults."""
@@ -234,7 +174,9 @@ class TestLoadConfigValidation:
             config_dir = Path(tmpdir) / "fdsx"
             config_dir.mkdir()
             config_file = config_dir / "config.yaml"
-            config_file.write_text(yaml.dump({"task_splitter": {"provider": "bad"}}))
+            config_file.write_text(
+                yaml.dump({"workflow_selector": {"provider": "bad"}})
+            )
 
             original_xdg = os.environ.get("XDG_CONFIG_HOME")
             os.environ["XDG_CONFIG_HOME"] = tmpdir
@@ -254,7 +196,7 @@ class TestLoadConfigValidation:
             config_dir.mkdir()
             config_file = config_dir / "config.yaml"
             config_file.write_text(
-                yaml.dump({"task_splitter": {"provider": "opencode"}})
+                yaml.dump({"workflow_selector": {"provider": "opencode"}})
             )
 
             original_xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -267,8 +209,8 @@ class TestLoadConfigValidation:
                 else:
                     os.environ["XDG_CONFIG_HOME"] = original_xdg
 
-            assert cfg.task_splitter.provider == "opencode"
-            assert cfg.task_splitter.model == "claude-sonnet-4-6"
+            assert cfg.workflow_selector.provider == "opencode"
+            assert cfg.workflow_selector.model == "claude-sonnet-4-6"
 
     def test_malformed_yaml_raises_value_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -764,53 +706,6 @@ class TestDeepMergeProfilesShallowReplacement:
         assert result["profiles"]["slow"] == {"provider": "opencode", "model": "o1"}
 
 
-class TestTaskSplitterConfigProfile:
-    """Tests for TaskSplitterConfig profile field."""
-
-    def test_profile_field_accepted(self):
-        """TaskSplitterConfig(profile='my_profile') is accepted."""
-        cfg = TaskSplitterConfig(profile="my_profile")
-        assert cfg.profile == "my_profile"
-        assert cfg.provider == "claude"
-        assert cfg.model == "claude-sonnet-4-6"
-
-    def test_profile_xor_with_explicit_provider(self):
-        """Providing both profile and non-default provider raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            TaskSplitterConfig(profile="my_profile", provider="codex")
-        assert "mutually exclusive" in str(exc_info.value)
-
-    def test_profile_xor_with_explicit_model(self):
-        """Providing both profile and non-default model raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            TaskSplitterConfig(profile="my_profile", model="gpt-4o")
-        assert "mutually exclusive" in str(exc_info.value)
-
-    def test_profile_xor_with_default_provider_raises(self):
-        """Providing profile and provider='claude' (default) still raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            TaskSplitterConfig(profile="fast", provider="claude")
-        assert "mutually exclusive" in str(exc_info.value)
-
-    def test_profile_xor_with_default_model_raises(self):
-        """Providing profile and model='claude-sonnet-4-6' (default) still raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            TaskSplitterConfig(profile="fast", model="claude-sonnet-4-6")
-        assert "mutually exclusive" in str(exc_info.value)
-
-    def test_profile_only_valid(self):
-        """Profile alone is valid."""
-        cfg = TaskSplitterConfig(profile="fast")
-        assert cfg.profile == "fast"
-        assert cfg.provider == "claude"
-        assert cfg.model == "claude-sonnet-4-6"
-
-    def test_no_profile_with_provider_valid(self):
-        """Provider alone (no profile) is valid."""
-        cfg = TaskSplitterConfig(provider="claude")
-        assert cfg.provider == "claude"
-
-
 class TestWorkflowSelectorConfigProfile:
     """Tests for WorkflowSelectorConfig profile field."""
 
@@ -861,21 +756,6 @@ class TestWorkflowSelectorConfigProfile:
 class TestResolveProfilesInConfig:
     """Tests for resolve_profiles_in_config function."""
 
-    def test_resolve_profiles_in_config_task_splitter(self):
-        """Raw dict with task_splitter.profile gets resolved."""
-        from fdsx.core.profiles import resolve_profiles_in_config
-
-        data = {
-            "task_splitter": {"profile": "fast"},
-            "profiles": {"fast": {"provider": "claude", "model": "haiku"}},
-        }
-        data, errors = resolve_profiles_in_config(data)
-
-        assert errors == []
-        assert data["task_splitter"]["provider"] == "claude"
-        assert data["task_splitter"]["model"] == "haiku"
-        assert "profile" not in data["task_splitter"]
-
     def test_resolve_profiles_in_config_workflow_selector(self):
         """Raw dict with workflow_selector.profile gets resolved."""
         from fdsx.core.profiles import resolve_profiles_in_config
@@ -896,7 +776,7 @@ class TestResolveProfilesInConfig:
         from fdsx.core.profiles import resolve_profiles_in_config
 
         data = {
-            "task_splitter": {"profile": "nonexistent"},
+            "workflow_selector": {"profile": "nonexistent"},
             "profiles": {"fast": {"provider": "claude", "model": "haiku"}},
         }
         data, errors = resolve_profiles_in_config(data)
@@ -909,25 +789,12 @@ class TestResolveProfilesInConfig:
         """No profiles section and no profile references is a no-op."""
         from fdsx.core.profiles import resolve_profiles_in_config
 
-        data = {"task_splitter": {"provider": "claude", "model": "haiku"}}
-        original = dict(data["task_splitter"])
+        data = {"workflow_selector": {"provider": "claude", "model": "haiku"}}
+        original = dict(data["workflow_selector"])
         data, errors = resolve_profiles_in_config(data)
 
         assert errors == []
-        assert data["task_splitter"] == original
-
-    def test_resolve_profiles_in_config_missing_profiles_section_with_reference_errors(
-        self,
-    ):
-        """Missing profiles section with a profile reference produces an error."""
-        from fdsx.core.profiles import resolve_profiles_in_config
-
-        data = {"task_splitter": {"profile": "fast"}}
-        data, errors = resolve_profiles_in_config(data)
-
-        assert len(errors) == 1
-        assert "not found" in errors[0]
-        assert "fast" in errors[0]
+        assert data["workflow_selector"] == original
 
     def test_resolve_profiles_in_config_missing_profiles_section_workflow_selector_errors(
         self,
@@ -966,61 +833,3 @@ class TestLoadConfigResolvesProfiles:
         assert cfg.workflow_selector.provider == "codex"
         assert cfg.workflow_selector.model == "codex-mini"
         assert cfg.workflow_selector.profile is None  # resolved and removed
-
-    def test_load_config_resolves_task_splitter_profile(self, tmp_path, monkeypatch):
-        """task_splitter.profile resolves through load_config() without false XOR."""
-        monkeypatch.chdir(tmp_path)
-        config_dir = tmp_path / ".fdsx"
-        config_dir.mkdir()
-        config_file = config_dir / "config.yaml"
-        config_file.write_text(
-            "profiles:\n"
-            "  fast:\n"
-            "    provider: codex\n"
-            "    model: codex-mini\n"
-            "task_splitter:\n"
-            "  profile: fast\n"
-        )
-        cfg = load_config(project_dir=tmp_path, load_global=False)
-        assert cfg.task_splitter is not None
-        assert cfg.task_splitter.provider == "codex"
-        assert cfg.task_splitter.model == "codex-mini"
-
-    def test_project_task_splitter_profile_replaces_global_explicit_config(
-        self, tmp_path, monkeypatch
-    ):
-        """Project task_splitter does not inherit conflicting global fields."""
-        global_dir = tmp_path / "global" / "fdsx"
-        global_dir.mkdir(parents=True)
-        (global_dir / "config.yaml").write_text(
-            "task_splitter:\n"
-            "  provider: codex\n"
-            "  model: global-model\n"
-            "  extra_instructions: global instructions\n"
-        )
-
-        project_dir = tmp_path / "project"
-        project_config_dir = project_dir / ".fdsx"
-        project_config_dir.mkdir(parents=True)
-        (project_config_dir / "config.yaml").write_text(
-            "profiles:\n"
-            "  smarty:\n"
-            "    provider: claude\n"
-            "    model: project-model\n"
-            "task_splitter:\n"
-            "  profile: smarty\n"
-            "  extra_instructions: project instructions\n"
-        )
-
-        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "global"))
-
-        cfg = load_config(
-            project_dir=project_dir,
-            load_global=True,
-            load_project=True,
-        )
-
-        assert cfg.task_splitter is not None
-        assert cfg.task_splitter.provider == "claude"
-        assert cfg.task_splitter.model == "project-model"
-        assert cfg.task_splitter.extra_instructions == "project instructions"

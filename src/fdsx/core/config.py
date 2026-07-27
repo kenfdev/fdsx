@@ -48,48 +48,8 @@ _SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
 
 # Keys whose dict values are fully replaced by the override (no field-level merging)
 _FULL_REPLACE_KEYS: frozenset[str] = frozenset(
-    {"task_splitter", "retry_escalation", "extraction_fallback"}
+    {"retry_escalation", "extraction_fallback"}
 )
-
-
-class TaskSplitterConfig(BaseModel):
-    """Configuration for batch task splitting (formerly TaskSplitter in flow.py)."""
-
-    profile: str | None = Field(
-        default=None,
-        description="Profile name for provider/model configuration",
-    )
-    provider: str = Field(
-        default="claude",
-        description="Provider name (claude/opencode/codex)",
-    )
-    model: str = Field(
-        default="claude-sonnet-4-6",
-        description="Model name",
-    )
-    extra_instructions: str | None = Field(
-        default=None,
-        description="Additional instructions appended to the task split prompt",
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_profile_xor(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if isinstance(values, dict):
-            has_profile = "profile" in values and values["profile"] is not None
-            has_provider = "provider" in values
-            has_model = "model" in values
-            if has_profile and (has_provider or has_model):
-                raise ValueError(
-                    "profile and (provider|model) are mutually exclusive. "
-                    "Use either profile reference or explicit provider/model, not both."
-                )
-        return values
-
-    @field_validator("provider")
-    @classmethod
-    def validate_provider(cls, v: str) -> str:
-        return validate_llm_provider(v, "task_splitter")
 
 
 class WorkflowSelectorConfig(BaseModel):
@@ -177,10 +137,16 @@ class RunHookConfig(BaseModel):
 class FdsxConfig(BaseModel):
     """Top-level fdsx configuration."""
 
-    task_splitter: TaskSplitterConfig | None = Field(
-        default=None,
-        description="Batch task splitting configuration (must be explicitly configured)",
-    )
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_task_splitter(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "task_splitter" in values:
+            raise ValueError(
+                "task_splitter has been removed. Delete the task_splitter section; "
+                "fdsx add now queues each input file directly."
+            )
+        return values
+
     workflow_selector: WorkflowSelectorConfig = Field(
         default_factory=WorkflowSelectorConfig,
         description="Workflow auto-selection configuration",

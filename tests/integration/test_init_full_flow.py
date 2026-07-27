@@ -198,9 +198,7 @@ class TestInitFullFlow:
         parsed = yaml.safe_load(config_text)
         assert isinstance(parsed, dict)
         assert "profiles" in parsed
-        assert "task_splitter" in parsed
         assert "workflow_selector" in parsed
-        assert parsed["task_splitter"]["profile"] == "generalist"
         assert parsed["workflow_selector"]["profile"] == "generalist"
 
     def test_init_flow_order_profiles_before_templates(self, tmp_path, monkeypatch):

@@ -1,5 +1,6 @@
 """Tasks directory execution for the engine package."""
 
+import hashlib
 import sys
 from collections import Counter
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Literal, cast
 import structlog
 
 import fdsx.core.mode
+from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.core.batch import (
     display_tasks_dir_summary,
     move_task_to_completed,
@@ -37,7 +39,7 @@ def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
 
     Raises:
         FileNotFoundError: If the tasks directory does not exist.
-        ValueError: If no .yaml or .yml files are found.
+        ValueError: If the directory or a task file is unsafe or invalid.
     """
     if not tasks_dir.exists():
         raise FileNotFoundError(f"Tasks directory not found: {tasks_dir}")
@@ -45,8 +47,6 @@ def load_tasks_dir(tasks_dir: Path) -> list[tuple[Path, TaskFile]]:
         raise ValueError(f"Tasks directory must not be a symlink: {tasks_dir}")
 
     yaml_files = sorted([*tasks_dir.glob("*.yaml"), *tasks_dir.glob("*.yml")])
-    if not yaml_files:
-        raise ValueError(f"No .yaml or .yml files found in {tasks_dir}")
 
     result: list[tuple[Path, TaskFile]] = []
     for fp in yaml_files:
@@ -210,6 +210,100 @@ def run_tasks_dir(
     quiet: bool = False,
     continue_on_error: bool = False,
 ) -> list[dict[str, Any]]:
+    """Drain task files until no newly queued files remain."""
+    effective_base_dir = base_dir or Path.cwd() / ".fdsx"
+    lock_manager = CheckpointManager(base_dir=effective_base_dir)
+    lock_digest = hashlib.sha256(str(tasks_dir.resolve()).encode("utf-8")).hexdigest()[
+        :16
+    ]
+    lock_id = f"tasks-dir-{lock_digest}"
+    if not lock_manager.acquire_lock(lock_id):
+        _, pid = lock_manager.is_locked(lock_id)
+        owner = f" by PID {pid}" if pid is not None else ""
+        logger.error(
+            "tasks_dir_already_running",
+            tasks_dir=str(tasks_dir),
+            owner_pid=pid,
+        )
+        raise RuntimeError(
+            f"Tasks directory is already being drained{owner}: {tasks_dir}"
+        )
+
+    try:
+        return _drain_tasks_dir(
+            workflow_path,
+            tasks_dir,
+            base_dir=base_dir,
+            auto_workflow=auto_workflow,
+            quiet=quiet,
+            continue_on_error=continue_on_error,
+        )
+    finally:
+        lock_manager.release_lock(lock_id)
+
+
+def _drain_tasks_dir(
+    workflow_path: Path | None,
+    tasks_dir: Path,
+    base_dir: Path | None = None,
+    auto_workflow: bool = False,
+    quiet: bool = False,
+    continue_on_error: bool = False,
+) -> list[dict[str, Any]]:
+    """Drain newly discovered task files without reacquiring the directory lock."""
+    results: list[dict[str, Any]] = []
+    attempted_files: set[Path] = set()
+
+    while True:
+        try:
+            queued_files = load_tasks_dir(tasks_dir)
+        except ValueError as e:
+            logger.error(
+                "tasks_dir_load_failed", tasks_dir=str(tasks_dir), error=str(e)
+            )
+            raise FlowValidationError(str(e)) from e
+        except FileNotFoundError as e:
+            logger.error(
+                "tasks_dir_load_failed", tasks_dir=str(tasks_dir), error=str(e)
+            )
+            raise FlowValidationError(str(e)) from e
+
+        new_files = [
+            item for item in queued_files if item[0].resolve() not in attempted_files
+        ]
+        if not new_files:
+            if not results:
+                print("No tasks queued.", file=sys.stderr)
+            return results
+
+        attempted_files.update(path.resolve() for path, _ in new_files)
+        batch_results = _run_tasks_dir_snapshot(
+            workflow_path,
+            tasks_dir,
+            base_dir=base_dir,
+            auto_workflow=auto_workflow,
+            quiet=quiet,
+            continue_on_error=continue_on_error,
+            task_files=new_files,
+        )
+        results.extend(batch_results)
+
+        if not continue_on_error and any(
+            result.get("status") == "failed" for result in batch_results
+        ):
+            return results
+
+
+def _run_tasks_dir_snapshot(
+    workflow_path: Path | None,
+    tasks_dir: Path,
+    base_dir: Path | None = None,
+    auto_workflow: bool = False,
+    quiet: bool = False,
+    continue_on_error: bool = False,
+    *,
+    task_files: list[tuple[Path, TaskFile]],
+) -> list[dict[str, Any]]:
     """Execute tasks from a directory of YAML task files with crash-resilient persistence.
 
     Args:
@@ -229,12 +323,6 @@ def run_tasks_dir(
     Raises:
         FlowValidationError: If flow validation fails.
     """
-    try:
-        task_files = load_tasks_dir(tasks_dir)
-    except ValueError as e:
-        raise FlowValidationError(str(e)) from e
-    except FileNotFoundError as e:
-        raise FlowValidationError(str(e)) from e
     results: list[dict[str, Any]] = []
     workflow_assignments: dict[tuple[int, int], Path] = {}
 
@@ -479,6 +567,9 @@ def run_tasks_dir(
                             "category": category,
                         }
                     )
+                    if not continue_on_error:
+                        display_tasks_dir_summary(results)
+                        return results
                 else:
                     _update_task_status(
                         file_path,

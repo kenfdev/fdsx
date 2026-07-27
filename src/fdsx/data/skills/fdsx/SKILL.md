@@ -255,7 +255,7 @@ fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id 
 fdsx validate <workflow.yaml>
 fdsx resume --thread-id <id> [--base-dir <path>]
 fdsx list [--base-dir <path>]
-fdsx add <task-file> [--split] [--force]
+fdsx add <task-file> [<task-file> ...]
 fdsx init [--skill]
 fdsx --version
 fdsx --ci | --interactive        # global flags (mutually exclusive)
@@ -267,7 +267,9 @@ fdsx --ci | --interactive        # global flags (mutually exclusive)
 
 When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`, it falls back to the `default_tasks_dir` config value (default: `.fdsx/tasks/`) and runs in tasks-dir mode.
 
-`fdsx add <task-file>` adds a task file to the batch execution queue. Use `--split` to invoke the LLM task splitter to break the file into multiple task files in `.fdsx/tasks/`. Use `--force` to clear existing tasks before writing.
+`fdsx add <task-file> [<task-file> ...]` appends one task per source file to the configured default task queue, preserving argument order and source contents. Existing queued tasks are never deleted.
+
+Tasks-directory runs process entries sequentially and rescan for newly added task files until the active queue is empty. An empty queue is a successful no-op. Only one runner may drain a given tasks directory at a time.
 
 `fdsx init` initializes a new fdsx project with interactive provider and template selection. Use `--skill` to install only the Claude Code skill without scaffolding `.fdsx/`.
 
@@ -400,10 +402,6 @@ workflow_selector:
   provider: claude              # LLM for auto-selecting workflows
   model: claude-sonnet-4-6
   extra_instructions: "..."     # optional additional prompt instructions
-task_splitter:                  # must be explicitly present to enable batch splitting
-  provider: claude
-  model: claude-sonnet-4-6
-  extra_instructions: "..."
 extraction_fallback:            # global default when no per-rule fallback is configured
   provider: claude              # or use profile: <name> (XOR with provider + model)
   model: claude-sonnet-4-6
@@ -428,7 +426,7 @@ profiles:                       # named provider/model bundles
     model: claude-haiku-4-5-20251001
 ```
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`). When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) configs declare `task_splitter`, the project block fully replaces the global one — fields are not merged.
+`workflow_selector` supports `profile: <name>` (XOR with `provider`/`model`).
 
 `extraction_fallback` at config level sets the project-wide default recovery LLM for extraction failures. Individual workflows can override it with their own `extraction_fallback:` field or disable it with `extraction_fallback: false`. When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.
 

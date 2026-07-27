@@ -63,9 +63,9 @@ class TestComputeRunStatus:
         results = [{"status": "completed"}, {"status": "failed"}]
         assert _compute_run_status(results) == "partial"
 
-    def test_empty_returns_partial(self) -> None:
-        """Empty results list yields 'partial' (neither pure completed nor pure failed)."""
-        assert _compute_run_status([]) == "partial"
+    def test_empty_returns_completed(self) -> None:
+        """An empty task queue is a successful no-op."""
+        assert _compute_run_status([]) == "completed"
 
     def test_single_completed_returns_completed(self) -> None:
         """Single completed result yields 'completed'."""
