@@ -220,22 +220,25 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                     )
                     if result.stdout != result.final_message:
                         candidates.append(result.stdout)
-                    validation_error: StructuredOutputValidationError | None = None
+                    # The final message is the authoritative response. Keep its
+                    # actionable error if the compatibility fallback also fails.
+                    primary_error: StructuredOutputValidationError | None = None
                     for candidate in candidates:
                         try:
                             structured_value = parse_structured_output(
                                 candidate, validator
                             )
                         except StructuredOutputValidationError as exc:
-                            validation_error = exc
+                            if primary_error is None:
+                                primary_error = exc
                             continue
                         break
                     if structured_value is None:
-                        if validation_error is None:
-                            validation_error = StructuredOutputValidationError(
+                        if primary_error is None:
+                            primary_error = StructuredOutputValidationError(
                                 "Provider returned no structured output candidate"
                             )
-                        last_error = str(validation_error)[:1000]
+                        last_error = str(primary_error)[:1000]
                         validation_feedback = last_error
                         if active_provider_name == "system":
                             break
