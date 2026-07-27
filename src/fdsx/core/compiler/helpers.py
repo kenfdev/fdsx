@@ -142,8 +142,24 @@ def _merge_provider_options(
                 f"State '{state_name}': 'system_prompt' and 'append_system_prompt' "
                 f"are mutually exclusive. Both cannot be set."
             )
+    elif provider_name == "codex":
+        for field in ("system_prompt", "append_system_prompt"):
+            if field in merged:
+                from fdsx.core.engine.validate import FlowValidationError
+
+                logger.error(
+                    "provider_option_unsupported",
+                    state=state_name,
+                    provider=provider_name,
+                    field=field,
+                    replacement="developer_instructions",
+                )
+                raise FlowValidationError(
+                    f"State '{state_name}': provider=codex does not support "
+                    f"'{field}'; use 'developer_instructions' instead."
+                )
     else:
-        # Non-Claude providers: warn once and strip the fields
+        # Other non-Claude providers: warn once and strip the fields
         for field in ("system_prompt", "append_system_prompt"):
             if field in merged:
                 logger.warning(

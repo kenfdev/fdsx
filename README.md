@@ -642,6 +642,8 @@ providers:
     sandbox: workspace-write             # (string, optional) one of:
                                          #   read-only, workspace-write, danger-full-access
     approval_policy: never               # (string, optional) one of: untrusted, on-request, never
+    developer_instructions: "Stay within the assigned task."  # (string, optional)
+    agents_enabled: false                # (bool, optional) enable/disable Codex subagents
     full_auto: false                     # (bool, default: false)
     dangerously_bypass_approvals_and_sandbox: false  # (bool, default: false)
     inactivity_timeout: 600              # (int, optional)

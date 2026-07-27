@@ -147,7 +147,11 @@ def _create_task_node(
 
         effective_options = dict(merged_options) if merged_options else None
         if effective_options:
-            for key in ("system_prompt", "append_system_prompt"):
+            for key in (
+                "system_prompt",
+                "append_system_prompt",
+                "developer_instructions",
+            ):
                 if effective_options.get(key):
                     effective_options[key] = resolve_template(
                         effective_options[key], vars_ctx

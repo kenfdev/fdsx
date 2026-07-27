@@ -153,6 +153,47 @@ class TestProfileFlowErrors:
 class TestValidateFlowProfileErrors:
     """T021/T022: Tests for profile errors surfaced via validate_flow()."""
 
+    def test_validate_flow_rejects_codex_append_system_prompt_profile(
+        self, tmp_path, monkeypatch
+    ):
+        """Codex profiles must use developer_instructions instead."""
+        import yaml
+
+        from fdsx.core.engine.validate import validate_flow
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        flow_dict = {
+            "name": "Invalid Codex Profile",
+            "description": "Codex profile with a Claude-only option",
+            "start_at": "review",
+            "profiles": {
+                "reviewer": {
+                    "provider": "codex",
+                    "model": "gpt-5.6",
+                    "append_system_prompt": "Do not delegate.",
+                }
+            },
+            "states": {
+                "review": {
+                    "type": "task",
+                    "profile": "reviewer",
+                    "prompt_template": "Review",
+                    "result_path": "$.output",
+                    "end": True,
+                }
+            },
+        }
+        flow_path = tmp_path / "invalid_codex_profile.yaml"
+        with flow_path.open("w") as f:
+            yaml.dump(flow_dict, f)
+
+        is_valid, errors, _flow_name = validate_flow(flow_path)
+
+        assert is_valid is False
+        assert len(errors) == 1
+        assert "append_system_prompt" in errors[0]
+        assert "developer_instructions" in errors[0]
+
     def test_validate_flow_catches_xor_violation(self, tmp_path):
         """validate_flow returns is_valid=False when task has both profile and provider."""
         import yaml

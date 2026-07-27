@@ -68,7 +68,7 @@ States that support routing use either `next` (go to state) or `end: true` (term
 | Provider | CLI Command | Requires | Options Key |
 |----------|------------|----------|-------------|
 | `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `effort`, `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools`, `system_prompt`, `append_system_prompt` |
-| `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `reasoning_effort`, `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
+| `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `reasoning_effort`, `sandbox`, `approval_policy`, `developer_instructions`, `agents_enabled`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
 | `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `variant`, `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
 | `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` |

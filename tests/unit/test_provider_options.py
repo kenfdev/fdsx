@@ -162,6 +162,28 @@ class TestCodexOptions:
         opts = CodexOptions(approval_policy="on-request")
         assert opts.to_cli_flags() == ["-c", 'approval_policy="on-request"']
 
+    def test_codex_options_to_cli_flags_developer_instructions(self):
+        """developer_instructions maps to a safely quoted Codex config override."""
+        opts = CodexOptions(
+            developer_instructions='Review "carefully".\nDo not delegate.'
+        )
+        assert opts.to_cli_flags() == [
+            "-c",
+            'developer_instructions="Review \\"carefully\\".\\nDo not delegate."',
+        ]
+
+    @pytest.mark.parametrize(
+        ("enabled", "expected"),
+        [
+            (True, "agents.enabled=true"),
+            (False, "agents.enabled=false"),
+        ],
+    )
+    def test_codex_options_to_cli_flags_agents_enabled(self, enabled, expected):
+        """agents_enabled maps to the Codex multi-agent configuration switch."""
+        opts = CodexOptions(agents_enabled=enabled)
+        assert opts.to_cli_flags() == ["-c", expected]
+
     def test_codex_options_to_cli_flags_full_auto(self):
         """full_auto=True maps to --full-auto."""
         opts = CodexOptions(full_auto=True)
@@ -193,6 +215,8 @@ class TestCodexOptions:
             reasoning_effort="high",
             sandbox="workspace-write",
             approval_policy="on-request",
+            developer_instructions="Stay focused.",
+            agents_enabled=False,
             full_auto=True,
             dangerously_bypass_approvals_and_sandbox=True,
         )
@@ -203,6 +227,10 @@ class TestCodexOptions:
             "workspace-write",
             "-c",
             'approval_policy="on-request"',
+            "-c",
+            'developer_instructions="Stay focused."',
+            "-c",
+            "agents.enabled=false",
             "--full-auto",
             "--dangerously-bypass-approvals-and-sandbox",
         ]

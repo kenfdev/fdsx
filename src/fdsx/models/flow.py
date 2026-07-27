@@ -417,6 +417,21 @@ def _validate_provider_fields(
             )
 
 
+def _validate_provider_instruction_options(
+    provider: str,
+    provider_options: dict[str, Any] | None,
+) -> None:
+    """Reject provider instruction options that would otherwise be ignored."""
+    if provider != "codex" or not provider_options:
+        return
+    for field in ("system_prompt", "append_system_prompt"):
+        if field in provider_options:
+            raise ValueError(
+                f"provider=codex does not support '{field}'; "
+                "use 'developer_instructions' instead"
+            )
+
+
 class ProfileConfig(BaseModel):
     """Named provider/model configuration bundle."""
 
@@ -427,6 +442,7 @@ class ProfileConfig(BaseModel):
     @model_validator(mode="after")
     def validate_provider(self) -> "ProfileConfig":
         validate_llm_provider(self.provider, "Profile")
+        _validate_provider_instruction_options(self.provider, self.model_extra)
         return self
 
 
@@ -448,6 +464,7 @@ class EscalationConfig(BaseModel):
                 "retry_escalation: 'model' is required when 'provider' is set"
             )
         validate_llm_provider(self.provider, "retry_escalation")
+        _validate_provider_instruction_options(self.provider, self.provider_options)
         return self
 
 
@@ -485,6 +502,7 @@ class Branch(BaseModel):
             self.command,
             self.model,
         )
+        _validate_provider_instruction_options(self.provider, self.provider_options)
         if self.prompt_template is not None and self.prompt_file is not None:
             raise ValueError("prompt_template and prompt_file are mutually exclusive")
         return self
@@ -623,6 +641,7 @@ class TaskState(BaseModel):
             self.command,
             self.model,
         )
+        _validate_provider_instruction_options(self.provider, self.provider_options)
         return self
 
     @model_validator(mode="after")
@@ -837,6 +856,7 @@ class IteratorTaskState(BaseModel):
             self.command,
             self.model,
         )
+        _validate_provider_instruction_options(self.provider, self.provider_options)
         return self
 
     @model_validator(mode="after")
@@ -1010,6 +1030,22 @@ class Flow(BaseModel):
     def validate_start_at_exists(self) -> "Flow":
         if self.start_at not in self.states:
             raise ValueError(f"start_at '{self.start_at}' does not exist in states")
+        return self
+
+    @model_validator(mode="after")
+    def validate_provider_instruction_options(self) -> "Flow":
+        """Validate workflow-level provider settings and declared profiles."""
+        for provider, options in (self.providers or {}).items():
+            _validate_provider_instruction_options(provider, options)
+        for profile in (self.profiles or {}).values():
+            profile_provider = profile.get("provider")
+            if isinstance(profile_provider, str):
+                options = {
+                    key: value
+                    for key, value in profile.items()
+                    if key not in ("provider", "model")
+                }
+                _validate_provider_instruction_options(profile_provider, options)
         return self
 
     @model_validator(mode="after")
