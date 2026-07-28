@@ -190,6 +190,7 @@ states:
     # structured_output:
     #   schema: schemas/plan.schema.json # relative to this workflow YAML
     #   result_path: $.plan              # stores the parsed object/list, not a JSON string
+    #   allow_extra_fields: false         # optional; default true, false rejects extras
     #   merge:                            # optional; lists of objects only
     #     strategy: upsert
     #     key: id                        # replace by key, append new keys, retain omissions
@@ -444,6 +445,8 @@ states:
 ```
 
 The schema path is relative to the workflow file and is loaded and checked before provider execution. Complete stdout must be one JSON object or list; a single outer Markdown code fence is allowed. Validation failures use the state's normal retry count and provide bounded corrective feedback. The `system` provider is not retried for a structured-output validation failure.
+
+Extra fields are allowed by default: `additionalProperties: false` and `unevaluatedProperties: false` are non-fatal, including inside nested and composite schemas. Unknown fields are retained in workflow state; required fields, known-property schemas, enum/pattern/numeric constraints, JSON syntax, and the object/list requirement remain enforced. Set `allow_extra_fields: false` to reject unknown fields strictly.
 
 `merge.strategy: upsert` requires a top-level result path and lists of objects containing the configured key. Matching objects are replaced in place, new keys append, and omitted existing objects remain. A batch with missing or duplicate keys is rejected.
 

@@ -5,10 +5,47 @@ from typing import Any
 
 from jsonschema import ValidationError
 from jsonschema.protocols import Validator
+from jsonschema.validators import extend, validator_for
 
 
 class StructuredOutputValidationError(Exception):
     """Provider output could not satisfy its structured-output contract."""
+
+
+def create_structured_output_validator(
+    schema: Any, *, allow_extra_fields: bool = True
+) -> Validator:
+    """Create a schema validator with the configured extra-field policy."""
+    validator_class = validator_for(schema)
+    if allow_extra_fields:
+        relaxed_validators: dict[str, Any] = {}
+        for keyword in ("additionalProperties", "unevaluatedProperties"):
+            original = validator_class.VALIDATORS.get(keyword)
+            if original is None:
+                continue
+
+            def ignore_false_schema(
+                validator: Validator,
+                keyword_schema: Any,
+                instance: Any,
+                containing_schema: dict[str, Any],
+                *,
+                _original: Any = original,
+            ) -> Any:
+                if keyword_schema is False:
+                    return
+                yield from _original(
+                    validator, keyword_schema, instance, containing_schema
+                )
+
+            relaxed_validators[keyword] = ignore_false_schema
+
+        if relaxed_validators:
+            validator_class = extend(  # type: ignore[no-untyped-call]
+                validator_class, relaxed_validators
+            )
+
+    return validator_class(schema)
 
 
 def parse_structured_output(

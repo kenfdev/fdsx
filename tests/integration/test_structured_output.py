@@ -60,6 +60,68 @@ def test_valid_structured_object_is_stored_as_workflow_state(tmp_path: Path) -> 
     assert result.results == {"payload": {"approved": True}}
 
 
+def test_extra_fields_are_retained_by_default(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, retry=0)
+    (tmp_path / "output.schema.json").write_text(
+        """
+{
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status": {"enum": ["COMMITTED", "NO_CHANGES", "BLOCKED"]}
+  },
+  "additionalProperties": false
+}
+""".strip()
+    )
+    fake = ProviderResult(
+        exit_code=0,
+        stdout='{"status": "COMMITTED", "evidence_notes": "Commit succeeded."}',
+        stderr="",
+    )
+
+    with patch("fdsx.providers.claude._run_subprocess", return_value=fake):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {
+        "payload": {
+            "status": "COMMITTED",
+            "evidence_notes": "Commit succeeded.",
+        }
+    }
+
+
+def test_extra_fields_are_rejected_when_explicitly_disabled(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, retry=0)
+    flow_path.write_text(
+        flow_path.read_text().replace(
+            "      result_path: $.payload",
+            "      result_path: $.payload\n      allow_extra_fields: false",
+        )
+    )
+    (tmp_path / "output.schema.json").write_text(
+        """
+{
+  "type": "object",
+  "required": ["status"],
+  "properties": {"status": {"enum": ["COMMITTED"]}},
+  "additionalProperties": false
+}
+""".strip()
+    )
+    fake = ProviderResult(
+        exit_code=0,
+        stdout='{"status": "COMMITTED", "evidence_notes": "Commit succeeded."}',
+        stderr="",
+    )
+
+    with (
+        patch("fdsx.providers.claude._run_subprocess", return_value=fake),
+        pytest.raises(RuntimeError, match="Additional properties are not allowed"),
+    ):
+        run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+
 def test_codex_structured_output_uses_final_agent_message(tmp_path: Path) -> None:
     flow_path = _write_flow(tmp_path, provider="codex", retry=0)
     (tmp_path / "output.schema.json").write_text(

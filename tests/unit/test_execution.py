@@ -399,6 +399,7 @@ class TestStructuredOutputCandidates:
 
     def _structured_output(self):
         structured_output = MagicMock()
+        structured_output.allow_extra_fields = False
         structured_output.schema_document = {
             "type": "object",
             "properties": {"approved": {"type": "boolean"}},
@@ -449,6 +450,7 @@ class TestStructuredOutputCandidates:
         from fdsx.core.compiler.execution import execute_with_retry
 
         structured_output = MagicMock()
+        structured_output.allow_extra_fields = False
         structured_output.schema_document = {
             "type": "object",
             "properties": {

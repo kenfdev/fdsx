@@ -126,6 +126,10 @@ class StructuredOutput(BaseModel):
         ..., alias="schema", serialization_alias="schema", min_length=1
     )
     result_path: str = Field(..., description="JSONPath for the validated value")
+    allow_extra_fields: bool = Field(
+        default=True,
+        description="Ignore false-valued JSON Schema extra-field restrictions",
+    )
     merge: StructuredOutputMerge | None = None
     schema_document: Any | None = Field(default=None, exclude=True, repr=False)
 

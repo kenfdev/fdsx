@@ -309,6 +309,7 @@ Used on `TaskState.structured_output` and `Branch.structured_output`:
 structured_output:
   schema: string                # required — JSON Schema file relative to workflow YAML
   result_path: string           # required — destination for parsed object/list
+  allow_extra_fields?: boolean  # optional — default true; false rejects extras
   merge?:                       # optional — keyed list merge
     strategy: "upsert"          # only supported strategy
     key: string                 # required — stable object key, min 1 char
@@ -318,6 +319,10 @@ structured_output:
 - Complete provider stdout is parsed as one JSON value; embedded fragments in prose are not extracted
 - One outer Markdown code fence around the complete JSON value is accepted
 - The parsed value must be an object or list and satisfy the schema
+- By default, `additionalProperties: false` and `unevaluatedProperties: false`
+  are ignored and unknown fields are retained
+- `allow_extra_fields: false` restores strict rejection of unknown fields
+- Required fields, known-property schemas, and all other constraints remain enforced
 - Schema files are loaded and the schema itself is validated at workflow-load time
 - Runtime parse/schema failures use the existing `retry` count and bounded validation feedback
 - The previous raw response is not copied into a retry prompt; raw output remains in run logs
