@@ -149,6 +149,8 @@ structured_output:
 
 The complete provider stdout is parsed as one JSON value. A single Markdown code fence around the complete value may be removed; embedded JSON inside prose is not searched. The value must be an object or list and satisfy the referenced JSON Schema. Schema files are loaded and checked during workflow loading, before any provider executes.
 
+Extra fields are allowed by default: `additionalProperties: false` and `unevaluatedProperties: false` are ignored, including in nested or composite schemas, and unknown fields remain in workflow state. Required fields, known-property schemas, all other constraints, JSON syntax, and the object/list requirement are unchanged. Set `allow_extra_fields: false` to reject unknown fields strictly.
+
 Validation failures use the state's or branch's existing `retry` count. LLM retries receive bounded validation feedback without the previous raw output. A `system` command is not retried after structured-output validation fails. Raw provider output remains in run logs.
 
 `structured_output` is mutually exclusive with a task's legacy `result_path` and `extract`, and with a branch's `extract`. The structured value is authoritative in workflow state.

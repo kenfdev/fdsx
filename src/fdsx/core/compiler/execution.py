@@ -19,11 +19,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from jsonschema.validators import validator_for
-
 from fdsx.core.extraction import extract_value
 from fdsx.core.structured_output import (
     StructuredOutputValidationError,
+    create_structured_output_validator,
     parse_structured_output,
 )
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
@@ -211,8 +210,10 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         raise StructuredOutputValidationError(
                             "Structured output schema was not loaded"
                         )
-                    validator_class = validator_for(schema_document)
-                    validator = validator_class(schema_document)
+                    validator = create_structured_output_validator(
+                        schema_document,
+                        allow_extra_fields=config.structured_output.allow_extra_fields,
+                    )
                     candidates = (
                         [result.final_message]
                         if result.final_message is not None
