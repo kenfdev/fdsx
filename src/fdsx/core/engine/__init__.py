@@ -5,6 +5,12 @@ existing imports like ``from fdsx.core.engine import run_flow`` continue
 to work without changes.
 """
 
+from .errors import (
+    CheckpointNotFoundError,
+    EngineError,
+    FlowExecutionError,
+    RunLockedError,
+)
 from .results import (
     AbortInfo,
     FlowResult,
@@ -27,9 +33,13 @@ from .validate import FailStateTermination, FlowValidationError, validate_flow
 
 __all__ = [
     "AbortInfo",
+    "CheckpointNotFoundError",
+    "EngineError",
     "FailStateTermination",
+    "FlowExecutionError",
     "FlowResult",
     "FlowValidationError",
+    "RunLockedError",
     "_calc_elapsed",
     "_detect_abort_status",
     "_extract_results",

@@ -8,7 +8,7 @@ from jsonschema.protocols import Validator
 from jsonschema.validators import extend, validator_for
 
 
-class StructuredOutputValidationError(Exception):
+class StructuredOutputValidationError(RuntimeError):
     """Provider output could not satisfy its structured-output contract."""
 
 

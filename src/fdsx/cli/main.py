@@ -26,7 +26,11 @@ from fdsx.core.batch import (
     queue_task_files,
 )
 from fdsx.core.config import load_config
-from fdsx.core.engine import FlowValidationError
+from fdsx.core.engine import (
+    CheckpointNotFoundError,
+    FlowValidationError,
+    RunLockedError,
+)
 from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
 from fdsx.core.init import (
     check_conflicts,
@@ -521,21 +525,15 @@ def resume(
     try:
         result = engine.resume_flow(thread_id, base_dir, from_state=from_state)
         execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
+    except (CheckpointNotFoundError, RunLockedError) as e:
+        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     except RuntimeError as e:
         error_msg = str(e)
         execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
-        if "No checkpoint found" in error_msg:
-            typer.echo(
-                f"Error: No checkpoint found for thread ID {_sanitize_output(thread_id)}",
-                err=True,
-            )
-            raise typer.Exit(code=2) from None
-        elif "locked by PID" in error_msg:
-            typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
-            raise typer.Exit(code=2) from None
-        else:
-            typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
-            raise typer.Exit(code=1) from None
+        typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
+        raise typer.Exit(code=1) from None
     except Exception as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         execute_run_hooks(_end_hooks, status="failed", event="on_run_end")

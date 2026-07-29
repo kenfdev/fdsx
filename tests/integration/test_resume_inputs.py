@@ -63,7 +63,7 @@ def test_resume_parallel_branch_preserves_inputs(
     with (
         patch(
             "fdsx.core.engine.interrupts.display_wait_prompt",
-            side_effect=Exception("simulated crash"),
+            side_effect=RuntimeError("simulated crash"),
         ),
         pytest.raises(RuntimeError, match="Flow execution failed"),
     ):

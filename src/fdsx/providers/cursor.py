@@ -20,7 +20,7 @@ from fdsx.providers.base import (
 logger = logging.getLogger(__name__)
 
 
-class CursorProviderError(Exception):
+class CursorProviderError(RuntimeError):
     """Raised when the Cursor provider encounters a domain-level error."""
 
 
