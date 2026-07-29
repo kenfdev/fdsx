@@ -4,7 +4,7 @@ import logging
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 
@@ -58,6 +58,12 @@ _WHITE = 0
 _GRAY = 1
 _BLACK = 2
 _MAX_LOOP_NODE = "__max_loop_reached__"
+_RECOVERY_NODE = "__fdsx_recovery__"
+
+
+def _recovery_noop(_state: dict[str, Any]) -> dict[str, Any]:
+    """Provide a stable graph node used only to supersede pending work."""
+    return {}
 
 
 def _get_all_next_state_names(state: Any, flow_states: dict[str, Any]) -> list[str]:
@@ -149,6 +155,21 @@ class CompiledGraph:
         self.graph = graph
         self.entry_point = entry_point
         self.result_paths = result_paths
+
+    def prepare_recovery(
+        self,
+        config: dict[str, Any],
+        update: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Supersede pending work and create a clean recovery checkpoint."""
+        return cast(
+            dict[str, Any],
+            self.graph.update_state(
+                config,
+                update,
+                as_node=_RECOVERY_NODE,
+            ),
+        )
 
 
 def _wrap_with_hooks(
@@ -288,6 +309,9 @@ def compile_flow(
 
     schema = _build_state_schema(flow, input_keys)
     graph: StateGraph[Any] = StateGraph(schema)
+    recovery_node: Any = _recovery_noop
+    graph.add_node(_RECOVERY_NODE, recovery_node)
+    graph.add_edge(_RECOVERY_NODE, END)
 
     if checkpointer is None:
         has_wait = any(isinstance(s, WaitState) for s in flow.states.values())

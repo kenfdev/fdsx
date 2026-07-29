@@ -253,7 +253,7 @@ states:
 ```
 fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow] [--continue-on-error]
 fdsx validate <workflow.yaml>
-fdsx resume --thread-id <id> [--base-dir <path>]
+fdsx resume --thread-id <id> [--from <state>] [--base-dir <path>]
 fdsx list [--base-dir <path>]
 fdsx add <task-file> [<task-file> ...]
 fdsx init [--skill]
@@ -444,6 +444,22 @@ profiles:                       # named provider/model bundles
 Set `max_loop` at flow level. Use a `choice` state to either loop back to `plan` or proceed to `done`.
 
 Prompts can use `{state.iteration}` to distinguish the first execution from later passes. If the workflow never routes to completion, reaching `max_loop` returns `FlowResult.status: max_loop_reached`, preserves partial results/checkpoint state, and is a non-success outcome: CLI exit is non-zero and tasks-directory entries are marked failed.
+
+**Recover after a terminal non-success outcome:**
+Fix the workflow or its inputs, then run
+`fdsx resume --thread-id <id> --from <state>`. This is a recovery jump on the
+same thread, not historical rewind: it combines the latest checkpoint's
+business data with the current workflow YAML and starts fresh runtime
+bookkeeping for loops, parallel branches, and maps. The target must exist in
+the current workflow, must have executed previously, cannot be a `fail` state,
+and must have its current required variables available. Completed executions
+cannot be recovered. Bare `fdsx resume` still retries ordinary pending
+task/provider failures; terminal `fail`, `abort_*`, `max_loop`, and
+`max_iterations` outcomes require `--from` and report eligible targets.
+If recovery reaches another non-success outcome, the user may intervene and
+issue another explicit `--from`; every recovery gets a fresh execution budget,
+and fdsx never repeats recovery automatically. Python callers use
+`resume_flow(<thread_id>, from_state="<state>")`.
 
 **Parallel review with aggregation:**
 Use `parallel` → `pass` (with `aggregate`) → `choice` to fan out reviews, aggregate votes, then branch on result.

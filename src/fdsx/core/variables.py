@@ -12,6 +12,19 @@ RESULT_FILE_DATA_DIR = "data"
 
 # Global variables automatically available in every state (injected at runtime by the runner)
 GLOBAL_TASK_VARS: set[str] = {"task", "source", "run_path", "state.iteration"}
+_TEMPLATE_PATTERN = re.compile(r"\{([^}]+)\}")
+
+
+def extract_template_references(*templates: str | None) -> set[str]:
+    """Return normalized variable paths referenced by runtime templates."""
+    references: set[str] = set()
+    for template in templates:
+        if not template:
+            continue
+        for match in _TEMPLATE_PATTERN.finditer(template):
+            path = match.group(1)
+            references.add(path[2:] if path.startswith("$.") else path)
+    return references
 
 
 def write_result_to_file(varname: str, value: Any, run_dir: Path) -> str:
@@ -44,7 +57,6 @@ def resolve_template(template: str, variables: dict[str, Any]) -> str:
     Only replaces registered variable names. Unknown {...} patterns
     are preserved as literals.
     """
-    pattern = re.compile(r"\{([^}]+)\}")
 
     def replace_match(match: re.Match[str]) -> str:
         var_path = match.group(1)
@@ -55,7 +67,7 @@ def resolve_template(template: str, variables: dict[str, Any]) -> str:
             return json.dumps(value, indent=2, ensure_ascii=False)
         return str(value)
 
-    return pattern.sub(replace_match, template)
+    return _TEMPLATE_PATTERN.sub(replace_match, template)
 
 
 def resolve_template_shell_safe(template: str, variables: dict[str, Any]) -> str:
@@ -65,7 +77,6 @@ def resolve_template_shell_safe(template: str, variables: dict[str, Any]) -> str
     shell injection when the result is used in sh -c commands.
     Unknown {...} patterns are preserved as literals.
     """
-    pattern = re.compile(r"\{([^}]+)\}")
 
     def replace_match(match: re.Match[str]) -> str:
         var_path = match.group(1)
@@ -76,7 +87,7 @@ def resolve_template_shell_safe(template: str, variables: dict[str, Any]) -> str
             return shlex.quote(json.dumps(value, indent=2, ensure_ascii=False))
         return shlex.quote(str(value))
 
-    return pattern.sub(replace_match, template)
+    return _TEMPLATE_PATTERN.sub(replace_match, template)
 
 
 def inject_builtin_vars(
@@ -135,6 +146,27 @@ def resolve_jsonpath(path: str, data: dict[str, Any]) -> Any:
             return None
 
     return current
+
+
+def jsonpath_exists(path: str, data: dict[str, Any]) -> bool:
+    """Return whether a JSONPath-like path exists, even when its value is null."""
+    path = path.strip()
+    if path.startswith("$."):
+        path = path[2:]
+
+    current: Any = data
+    for part in parse_jsonpath(path):
+        if isinstance(current, dict):
+            if not isinstance(part, str) or part not in current:
+                return False
+            current = current[part]
+        elif isinstance(current, list):
+            if not isinstance(part, int) or part < 0 or part >= len(current):
+                return False
+            current = current[part]
+        else:
+            return False
+    return True
 
 
 def set_jsonpath(path: str, data: dict[str, Any], value: Any) -> dict[str, Any]:
@@ -468,19 +500,27 @@ def analyze_variable_references(
 
         if isinstance(state, MapState):
             iter_prompt_vars: set[str] = set()
-            iter_pattern = re.compile(r"\{([^}]+)\}")
+            iterator_outputs = {"item"}
             for iter_state in state.iterator.states:
                 iter_prompt = iter_state.prompt_template or ""
                 iter_command = iter_state.command or ""
-                iter_text = iter_prompt + " " + iter_command
-                for match in iter_pattern.finditer(iter_text):
-                    var_path = match.group(1)
-                    if var_path.startswith("$."):
-                        var_path = var_path[2:]
-                    iter_prompt_vars.add(var_path)
-            iter_prompt_vars = {
-                v for v in iter_prompt_vars if v != "item" and not v.startswith("item.")
-            }
+                references = extract_template_references(iter_prompt, iter_command)
+                iter_prompt_vars.update(
+                    reference
+                    for reference in references
+                    if not _is_var_satisfied(reference, iterator_outputs)
+                )
+                result_path = iter_state.result_path
+                iterator_outputs.add(
+                    result_path[2:] if result_path.startswith("$.") else result_path
+                )
+                if iter_state.extract is not None:
+                    extract_path = iter_state.extract.result_path
+                    iterator_outputs.add(
+                        extract_path[2:]
+                        if extract_path.startswith("$.")
+                        else extract_path
+                    )
             prompt_vars = iter_prompt_vars
             items_path = state.items_path
             if items_path.startswith("$."):

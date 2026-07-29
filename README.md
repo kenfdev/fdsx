@@ -714,7 +714,8 @@ run_hooks:
 | `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
 | `fdsx run ... --confirm-workflow` | Show workflow confirmation UI (requires interactive mode) |
 | `fdsx run ... --continue-on-error` | Continue processing remaining entries on error in tasks-dir mode |
-| `fdsx resume --thread-id <id>` | Resume from checkpoint |
+| `fdsx resume --thread-id <id>` | Resume an interrupted or retryable failed execution from its checkpoint |
+| `fdsx resume --thread-id <id> --from <state>` | Recover a non-successful execution by jumping to a previously executed state |
 | `fdsx resume --thread-id <id> --base-dir <dir>` | Resume with custom base directory |
 | `fdsx validate <workflow.yaml>` | Validate YAML syntax |
 | `fdsx resolve <workflow.yaml>` | Print normalized YAML with prompt files and referenced profiles resolved for inspection |
@@ -813,6 +814,37 @@ Flows automatically persist state after each step. If interrupted (Ctrl+C, crash
 ```bash
 fdsx resume --thread-id <thread_id>
 ```
+
+For a terminal non-success outcome such as `fail`, `abort_*`, `max_loop`, or
+`max_iterations`, fix the workflow or its inputs and explicitly select a
+previously executed state:
+
+```bash
+fdsx resume --thread-id <thread_id> --from review
+```
+
+The equivalent Python API is:
+
+```python
+from fdsx.core.engine import resume_flow
+
+result = resume_flow("<thread_id>", from_state="review")
+```
+
+This is a recovery jump, not a rewind. It uses the latest checkpoint's business
+data together with the current workflow YAML, starts the selected state with
+fresh loop/parallel/map runtime bookkeeping, and continues on the same thread.
+It does not reconstruct historical state from before the failure. The target
+must be a previously executed state in the current workflow, cannot be a
+`fail` state, and must have all variables it currently requires. A successful
+execution cannot be recovered. Running terminal resume without `--from` prints
+the eligible states; ordinary pending task/provider failures retain the
+existing bare-resume retry behavior.
+
+If the recovered workflow reaches another non-success outcome, fix the problem
+and invoke `--from` (or `from_state`) again. Each explicit invocation gets a
+fresh execution budget; fdsx never starts another recovery attempt
+automatically.
 
 List all executions:
 ```bash
