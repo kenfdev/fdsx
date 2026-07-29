@@ -202,6 +202,10 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     return paths
 
 
+class MaxIterationsReachedError(RuntimeError):
+    """Raised when a state exhausts its configured execution budget."""
+
+
 def _check_max_iterations(state_name: str, state_def: Any, iteration: int) -> None:
     """Raise RuntimeError if the state has exceeded its max_iterations limit.
 
@@ -209,7 +213,7 @@ def _check_max_iterations(state_name: str, state_def: Any, iteration: int) -> No
     """
     max_iter = getattr(state_def, "max_iterations", None)
     if max_iter is not None and iteration > max_iter:
-        raise RuntimeError(
+        raise MaxIterationsReachedError(
             f"State '{state_name}' reached max_iterations limit ({max_iter})"
         )
 

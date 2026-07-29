@@ -503,6 +503,11 @@ def resume(
     base_dir: Path | None = typer.Option(
         None, "--base-dir", help="Base directory for checkpoints (default: .fdsx/)"
     ),
+    from_state: str | None = typer.Option(
+        None,
+        "--from",
+        help="Executed state to start an explicit recovery jump from",
+    ),
 ) -> None:
     """Resume a flow from a checkpoint."""
     config = load_config()
@@ -514,10 +519,8 @@ def resume(
     )
     execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
     try:
-        result = engine.resume_flow(thread_id, base_dir)
+        result = engine.resume_flow(thread_id, base_dir, from_state=from_state)
         execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
-        if result.status != "completed":
-            raise typer.Exit(code=1)
     except RuntimeError as e:
         error_msg = str(e)
         execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
@@ -537,6 +540,8 @@ def resume(
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         raise typer.Exit(code=1) from None
+    if result.status != "completed":
+        raise typer.Exit(code=1)
 
 
 @app.command(name="list")

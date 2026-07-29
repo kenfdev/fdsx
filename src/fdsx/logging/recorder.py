@@ -38,6 +38,7 @@ class RunRecorder:
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.status = "running"
         self.states: list[dict[str, Any]] = []
+        self.recoveries: list[dict[str, str]] = []
         self.completed_at: str | None = None
         self.final_variables: dict[str, Any] | None = None
         self._current_state: dict[str, Any] | None = None
@@ -283,6 +284,15 @@ class RunRecorder:
         self.status = status
         self.final_variables = final_variables
 
+    def record_recovery(self, from_state: str) -> None:
+        """Record the start of an explicit recovery jump."""
+        self.recoveries.append(
+            {
+                "from_state": from_state,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
     def save(self, base_dir: Path | None = None) -> Path:
         """Write JSON to <base_dir>/runs/<thread_id>/run.json.
 
@@ -315,6 +325,9 @@ class RunRecorder:
             existing_states.extend(self.states)
 
             self.states = existing_states
+            existing_recoveries = existing_log.get("recoveries", [])
+            existing_recoveries.extend(self.recoveries)
+            self.recoveries = existing_recoveries
             self.started_at = existing_log.get("started_at", self.started_at)
 
         log_data = self.to_dict()
@@ -346,6 +359,8 @@ class RunRecorder:
 
         if self.final_variables is not None:
             result["final_variables"] = self.final_variables
+        if self.recoveries:
+            result["recoveries"] = self.recoveries
 
         return result
 

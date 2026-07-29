@@ -271,6 +271,30 @@ class TestResumeHooksWiring:
         assert len(end_calls) == 1
         assert end_calls[0].kwargs["status"] == "failed"
 
+    def test_resume_non_success_fires_on_run_end_once_with_result_status(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        with (
+            patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
+            patch(
+                "fdsx.cli.main.engine.resume_flow",
+                return_value=MagicMock(status="max_loop_reached"),
+            ),
+        ):
+            result = runner.invoke(app, ["resume", "--thread-id", "test-thread"])
+
+        assert result.exit_code == 1
+        end_calls = [
+            call
+            for call in mock_exec.call_args_list
+            if call.kwargs.get("event") == "on_run_end"
+        ]
+        assert len(end_calls) == 1
+        assert end_calls[0].kwargs["status"] == "max_loop_reached"
+
     def test_resume_fires_on_run_end_failed_on_no_checkpoint(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

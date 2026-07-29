@@ -2,13 +2,15 @@
 
 import sys
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 from typing import Any
 
 import structlog
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.errors import InvalidUpdateError
 
 from fdsx.checkpoint.manager import CheckpointManager
-from fdsx.core.compiler import compile_flow
+from fdsx.core.compiler import MaxIterationsReachedError, compile_flow
 from fdsx.core.config import load_config
 from fdsx.core.hooks import (
     HookAbortError,
@@ -304,6 +306,34 @@ def run_flow(
         )
         return FlowResult(results=results, status=status, abort_state=failed_state)
     except Exception as e:
+        if checkpoint_manager is not None and isinstance(e, MaxIterationsReachedError):
+            try:
+                state_info = compiled.graph.get_state(config)
+                existing_meta = (
+                    state_info.values.get("_meta", {}) if state_info.values else {}
+                )
+                compiled.graph.update_state(
+                    config,
+                    {
+                        "_meta": {
+                            **existing_meta,
+                            "terminal_status": "max_iterations_reached",
+                        }
+                    },
+                )
+            except (
+                InvalidUpdateError,
+                SQLiteError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as marker_error:
+                logger.error(
+                    "max_iterations_marker_persist_failed",
+                    thread_id=thread_id,
+                    error=str(marker_error),
+                )
         if checkpoint_manager is not None:
             print(
                 f"Checkpoint saved. Resume with: fdsx resume --thread-id {_sanitize_output(thread_id)}",
