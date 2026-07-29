@@ -180,7 +180,7 @@ class TestResumeSuccess:
             pytest.raises(RuntimeError, match="Flow execution failed"),
             patch(
                 "fdsx.core.engine.interrupts.display_wait_prompt",
-                side_effect=Exception("simulated crash"),
+                side_effect=RuntimeError("simulated crash"),
             ),
         ):
             engine.run_flow(
@@ -226,7 +226,7 @@ class TestScenario4FullResume:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                raise Exception("simulated crash on implement state")
+                raise RuntimeError("simulated crash on implement state")
             return original_execute(*args, **kwargs)
 
         # Step 1: Run flow until implement state crashes
@@ -267,7 +267,7 @@ class TestScenario4FullResume:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                raise Exception("simulated crash")
+                raise RuntimeError("simulated crash")
             return original_execute(*args, **kwargs)
 
         with (

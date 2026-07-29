@@ -298,7 +298,9 @@ class TestResumeHooksWiring:
     def test_resume_fires_on_run_end_failed_on_no_checkpoint(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """'No checkpoint found' RuntimeError fires on_run_end with status='failed'."""
+        """Missing checkpoint fires on_run_end with status='failed'."""
+        from fdsx.core.engine import CheckpointNotFoundError
+
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".fdsx").mkdir()
 
@@ -306,7 +308,7 @@ class TestResumeHooksWiring:
             patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
             patch(
                 "fdsx.cli.main.engine.resume_flow",
-                side_effect=RuntimeError("No checkpoint found for thread"),
+                side_effect=CheckpointNotFoundError("No checkpoint found for thread"),
             ),
         ):
             result = runner.invoke(app, ["resume", "--thread-id", "missing-thread"])
@@ -317,6 +319,46 @@ class TestResumeHooksWiring:
         ]
         assert len(end_calls) == 1
         assert end_calls[0].kwargs["status"] == "failed"
+
+    def test_resume_maps_checkpoint_error_type_without_parsing_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fdsx.core.engine import CheckpointNotFoundError
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        with patch(
+            "fdsx.cli.main.engine.resume_flow",
+            side_effect=CheckpointNotFoundError("storage lookup failed"),
+        ):
+            result = runner.invoke(
+                app,
+                ["resume", "--thread-id", "missing-thread"],
+            )
+
+        assert result.exit_code == 2
+        assert "storage lookup failed" in result.stderr
+
+    def test_resume_maps_locked_error_type_without_parsing_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fdsx.core.engine import RunLockedError
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        with patch(
+            "fdsx.cli.main.engine.resume_flow",
+            side_effect=RunLockedError("thread is busy"),
+        ):
+            result = runner.invoke(
+                app,
+                ["resume", "--thread-id", "busy-thread"],
+            )
+
+        assert result.exit_code == 2
+        assert "thread is busy" in result.stderr
 
     def test_resume_fires_on_run_end_failed_on_exception(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

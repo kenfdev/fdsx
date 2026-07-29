@@ -258,7 +258,7 @@ class TestMetaRunDir:
             with (
                 patch("fdsx.core.engine.run.compile_flow", return_value=mock_compiled),
                 patch("fdsx.core.engine.run.RunRecorder") as mock_recorder_cls,
-                patch("fdsx.core.engine.run.display_completion_summary"),
+                patch("fdsx.core.engine.lifecycle.display_completion_summary"),
                 patch("fdsx.core.engine.run.load_config"),
             ):
                 mock_recorder_instance = MagicMock()

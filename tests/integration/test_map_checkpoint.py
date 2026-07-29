@@ -84,7 +84,7 @@ class TestMapCheckpoint:
             nonlocal call_count
             call_count += 1
             if call_count == 3:
-                raise Exception("simulated interruption after 2 items")
+                raise RuntimeError("simulated interruption after 2 items")
             return original_execute(*args, **kwargs)
 
         with (
@@ -166,7 +166,7 @@ class TestMapCheckpoint:
             nonlocal call_count
             call_count += 1
             if call_count == 3:
-                raise Exception("simulated interruption after 2 items")
+                raise RuntimeError("simulated interruption after 2 items")
             return original_execute(*args, **kwargs)
 
         with (
@@ -265,7 +265,7 @@ class TestMapCheckpoint:
             nonlocal call_count
             call_count += 1
             if call_count == 4:
-                raise Exception("simulated interruption after 3 items")
+                raise RuntimeError("simulated interruption after 3 items")
             return original_execute(*args, **kwargs)
 
         with (
