@@ -246,7 +246,7 @@ states:
 ```
 
 `ExtractionFallback` fields:
-- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
+- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
 - `model` — model string passed to the provider binary. Required when `provider` is set.
 - `profile` — named profile. XOR with `provider` + `model`. Exactly one of `provider + model` or `profile` must be set.
 - `extra_instructions` — optional string appended to the recovery prompt.

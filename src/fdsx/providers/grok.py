@@ -1,5 +1,4 @@
 import json
-import logging
 import subprocess
 import tempfile
 import threading
@@ -8,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from fdsx.providers.base import (
@@ -15,17 +15,19 @@ from fdsx.providers.base import (
     DEFAULT_EXECUTION_TIMEOUT,
     DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
+    ProviderError,
     ProviderResult,
     _run_subprocess,
     add_schema_update_guidance,
+    serialize_output_schema,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 NonEmptyString = Annotated[str, Field(min_length=1)]
 
 
-class GrokProviderError(Exception):
+class GrokProviderError(ProviderError):
     """Raised when Grok returns an invalid or incomplete provider response."""
 
 
@@ -77,6 +79,10 @@ class GrokOptions(BaseModel):
             raise ValueError("rules and system_prompt_override are mutually exclusive")
         if self.agents and self.no_subagents:
             raise ValueError("agents requires no_subagents: false")
+        try:
+            json.dumps(self.agents)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("agents must contain only JSON-compatible values") from exc
         return self
 
     def to_cli_flags(self) -> list[str]:
@@ -113,7 +119,14 @@ class GrokOptions(BaseModel):
         if self.agent is not None:
             flags.extend(["--agent", self.agent])
         if self.agents:
-            flags.extend(["--agents", json.dumps(self.agents, separators=(",", ":"))])
+            try:
+                encoded_agents = json.dumps(self.agents, separators=(",", ":"))
+            except (TypeError, ValueError) as exc:
+                logger.error("grok_agents_serialization_failed", error=str(exc))
+                raise GrokProviderError(
+                    "Grok agents must contain only JSON-compatible values"
+                ) from exc
+            flags.extend(["--agents", encoded_agents])
         if self.rules is not None:
             flags.extend(["--rules", self.rules])
         if self.system_prompt_override is not None:
@@ -201,7 +214,10 @@ class GrokStreamParser:
 
     def _start_tool(self, update: dict[str, Any]) -> None:
         self._flush_buffer()
-        tool_id = str(update.get("toolCallId") or update.get("id") or "unknown")
+        tool_id = update.get("toolCallId") or update.get("id")
+        if not isinstance(tool_id, str) or not tool_id:
+            logger.error("grok_stream_invalid_tool_call", reason="missing id")
+            raise GrokProviderError("Grok tool-call event requires an id")
         if tool_id not in self._active_tool_ids:
             was_idle = not self._active_tool_ids
             self._active_tool_ids.add(tool_id)
@@ -213,10 +229,19 @@ class GrokStreamParser:
             self._summary_callback(f"[tool: {title}]")
 
     def _update_tool(self, update: dict[str, Any]) -> None:
-        status = str(update.get("status") or "").lower()
+        tool_id = update.get("toolCallId") or update.get("id")
+        if not isinstance(tool_id, str) or not tool_id:
+            logger.error("grok_stream_invalid_tool_update", reason="missing id")
+            raise GrokProviderError("Grok tool-update event requires an id")
+        raw_status = update.get("status")
+        if not isinstance(raw_status, str) or not raw_status:
+            logger.error("grok_stream_invalid_tool_update", reason="missing status")
+            raise GrokProviderError("Grok tool-update event requires a status")
+        status = raw_status.lower()
+        if self._summary_callback is not None:
+            self._summary_callback(f"[tool update: {tool_id} {status}]")
         if status not in {"completed", "failed", "cancelled", "canceled"}:
             return
-        tool_id = str(update.get("toolCallId") or update.get("id") or "unknown")
         if tool_id in self._active_tool_ids:
             self._active_tool_ids.remove(tool_id)
             if not self._active_tool_ids and self._on_tool_end is not None:
@@ -229,25 +254,27 @@ class GrokStreamParser:
         try:
             event = json.loads(line)
         except json.JSONDecodeError as exc:
-            logger.error("grok_stream_invalid_json line=%s", line)
+            logger.error("grok_stream_invalid_json", line=line)
             raise GrokProviderError("Grok returned malformed streaming JSON") from exc
         if not isinstance(event, dict):
-            logger.error(
-                "grok_stream_invalid_event event_type=%s", type(event).__name__
-            )
+            logger.error("grok_stream_invalid_event", event_type=type(event).__name__)
             raise GrokProviderError("Grok returned a non-object streaming event")
 
         event_type = event.get("type")
         if event_type == "text":
             data = event.get("data")
-            if isinstance(data, str):
-                self._text_parts.append(data)
-                self._append_progress(data, "text")
+            if not isinstance(data, str):
+                logger.error("grok_stream_invalid_text", reason="non-string data")
+                raise GrokProviderError("Grok text event requires string data")
+            self._text_parts.append(data)
+            self._append_progress(data, "text")
             return
         if event_type == "thought":
             data = event.get("data")
-            if isinstance(data, str):
-                self._append_progress(data, "thought")
+            if not isinstance(data, str):
+                logger.error("grok_stream_invalid_thought", reason="non-string data")
+                raise GrokProviderError("Grok thought event requires string data")
+            self._append_progress(data, "thought")
             return
         if event_type == "tool_call":
             self._start_tool(event)
@@ -256,32 +283,59 @@ class GrokStreamParser:
             self._update_tool(event)
             return
         if event_type == "end":
+            stop_reason = event.get("stopReason")
+            if not isinstance(stop_reason, str) or not stop_reason:
+                logger.error("grok_stream_invalid_end", reason="missing stopReason")
+                raise GrokProviderError("Grok end event requires a stopReason")
             self._flush_buffer()
-            self._stop_reason = event.get("stopReason")
+            self._stop_reason = stop_reason
             self._structured_output = event.get("structuredOutput")
             self._ended = True
             return
         if event_type == "error":
-            message = event.get("message") or event.get("data") or "unknown error"
-            logger.error("grok_stream_error error=%s", str(message))
+            message = event.get("message") or event.get("data")
+            if not isinstance(message, str) or not message:
+                logger.error("grok_stream_invalid_error", reason="missing message")
+                raise GrokProviderError("Grok error event requires a message")
+            logger.error("grok_stream_error", error=message)
             raise GrokProviderError(f"Grok stream error: {message}")
 
         params = event.get("params")
         update = params.get("update") if isinstance(params, dict) else None
         if not isinstance(update, dict):
+            if event.get("method") == "session/update":
+                logger.error(
+                    "grok_stream_invalid_session_update",
+                    reason="missing update object",
+                )
+                raise GrokProviderError("Grok session update requires an update object")
             return
         update_type = update.get("sessionUpdate")
         content = update.get("content")
         data = content.get("text") if isinstance(content, dict) else None
-        if update_type == "agent_message_chunk" and isinstance(data, str):
+        if update_type == "agent_message_chunk":
+            if not isinstance(data, str):
+                logger.error(
+                    "grok_stream_invalid_message_chunk",
+                    reason="non-string content",
+                )
+                raise GrokProviderError("Grok message chunk requires string content")
             self._text_parts.append(data)
             self._append_progress(data, "text")
-        elif update_type == "agent_thought_chunk" and isinstance(data, str):
+        elif update_type == "agent_thought_chunk":
+            if not isinstance(data, str):
+                logger.error(
+                    "grok_stream_invalid_thought_chunk",
+                    reason="non-string content",
+                )
+                raise GrokProviderError("Grok thought chunk requires string content")
             self._append_progress(data, "thought")
         elif update_type == "tool_call":
             self._start_tool(update)
         elif update_type == "tool_call_update":
             self._update_tool(update)
+        elif event_type is not None:
+            logger.debug("grok_stream_unknown_event", event_type=str(event_type))
 
     @property
     def ended(self) -> bool:
@@ -322,26 +376,36 @@ class GrokProvider(ProviderBase):
             raise GrokProviderError("Grok provider requires a model")
 
         prompt_path: Path | None = None
-        if len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                prefix="fdsx-grok-",
-                suffix=".txt",
-                delete=False,
-            ) as prompt_file:
-                prompt_file.write(prompt)
-                prompt_path = Path(prompt_file.name)
-            prompt_flags = ["--prompt-file", str(prompt_path)]
-        else:
-            prompt_flags = ["--single", prompt]
+        try:
+            if len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix="fdsx-grok-",
+                    suffix=".txt",
+                    delete=False,
+                ) as prompt_file:
+                    prompt_path = Path(prompt_file.name)
+                    prompt_file.write(prompt)
+                prompt_flags = ["--prompt-file", str(prompt_path)]
+            else:
+                prompt_flags = ["--single", prompt]
+        except (OSError, UnicodeError) as exc:
+            if prompt_path is not None:
+                try:
+                    prompt_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "grok_prompt_file_cleanup_failed",
+                        path=str(prompt_path),
+                    )
+            logger.error("grok_prompt_file_creation_failed", error=str(exc))
+            raise GrokProviderError("Failed to prepare the Grok prompt") from exc
 
         args = ["grok", "--no-auto-update", "--no-ask-user"]
         args.extend(self.options.to_cli_flags())
         if output_schema is not None:
-            args.extend(
-                ["--json-schema", json.dumps(output_schema, separators=(",", ":"))]
-            )
+            args.extend(["--json-schema", serialize_output_schema(output_schema)])
         args.extend(
             [
                 "--model",
@@ -408,7 +472,8 @@ class GrokProvider(ProviderBase):
                     prompt_path.unlink(missing_ok=True)
                 except OSError:
                     logger.warning(
-                        "grok_prompt_file_cleanup_failed path=%s", str(prompt_path)
+                        "grok_prompt_file_cleanup_failed",
+                        path=str(prompt_path),
                     )
 
         stream_result = parser.finish()

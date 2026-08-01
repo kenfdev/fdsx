@@ -93,7 +93,11 @@ def _resolve_profile_on_dict(
 
     extra_fields = {k: v for k, v in profile.items() if k not in ("provider", "model")}
     if extra_fields:
-        item["provider_options"] = extra_fields
+        state_options = item.get("provider_options")
+        if isinstance(state_options, dict):
+            item["provider_options"] = {**extra_fields, **state_options}
+        else:
+            item["provider_options"] = extra_fields
 
     del item["profile"]
 

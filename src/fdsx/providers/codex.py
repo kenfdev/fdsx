@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
@@ -14,11 +15,14 @@ from fdsx.providers.base import (
     DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
+    ProviderSchemaError,
     _run_subprocess,
     add_schema_update_guidance,
+    serialize_output_schema,
 )
 
 logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # JSONL streaming format constants
@@ -206,15 +210,34 @@ class CodexProvider(ProviderBase):
         """
         schema_path: Path | None = None
         if output_schema is not None:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                prefix="fdsx-codex-schema-",
-                suffix=".json",
-                delete=False,
-            ) as schema_file:
-                json.dump(output_schema, schema_file, separators=(",", ":"))
-                schema_path = Path(schema_file.name)
+            encoded_schema = serialize_output_schema(output_schema)
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix="fdsx-codex-schema-",
+                    suffix=".json",
+                    delete=False,
+                ) as schema_file:
+                    schema_path = Path(schema_file.name)
+                    schema_file.write(encoded_schema)
+            except (OSError, UnicodeError) as exc:
+                if schema_path is not None:
+                    try:
+                        schema_path.unlink(missing_ok=True)
+                    except OSError as cleanup_exc:
+                        structured_logger.warning(
+                            "codex_schema_file_cleanup_failed",
+                            path=str(schema_path),
+                            error=str(cleanup_exc),
+                        )
+                structured_logger.error(
+                    "codex_schema_file_creation_failed",
+                    error=str(exc),
+                )
+                raise ProviderSchemaError(
+                    "Failed to create the Codex output schema file"
+                ) from exc
 
         try:
             use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
@@ -296,6 +319,7 @@ class CodexProvider(ProviderBase):
                 try:
                     schema_path.unlink(missing_ok=True)
                 except OSError:
-                    logger.warning(
-                        "codex_schema_file_cleanup_failed path=%s", str(schema_path)
+                    structured_logger.warning(
+                        "codex_schema_file_cleanup_failed",
+                        path=str(schema_path),
                     )

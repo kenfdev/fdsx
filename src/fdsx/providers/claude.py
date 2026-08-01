@@ -15,6 +15,7 @@ from fdsx.providers.base import (
     ProviderResult,
     _run_subprocess,
     add_schema_update_guidance,
+    serialize_output_schema,
 )
 
 logger = logging.getLogger(__name__)
@@ -344,9 +345,7 @@ class ClaudeProvider(ProviderBase):
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
         if output_schema is not None:
-            args.extend(
-                ["--json-schema", json.dumps(output_schema, separators=(",", ":"))]
-            )
+            args.extend(["--json-schema", serialize_output_schema(output_schema)])
 
         effective_inactivity = (
             self.options.inactivity_timeout

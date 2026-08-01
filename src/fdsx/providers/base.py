@@ -10,7 +10,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import structlog
+
 logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger(__name__)
 
 # Commands at or above this byte length are piped via stdin to avoid ARG_MAX limits.
 ARG_MAX_STDIN_THRESHOLD = 131072  # 128 KB
@@ -28,13 +31,33 @@ DEFAULT_INACTIVITY_TIMEOUT = 300
 DEFAULT_EXECUTION_TIMEOUT = 1800
 
 
+class ProviderError(RuntimeError):
+    """Base error for failures at a provider adapter boundary."""
+
+
+class ProviderSchemaError(ProviderError):
+    """Raised when an output schema cannot be prepared for a provider."""
+
+
+def serialize_output_schema(output_schema: Any) -> str:
+    """Serialize a provider-bound output schema with domain error translation."""
+    try:
+        return json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        structured_logger.error(
+            "provider_schema_serialization_failed",
+            error=str(exc),
+        )
+        raise ProviderSchemaError(
+            "Output schema must contain only JSON-compatible values"
+        ) from exc
+
+
 def append_structured_output_guidance(prompt: str, output_schema: Any | None) -> str:
     """Append provider-neutral JSON-only guidance when native schemas are absent."""
     if output_schema is None:
         return prompt
-    encoded_schema = json.dumps(
-        output_schema, ensure_ascii=False, separators=(",", ":")
-    )
+    encoded_schema = serialize_output_schema(output_schema)
     return (
         f"{prompt}\n\n"
         "Return only a JSON object or array matching this JSON Schema. "
@@ -59,10 +82,10 @@ def add_schema_update_guidance(
     )
     if not any(marker in result.stderr.lower() for marker in rejection_markers):
         return result
-    logger.error(
-        "provider_native_schema_unsupported provider=%s schema_flag=%s",
-        provider_name.lower(),
-        schema_flag,
+    structured_logger.error(
+        "provider_native_schema_unsupported",
+        provider=provider_name.lower(),
+        schema_flag=schema_flag,
     )
     return ProviderResult(
         exit_code=result.exit_code,

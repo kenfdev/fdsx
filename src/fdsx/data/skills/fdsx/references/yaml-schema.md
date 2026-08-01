@@ -408,7 +408,7 @@ extraction_fallback: false      # disables config-level extraction_fallback for 
 **Validation:**
 - `provider + model` and `profile` are mutually exclusive (XOR) — exactly one group must be provided
 - When `provider` is set, `model` is required; `provider` without `model` raises a validation error
-- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`); `system` is forbidden
+- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`); `system` is forbidden
 - Uses `extra="forbid"` — unknown keys cause validation errors
 
 ---
