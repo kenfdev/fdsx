@@ -64,7 +64,7 @@ class TestSelectProviders:
         """Out-of-range number triggers retry; '1' on third attempt succeeds."""
         with (
             patch(
-                "fdsx.cli.init_interactive._input", side_effect=["0", "6", "1"]
+                "fdsx.cli.init_interactive._input", side_effect=["0", "7", "1"]
             ) as mock_input,
             _patch_console(_mock_console()),
         ):
@@ -117,6 +117,15 @@ class TestSelectModels:
         ):
             result = select_models(["claude"])
         assert result == [ProviderSelection(provider="claude", model="my-custom-model")]
+
+    def test_grok_preset_selection_uses_grok_4_5(self):
+        with (
+            patch("fdsx.cli.init_interactive._input", return_value="1"),
+            _patch_console(_mock_console()),
+        ):
+            result = select_models(["grok"])
+
+        assert result == [ProviderSelection(provider="grok", model="grok-4.5")]
 
     def test_empty_input_retries(self):
         """Empty input triggers retry; '1' on second attempt succeeds."""

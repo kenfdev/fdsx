@@ -1,4 +1,5 @@
 import contextlib
+import json
 import logging
 import os
 import signal as signal_module
@@ -9,7 +10,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import structlog
+
 logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger(__name__)
 
 # Commands at or above this byte length are piped via stdin to avoid ARG_MAX limits.
 ARG_MAX_STDIN_THRESHOLD = 131072  # 128 KB
@@ -25,6 +29,74 @@ DEFAULT_INACTIVITY_TIMEOUT = 300
 # forever. Applied by LLM providers when no explicit timeout_seconds is set.
 # Set to 0 or None to disable.
 DEFAULT_EXECUTION_TIMEOUT = 1800
+
+
+class ProviderError(RuntimeError):
+    """Base error for failures at a provider adapter boundary."""
+
+
+class ProviderSchemaError(ProviderError):
+    """Raised when an output schema cannot be prepared for a provider."""
+
+
+def serialize_output_schema(output_schema: Any) -> str:
+    """Serialize a provider-bound output schema with domain error translation."""
+    try:
+        return json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        structured_logger.error(
+            "provider_schema_serialization_failed",
+            error=str(exc),
+        )
+        raise ProviderSchemaError(
+            "Output schema must contain only JSON-compatible values"
+        ) from exc
+
+
+def append_structured_output_guidance(prompt: str, output_schema: Any | None) -> str:
+    """Append provider-neutral JSON-only guidance when native schemas are absent."""
+    if output_schema is None:
+        return prompt
+    encoded_schema = serialize_output_schema(output_schema)
+    return (
+        f"{prompt}\n\n"
+        "Return only a JSON object or array matching this JSON Schema. "
+        "Do not include Markdown fences or commentary.\n"
+        f"JSON Schema:\n{encoded_schema}"
+    )
+
+
+def add_schema_update_guidance(
+    result: "ProviderResult", *, provider_name: str, schema_flag: str
+) -> "ProviderResult":
+    """Make native-schema CLI incompatibilities actionable without retrying."""
+    if result.exit_code == 0 or schema_flag not in result.stderr:
+        return result
+    rejection_markers = (
+        "unexpected argument",
+        "unknown argument",
+        "unrecognized option",
+        "unknown option",
+        "cannot be used with",
+        "conflicts with",
+    )
+    if not any(marker in result.stderr.lower() for marker in rejection_markers):
+        return result
+    structured_logger.error(
+        "provider_native_schema_unsupported",
+        provider=provider_name.lower(),
+        schema_flag=schema_flag,
+    )
+    return ProviderResult(
+        exit_code=result.exit_code,
+        stdout=result.stdout,
+        stderr=(
+            f"{provider_name} CLI rejected {schema_flag}. Update the "
+            f"{provider_name} CLI to a version that supports native structured "
+            f"output with streaming. Original error: {result.stderr}"
+        ),
+        final_message=result.final_message,
+    )
 
 
 @dataclass
@@ -55,6 +127,7 @@ class ProviderBase(Protocol):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute a provider.
 
@@ -70,6 +143,7 @@ class ProviderBase(Protocol):
                 register active subprocesses for signal forwarding.
             summary_callback: Optional callback for summary lines ([tool: X],
                 [thinking] ...) that should be visible even in quiet mode.
+            output_schema: Optional resolved JSON Schema output contract.
 
         Returns:
             ProviderResult with exit code and output
@@ -416,7 +490,7 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
     """Factory function to get a provider by name.
 
     Args:
-        name: Provider name (claude, codex, opencode, system).
+        name: Provider name (claude, codex, opencode, grok, system).
         options: Optional dict of provider-specific options. Converted to the
                  appropriate typed options model internally. Ignored for system provider.
 
@@ -455,5 +529,10 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
 
         cursor_opts = CursorOptions.model_validate(options) if options else None
         return CursorProvider(cursor_opts)
+    elif name == "grok":
+        from fdsx.providers.grok import GrokOptions, GrokProvider
+
+        grok_opts = GrokOptions.model_validate(options) if options else None
+        return GrokProvider(grok_opts)
     else:
         raise ValueError(f"Unknown provider: {name}")

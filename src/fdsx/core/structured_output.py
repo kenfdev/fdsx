@@ -12,6 +12,30 @@ class StructuredOutputValidationError(RuntimeError):
     """Provider output could not satisfy its structured-output contract."""
 
 
+def prepare_provider_schema(schema: Any, *, allow_extra_fields: bool) -> Any:
+    """Copy a schema while matching fdsx's configured extra-field semantics."""
+    if isinstance(schema, list):
+        return [
+            prepare_provider_schema(item, allow_extra_fields=allow_extra_fields)
+            for item in schema
+        ]
+    if not isinstance(schema, dict):
+        return schema
+
+    prepared: dict[str, Any] = {}
+    for key, value in schema.items():
+        if (
+            allow_extra_fields
+            and key in {"additionalProperties", "unevaluatedProperties"}
+            and value is False
+        ):
+            continue
+        prepared[key] = prepare_provider_schema(
+            value, allow_extra_fields=allow_extra_fields
+        )
+    return prepared
+
+
 def create_structured_output_validator(
     schema: Any, *, allow_extra_fields: bool = True
 ) -> Validator:

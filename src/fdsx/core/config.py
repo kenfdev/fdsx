@@ -27,6 +27,7 @@ from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
 from fdsx.providers.cursor import CursorOptions
 from fdsx.providers.gemini import GeminiOptions
+from fdsx.providers.grok import GrokOptions
 from fdsx.providers.opencode import OpenCodeOptions
 
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
@@ -114,6 +115,10 @@ class ProviderConfigs(BaseModel):
     gemini: GeminiOptions | None = Field(
         default=None,
         description="Gemini provider options",
+    )
+    grok: GrokOptions | None = Field(
+        default=None,
+        description="Grok provider options",
     )
 
     model_config = {"extra": "forbid"}

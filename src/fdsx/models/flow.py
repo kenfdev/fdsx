@@ -395,7 +395,15 @@ def _validate_provider_fields(
     model: str | None,
 ) -> None:
     """Shared provider-field validation logic for TaskState and Branch."""
-    valid_providers = {"claude", "cursor", "opencode", "codex", "gemini", "system"}
+    valid_providers = {
+        "claude",
+        "cursor",
+        "opencode",
+        "codex",
+        "gemini",
+        "grok",
+        "system",
+    }
     if provider not in valid_providers:
         raise ValueError(
             f"provider must be one of {', '.join(sorted(valid_providers))}, got '{provider}'"
@@ -597,7 +605,10 @@ class TaskState(BaseModel):
     """Task state - executes a provider to generate output."""
 
     type: Literal["task"] = "task"
-    provider: str = Field(..., description="Provider: claude|opencode|codex|system")
+    provider: str = Field(
+        ...,
+        description="Provider: claude|cursor|opencode|codex|gemini|grok|system",
+    )
     model: str | None = Field(default=None, description="Model name")
     prompt_template: str | None = Field(
         default=None, description="Prompt template (exclusive with prompt_file)"
@@ -825,7 +836,10 @@ class IteratorTaskState(BaseModel):
 
     type: Literal["task"] = "task"
     name: str = Field(..., description="State name within the iterator")
-    provider: str = Field(..., description="Provider: claude|opencode|codex|system")
+    provider: str = Field(
+        ...,
+        description="Provider: claude|cursor|opencode|codex|gemini|grok|system",
+    )
     model: str | None = Field(default=None, description="Model name")
     prompt_template: str | None = Field(
         default=None, description="Prompt template (exclusive with prompt_file)"

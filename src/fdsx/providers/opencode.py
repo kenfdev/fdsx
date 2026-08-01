@@ -12,6 +12,7 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    append_structured_output_guidance,
 )
 
 
@@ -57,6 +58,7 @@ class OpenCodeProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute OpenCode CLI with a prompt.
 
@@ -73,6 +75,7 @@ class OpenCodeProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
+        prompt = append_structured_output_guidance(prompt, output_schema)
         use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         args = ["opencode", "run"]
         if model:

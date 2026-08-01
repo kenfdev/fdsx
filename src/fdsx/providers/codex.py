@@ -1,9 +1,12 @@
 import json
 import logging
 import subprocess
+import tempfile
 from collections.abc import Callable
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
@@ -12,10 +15,14 @@ from fdsx.providers.base import (
     DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
+    ProviderSchemaError,
     _run_subprocess,
+    add_schema_update_guidance,
+    serialize_output_schema,
 )
 
 logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # JSONL streaming format constants
@@ -179,6 +186,7 @@ class CodexProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute Codex CLI with a prompt.
 
@@ -200,62 +208,118 @@ class CodexProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
-        use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
-        args = ["codex", "exec"]
-        if model:
-            args.extend(["--model", model])
-        args.extend(self.options.to_cli_flags())
-        if use_stdin:
-            stdin_data: str | None = prompt
-        else:
-            args.append(prompt)
-            stdin_data = None
+        schema_path: Path | None = None
+        if output_schema is not None:
+            encoded_schema = serialize_output_schema(output_schema)
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix="fdsx-codex-schema-",
+                    suffix=".json",
+                    delete=False,
+                ) as schema_file:
+                    schema_path = Path(schema_file.name)
+                    schema_file.write(encoded_schema)
+            except (OSError, UnicodeError) as exc:
+                if schema_path is not None:
+                    try:
+                        schema_path.unlink(missing_ok=True)
+                    except OSError as cleanup_exc:
+                        structured_logger.warning(
+                            "codex_schema_file_cleanup_failed",
+                            path=str(schema_path),
+                            error=str(cleanup_exc),
+                        )
+                structured_logger.error(
+                    "codex_schema_file_creation_failed",
+                    error=str(exc),
+                )
+                raise ProviderSchemaError(
+                    "Failed to create the Codex output schema file"
+                ) from exc
 
-        effective_inactivity = (
-            self.options.inactivity_timeout
-            if self.options.inactivity_timeout is not None
-            else DEFAULT_INACTIVITY_TIMEOUT
-        )
-        effective_timeout = (
-            timeout if timeout is not None else DEFAULT_EXECUTION_TIMEOUT
-        )
+        try:
+            use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
+            args = ["codex", "exec"]
+            if model:
+                args.extend(["--model", model])
+            args.extend(self.options.to_cli_flags())
+            if schema_path is not None:
+                args.extend(["--output-schema", str(schema_path)])
+            if use_stdin:
+                stdin_data: str | None = prompt
+            else:
+                args.append(prompt)
+                stdin_data = None
 
-        if output_callback is not None:
-            args.extend(_STREAM_FORMAT_FLAGS)
-            final_message: list[str | None] = [None]
-
-            def capture_final_message(message: str) -> None:
-                final_message[0] = message
-
-            stream_callback, get_result = self._make_stream_callback(
-                output_callback,
-                final_message_callback=capture_final_message,
+            effective_inactivity = (
+                self.options.inactivity_timeout
+                if self.options.inactivity_timeout is not None
+                else DEFAULT_INACTIVITY_TIMEOUT
             )
+            effective_timeout = (
+                timeout if timeout is not None else DEFAULT_EXECUTION_TIMEOUT
+            )
+
+            if output_callback is not None:
+                args.extend(_STREAM_FORMAT_FLAGS)
+                final_message: list[str | None] = [None]
+
+                def capture_final_message(message: str) -> None:
+                    final_message[0] = message
+
+                stream_callback, get_result = self._make_stream_callback(
+                    output_callback,
+                    final_message_callback=capture_final_message,
+                )
+                result = _run_subprocess(
+                    args=args,
+                    timeout=effective_timeout,
+                    output_callback=stream_callback,
+                    stderr_callback=stderr_callback,
+                    stdin_data=stdin_data,
+                    inactivity_timeout=effective_inactivity,
+                    on_process_start=on_process_start,
+                )
+                if output_schema is not None:
+                    result = add_schema_update_guidance(
+                        result,
+                        provider_name="Codex",
+                        schema_flag="--output-schema",
+                    )
+                parsed_stdout = get_result()
+                if parsed_stdout is not None:
+                    return ProviderResult(
+                        exit_code=result.exit_code,
+                        stdout=parsed_stdout,
+                        stderr=result.stderr,
+                        final_message=final_message[0],
+                    )
+                return result
+
             result = _run_subprocess(
                 args=args,
                 timeout=effective_timeout,
-                output_callback=stream_callback,
+                output_callback=output_callback,
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
                 inactivity_timeout=effective_inactivity,
                 on_process_start=on_process_start,
             )
-            parsed_stdout = get_result()
-            if parsed_stdout is not None:
-                return ProviderResult(
-                    exit_code=result.exit_code,
-                    stdout=parsed_stdout,
-                    stderr=result.stderr,
-                    final_message=final_message[0],
+            if output_schema is not None:
+                result = add_schema_update_guidance(
+                    result,
+                    provider_name="Codex",
+                    schema_flag="--output-schema",
                 )
             return result
-
-        return _run_subprocess(
-            args=args,
-            timeout=effective_timeout,
-            output_callback=output_callback,
-            stderr_callback=stderr_callback,
-            stdin_data=stdin_data,
-            inactivity_timeout=effective_inactivity,
-            on_process_start=on_process_start,
-        )
+        finally:
+            if schema_path is not None:
+                try:
+                    schema_path.unlink(missing_ok=True)
+                except OSError:
+                    structured_logger.warning(
+                        "codex_schema_file_cleanup_failed",
+                        path=str(schema_path),
+                    )

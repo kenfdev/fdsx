@@ -15,7 +15,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Parallel execution with branch aggregation
 - Map state for iterating over arrays with sub-workflows
 - Persistent batch task processing with crash-resilient resume
-- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, OpenCode, and system commands)
+- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, Grok, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
@@ -92,7 +92,7 @@ max_loop: 10                    # (int, default: 10) max loop iterations; exhaus
 # Extra fields beyond provider/model are passed as provider_options.
 profiles:
   smarty:
-    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini
+    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini, grok
     model: claude-opus-4-6      # (string, REQUIRED) model name
   doer:
     provider: opencode
@@ -168,7 +168,7 @@ states:
 
     # --- Provider (pick ONE approach) ---
     # Approach A: explicit provider + model
-    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, system
+    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, grok, system
     model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
     # Approach B: profile reference (mutually exclusive with provider/model)
     # profile: smarty
@@ -444,7 +444,7 @@ states:
     end: true
 ```
 
-The schema path is relative to the workflow file and is loaded and checked before provider execution. Complete stdout must be one JSON object or list; a single outer Markdown code fence is allowed. Validation failures use the state's normal retry count and provide bounded corrective feedback. The `system` provider is not retried for a structured-output validation failure.
+The schema path is relative to the workflow file and is loaded and checked before provider execution. Claude, Codex, and Grok also receive the schema through their native CLI schema controls while retaining streaming; Gemini, Cursor, and OpenCode receive JSON-only schema guidance in the prompt. fdsx always parses and validates the final value locally, regardless of native support. Complete output must be one JSON object or list; a single outer Markdown code fence is allowed. Validation failures use the state's normal retry count and provide bounded corrective feedback. The `system` provider is not retried for a structured-output validation failure.
 
 Extra fields are allowed by default: `additionalProperties: false` and `unevaluatedProperties: false` are non-fatal, including inside nested and composite schemas. Unknown fields are retained in workflow state; required fields, known-property schemas, enum/pattern/numeric constraints, JSON syntax, and the object/list requirement remain enforced. Set `allow_extra_fields: false` to reject unknown fields strictly.
 
@@ -584,7 +584,7 @@ auto_workflow: false              # (bool, default: false) skip interactive conf
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
   profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini
+  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini, grok
   # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.
@@ -656,6 +656,28 @@ providers:
     include_directories: []              # (list of strings, default: []) extra directories to include
     extensions: []                       # (list of strings, default: []) extensions to enable
     policy: []                           # (list of strings, default: []) policy files to apply
+    inactivity_timeout: 600              # (int, optional)
+
+  grok:
+    permission_mode: dontAsk             # default; default|acceptEdits|auto|dontAsk|bypassPermissions|plan
+    sandbox: workspace                   # (string, optional) Grok sandbox profile; unset by default
+    allow: []                            # (list of strings) repeatable permission allow rules
+    deny: []                             # (list of strings) repeatable permission deny rules
+    tools: []                            # (list of strings) built-in tool allowlist
+    disallowed_tools: []                 # (list of strings) built-in tools to remove
+    reasoning_effort: high               # (string, optional)
+    max_turns: 20                        # (positive int, optional)
+    on_max_turns: fail                   # fail (default) or return_partial
+    no_subagents: true                   # default: true
+    no_plan: true                        # default: true
+    cross_session_memory: off            # off (default), on, or inherit
+    disable_web_search: false            # default: false
+    verbatim: true                       # default: true
+    cwd: /workspace/project              # (string, optional)
+    agent: reviewer                      # (string, optional) agent name or definition path
+    agents: {}                           # JSON-compatible map; requires no_subagents: false when non-empty
+    rules: "Review carefully"            # mutually exclusive with system_prompt_override
+    # system_prompt_override: "..."      # replaces Grok's normal system prompt
     inactivity_timeout: 600              # (int, optional)
 
 # --- Global hooks (optional) ---

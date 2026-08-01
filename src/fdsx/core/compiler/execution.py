@@ -24,6 +24,7 @@ from fdsx.core.structured_output import (
     StructuredOutputValidationError,
     create_structured_output_validator,
     parse_structured_output,
+    prepare_provider_schema,
 )
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
 
@@ -182,6 +183,17 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                     )
                 else:
                     active_prompt = config.prompt
+                    output_schema: Any | None = None
+                    if config.structured_output is not None:
+                        schema_document = config.structured_output.schema_document
+                        if schema_document is None:
+                            raise StructuredOutputValidationError(
+                                "Structured output schema was not loaded"
+                            )
+                        output_schema = prepare_provider_schema(
+                            schema_document,
+                            allow_extra_fields=config.structured_output.allow_extra_fields,
+                        )
                     if validation_feedback is not None:
                         active_prompt = (
                             f"{config.prompt}\n\n"
@@ -197,6 +209,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         stderr_callback=config.stream_logger.on_stderr,
                         on_process_start=config.on_process_start,
                         summary_callback=config.summary_callback,
+                        output_schema=output_schema,
                     )
             except (subprocess.TimeoutExpired, TimeoutError) as exc:
                 last_error = str(exc)

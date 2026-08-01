@@ -3,7 +3,7 @@ name: fdsx
 description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
-  configuring fdsx providers (claude, cursor, codex, opencode, gemini), setting up
+  configuring fdsx providers (claude, cursor, codex, opencode, gemini, grok), setting up
   profiles, adding hooks, using choice/parallel/loop/wait/pass/map/fail states,
   running fdsx CLI commands, debugging workflow validation errors, or asking
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
@@ -14,7 +14,7 @@ description: >
 
 # fdsx Workflow Authoring Guide
 
-fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
+fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`, `grok`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
 
 ## Quick Start
 
@@ -72,6 +72,7 @@ States that support routing use either `next` (go to state) or `end: true` (term
 | `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `variant`, `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
 | `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` |
+| `grok` | `grok --single <prompt> --model <model> --output-format streaming-json` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `sandbox`, `allow`, `deny`, `tools`, `disallowed_tools`, `reasoning_effort`, `max_turns`, `on_max_turns`, `no_subagents`, `no_plan`, `cross_session_memory`, `disable_web_search`, `verbatim`, `cwd`, `agent`, `agents`, `rules`, `system_prompt_override` |
 | `system` | `sh -c <command>` | `command` | (none) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
@@ -147,7 +148,7 @@ structured_output:
     key: id
 ```
 
-The complete provider stdout is parsed as one JSON value. A single Markdown code fence around the complete value may be removed; embedded JSON inside prose is not searched. The value must be an object or list and satisfy the referenced JSON Schema. Schema files are loaded and checked during workflow loading, before any provider executes.
+Claude, Codex, and Grok use native CLI schema enforcement while retaining streaming. Gemini, Cursor, and OpenCode receive JSON-only schema guidance in the prompt. In every case, the final provider value is parsed and validated locally as one JSON value. A single Markdown code fence around the complete value may be removed; embedded JSON inside prose is not searched. The value must be an object or list and satisfy the referenced JSON Schema. Schema files are loaded and checked during workflow loading, before any provider executes.
 
 Extra fields are allowed by default: `additionalProperties: false` and `unevaluatedProperties: false` are ignored, including in nested or composite schemas, and unknown fields remain in workflow state. Required fields, known-property schemas, all other constraints, JSON syntax, and the object/list requirement are unchanged. Set `allow_extra_fields: false` to reject unknown fields strictly.
 
@@ -245,7 +246,7 @@ states:
 ```
 
 `ExtractionFallback` fields:
-- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
+- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
 - `model` — model string passed to the provider binary. Required when `provider` is set.
 - `profile` — named profile. XOR with `provider` + `model`. Exactly one of `provider + model` or `profile` must be set.
 - `extra_instructions` — optional string appended to the recovery prompt.

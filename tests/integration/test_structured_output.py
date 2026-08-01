@@ -1,4 +1,5 @@
 import json
+import stat
 from pathlib import Path
 from unittest.mock import patch
 
@@ -137,8 +138,18 @@ def test_codex_structured_output_uses_final_agent_message(tmp_path: Path) -> Non
         "I'll inspect the repository before producing the result.",
         '{"approved": true}',
     ]
+    schema_paths: list[Path] = []
 
-    def fake_run(**kwargs: object) -> ProviderResult:
+    def fake_run(*, args: list[str], **kwargs: object) -> ProviderResult:
+        schema_path = Path(args[args.index("--output-schema") + 1])
+        schema_paths.append(schema_path)
+        assert json.loads(schema_path.read_text()) == {
+            "type": "object",
+            "required": ["approved"],
+            "properties": {"approved": {"type": "boolean"}},
+        }
+        assert stat.S_IMODE(schema_path.stat().st_mode) == 0o600
+        assert "--json" in args
         output_callback = kwargs["output_callback"]
         for index, message in enumerate(messages):
             output_callback(  # type: ignore[operator]
@@ -159,6 +170,7 @@ def test_codex_structured_output_uses_final_agent_message(tmp_path: Path) -> Non
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 
     assert result.results == {"payload": {"approved": True}}
+    assert schema_paths and not schema_paths[0].exists()
 
 
 def test_claude_structured_output_uses_final_result_message(tmp_path: Path) -> None:
@@ -191,8 +203,10 @@ def test_claude_structured_output_uses_final_result_message(tmp_path: Path) -> N
             "result": '{"approved": true}',
         },
     ]
+    captured_args: list[str] = []
 
-    def fake_run(**kwargs: object) -> ProviderResult:
+    def fake_run(*, args: list[str], **kwargs: object) -> ProviderResult:
+        captured_args.extend(args)
         output_callback = kwargs["output_callback"]
         for event in events:
             output_callback(json.dumps(event))  # type: ignore[operator]
@@ -202,6 +216,301 @@ def test_claude_structured_output_uses_final_result_message(tmp_path: Path) -> N
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 
     assert result.results == {"payload": {"approved": True}}
+    assert json.loads(captured_args[captured_args.index("--json-schema") + 1]) == {
+        "type": "object",
+        "required": ["approved"],
+        "properties": {"approved": {"type": "boolean"}},
+    }
+    assert captured_args[captured_args.index("--output-format") + 1] == "stream-json"
+
+
+def test_grok_structured_output_uses_native_schema_and_terminal_value(
+    tmp_path: Path,
+) -> None:
+    flow_path = _write_flow(tmp_path, provider="grok", retry=0)
+    (tmp_path / "output.schema.json").write_text(
+        """
+{
+  "type": "object",
+  "required": ["approved"],
+  "properties": {"approved": {"type": "boolean"}},
+  "additionalProperties": false
+}
+""".strip()
+    )
+    captured_args: list[str] = []
+
+    def fake_run(*, args: list[str], **kwargs: object) -> ProviderResult:
+        captured_args.extend(args)
+        output_callback = kwargs["output_callback"]
+        output_callback(  # type: ignore[operator]
+            json.dumps(
+                {
+                    "type": "end",
+                    "stopReason": "EndTurn",
+                    "structuredOutput": {
+                        "approved": True,
+                        "provider_note": "retained",
+                    },
+                }
+            )
+        )
+        return ProviderResult(exit_code=0, stdout="<raw ndjson>", stderr="")
+
+    with patch("fdsx.providers.grok._run_subprocess", side_effect=fake_run):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {
+        "payload": {"approved": True, "provider_note": "retained"}
+    }
+    native_schema = json.loads(captured_args[captured_args.index("--json-schema") + 1])
+    assert "additionalProperties" not in native_schema
+    assert captured_args[captured_args.index("--output-format") + 1] == (
+        "streaming-json"
+    )
+
+
+def test_grok_partial_structured_output_is_still_locally_validated(
+    tmp_path: Path,
+) -> None:
+    flow_path = _write_flow(tmp_path, provider="grok", retry=0)
+    flow_path.write_text(
+        flow_path.read_text().replace(
+            "    retry: 0",
+            "    retry: 0\n"
+            "    provider_options:\n"
+            "      max_turns: 1\n"
+            "      on_max_turns: return_partial",
+        )
+    )
+    (tmp_path / "output.schema.json").write_text(
+        '{"type":"object","required":["approved"],'
+        '"properties":{"approved":{"type":"boolean"}}}'
+    )
+
+    def fake_run(**kwargs: object) -> ProviderResult:
+        output_callback = kwargs["output_callback"]
+        output_callback(  # type: ignore[operator]
+            json.dumps(
+                {
+                    "type": "end",
+                    "stopReason": "MaxTurnsReached",
+                    "structuredOutput": {"approved": "yes"},
+                }
+            )
+        )
+        return ProviderResult(exit_code=0, stdout="", stderr="")
+
+    with (
+        patch("fdsx.providers.grok._run_subprocess", side_effect=fake_run),
+        pytest.raises(RuntimeError, match="JSON Schema validation failed"),
+    ):
+        run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+
+def test_grok_structured_output_validation_feedback_drives_retry(
+    tmp_path: Path,
+) -> None:
+    flow_path = _write_flow(tmp_path, provider="grok", retry=1)
+    (tmp_path / "output.schema.json").write_text(
+        '{"type":"object","required":["approved"],'
+        '"properties":{"approved":{"type":"boolean"}}}'
+    )
+    prompts: list[str] = []
+
+    def fake_run(*, args: list[str], **kwargs: object) -> ProviderResult:
+        prompts.append(args[args.index("--single") + 1])
+        output_callback = kwargs["output_callback"]
+        output_callback(  # type: ignore[operator]
+            json.dumps(
+                {
+                    "type": "end",
+                    "stopReason": "EndTurn",
+                    "structuredOutput": {
+                        "approved": "yes" if len(prompts) == 1 else True
+                    },
+                }
+            )
+        )
+        return ProviderResult(exit_code=0, stdout="", stderr="")
+
+    with (
+        patch("fdsx.providers.grok._run_subprocess", side_effect=fake_run),
+        patch("fdsx.core.compiler.execution.time.sleep"),
+    ):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {"approved": True}}
+    assert len(prompts) == 2
+    assert "JSON Schema validation failed" in prompts[1]
+
+
+def test_grok_structured_output_escalation_preserves_native_schema(
+    tmp_path: Path,
+) -> None:
+    flow_path = _write_flow(tmp_path, provider="grok", retry=1)
+    flow_path.write_text(
+        flow_path.read_text()
+        + """
+retry_escalation:
+  provider: claude
+  model: fallback-model
+"""
+    )
+    (tmp_path / "output.schema.json").write_text(
+        '{"type":"object","required":["approved"],'
+        '"properties":{"approved":{"type":"boolean"}}}'
+    )
+    claude_args: list[str] = []
+
+    def fake_grok(**kwargs: object) -> ProviderResult:
+        output_callback = kwargs["output_callback"]
+        output_callback(  # type: ignore[operator]
+            json.dumps(
+                {
+                    "type": "end",
+                    "stopReason": "EndTurn",
+                    "structuredOutput": {"approved": "yes"},
+                }
+            )
+        )
+        return ProviderResult(exit_code=0, stdout="", stderr="")
+
+    def fake_claude(*, args: list[str], **kwargs: object) -> ProviderResult:
+        claude_args.extend(args)
+        output_callback = kwargs["output_callback"]
+        output_callback(  # type: ignore[operator]
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "",
+                    "structured_output": {"approved": True},
+                }
+            )
+        )
+        return ProviderResult(exit_code=0, stdout="", stderr="")
+
+    with (
+        patch("fdsx.providers.grok._run_subprocess", side_effect=fake_grok),
+        patch("fdsx.providers.claude._run_subprocess", side_effect=fake_claude),
+        patch("fdsx.core.compiler.execution.time.sleep"),
+    ):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {"approved": True}}
+    assert json.loads(claude_args[claude_args.index("--json-schema") + 1]) == {
+        "type": "object",
+        "required": ["approved"],
+        "properties": {"approved": {"type": "boolean"}},
+    }
+
+
+def test_claude_native_structured_value_is_locally_validated(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, retry=0)
+    (tmp_path / "output.schema.json").write_text(
+        '{"type":"object","required":["approved"],'
+        '"properties":{"approved":{"type":"boolean"}}}'
+    )
+
+    def fake_run(**kwargs: object) -> ProviderResult:
+        output_callback = kwargs["output_callback"]
+        output_callback(  # type: ignore[operator]
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "",
+                    "structured_output": {"approved": True},
+                }
+            )
+        )
+        return ProviderResult(exit_code=0, stdout="<raw ndjson>", stderr="")
+
+    with patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {"approved": True}}
+
+
+def test_gemini_structured_output_receives_schema_guidance(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, provider="gemini", retry=0)
+    (tmp_path / "output.schema.json").write_text(
+        '{"type":"object","required":["approved"],'
+        '"properties":{"approved":{"type":"boolean"}}}'
+    )
+    captured_args: list[str] = []
+
+    def fake_run(*, args: list[str], **_: object) -> ProviderResult:
+        captured_args.extend(args)
+        return ProviderResult(exit_code=0, stdout='{"approved": true}', stderr="")
+
+    with patch("fdsx.providers.gemini._run_subprocess", side_effect=fake_run):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {"approved": True}}
+    prompt = captured_args[captured_args.index("-p") + 1]
+    assert "Return only a JSON object or array matching this JSON Schema" in prompt
+    assert '"approved":{"type":"boolean"}' in prompt
+
+
+def test_cursor_structured_output_receives_schema_guidance(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, provider="cursor", retry=0)
+    (tmp_path / "output.schema.json").write_text('{"type":"object"}')
+    captured_args: list[str] = []
+
+    def fake_run(*, args: list[str], **_: object) -> ProviderResult:
+        captured_args.extend(args)
+        return ProviderResult(exit_code=0, stdout="{}", stderr="")
+
+    with (
+        patch("fdsx.providers.cursor.shutil.which", return_value="/mock/agent"),
+        patch("fdsx.providers.cursor._run_subprocess", side_effect=fake_run),
+    ):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {}}
+    prompt = captured_args[captured_args.index("-p") + 1]
+    assert "Return only a JSON object or array matching this JSON Schema" in prompt
+
+
+def test_opencode_structured_output_receives_schema_guidance(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, provider="opencode", retry=0)
+    (tmp_path / "output.schema.json").write_text('{"type":"object"}')
+    captured_args: list[str] = []
+
+    def fake_run(*, args: list[str], **_: object) -> ProviderResult:
+        captured_args.extend(args)
+        return ProviderResult(exit_code=0, stdout="{}", stderr="")
+
+    with patch("fdsx.providers.opencode._run_subprocess", side_effect=fake_run):
+        result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert result.results == {"payload": {}}
+    assert (
+        "Return only a JSON object or array matching this JSON Schema"
+        in (captured_args[-1])
+    )
+
+
+def test_grok_schema_flag_rejection_requires_cli_update(tmp_path: Path) -> None:
+    flow_path = _write_flow(tmp_path, provider="grok", retry=0)
+    (tmp_path / "output.schema.json").write_text('{"type":"object"}')
+    fake = ProviderResult(
+        exit_code=2,
+        stdout="",
+        stderr="error: unexpected argument '--json-schema' found",
+    )
+
+    with (
+        patch("fdsx.providers.grok._run_subprocess", return_value=fake) as provider,
+        pytest.raises(RuntimeError, match="Update the Grok CLI"),
+    ):
+        run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+    assert provider.call_count == 1
 
 
 def test_missing_structured_output_schema_is_rejected_before_provider_execution(

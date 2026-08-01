@@ -75,7 +75,7 @@ Reaching `max_loop` is not successful completion. Execution stops with `FlowResu
 
 ```yaml
 type: "task"                    # literal discriminator
-provider: string                # required — claude|cursor|codex|opencode|gemini|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
@@ -252,7 +252,7 @@ Used inside `IteratorDef.states`:
 ```yaml
 type: "task"                    # literal discriminator (only "task" allowed)
 name: string                    # required — state name within the iterator
-provider: string                # required — claude|cursor|codex|opencode|gemini|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
@@ -283,7 +283,7 @@ Used inside `ParallelState.branches`:
 
 ```yaml
 name?: string                   # optional — stable identity; required when referenced by a gate
-provider: string                # required — claude|cursor|codex|opencode|gemini|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
 model?: string                  # required for LLM providers
 prompt_template?: string        # XOR with prompt_file
 prompt_file?: string            # XOR with prompt_template
@@ -364,7 +364,7 @@ extract:
   result_path: string           # required — JSONPath for extracted value
   fallback?:                    # optional — per-rule LLM classification fallback
     type: "llm_classify"
-    provider?: string           # XOR with profile — claude|cursor|codex|opencode|gemini
+    provider?: string           # XOR with profile — claude|cursor|codex|opencode|gemini|grok
     model?: string              # required when provider is set
     profile?: string            # XOR with provider+model
     prompt: string              # required — classification prompt
@@ -391,7 +391,7 @@ Used at **flow level** (`Flow.extraction_fallback`) and in **config files** (`Fd
 
 ```yaml
 extraction_fallback:
-  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini (system forbidden)
+  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok (system forbidden)
   model?: string                # required when provider is set
   profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
@@ -408,7 +408,7 @@ extraction_fallback: false      # disables config-level extraction_fallback for 
 **Validation:**
 - `provider + model` and `profile` are mutually exclusive (XOR) — exactly one group must be provided
 - When `provider` is set, `model` is required; `provider` without `model` raises a validation error
-- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`); `system` is forbidden
+- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`); `system` is forbidden
 - Uses `extra="forbid"` — unknown keys cause validation errors
 
 ---
@@ -637,7 +637,7 @@ Uses `extra="forbid"` — unknown keys cause validation errors.
 ```yaml
 profiles:
   <name>:                       # must match: ^[a-zA-Z][a-zA-Z0-9_-]*$
-    provider: string            # required — claude|cursor|codex|opencode|gemini
+    provider: string            # required — claude|cursor|codex|opencode|gemini|grok
     model: string               # required
     # extra fields allowed (passed through as provider_options)
 ```
@@ -732,6 +732,34 @@ When `output_callback` is provided, `--output-format stream-json --stream-partia
 
 **Requirements:** Cursor's `agent` CLI binary must be in `PATH`. If it is absent, `CursorProvider` raises `CursorProviderError` at execution time.
 
+### Grok
+
+```yaml
+provider_options:
+  permission_mode?: default|acceptEdits|auto|dontAsk|bypassPermissions|plan  # default: dontAsk
+  sandbox?: string                       # optional Grok sandbox profile
+  allow?: [string]                       # repeatable permission allow rules
+  deny?: [string]                        # repeatable permission deny rules
+  tools?: [string]                       # built-in tool allowlist
+  disallowed_tools?: [string]            # built-in tools to remove
+  reasoning_effort?: string
+  max_turns?: int                        # positive integer
+  on_max_turns?: fail|return_partial     # default: fail
+  no_subagents?: bool                    # default: true
+  no_plan?: bool                         # default: true
+  cross_session_memory?: off|on|inherit  # default: off
+  disable_web_search?: bool              # default: false
+  verbatim?: bool                        # default: true
+  cwd?: string
+  agent?: string                         # agent name or definition path
+  agents?: {name: definition}            # requires no_subagents: false when non-empty
+  rules?: string                         # mutually exclusive with system_prompt_override
+  system_prompt_override?: string        # mutually exclusive with rules
+  inactivity_timeout?: int               # default: 300
+```
+
+Grok always runs headlessly with `streaming-json`, auto-update disabled, and its user-question tool disabled. `dontAsk` prevents approval prompts but is not a sandbox and does not disable intrinsically safe or explicitly allowed tools. Grok planning, subagents, and cross-session memory are disabled by default. Native JSON Schema output remains streaming and is always validated again by fdsx.
+
 All provider option models use `extra="forbid"` — unknown keys cause validation errors.
 
 ---
@@ -757,6 +785,7 @@ providers?:
   codex?: CodexOptions
   opencode?: OpenCodeOptions
   gemini?: GeminiOptions
+  grok?: GrokOptions
 
 hooks?: HookConfig              # workflow/state/wait lifecycle hooks applied to all flows
                                 # accepts: on_state_start, on_state_end, on_workflow_start,
@@ -771,13 +800,13 @@ profiles?:
   <name>: ProfileConfig
 
 extraction_fallback?:           # absent by default — global LLM fallback when no per-rule fallback is set
-  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini (system forbidden)
+  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok (system forbidden)
   model?: string                # required when provider is set
   profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
 
 retry_escalation?:              # absent by default — global escalation target for all flows
-  provider: string              # required — claude|cursor|codex|opencode|gemini (system forbidden)
+  provider: string              # required — claude|cursor|codex|opencode|gemini|grok (system forbidden)
   model: string                 # required — exact model string for the escalation provider
   provider_options?: {k: v}     # optional — passed to the escalation provider
 ```
