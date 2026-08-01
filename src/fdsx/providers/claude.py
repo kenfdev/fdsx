@@ -3,7 +3,7 @@ import logging
 import subprocess
 import threading
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +14,7 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    add_schema_update_guidance,
 )
 
 logger = logging.getLogger(__name__)
@@ -269,7 +270,11 @@ class ClaudeProvider(ProviderBase):
 
             elif event_type == _EVENT_RESULT:
                 _flush_buffer()
-                final_result[0] = event.get("result", "")
+                structured_result = event.get("structured_output")
+                if structured_result is not None:
+                    final_result[0] = json.dumps(structured_result)
+                else:
+                    final_result[0] = event.get("result", "")
                 if final_message_callback is not None:
                     final_message_callback(final_result[0] or "")
                 if completion_event is not None:
@@ -304,6 +309,7 @@ class ClaudeProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute Claude CLI with a prompt.
 
@@ -337,6 +343,10 @@ class ClaudeProvider(ProviderBase):
         if model:
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
+        if output_schema is not None:
+            args.extend(
+                ["--json-schema", json.dumps(output_schema, separators=(",", ":"))]
+            )
 
         effective_inactivity = (
             self.options.inactivity_timeout
@@ -386,6 +396,10 @@ class ClaudeProvider(ProviderBase):
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
             )
+            if output_schema is not None:
+                result = add_schema_update_guidance(
+                    result, provider_name="Claude", schema_flag="--json-schema"
+                )
             flush()
             parsed_stdout = get_result()
             if parsed_stdout is not None:
@@ -397,7 +411,7 @@ class ClaudeProvider(ProviderBase):
                 )
             return result
 
-        return _run_subprocess(
+        result = _run_subprocess(
             args=args,
             timeout=effective_timeout,
             output_callback=output_callback,
@@ -406,3 +420,8 @@ class ClaudeProvider(ProviderBase):
             inactivity_timeout=effective_inactivity,
             on_process_start=on_process_start,
         )
+        if output_schema is not None:
+            result = add_schema_update_guidance(
+                result, provider_name="Claude", schema_flag="--json-schema"
+            )
+        return result

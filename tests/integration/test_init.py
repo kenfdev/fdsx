@@ -169,7 +169,7 @@ class TestConfigYamlContent:
         assert "codex" in parsed["providers"]
 
     def test_all_providers_max_permissions(self):
-        """All four providers get their respective max-permission keys."""
+        """All providers get their respective max-permission keys."""
         profile_assignments = {
             name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
             for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
@@ -179,6 +179,7 @@ class TestConfigYamlContent:
             ProviderSelection(provider="codex", model="codex-model"),
             ProviderSelection(provider="gemini", model="gemini-model"),
             ProviderSelection(provider="opencode", model="opencode-model"),
+            ProviderSelection(provider="grok", model="grok-4.5"),
         ]
         config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
@@ -190,6 +191,7 @@ class TestConfigYamlContent:
         )
         assert parsed["providers"]["gemini"]["yolo"] is True
         assert parsed["providers"]["opencode"]["permission"] == "auto-edit"
+        assert parsed["providers"]["grok"]["permission_mode"] == "bypassPermissions"
 
     def test_generated_yaml_is_parseable(self):
         """Round-trip: generate -> yaml.safe_load returns a valid dict."""

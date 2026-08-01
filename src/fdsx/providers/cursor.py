@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import threading
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,6 +15,7 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    append_structured_output_guidance,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class CursorProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute Cursor agent CLI with a prompt.
 
@@ -89,6 +91,7 @@ class CursorProvider(ProviderBase):
                 "Ensure Cursor is installed and 'agent' is available."
             )
 
+        prompt = append_structured_output_guidance(prompt, output_schema)
         use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         if use_stdin:
             prompt_arg = "-"

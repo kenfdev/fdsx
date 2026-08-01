@@ -342,6 +342,7 @@ _MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
     "codex": {"dangerously_bypass_approvals_and_sandbox": True},
     "gemini": {"yolo": True},
     "opencode": {"permission": "auto-edit"},
+    "grok": {"permission_mode": "bypassPermissions"},
 }
 
 _PROFILE_ROLE_COMMENTS: dict[str, str] = {
