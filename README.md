@@ -865,9 +865,17 @@ fdsx resume --thread-id <thread_id> --from review --input 'task=Revised requirem
 `--from` is required even when submitted values are identical. Only saved input
 keys are accepted; unspecified values remain unchanged. The terminal shows line
 differences, the restart state, and a warning that retained results may reflect
-old inputs. Interactive confirmation is required. Cancellation exits with code 1
-without changing the saved execution or running hooks. Noninteractive input
-updates are refused.
+old inputs. Interactive confirmation is required unless you pass `--yes` to
+approve the submitted values and restart state without prompting:
+
+```bash
+fdsx resume --thread-id <thread_id> --from review --input 'task=Revised requirements' --yes
+```
+
+Without a terminal, input updates require explicit `--yes`; otherwise the command
+exits with code 1 without changing saved data or running states or hooks.
+Cancellation has the same effect. `--yes` does not bypass validation or locking,
+and has no effect on ordinary resume without input updates or wait-state choices.
 
 Recovery keeps the same thread and runs normal workflow verification and routing.
 Changed inputs preserve full saved values, the prior run record, and copies of

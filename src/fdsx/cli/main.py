@@ -517,8 +517,16 @@ def resume(
         "--input",
         help="Replace an existing input (KEY=VALUE, repeatable; requires --from)",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Approve submitted input updates without prompting (required without a terminal)",
+    ),
 ) -> None:
-    """Resume a flow from a checkpoint."""
+    """Resume a flow from a checkpoint.
+
+    Input updates require interactive approval or explicit --yes.
+    """
     from fdsx.display.terminal import confirm_input_updates
 
     updates: dict[str, str] | None = None
@@ -541,7 +549,7 @@ def resume(
 
     def approve(old: dict[str, Any], proposed: dict[str, str], target: str) -> bool:
         nonlocal started
-        if not confirm_input_updates(old, proposed, target):
+        if not confirm_input_updates(old, proposed, target, yes=yes):
             return False
         execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
         started = True

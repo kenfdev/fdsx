@@ -845,9 +845,13 @@ def display_resume_command(
 
 
 def confirm_input_updates(
-    old_inputs: dict[str, Any], updates: dict[str, str], from_state: str
+    old_inputs: dict[str, Any],
+    updates: dict[str, str],
+    from_state: str,
+    *,
+    yes: bool = False,
 ) -> bool:
-    """Render intentional value differences and obtain interactive approval."""
+    """Render differences and obtain approval unless explicitly supplied."""
     import difflib
     import json
 
@@ -881,8 +885,13 @@ def confirm_input_updates(
         print("Inputs are unchanged.", file=sys.stderr)
     print(f"Restart state: {_sanitize_spinner_text(from_state)}", file=sys.stderr)
     print("Warning: retained results may reflect old inputs.", file=sys.stderr)
+    if yes:
+        return True
     if not sys.stdin.isatty():
-        print("Interactive approval is required for input updates.", file=sys.stderr)
+        print(
+            "Input updates require a terminal for approval or explicit --yes.",
+            file=sys.stderr,
+        )
         return False
     try:
         return click.confirm("Apply inputs and resume?", default=False, err=True)

@@ -12,6 +12,7 @@ from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.cli.main import app
 from fdsx.core.engine import resume_flow, run_flow
 from fdsx.core.engine.recovery import RecoveryValidationError
+from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 from fdsx.providers.base import ProviderResult
 
 
@@ -180,9 +181,25 @@ def test_invalid_update_leaves_saved_execution_unchanged(stopped, updates, targe
     "answer,interactive", [("n\n", True), ("y\n", False), ("", True)]
 )
 def test_cli_refusal_changes_nothing_and_runs_no_hooks(stopped, answer, interactive):
+    progress = stopped / "runs/updates/map/progress.json"
+    progress.parent.mkdir()
+    progress.write_text('{"completed_iterations": 3}')
+    task_file = stopped.parent / "task.yaml"
+    save_task_file(
+        task_file,
+        TaskFile(entries=[TaskEntry(description="original", status="running")]),
+    )
+    replace_saved_metadata(
+        stopped,
+        lambda values: values["_meta"].update(
+            task_file_path=str(task_file), task_entry_index=0
+        ),
+    )
+    task_contents = task_file.read_bytes()
     before, artifacts = saved(stopped), files(stopped)
     with (
         patch("click.testing._NamedTextIOWrapper.isatty", return_value=interactive),
+        patch("fdsx.core.engine.resume.execute_workflow_hooks") as workflow_hooks,
         patch("fdsx.cli.main.execute_run_hooks") as hooks,
         patch("fdsx.providers.claude._run_subprocess") as provider,
     ):
@@ -207,6 +224,12 @@ def test_cli_refusal_changes_nothing_and_runs_no_hooks(stopped, answer, interact
     assert "Restart state: review" in result.stderr
     assert "retained results may reflect old inputs" in result.stderr
     assert "unchanged.md" not in result.stderr
+    if not interactive:
+        assert "explicit --yes" in result.stderr
+    assert "Restart state" not in result.stdout
+    assert "-original" not in result.stdout
+    assert task_file.read_bytes() == task_contents
+    workflow_hooks.assert_not_called()
     hooks.assert_not_called()
     provider.assert_not_called()
     assert saved(stopped) == before
@@ -247,12 +270,15 @@ def test_cli_approval_uses_run_parsing_conventions(stopped, arguments, expected)
     assert saved(stopped)["task"] == expected
 
 
-def test_identical_update_recovers_without_revision(stopped):
+@pytest.mark.parametrize(
+    "yes, interactive", [(False, True), (True, False), (True, True)]
+)
+def test_identical_update_recovers_without_revision(stopped, yes, interactive):
     before = saved(stopped)
     review_file = Path(before["review_file"])
     original_file = review_file.read_bytes()
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=True),
+        patch("click.testing._NamedTextIOWrapper.isatty", return_value=interactive),
         patch(
             "fdsx.providers.claude._run_subprocess",
             return_value=ProviderResult(exit_code=0, stdout="rerun", stderr=""),
@@ -270,12 +296,19 @@ def test_identical_update_recovers_without_revision(stopped):
                 "review",
                 "--input",
                 "task=original",
-            ],
-            input="y\n",
+            ]
+            + (["--yes"] if yes else []),
+            input="" if yes else "y\n",
         )
     assert result.exit_code == 1  # workflow-defined fail state still executes
     assert "Inputs are unchanged" in result.stderr
     assert "Restart state: review" in result.stderr
+    assert "Warning: retained results may reflect old inputs." in result.stderr
+    assert "Inputs are unchanged" not in result.stdout
+    assert "Restart state: review" not in result.stdout
+    assert "Warning: retained results" not in result.stdout
+    if yes:
+        assert "Apply inputs and resume?" not in result.output
     assert not saved(stopped)["_meta"].get("input_revisions")
     log = json.loads((stopped / "runs/updates/run.json").read_text())
     assert len(log["recoveries"]) == 1
@@ -586,3 +619,178 @@ def test_cli_type_changing_replacement_displays_difference(stopped, old, propose
     assert "Inputs are unchanged" not in result.stderr
     assert proposed + "|unchanged.md" in provider.call_args_list[0].kwargs["args"]
     assert saved(stopped)["task"] == proposed
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_cli_yes_applies_update_without_prompt_and_preserves_history(
+    stopped, interactive
+):
+    before = saved(stopped)
+    with (
+        patch("click.testing._NamedTextIOWrapper.isatty", return_value=interactive),
+        patch("click.confirm", side_effect=AssertionError("unexpected prompt")),
+        patch(
+            "fdsx.providers.claude._run_subprocess",
+            return_value=ProviderResult(exit_code=0, stdout="new review", stderr=""),
+        ) as provider,
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "resume",
+                "--thread-id",
+                "updates",
+                "--base-dir",
+                str(stopped),
+                "--from",
+                "review",
+                "--input",
+                "task=accepted",
+                "--yes",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    for message in (
+        "--- task (saved)",
+        "+++ task (proposed)",
+        "-original",
+        "+accepted",
+        "Restart state: review",
+        "Warning: retained results may reflect old inputs.",
+    ):
+        assert message in result.stderr
+        assert message not in result.stdout
+    assert "unchanged.md" not in result.stderr
+    assert "accepted|unchanged.md" in provider.call_args_list[0].kwargs["args"]
+    assert (
+        "accepted|unchanged.md|new review" in provider.call_args_list[1].kwargs["args"]
+    )
+    after = saved(stopped)
+    assert after["task"] == "accepted"
+    assert after["source"] == before["source"]
+    assert after["_meta"]["thread_id"] == "updates"
+    assert after["_meta"]["initial_inputs"]["task"] == "original"
+    revision = stopped / "runs/updates" / after["_meta"]["input_revisions"][0]
+    history = json.loads((revision / "snapshot.json").read_text())
+    assert history["saved_values"]["review"] == before["review"]
+    assert history["saved_values"]["task"] == "original"
+    assert history["effective_inputs"] == {"task": "accepted", "source": "unchanged.md"}
+    assert after["result"] == "verified"
+    assert "Apply inputs and resume?" not in result.output
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "unknown",
+        "missing_from",
+        "absent",
+        "unexecuted",
+        "fail",
+        "completed",
+        "locked",
+        "required_input",
+    ],
+)
+def test_cli_yes_cannot_bypass_validation(stopped, scenario):
+    manager = CheckpointManager(base_dir=stopped)
+    if scenario == "completed":
+        with patch(
+            "fdsx.providers.claude._run_subprocess",
+            return_value=ProviderResult(exit_code=0, stdout="updated", stderr=""),
+        ):
+            resume_flow(
+                "updates",
+                base_dir=stopped,
+                from_state="review",
+                input_updates={"task": "accepted"},
+                confirm_inputs=lambda *_: True,
+            )
+    if scenario == "required_input":
+        replace_saved_metadata(stopped, lambda values: values.pop("source"))
+    if scenario == "locked":
+        assert manager.acquire_lock("updates")
+    before, artifacts = saved(stopped), files(stopped)
+    target = {"absent": "absent", "unexecuted": "done", "fail": "stop"}.get(
+        scenario, "review"
+    )
+    arguments = [
+        "resume",
+        "--thread-id",
+        "updates",
+        "--base-dir",
+        str(stopped),
+        "--yes",
+        "--input",
+        "unknown=value" if scenario == "unknown" else "task=accepted",
+    ]
+    if scenario != "missing_from":
+        arguments += ["--from", target]
+    try:
+        with (
+            patch("fdsx.cli.main.execute_run_hooks") as hooks,
+            patch("fdsx.core.engine.resume.execute_workflow_hooks") as workflow_hooks,
+            patch("fdsx.providers.claude._run_subprocess") as provider,
+        ):
+            result = CliRunner().invoke(app, arguments)
+        assert result.exit_code != 0
+        assert "No such option" not in result.stderr
+        hooks.assert_not_called()
+        workflow_hooks.assert_not_called()
+        provider.assert_not_called()
+        assert saved(stopped) == before
+        assert files(stopped) == artifacts
+        assert manager.is_locked("updates")[0] == (scenario == "locked")
+    finally:
+        if scenario == "locked":
+            manager.release_lock("updates")
+
+
+@pytest.mark.parametrize("yes", [False, True])
+def test_cli_ordinary_noninteractive_resume_preserves_wait_default(
+    tmp_path, monkeypatch, yes
+):
+    monkeypatch.chdir(tmp_path)
+    flow = tmp_path / "wait.yaml"
+    flow.write_text(
+        yaml.safe_dump(
+            {
+                "name": "wait compatibility",
+                "description": "wait compatibility",
+                "start_at": "approval",
+                "states": {
+                    "approval": {
+                        "type": "wait",
+                        "mode": "prompt",
+                        "message": "Continue?",
+                        "choices": ["first", "second"],
+                        "result_path": "$.answer",
+                        "end": True,
+                    }
+                },
+            }
+        )
+    )
+    base = tmp_path / ".fdsx"
+    with (
+        patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt",
+            side_effect=RuntimeError("stop"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        run_flow(flow, thread_id="updates", base_dir=base)
+    result = CliRunner().invoke(
+        app,
+        [
+            "resume",
+            "--thread-id",
+            "updates",
+            "--base-dir",
+            str(base),
+            *(["--yes"] if yes else []),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert saved(base)["answer"] == "first"
+    assert "Apply inputs and resume?" not in result.output
