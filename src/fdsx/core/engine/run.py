@@ -99,6 +99,7 @@ def _execute_fresh_flow(
             "flow_name": flow.name,
             "run_dir": str(run_dir),
             "input_keys": sorted(inputs) if inputs else [],
+            "initial_inputs": dict(inputs or {}),
             **(
                 {"task_file_path": str(task_file_path)}
                 if task_file_path is not None

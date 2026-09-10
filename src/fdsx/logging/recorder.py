@@ -1,7 +1,9 @@
 import json
 import os
 import re
+import shutil
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,10 @@ FDSX_DIR_NAME = ".fdsx"
 RUNS_DIR_NAME = "runs"
 LOGS_DIR_NAME = "logs"
 RUN_FILENAME = "run.json"
+
+
+class InputRevisionError(RuntimeError):
+    """Full revision history could not be preserved."""
 
 
 class RunRecorder:
@@ -283,6 +289,50 @@ class RunRecorder:
         self.completed_at = datetime.now(timezone.utc).isoformat()
         self.status = status
         self.final_variables = final_variables
+
+    def preserve_recovery_snapshot(
+        self,
+        run_dir: Path,
+        saved_values: dict[str, Any],
+        run_log: dict[str, Any],
+        effective_inputs: dict[str, Any],
+        from_state: str,
+    ) -> str:
+        """Publish full pre-update history before the recovery checkpoint changes.
+
+        The checkpoint references only a completely published snapshot. An
+        interrupted publication cannot overwrite an earlier revision.
+        """
+        import structlog
+
+        revision = uuid.uuid4().hex
+        revisions = run_dir / "revisions"
+        staging = revisions / f".{revision}.pending"
+        destination = revisions / revision
+        try:
+            staging.mkdir(parents=True, mode=0o700)
+            snapshot = {
+                "thread_id": self.thread_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "from_state": from_state,
+                "saved_values": saved_values,
+                "run_log": run_log,
+                "effective_inputs": effective_inputs,
+            }
+            (staging / "snapshot.json").write_text(
+                json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            # Managed result_file outputs live under data/, including nested runs.
+            for data_dir in run_dir.rglob("data"):
+                relative = data_dir.relative_to(run_dir)
+                if "revisions" in relative.parts or not data_dir.is_dir():
+                    continue
+                shutil.copytree(data_dir, staging / "files" / relative)
+            staging.rename(destination)
+        except (OSError, TypeError, ValueError) as error:
+            structlog.get_logger(__name__).error("input_revision_preservation_failed")
+            raise InputRevisionError("Could not preserve input revision") from error
+        return str(destination.relative_to(run_dir))
 
     def record_recovery(self, from_state: str) -> None:
         """Record the start of an explicit recovery jump."""

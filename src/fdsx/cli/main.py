@@ -512,8 +512,24 @@ def resume(
         "--from",
         help="Executed state to start an explicit recovery jump from",
     ),
+    input_vars: list[str] | None = typer.Option(
+        None,
+        "--input",
+        help="Replace an existing input (KEY=VALUE, repeatable; requires --from)",
+    ),
 ) -> None:
     """Resume a flow from a checkpoint."""
+    from fdsx.display.terminal import confirm_input_updates
+
+    updates: dict[str, str] | None = None
+    if input_vars:
+        updates = {}
+        for pair in input_vars:
+            if "=" not in pair:
+                typer.echo("Invalid input format. Use KEY=VALUE", err=True)
+                raise typer.Exit(code=2)
+            key, value = pair.split("=", 1)
+            updates[key] = value
     config = load_config()
     _start_hooks = collect_run_hooks(
         "on_run_start", global_run_hooks=config.run_hooks, project_run_hooks=None
@@ -521,22 +537,46 @@ def resume(
     _end_hooks = collect_run_hooks(
         "on_run_end", global_run_hooks=config.run_hooks, project_run_hooks=None
     )
-    execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+    started = False
+
+    def approve(old: dict[str, Any], proposed: dict[str, str], target: str) -> bool:
+        nonlocal started
+        if not confirm_input_updates(old, proposed, target):
+            return False
+        execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+        started = True
+        return True
+
+    if updates is None:
+        execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+        started = True
     try:
-        result = engine.resume_flow(thread_id, base_dir, from_state=from_state)
+        if updates is None:
+            result = engine.resume_flow(thread_id, base_dir, from_state=from_state)
+        else:
+            result = engine.resume_flow(
+                thread_id,
+                base_dir,
+                from_state=from_state,
+                input_updates=updates,
+                confirm_inputs=approve,
+            )
         execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
     except (CheckpointNotFoundError, RunLockedError) as e:
-        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        if started:
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
     except RuntimeError as e:
         error_msg = str(e)
-        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        if started:
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
         raise typer.Exit(code=1) from None
     except Exception as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        if started:
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         raise typer.Exit(code=1) from None
     if result.status != "completed":
         raise typer.Exit(code=1)

@@ -2,8 +2,9 @@
 
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextvars import Token
+from copy import deepcopy
 from pathlib import Path
 from sqlite3 import Error as SQLiteError
 from typing import Any, Literal, cast
@@ -24,7 +25,12 @@ from fdsx.display.terminal import (
     display_wait_prompt,
 )
 from fdsx.logging import RunRecorder
-from fdsx.logging.recorder import LOGS_DIR_NAME, RUN_FILENAME, RUNS_DIR_NAME
+from fdsx.logging.recorder import (
+    LOGS_DIR_NAME,
+    RUN_FILENAME,
+    RUNS_DIR_NAME,
+    InputRevisionError,
+)
 from fdsx.models.task import load_task_file, save_task_file
 
 from .errors import CheckpointNotFoundError, FlowExecutionError, RunLockedError
@@ -36,6 +42,7 @@ from .lifecycle import (
     finalize_failed_execution,
 )
 from .recovery import (
+    InputUpdateCancelledError,
     RecoveryStateRequiredError,
     RecoveryValidationError,
     build_recovery_update,
@@ -91,6 +98,8 @@ def resume_flow(
     base_dir: Path | None = None,
     flow_path: Path | None = None,
     from_state: str | None = None,
+    input_updates: dict[str, str] | None = None,
+    confirm_inputs: Callable[[dict[str, Any], dict[str, str], str], bool] | None = None,
 ) -> FlowResult:
     """Resume a flow from a checkpoint.
 
@@ -99,6 +108,9 @@ def resume_flow(
         base_dir: Base directory for checkpoints (.fdsx/). Defaults to '.fdsx/'.
         flow_path: Optional path to the flow YAML file. Required if not stored in checkpoint.
         from_state: Optional executed state name for an explicit recovery jump.
+        input_updates: Whole-value replacements for saved execution input keys.
+        confirm_inputs: Approval of old values, submitted values, and restart target.
+            Called under the thread lock after validation and before mutations.
 
     Returns:
         Final state variables as result dict.
@@ -109,6 +121,7 @@ def resume_flow(
     if base_dir is None:
         base_dir = CheckpointManager.DEFAULT_BASE_DIR
 
+    input_updates = deepcopy(input_updates)
     checkpoint_manager = CheckpointManager(base_dir=base_dir)
 
     if not checkpoint_manager.verify_checkpoint(thread_id):
@@ -118,6 +131,7 @@ def resume_flow(
         locked, pid = checkpoint_manager.is_locked(thread_id)
         if locked:
             raise RunLockedError(f"Thread {thread_id} is locked by PID {pid}")
+        raise RunLockedError(f"Could not acquire lock for thread {thread_id}")
 
     print(f"Resuming from thread: {_sanitize_output(thread_id)}", file=sys.stderr)
 
@@ -125,21 +139,38 @@ def resume_flow(
     terminal_context: TerminalContext | None = None
     last_state: dict[str, Any] = {}
     context_tokens: Mapping[str, Token[Any]] | None = None
+    inputs_approved = input_updates is None
 
     try:
         checkpointer = checkpoint_manager.get_checkpointer()
         checkpoint_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
         checkpoint_tuple = checkpointer.get_tuple(checkpoint_config)
         input_keys: set[str] = set()
+        has_input_metadata = False
         if checkpoint_tuple is not None:
             channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
             checkpoint_meta = channel_values.get("_meta", {})
             if isinstance(checkpoint_meta, dict):
                 stored_input_keys = checkpoint_meta.get("input_keys", [])
+                has_input_metadata = "input_keys" in checkpoint_meta and isinstance(
+                    stored_input_keys, list
+                )
                 if isinstance(stored_input_keys, list):
                     input_keys = {
                         key for key in stored_input_keys if isinstance(key, str)
                     }
+
+        if input_updates is not None:
+            if from_state is None:
+                raise RecoveryValidationError("Input updates require --from <state>")
+            if not has_input_metadata:
+                raise RecoveryValidationError(
+                    "Saved input-key metadata is required for input updates"
+                )
+            if set(input_updates) - input_keys:
+                raise RecoveryValidationError(
+                    "Input updates contain unknown input keys"
+                )
 
         existing_log: dict[str, Any] = {}
         if flow_path is None or not flow_path.exists():
@@ -256,12 +287,6 @@ def resume_flow(
         if state_info.values:
             last_state = dict(state_info.values)
         existing_meta = state_info.values.get("_meta", {}) if state_info.values else {}
-        if "run_dir" not in existing_meta:
-            updated_meta = {**existing_meta, "run_dir": str(resume_run_dir)}
-            compiled.graph.update_state(resume_config, {"_meta": updated_meta})
-
-        state_info = compiled.graph.get_state(resume_config)
-
         _terminal_failure = (
             (state_info.values or {}).get("_meta", {}).get("terminal_failure")
         )
@@ -278,17 +303,58 @@ def resume_flow(
                 flow,
                 existing_log,
                 from_state,
-                dict(state_info.values or {}),
+                {**dict(state_info.values or {}), **(input_updates or {})},
                 config,
             )
-            reset_recovery_progress(flow, dict(state_info.values or {}))
-            resume_config = compiled.prepare_recovery(
-                resume_config,
-                build_recovery_update(
-                    flow,
-                    dict(state_info.values or {}),
-                ),
-            )
+            saved_values = dict(state_info.values or {})
+            recovery_update = build_recovery_update(flow, saved_values)
+            recovery_update["_meta"].setdefault("run_dir", str(resume_run_dir))
+            if input_updates is not None:
+                old_inputs = {key: saved_values.get(key) for key in input_keys}
+                try:
+                    approved = confirm_inputs is not None and confirm_inputs(
+                        deepcopy(old_inputs), deepcopy(input_updates), from_state
+                    )
+                except (OSError, RuntimeError, ValueError, EOFError) as error:
+                    logger.warning(
+                        "input_update_confirmation_failed", thread_id=thread_id
+                    )
+                    raise InputUpdateCancelledError(
+                        "Interactive approval could not be obtained"
+                    ) from error
+                if not approved:
+                    raise InputUpdateCancelledError(
+                        "Input update canceled or interactive approval unavailable"
+                    )
+                inputs_approved = True
+                effective_inputs = {**old_inputs, **input_updates}
+                inputs_changed = any(
+                    saved_values.get(key) != value
+                    for key, value in input_updates.items()
+                )
+                try:
+                    snapshot = recorder.preserve_recovery_snapshot(
+                        resume_run_dir,
+                        saved_values,
+                        existing_log,
+                        effective_inputs,
+                        from_state,
+                    )
+                except InputRevisionError as error:
+                    raise RecoveryValidationError(
+                        "Could not preserve recovery snapshot"
+                    ) from error
+                history_key = (
+                    "input_revisions" if inputs_changed else "recovery_snapshots"
+                )
+                recovery_update["_meta"][history_key] = [
+                    *existing_meta.get(history_key, []),
+                    snapshot,
+                ]
+                recovery_update["_meta"]["input_values"] = effective_inputs
+                recovery_update.update(input_updates)
+            reset_recovery_progress(flow, saved_values)
+            resume_config = compiled.prepare_recovery(resume_config, recovery_update)
             state_info = compiled.graph.get_state(resume_config)
             recovery_command = Command(goto=from_state)
             recorder.record_recovery(from_state)
@@ -305,6 +371,13 @@ def resume_flow(
             raise RecoveryStateRequiredError(
                 recovery_state_required_message(flow, existing_log)
             )
+
+        if from_state is None and "run_dir" not in existing_meta:
+            compiled.graph.update_state(
+                resume_config,
+                {"_meta": {**existing_meta, "run_dir": str(resume_run_dir)}},
+            )
+            state_info = compiled.graph.get_state(resume_config)
 
         stream_config = resume_config
         resume_config = latest_resume_config
@@ -345,6 +418,9 @@ def resume_flow(
             terminal_context,
             error_prefix="Flow resume failed",
         )
+    except InputUpdateCancelledError:
+        logger.info("input_update_cancelled", thread_id=thread_id)
+        raise
     except RecoveryValidationError as error:
         logger.warning(
             "recovery_validation_failed",
@@ -372,7 +448,7 @@ def resume_flow(
             thread_id=thread_id,
             error=str(error),
         )
-        if recorder is not None and terminal_context is not None:
+        if inputs_approved and recorder is not None and terminal_context is not None:
             finalize_failed_execution(terminal_context, last_state, error)
         raise FlowExecutionError(f"Flow resume failed: {error}") from error
     finally:

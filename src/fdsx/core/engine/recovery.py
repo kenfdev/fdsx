@@ -33,6 +33,10 @@ class RecoveryValidationError(RuntimeError):
     """Raised when an explicit recovery jump is not safe to execute."""
 
 
+class InputUpdateCancelledError(RecoveryValidationError):
+    """Input changes were not approved; the saved execution is untouched."""
+
+
 class RecoveryStateRequiredError(RecoveryValidationError):
     """Raised when a terminal workflow needs an explicit recovery target."""
 
