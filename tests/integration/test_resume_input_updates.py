@@ -1,6 +1,8 @@
 """Input-aware recovery observed through real checkpoints and the CLI."""
 
 import json
+import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,8 +14,21 @@ from fdsx.checkpoint.manager import CheckpointManager
 from fdsx.cli.main import app
 from fdsx.core.engine import resume_flow, run_flow
 from fdsx.core.engine.recovery import RecoveryValidationError
+from fdsx.display.terminal import confirm_input_updates
 from fdsx.models.task import TaskEntry, TaskFile, save_task_file
 from fdsx.providers.base import ProviderResult
+
+
+@contextmanager
+def input_terminal(interactive):
+    """Set TTY behavior on the actual stdin installed by the CLI runner."""
+
+    def confirm(*args, **kwargs):
+        with patch.object(sys.stdin, "isatty", return_value=interactive):
+            return confirm_input_updates(*args, **kwargs)
+
+    with patch("fdsx.display.terminal.confirm_input_updates", side_effect=confirm):
+        yield
 
 
 @pytest.fixture
@@ -198,7 +213,7 @@ def test_cli_refusal_changes_nothing_and_runs_no_hooks(stopped, answer, interact
     task_contents = task_file.read_bytes()
     before, artifacts = saved(stopped), files(stopped)
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=interactive),
+        input_terminal(interactive),
         patch("fdsx.core.engine.resume.execute_workflow_hooks") as workflow_hooks,
         patch("fdsx.cli.main.execute_run_hooks") as hooks,
         patch("fdsx.providers.claude._run_subprocess") as provider,
@@ -246,7 +261,7 @@ def test_cli_refusal_changes_nothing_and_runs_no_hooks(stopped, answer, interact
 )
 def test_cli_approval_uses_run_parsing_conventions(stopped, arguments, expected):
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=True),
+        input_terminal(True),
         patch(
             "fdsx.providers.claude._run_subprocess",
             return_value=ProviderResult(exit_code=0, stdout="updated", stderr=""),
@@ -278,7 +293,7 @@ def test_identical_update_recovers_without_revision(stopped, yes, interactive):
     review_file = Path(before["review_file"])
     original_file = review_file.read_bytes()
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=interactive),
+        input_terminal(interactive),
         patch(
             "fdsx.providers.claude._run_subprocess",
             return_value=ProviderResult(exit_code=0, stdout="rerun", stderr=""),
@@ -450,7 +465,7 @@ def test_diff_has_context_and_sanitizes_terminal_controls(stopped):
     old = "\n".join(f"line {i}" for i in range(30))
     replace_saved_metadata(stopped, lambda values: values.update(task=old))
     proposed = old.replace("line 15", "changed\x1b[31m\x07")
-    with patch("click.testing._NamedTextIOWrapper.isatty", return_value=True):
+    with input_terminal(True):
         result = CliRunner().invoke(
             app,
             [
@@ -554,7 +569,7 @@ def test_confirmation_error_preserves_execution_and_releases_lock(
     progress.write_text('{"completed_iterations": 3}')
     before, artifacts = saved(stopped), files(stopped)
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=True),
+        input_terminal(True),
         patch(operation, side_effect=failure("private terminal content"), create=True),
         patch("fdsx.cli.main.execute_run_hooks") as run_hooks,
         patch("fdsx.core.engine.resume.execute_workflow_hooks") as workflow_hooks,
@@ -590,7 +605,7 @@ def test_confirmation_error_preserves_execution_and_releases_lock(
 def test_cli_type_changing_replacement_displays_difference(stopped, old, proposed):
     replace_saved_metadata(stopped, lambda values: values.update(task=old))
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=True),
+        input_terminal(True),
         patch(
             "fdsx.providers.claude._run_subprocess",
             return_value=ProviderResult(exit_code=0, stdout="rerun", stderr=""),
@@ -627,7 +642,7 @@ def test_cli_yes_applies_update_without_prompt_and_preserves_history(
 ):
     before = saved(stopped)
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=interactive),
+        input_terminal(interactive),
         patch("click.confirm", side_effect=AssertionError("unexpected prompt")),
         patch(
             "fdsx.providers.claude._run_subprocess",
@@ -882,7 +897,6 @@ def test_repeated_updates_preserve_each_review_and_original_key_set(stopped):
 def test_update_survives_process_exit_at_persistence_boundaries(stopped, boundary):
     import subprocess
 
-    project = Path(__file__).resolve().parents[2]
     # Exit without Python cleanup, closing neither the saver nor the run recorder.
     # Every AI invocation in this child is mocked, including recovery after commit.
     script = """
@@ -925,11 +939,7 @@ with patch("fdsx.providers.claude._run_subprocess", return_value=ProviderResult(
 """
     child = subprocess.run(
         [
-            "uv",
-            "run",
-            "--project",
-            str(project),
-            "python",
+            sys.executable,
             "-c",
             script,
             str(stopped),
@@ -1029,7 +1039,7 @@ def test_tasks_directory_resume_keeps_association_and_explicit_inputs(stopped):
         resume_flow(thread, base_dir=stopped, from_state="review")
     assert "original|unchanged.md" in provider.call_args_list[0].kwargs["args"]
     with (
-        patch("click.testing._NamedTextIOWrapper.isatty", return_value=True),
+        input_terminal(True),
         patch(
             "fdsx.providers.claude._run_subprocess",
             return_value=ProviderResult(
