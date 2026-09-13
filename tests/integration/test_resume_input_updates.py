@@ -794,3 +794,289 @@ def test_cli_ordinary_noninteractive_resume_preserves_wait_default(
     assert result.exit_code == 0, result.output
     assert saved(base)["answer"] == "first"
     assert "Apply inputs and resume?" not in result.output
+
+
+def test_repeated_updates_preserve_each_review_and_original_key_set(stopped):
+    original = saved(stopped)
+    archives = {}
+    for task, review in [
+        ("revision one", "review one"),
+        ("revision two", "review two"),
+    ]:
+        with patch(
+            "fdsx.providers.claude._run_subprocess",
+            return_value=ProviderResult(exit_code=0, stdout=review, stderr=""),
+        ) as provider:
+            result = resume_flow(
+                "updates",
+                base_dir=stopped,
+                from_state="review",
+                input_updates={"task": task},
+                confirm_inputs=lambda *_: True,
+            )
+        assert result.status == "aborted"
+        assert task + "|unchanged.md" in provider.call_args_list[0].kwargs["args"]
+        current = saved(stopped)
+        assert current["_meta"]["initial_inputs"] == original["_meta"]["initial_inputs"]
+        assert current["_meta"]["input_keys"] == original["_meta"]["input_keys"]
+        for path, contents in archives.items():
+            assert path.read_bytes() == contents
+        archives = {
+            p: p.read_bytes()
+            for p in (stopped / "runs/updates/revisions").rglob("*")
+            if p.is_file()
+        }
+    revisions = [
+        json.loads((stopped / "runs/updates" / revision / "snapshot.json").read_text())
+        for revision in current["_meta"]["input_revisions"]
+    ]
+    assert [r["saved_values"]["task"] for r in revisions] == [
+        "original",
+        "revision one",
+    ]
+    assert [r["effective_inputs"]["task"] for r in revisions] == [
+        "revision one",
+        "revision two",
+    ]
+    assert revisions[0]["saved_values"]["review"] == original["review"]
+    assert revisions[1]["saved_values"]["review"] == "review one"
+    assert current["review"] == "review two"
+    assert all(r["thread_id"] == "updates" for r in revisions)
+    assert [len(r["run_log"]["states"]) for r in revisions] == [4, 8]
+    for reference, revision in zip(
+        current["_meta"]["input_revisions"], revisions, strict=True
+    ):
+        review_file = Path(revision["saved_values"]["review_file"])
+        archived = (
+            stopped / "runs/updates" / reference / "files/data" / review_file.name
+        )
+        assert archived.read_text() == revision["saved_values"]["review"]
+    for updates, target in [({"review": "oops"}, "review"), ({"task": "third"}, None)]:
+        with pytest.raises(RecoveryValidationError):
+            resume_flow(
+                "updates",
+                base_dir=stopped,
+                from_state=target,
+                input_updates=updates,
+                confirm_inputs=lambda *_: True,
+            )
+    # A recovery without another input change must retain the review it replaces.
+    with patch(
+        "fdsx.providers.claude._run_subprocess",
+        return_value=ProviderResult(exit_code=0, stdout="later review", stderr=""),
+    ):
+        resume_flow("updates", base_dir=stopped, from_state="review")
+    current = saved(stopped)
+    snapshot = stopped / "runs/updates" / current["_meta"]["recovery_snapshots"][-1]
+    assert (
+        json.loads((snapshot / "snapshot.json").read_text())["saved_values"]["review"]
+        == "review two"
+    )
+    assert current["task"] == "revision two"
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ["snapshot_write", "files_copied", "published", "committed", "completed"],
+)
+def test_update_survives_process_exit_at_persistence_boundaries(stopped, boundary):
+    import subprocess
+
+    project = Path(__file__).resolve().parents[2]
+    # Exit without Python cleanup, closing neither the saver nor the run recorder.
+    # Every AI invocation in this child is mocked, including recovery after commit.
+    script = """
+import os
+import shutil
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from fdsx.core.compiler.compile import CompiledGraph
+from fdsx.core.engine import resume_flow
+from fdsx.providers.base import ProviderResult
+boundary = sys.argv[2]
+original_prepare = CompiledGraph.prepare_recovery
+original_write = Path.write_text
+original_rename = Path.rename
+original_copytree = shutil.copytree
+def copytree(*args, **kwargs):
+    result = original_copytree(*args, **kwargs)
+    os._exit(73)
+def write(path, *args, **kwargs):
+    result = original_write(path, *args, **kwargs)
+    if path.name == "snapshot.json":
+        os._exit(73)
+    return result
+def rename(path, *args, **kwargs):
+    result = original_rename(path, *args, **kwargs)
+    if path.name.endswith(".pending"):
+        os._exit(73)
+    return result
+def prepare(self, *args, **kwargs):
+    result = original_prepare(self, *args, **kwargs)
+    os._exit(73)
+with patch("fdsx.providers.claude._run_subprocess", return_value=ProviderResult(
+    exit_code=0, stdout="child review", stderr=""
+)), patch.object(shutil, "copytree", copytree if boundary == "files_copied" else original_copytree), patch.object(Path, "write_text", write if boundary == "snapshot_write" else original_write), patch.object(
+    Path, "rename", rename if boundary == "published" else original_rename
+), patch.object(CompiledGraph, "prepare_recovery", prepare if boundary == "committed" else original_prepare):
+    resume_flow("updates", base_dir=Path(sys.argv[1]), from_state="review",
+                input_updates={"task": "child revision"}, confirm_inputs=lambda *_: True)
+"""
+    child = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--project",
+            str(project),
+            "python",
+            "-c",
+            script,
+            str(stopped),
+            boundary,
+        ],
+        cwd=stopped.parent,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert child.returncode == (0 if boundary == "completed" else 73), child.stderr
+    current = saved(stopped)
+    committed = boundary in {"committed", "completed"}
+    assert current["task"] == ("child revision" if committed else "original")
+    assert current["source"] == "unchanged.md"
+    revisions = current["_meta"].get("input_revisions", [])
+    assert len(revisions) == int(committed)
+    if committed:
+        snapshot = json.loads(
+            (stopped / "runs/updates" / revisions[0] / "snapshot.json").read_text()
+        )
+        assert snapshot["effective_inputs"]["task"] == current["task"]
+        assert snapshot["saved_values"]["task"] == "original"
+        assert snapshot["saved_values"]["review"] == ("FULL REVIEW " * 150).strip()
+    # A fresh invocation recovers the same thread and observes only committed inputs.
+    with patch(
+        "fdsx.providers.claude._run_subprocess",
+        return_value=ProviderResult(exit_code=0, stdout="recovered review", stderr=""),
+    ) as provider:
+        result = resume_flow("updates", base_dir=stopped, from_state="review")
+    assert result.status == "aborted"
+    assert (
+        current["task"] + "|unchanged.md" in provider.call_args_list[0].kwargs["args"]
+    )
+    assert saved(stopped)["task"] == current["task"]
+
+
+def test_old_run_preserves_available_values_without_inventing_initial_inputs(stopped):
+    replace_saved_metadata(
+        stopped, lambda values: values["_meta"].pop("initial_inputs")
+    )
+    before = saved(stopped)
+    with patch(
+        "fdsx.providers.claude._run_subprocess",
+        return_value=ProviderResult(exit_code=0, stdout="new review", stderr=""),
+    ):
+        resume_flow(
+            "updates",
+            base_dir=stopped,
+            from_state="review",
+            input_updates={"task": "revision"},
+            confirm_inputs=lambda *_: True,
+        )
+    after = saved(stopped)
+    assert "initial_inputs" not in after["_meta"]
+    snapshot = stopped / "runs/updates" / after["_meta"]["input_revisions"][0]
+    history = json.loads((snapshot / "snapshot.json").read_text())["saved_values"]
+    for key in ("task", "source", "review", "review_file", "_meta"):
+        assert history[key] == before[key]
+
+
+def test_tasks_directory_resume_keeps_association_and_explicit_inputs(stopped):
+    from fdsx.core.engine import run_tasks_dir
+    from fdsx.models.task import load_task_file
+
+    tasks = stopped.parent / "tasks"
+    tasks.mkdir()
+    task_path = tasks / "task.yaml"
+    save_task_file(
+        task_path,
+        TaskFile(source="unchanged.md", entries=[TaskEntry(description="original")]),
+    )
+    with patch(
+        "fdsx.providers.claude._run_subprocess",
+        return_value=ProviderResult(exit_code=0, stdout="task review", stderr=""),
+    ):
+        run_tasks_dir(stopped.parent / "flow.yaml", tasks, base_dir=stopped)
+    task = load_task_file(task_path)
+    thread = task.entries[0].thread_id
+    assert thread and task.entries[0].status == "failed"
+    run_dirs = set((stopped / "runs").iterdir())
+    task.entries[0].description = "edited file only"
+    save_task_file(task_path, task)
+    unrelated = tasks / "unrelated.yaml"
+    unrelated.write_text("description: untouched\n")
+    source = stopped.parent / "unchanged.md"
+    source.write_text("edited source only")
+    untouched = {
+        p: p.read_bytes() for p in [unrelated, source, stopped.parent / "flow.yaml"]
+    }
+    with patch(
+        "fdsx.providers.claude._run_subprocess",
+        return_value=ProviderResult(
+            exit_code=0, stdout="same inputs review", stderr=""
+        ),
+    ) as provider:
+        resume_flow(thread, base_dir=stopped, from_state="review")
+    assert "original|unchanged.md" in provider.call_args_list[0].kwargs["args"]
+    with (
+        patch("click.testing._NamedTextIOWrapper.isatty", return_value=True),
+        patch(
+            "fdsx.providers.claude._run_subprocess",
+            return_value=ProviderResult(
+                exit_code=0, stdout="accepted review", stderr=""
+            ),
+        ) as provider,
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "resume",
+                "--thread-id",
+                thread,
+                "--base-dir",
+                str(stopped),
+                "--from",
+                "review",
+                "--input",
+                "task=accepted",
+            ],
+            input="y\n",
+        )
+    assert result.exit_code == 0, result.output
+    assert "Apply inputs and resume?" in result.output
+    assert "accepted|unchanged.md" in provider.call_args_list[0].kwargs["args"]
+    assert (
+        "accepted|unchanged.md|accepted review"
+        in provider.call_args_list[1].kwargs["args"]
+    )
+    task = load_task_file(task_path)
+    assert task.entries[0].description == "edited file only"
+    assert task.entries[0].status == "completed"
+    assert task.entries[0].thread_id == thread
+    assert set((stopped / "runs").iterdir()) == run_dirs
+    assert all(p.read_bytes() == contents for p, contents in untouched.items())
+    manager = CheckpointManager(base_dir=stopped)
+    current = (
+        manager.get_checkpointer()
+        .get_tuple({"configurable": {"thread_id": thread}})
+        .checkpoint["channel_values"]
+    )
+    assert current["task"] == "accepted"
+    assert current["_meta"]["task_file_path"] == str(task_path)
+    assert current["_meta"]["task_entry_index"] == 0
+    assert current["_meta"]["initial_inputs"]["task"] == "original"
+    snapshot = stopped / "runs" / thread / current["_meta"]["input_revisions"][0]
+    history = json.loads((snapshot / "snapshot.json").read_text())
+    assert history["thread_id"] == thread
+    assert history["saved_values"]["task"] == "original"
+    assert history["saved_values"]["review"] == "same inputs review"

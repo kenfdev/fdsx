@@ -327,10 +327,12 @@ def resume_flow(
                         "Input update canceled or interactive approval unavailable"
                     )
                 inputs_approved = True
-                effective_inputs = {**old_inputs, **input_updates}
+            if input_updates is not None or existing_meta.get("input_revisions"):
+                old_inputs = {key: saved_values.get(key) for key in input_keys}
+                effective_inputs = {**old_inputs, **(input_updates or {})}
                 inputs_changed = any(
                     saved_values.get(key) != value
-                    for key, value in input_updates.items()
+                    for key, value in (input_updates or {}).items()
                 )
                 try:
                     snapshot = recorder.preserve_recovery_snapshot(
@@ -352,7 +354,7 @@ def resume_flow(
                     snapshot,
                 ]
                 recovery_update["_meta"]["input_values"] = effective_inputs
-                recovery_update.update(input_updates)
+                recovery_update.update(input_updates or {})
             reset_recovery_progress(flow, saved_values)
             resume_config = compiled.prepare_recovery(resume_config, recovery_update)
             state_info = compiled.graph.get_state(resume_config)

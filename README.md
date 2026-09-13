@@ -884,7 +884,27 @@ fdsx-managed result files under `runs/<thread_id>/revisions/`; the checkpoint's
 in `_meta.initial_inputs`. Older runs preserve only history still available when
 updated. Identical inputs record a recovery attempt without a new input revision;
 its full snapshot and managed files are linked by `_meta.recovery_snapshots`
-in the same archive directory.
+in the same archive directory. After the first input revision, explicit recovery
+without new inputs also archives the values and managed files it is about to
+replace. Each snapshot includes the prior checkpoint metadata and run record,
+so earlier revisions and reviews remain traceable after summary rewrites.
+
+Snapshot publication precedes the single SQLite checkpoint update that stores
+both accepted inputs and their history reference, under the existing thread lock.
+If the process exits before that checkpoint commits, the old inputs remain
+current; an unreferenced snapshot or `.pending` directory may remain and does not
+represent an accepted revision. If it exits after commit, the new inputs and
+published history remain together. Resume with an explicit `--from` to retry
+interrupted recovery. This uses the existing local filesystem and SQLite
+persistence; it does not reconstruct missing archives. For older executions,
+only values and artifacts available at the first update can be preserved, not
+already overwritten requirements or reviews.
+
+Tasks-directory resume retains the original task entry and thread. Its normal
+status updates still occur, but edited task descriptions and source files are
+not imported into checkpoint inputs. Submit existing-input replacements explicitly;
+resume does not start another batch or rewrite those descriptions.
+
 External-tool files are not archived. Changing a file behind an unchanged input
 path does not import its contents: submit the desired input value explicitly.
 
