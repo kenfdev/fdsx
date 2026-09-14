@@ -609,9 +609,9 @@ run_hooks:
 
 **Scope:** `run_hooks` is a **separate top-level key** in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml`. It is distinct from `hooks:` (which contains state/workflow/wait lifecycle events). Using `on_run_start`/`on_run_end` inside `hooks:` raises a validation error.
 
-**`on_run_start`** fires once at the start of a `fdsx run` or `fdsx resume` CLI invocation, before any workflow or checkpoint logic executes.
+**`on_run_start`** normally fires once at the start of a `fdsx run` or `fdsx resume` CLI invocation. For `fdsx resume --input`, it is delayed until checkpoint/recovery validation and input approval succeed.
 
-**`on_run_end`** fires once when the CLI invocation exits (success, failure, or partial completion for tasks-dir runs).
+**`on_run_end`** fires once when a started CLI invocation exits (success, failure, or partial completion for tasks-dir runs). Input-update rejection before approval runs neither run hook. See `resume.md` for approval and history rules.
 
 Each command receives:
 

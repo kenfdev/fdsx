@@ -9,7 +9,8 @@ description: >
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
   agent workflow", "multi-step AI pipeline", "provider options", "checkpoint
   resume", "map state", "iterator", "extraction fallback", "structured output",
-  "JSON Schema output", "parallel gate", "state iteration", "max loop".
+  "JSON Schema output", "parallel gate", "state iteration", "max loop",
+  "resume input updates", "input revision history".
 ---
 
 # fdsx Workflow Authoring Guide
@@ -256,13 +257,15 @@ states:
 ```
 fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow] [--continue-on-error]
 fdsx validate <workflow.yaml>
-fdsx resume --thread-id <id> [--from <state>] [--base-dir <path>]
+fdsx resume --thread-id <id> [--from <state>] [--input KEY=VALUE] [--yes] [--base-dir <path>]
 fdsx list [--base-dir <path>]
 fdsx add <task-file> [<task-file> ...]
 fdsx init [--skill]
 fdsx --version
 fdsx --ci | --interactive        # global flags (mutually exclusive)
 ```
+
+For recovery with revised inputs (`resume --from ... --input ...`), approval with `--yes`, or preserved input history, read `references/resume.md` before preparing the command. These are CLI options, not workflow YAML fields.
 
 `--auto-workflow` and `--confirm-workflow` are mutually exclusive. `--auto-workflow` skips interactive workflow confirmation; `--confirm-workflow` forces the confirmation UI.
 
@@ -370,7 +373,7 @@ Workflow-scope hooks are always warn-only — non-zero exits log a warning and n
 
 ### Run-scope hooks (`on_run_start`, `on_run_end`)
 
-Run once per CLI invocation — outside any individual workflow or flow context. Configured under a **separate** `run_hooks:` key in `.fdsx/config.yaml` (not under `hooks:`). Not available in workflow YAML or at state level.
+Run once per CLI invocation, outside any individual workflow or flow context. For `resume --input`, hooks start only after validation and input approval; refusal runs neither start nor end hooks. Configured under a **separate** `run_hooks:` key in `.fdsx/config.yaml` (not under `hooks:`). Not available in workflow YAML or at state level.
 
 ```yaml
 # .fdsx/config.yaml
