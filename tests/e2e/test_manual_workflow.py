@@ -1,6 +1,7 @@
 """CLI option parsing and error exits without any provider execution."""
 
 import pytest
+from click import unstyle
 
 from tests.e2e.cli_test_utils import run_fdsx
 
@@ -20,8 +21,14 @@ def test_conflicting_options_exit_two(tmp_path, options):
     assert "mutually exclusive" in result.stderr
 
 
-def test_manual_option_help(tmp_path):
+@pytest.mark.parametrize("force_color", [False, True])
+def test_manual_option_help(tmp_path, monkeypatch, force_color):
+    if force_color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
     result = run_fdsx(["run", "--help"], cwd=tmp_path)
     assert result.returncode == 0
-    assert "--manual-workflow" in result.stdout
-    assert "Disable AI" in result.stdout
+    plain_output = unstyle(result.stdout)
+    assert "--manual-workflow" in plain_output
+    assert "Disable AI" in plain_output
