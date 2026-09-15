@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+import structlog
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -141,6 +142,8 @@ class RunHookConfig(BaseModel):
 
 class FdsxConfig(BaseModel):
     """Top-level fdsx configuration."""
+
+    prompt_prefix: str = Field(default="", strict=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -326,6 +329,17 @@ def load_config(
         proj_config_dir = _resolve_project_config_dir(proj_dir)
         if proj_config_dir is not None:
             raw_project = _load_yaml(proj_config_dir / "config.yaml")
+
+    # Validate each source before merging: an override must not hide an
+    # invalid global instruction. Never include instruction contents in errors.
+    for source, raw in (("global", raw_global), ("project", raw_project)):
+        if "prompt_prefix" in raw and not isinstance(raw["prompt_prefix"], str):
+            structlog.get_logger(__name__).error(
+                "invalid_prompt_prefix", source=source, reason="expected string"
+            )
+            raise ValueError(
+                f"prompt_prefix in {source} config must be a string; null is not allowed"
+            )
 
     # Merge user configs first (without defaults) so profile resolution
     # sees only explicitly-provided keys — no false XOR from defaults.

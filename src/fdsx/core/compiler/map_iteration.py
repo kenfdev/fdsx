@@ -284,6 +284,7 @@ def _create_map_node(
                     provider=provider,
                     provider_name=iter_state.provider,
                     prompt=resolved_prompt,
+                    prompt_prefix=config.prompt_prefix if config is not None else "",
                     command=resolved_command,
                     model=iter_state.model,
                     timeout_seconds=iter_state.timeout_seconds,

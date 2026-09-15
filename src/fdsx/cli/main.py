@@ -6,7 +6,6 @@ from typing import Any
 import click
 import typer
 import typer.core
-from pydantic import ValidationError as PydanticValidationError
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
@@ -202,7 +201,7 @@ def run(
     In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
     try:
         config = load_config()
-    except PydanticValidationError as e:
+    except ValueError as e:
         typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
     if tasks_dir is not None:
@@ -538,7 +537,11 @@ def resume(
                 raise typer.Exit(code=2)
             key, value = pair.split("=", 1)
             updates[key] = value
-    config = load_config()
+    try:
+        config = load_config()
+    except ValueError as e:
+        typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     _start_hooks = collect_run_hooks(
         "on_run_start", global_run_hooks=config.run_hooks, project_run_hooks=None
     )

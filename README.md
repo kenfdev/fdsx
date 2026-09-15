@@ -544,6 +544,52 @@ iterator:
 | `{run_path}` | Absolute path of the current run's data directory (`<base_dir>/runs/<thread_id>`). Read-only — cannot be overridden by `--input` or a state's `result_path`. Use it to share files between states: write to `{run_path}/artifact.txt` in one state and read from it in the next. |
 | `{state.iteration}` | One-based execution count for the current state. The first entry is `1`; loop re-entry increments it. |
 
+## Common task instructions
+
+Set `prompt_prefix` in `$XDG_CONFIG_HOME/fdsx/config.yaml` (by default
+`~/.config/fdsx/config.yaml`) or the project's `.fdsx/config.yaml` to share
+instructions across workflows without editing AGENTS.md:
+
+```yaml
+prompt_prefix: |
+  Explain changes briefly.
+  Run the relevant local tests before finishing.
+```
+
+The project value replaces the global value completely. Omitting the key
+inherits the global value; `prompt_prefix: ""` disables it, as does a string
+containing only spaces, tabs, or newlines. A missing value, explicit `null`, or
+non-string value is a configuration error. Each configuration file is validated
+before merging, even when the project replaces an invalid global value.
+Configuration lookup locations are unchanged.
+
+For a nonblank value, fdsx preserves all characters, including leading/trailing
+whitespace and braces, then adds two newline characters and the resolved task
+body. Only the task body receives variable substitution. An unset or disabled
+prefix leaves the body unchanged, with no added separator. This works with both
+inline task prompts and existing task `prompt_file` inputs.
+
+The prefix is sent once per AI task invocation across all LLM providers,
+including parallel branches, map iterations, loops, retries, provider escalation,
+and retries with structured-output feedback. It is excluded from workflow
+auto-selection, extraction fallback/recovery calls, system commands, and hooks.
+It is configured only at the global or project level.
+
+Each `run_flow` or `resume_flow` call reads the current configuration once; it
+does not reload during that call. Resume uses the latest value, including
+disabling the prefix or removing a project override to inherit the global value.
+Invalid current settings prevent remaining tasks from starting. Consecutive task
+files use the existing per-`run_flow`/`resume_flow` configuration loading boundary.
+The checkpoint format does not change. Configuration loading raises `ValueError`
+for invalid prefix values; resume wraps setup errors in its existing
+`FlowExecutionError`. The CLI reports configuration errors on stderr and exits
+nonzero.
+
+This is ordinary prompt text, separate from provider-specific `system_prompt`
+or developer instruction options. It does not guarantee instruction priority,
+compliance, permissions, or command restrictions. Do not include secrets: the
+text is sent to the provider and may appear in existing prompt records.
+
 ## Project Configuration (`.fdsx/config.yaml`)
 
 Config is loaded from two sources (later wins):

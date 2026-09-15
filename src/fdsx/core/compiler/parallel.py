@@ -189,6 +189,7 @@ def _create_branch_executor(
             provider=provider,
             provider_name=branch.provider,
             prompt=resolved_prompt,
+            prompt_prefix=config.prompt_prefix if config is not None else "",
             command=resolved_command,
             model=branch.model,
             timeout_seconds=branch.timeout_seconds,
@@ -373,6 +374,9 @@ def _create_collector_node(
             branch_info_list.append(
                 {
                     "index": r.get("index", 0),
+                    "name": r.get("name"),
+                    "exit_code": r.get("exit_code"),
+                    "error": r.get("error"),
                     "provider": state.branches[r.get("index", 0)].provider
                     if r.get("index", 0) < len(state.branches)
                     else "unknown",
