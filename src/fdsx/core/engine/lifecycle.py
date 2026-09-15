@@ -312,12 +312,14 @@ def finalize_terminal_execution(
     context.recorder.save(base_dir=context.base_dir)
 
     elapsed = _calc_elapsed(context.recorder)
+    route = [state["name"] for state in context.recorder.states]
     if status == "max_loop_reached":
         display_completion_summary(
             context.recorder.flow_name,
             elapsed,
             "max_loop",
             "max_loop_reached",
+            route=route,
         )
     elif failed_state is not None:
         display_completion_summary(
@@ -327,9 +329,10 @@ def finalize_terminal_execution(
             "workflow aborted",
             error_name=abort_info.error_name if abort_info is not None else None,
             error_cause=abort_info.error_cause if abort_info is not None else None,
+            route=route,
         )
     else:
-        display_completion_summary(context.recorder.flow_name, elapsed)
+        display_completion_summary(context.recorder.flow_name, elapsed, route=route)
 
     if context.on_terminal is not None:
         context.on_terminal(last_state, status, failed_state)
@@ -432,6 +435,7 @@ def finalize_failed_execution(
             elapsed,
             failed_state,
             error_message,
+            route=[state["name"] for state in context.recorder.states],
         ),
     )
 

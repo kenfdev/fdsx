@@ -428,6 +428,7 @@ def display_completion_summary(
     error: str | None = None,
     error_name: str | None = None,
     error_cause: str | None = None,
+    route: list[str] | None = None,
 ) -> None:
     """Display workflow completion summary to stderr.
 
@@ -441,6 +442,7 @@ def display_completion_summary(
         error: Error message (None on success)
         error_name: Structured error name from a fail state (None if not a fail state)
         error_cause: Structured error cause from a fail state (None if not a fail state)
+        route: Recorded state visits in execution order, including repeated visits
     """
     flow_name_safe = _sanitize_output(flow_name)
     time_str = _format_elapsed(elapsed_seconds)
@@ -464,6 +466,12 @@ def display_completion_summary(
                 f"✗ Workflow '{flow_name_safe}' failed at state '{failed_state_safe}' — {error_str}",
                 file=sys.stderr,
             )
+
+    if route:
+        print(
+            "Route: " + " → ".join(_sanitize_output(name) for name in route),
+            file=sys.stderr,
+        )
 
 
 def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> str:
