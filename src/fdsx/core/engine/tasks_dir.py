@@ -209,8 +209,18 @@ def run_tasks_dir(
     auto_workflow: bool = False,
     quiet: bool = False,
     continue_on_error: bool = False,
+    *,
+    manual_workflow: bool = False,
 ) -> list[dict[str, Any]]:
-    """Drain task files until no newly queued files remain."""
+    """Drain task files until no newly queued files remain.
+
+    The caller resolves configuration into modes. manual_workflow disables
+    selection AI and takes precedence over auto_workflow for direct callers.
+    It defaults to False for compatibility with existing engine callers.
+    """
+    # Modes are resolved by the caller; direct callers retain the previous default.
+    if manual_workflow:
+        auto_workflow = False
     effective_base_dir = base_dir or Path.cwd() / ".fdsx"
     lock_manager = CheckpointManager(base_dir=effective_base_dir)
     lock_digest = hashlib.sha256(str(tasks_dir.resolve()).encode("utf-8")).hexdigest()[
@@ -235,6 +245,7 @@ def run_tasks_dir(
             tasks_dir,
             base_dir=base_dir,
             auto_workflow=auto_workflow,
+            manual_workflow=manual_workflow,
             quiet=quiet,
             continue_on_error=continue_on_error,
         )
@@ -249,6 +260,8 @@ def _drain_tasks_dir(
     auto_workflow: bool = False,
     quiet: bool = False,
     continue_on_error: bool = False,
+    *,
+    manual_workflow: bool = False,
 ) -> list[dict[str, Any]]:
     """Drain newly discovered task files without reacquiring the directory lock."""
     results: list[dict[str, Any]] = []
@@ -282,6 +295,7 @@ def _drain_tasks_dir(
             tasks_dir,
             base_dir=base_dir,
             auto_workflow=auto_workflow,
+            manual_workflow=manual_workflow,
             quiet=quiet,
             continue_on_error=continue_on_error,
             task_files=new_files,
@@ -302,6 +316,7 @@ def _run_tasks_dir_snapshot(
     quiet: bool = False,
     continue_on_error: bool = False,
     *,
+    manual_workflow: bool = False,
     task_files: list[tuple[Path, TaskFile]],
 ) -> list[dict[str, Any]]:
     """Execute tasks from a directory of YAML task files with crash-resilient persistence.
@@ -379,7 +394,30 @@ def _run_tasks_dir_snapshot(
             config_profiles,
         )
     auto_selection_keys: list[tuple[int, int]] = []
-    if auto_selection_entries:
+    if manual_workflow and auto_selection_entries:
+        auto_selection_keys = [
+            (file_idx, entry_idx)
+            for file_idx, entry_idx, _, _ in auto_selection_entries
+        ]
+        if not available_workflows:
+            logger.error("manual_workflow_no_candidates", tasks_dir=str(tasks_dir))
+            raise FlowValidationError(
+                "No workflow available. Specify a workflow argument or set workflow "
+                "in each task, or add workflows to the workflows directory."
+            )
+        if len(available_workflows) == 1:
+            workflow_assignments.update(
+                dict.fromkeys(auto_selection_keys, available_workflows[0][0])
+            )
+        if not fdsx.core.mode.is_interactive() and any(
+            key not in workflow_assignments for key in auto_selection_keys
+        ):
+            logger.error("manual_workflow_requires_input", tasks_dir=str(tasks_dir))
+            raise FlowValidationError(
+                "Manual workflow selection requires interactive input for unassigned tasks. "
+                "Specify a workflow argument or set workflow in each task."
+            )
+    elif auto_selection_entries:
         total = len(auto_selection_entries)
         with Spinner(
             f"Auto-selecting workflows for {total} task{'s' if total != 1 else ''}..."

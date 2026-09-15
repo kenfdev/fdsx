@@ -171,6 +171,10 @@ class FdsxConfig(BaseModel):
         default=False,
         description="Skip confirmation for auto-selected workflows",
     )
+    manual_workflow: bool = Field(
+        default=False,
+        description="Disable AI workflow selection and confirm assignments in the numbered editor",
+    )
     providers: ProviderConfigs | None = Field(
         default=None,
         description="Provider-specific configuration options",

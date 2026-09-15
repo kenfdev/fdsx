@@ -652,6 +652,7 @@ default_tasks_dir: .fdsx/tasks    # (string, optional) default directory for bar
 
 # --- Auto-workflow selection ---
 auto_workflow: false              # (bool, default: false) skip interactive confirmation UI
+manual_workflow: false            # (bool, default: false) disable AI workflow selection
 
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
@@ -808,7 +809,8 @@ run_hooks:
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
 | `fdsx run --tasks-dir <dir>` | Drain queued tasks sequentially until the directory is empty (workflow optional) |
 | `fdsx run ... --quiet` | Suppress stderr streaming output |
-| `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
+| `fdsx run ... --auto-workflow` | Auto-select and skip confirmation; override manual config |
+| `fdsx run ... --manual-workflow` | Disable AI selection and use the numbered workflow editor |
 | `fdsx run ... --confirm-workflow` | Show workflow confirmation UI (requires interactive mode) |
 | `fdsx run ... --continue-on-error` | Continue processing remaining entries on error in tasks-dir mode |
 | `fdsx resume --thread-id <id>` | Resume an interrupted or retryable failed execution from its checkpoint |
@@ -999,6 +1001,40 @@ List all executions:
 ```bash
 fdsx list
 ```
+
+### Manual workflow selection
+
+Use `fdsx run --tasks-dir .fdsx/tasks --manual-workflow` to choose workflows
+without calling the workflow-selection AI. To make this the default, set
+`manual_workflow: true` in `.fdsx/config.yaml` or the global
+`$XDG_CONFIG_HOME/fdsx/config.yaml` (normally `~/.config/fdsx/config.yaml`).
+This also applies to `fdsx run` with no arguments. Project settings override
+global settings, including `manual_workflow: false`.
+
+Manual mode preserves saved assignments before applying a workflow argument.
+With multiple candidates, unspecified tasks start unassigned in the existing
+numbered editor; with one candidate, it is assigned before confirmation.
+Enter a task number, then a workflow number to change an assignment; `c`
+confirms only when every task is assigned, and `q` cancels before execution.
+Confirmed assignments use the existing task YAML format. Project and global
+workflows remain available, with project workflows taking precedence for duplicates.
+
+- `--manual-workflow` or `manual_workflow: true` takes precedence over saved
+  `auto_workflow: true` and disables selection AI.
+- Explicit `--auto-workflow` overrides manual configuration, enables automatic
+  selection, and skips confirmation. It conflicts with both `--manual-workflow`
+  and `--confirm-workflow`.
+- `--confirm-workflow` works with manual mode and does not re-enable selection AI.
+  Explicit confirmation still requires interactive input.
+- Without interactive input, unresolved manual assignments produce an error:
+  supply a workflow argument or set `workflow` in each task. Fully assigned tasks
+  and single-candidate assignments can run without input.
+
+New task files discovered during a run inherit the mode and are confirmed at the
+next batch, before those tasks execute. Manual mode does not disable AI tasks
+inside workflows or change provider permissions. Direct single-workflow runs
+continue without a selection screen.
+
 
 ## License
 
