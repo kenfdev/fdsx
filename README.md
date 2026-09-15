@@ -556,11 +556,34 @@ prompt_prefix: |
   Run the relevant local tests before finishing.
 ```
 
-The project value replaces the global value completely. Omitting the key
-inherits the global value; `prompt_prefix: ""` disables it, as does a string
-containing only spaces, tabs, or newlines. A missing value, explicit `null`, or
+Alternatively, put the instructions in a UTF-8 file:
+
+```yaml
+prompt_prefix_file: rules.md
+```
+
+Relative paths are based on the folder containing the configuration file:
+this example reads `.fdsx/rules.md` for project configuration, or
+`$XDG_CONFIG_HOME/fdsx/rules.md` for global configuration. Inherited global
+paths keep that base; neither the current working directory nor the workflow
+folder is used. Absolute paths, parent references (`../`), symlinks, and `~/`
+(expanded to the home folder) are supported. File line endings are preserved.
+
+Do not specify `prompt_prefix` and `prompt_prefix_file` in the same configuration,
+even if one value is empty. The project choice replaces the global choice
+completely, including when switching between inline text and a file.
+Omitting both keys inherits the global value; `prompt_prefix: ""` disables it,
+as does a string
+containing only spaces, tabs, or newlines. An empty or whitespace-only file also
+disables the prefix without falling back to the global value.
+An empty file path is invalid; use an existing empty file or `prompt_prefix: ""`
+to disable instructions. A missing value, explicit `null`, or
 non-string value is a configuration error. Each configuration file is validated
 before merging, even when the project replaces an invalid global value.
+Only the selected instruction file is read: an overridden global file need not
+exist or be readable. A selected file that is missing, unreadable, or not valid
+UTF-8 causes a configuration error before auto-selection or any AI task starts.
+Diagnostics identify the setting and error cause without including file contents.
 Configuration lookup locations are unchanged.
 
 For a nonblank value, fdsx preserves all characters, including leading/trailing
@@ -575,20 +598,23 @@ and retries with structured-output feedback. It is excluded from workflow
 auto-selection, extraction fallback/recovery calls, system commands, and hooks.
 It is configured only at the global or project level.
 
-Each `run_flow` or `resume_flow` call reads the current configuration once; it
-does not reload during that call. Resume uses the latest value, including
+Each `run_flow` or `resume_flow` call reads the current configuration and selected
+instruction file once; it does not reload during that call. Resume uses the
+latest contents and file reference, including switching between file and inline text,
 disabling the prefix or removing a project override to inherit the global value.
 Invalid current settings prevent remaining tasks from starting. Consecutive task
 files use the existing per-`run_flow`/`resume_flow` configuration loading boundary.
 The checkpoint format does not change. Configuration loading raises `ValueError`
-for invalid prefix values; resume wraps setup errors in its existing
-`FlowExecutionError`. The CLI reports configuration errors on stderr and exits
-nonzero.
+for invalid prefix values and file reading/decoding failures; resume wraps setup
+errors in its existing `FlowExecutionError`. The CLI reports configuration errors
+on stderr and exits nonzero.
 
 This is ordinary prompt text, separate from provider-specific `system_prompt`
 or developer instruction options. It does not guarantee instruction priority,
 compliance, permissions, or command restrictions. Do not include secrets: the
-text is sent to the provider and may appear in existing prompt records.
+text is sent to the provider and may appear in existing prompt records. Provider
+stdout/stderr is also recorded in per-state logs, so echoed instructions can
+appear there even in quiet mode.
 
 ## Project Configuration (`.fdsx/config.yaml`)
 

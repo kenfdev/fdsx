@@ -317,6 +317,8 @@ def load_config(
     """
     defaults = FdsxConfig()
 
+    global_dir = None
+    proj_config_dir = None
     raw_global: dict[str, Any] = {}
     if load_global:
         global_dir = _resolve_xdg_config_dir()
@@ -330,20 +332,17 @@ def load_config(
         if proj_config_dir is not None:
             raw_project = _load_yaml(proj_config_dir / "config.yaml")
 
-    # Validate each source before merging: an override must not hide an
-    # invalid global instruction. Never include instruction contents in errors.
-    for source, raw in (("global", raw_global), ("project", raw_project)):
-        if "prompt_prefix" in raw and not isinstance(raw["prompt_prefix"], str):
-            structlog.get_logger(__name__).error(
-                "invalid_prompt_prefix", source=source, reason="expected string"
-            )
-            raise ValueError(
-                f"prompt_prefix in {source} config must be a string; null is not allowed"
-            )
+    prefix = _resolve_prompt_prefix(
+        [("global", raw_global, global_dir), ("project", raw_project, proj_config_dir)]
+    )
 
     # Merge user configs first (without defaults) so profile resolution
     # sees only explicitly-provided keys — no false XOR from defaults.
     user_merged: dict[str, Any] = _deep_merge(raw_global, raw_project)
+    user_merged.pop("prompt_prefix_file", None)
+    # The prefix has already been validated by _resolve_prompt_prefix. Keep its
+    # contents out of model-validation inputs, which can appear in diagnostics.
+    user_merged.pop("prompt_prefix", None)
 
     user_merged, profile_errors = resolve_profiles_in_config(user_merged)
     if profile_errors:
@@ -352,4 +351,54 @@ def load_config(
     # Now merge with defaults to fill in missing fields
     merged: dict[str, Any] = _deep_merge(defaults.model_dump(), user_merged)
 
-    return FdsxConfig.model_validate(merged)
+    config = FdsxConfig.model_validate(merged)
+    config.prompt_prefix = prefix
+    return config
+
+
+def _resolve_prompt_prefix(
+    sources: list[tuple[str, dict[str, Any], Path | None]],
+) -> str:
+    """Validate both sources, then read only the selected instruction file.
+
+    File paths belong to the source configuration, not to the runtime model:
+    callers receive only resolved text through the existing prompt_prefix field.
+    """
+    selected: tuple[str, dict[str, Any], Path | None] | None = None
+    for source, raw, directory in sources:
+        keys = [key for key in ("prompt_prefix", "prompt_prefix_file") if key in raw]
+        reason = ""
+        if len(keys) == 2:
+            reason = "prompt_prefix and prompt_prefix_file are mutually exclusive"
+        else:
+            for key in keys:
+                if not isinstance(raw[key], str):
+                    reason = f"{key} must be a string; null is not allowed"
+                elif key == "prompt_prefix_file" and not raw[key]:
+                    reason = "prompt_prefix_file must not be an empty path"
+        if reason:
+            structlog.get_logger(__name__).error(
+                "invalid_prompt_prefix", source=source, reason=reason
+            )
+            raise ValueError(f"{source} config: {reason}")
+        if keys:
+            selected = (source, raw, directory)
+    if selected is None:
+        return ""
+    source, raw, directory = selected
+    if "prompt_prefix" in raw:
+        return str(raw["prompt_prefix"])
+    try:
+        path = Path(raw["prompt_prefix_file"]).expanduser()
+        if not path.is_absolute() and directory is not None:
+            path = directory / path
+        with path.open(encoding="utf-8", newline="") as stream:
+            return stream.read()
+    except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+        # Do not stringify decode errors (which can contain instruction bytes)
+        # or expose their exception chain to callers/loggers.
+        reason = type(error).__name__
+        structlog.get_logger(__name__).error(
+            "invalid_prompt_prefix_file", source=source, reason=reason
+        )
+        raise ValueError(f"prompt_prefix_file in {source} config: {reason}") from None
