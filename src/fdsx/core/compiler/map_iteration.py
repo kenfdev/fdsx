@@ -77,7 +77,7 @@ def _read_map_progress(run_dir: str, state_name: str) -> dict[str, Any] | None:
         return None
     progress_file = progress_dir / _MAP_PROGRESS_FILENAME
     try:
-        with progress_file.open() as f:
+        with progress_file.open(encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, dict):
                 return data
@@ -100,8 +100,8 @@ def _write_map_progress(
         "results": results,
     }
     fd = os.open(str(temp_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(progress_data, f)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(progress_data, f, ensure_ascii=False)
     temp_file.replace(progress_dir / _MAP_PROGRESS_FILENAME)
 
 
@@ -284,6 +284,7 @@ def _create_map_node(
                     provider=provider,
                     provider_name=iter_state.provider,
                     prompt=resolved_prompt,
+                    prompt_prefix=config.prompt_prefix if config is not None else "",
                     command=resolved_command,
                     model=iter_state.model,
                     timeout_seconds=iter_state.timeout_seconds,

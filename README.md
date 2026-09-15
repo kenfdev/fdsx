@@ -544,6 +544,92 @@ iterator:
 | `{run_path}` | Absolute path of the current run's data directory (`<base_dir>/runs/<thread_id>`). Read-only — cannot be overridden by `--input` or a state's `result_path`. Use it to share files between states: write to `{run_path}/artifact.txt` in one state and read from it in the next. |
 | `{state.iteration}` | One-based execution count for the current state. The first entry is `1`; loop re-entry increments it. |
 
+## Common task instructions
+
+Set `prompt_prefix` in `$XDG_CONFIG_HOME/fdsx/config.yaml` (by default
+`~/.config/fdsx/config.yaml`) or the project's `.fdsx/config.yaml` to share
+instructions across workflows without editing AGENTS.md:
+
+```yaml
+prompt_prefix: |
+  Explain changes briefly.
+  Run the relevant local tests before finishing.
+```
+
+Alternatively, put the instructions in a UTF-8 file:
+
+```yaml
+prompt_prefix_file: rules.md
+```
+
+Relative paths are based on the folder containing the configuration file:
+this example reads `.fdsx/rules.md` for project configuration, or
+`$XDG_CONFIG_HOME/fdsx/rules.md` for global configuration. Inherited global
+paths keep that base; neither the current working directory nor the workflow
+folder is used. Absolute paths, parent references (`../`), symlinks, and `~/`
+(expanded to the home folder) are supported. File line endings are preserved.
+
+Do not specify `prompt_prefix` and `prompt_prefix_file` in the same configuration,
+even if one value is empty. The project choice replaces the global choice
+completely, including when switching between inline text and a file.
+Omitting both keys inherits the global value; `prompt_prefix: ""` disables it,
+as does a string
+containing only spaces, tabs, or newlines. An empty or whitespace-only file also
+disables the prefix without falling back to the global value.
+An empty file path is invalid; use an existing empty file or `prompt_prefix: ""`
+to disable instructions. A missing value, explicit `null`, or
+non-string value is a configuration error. Each configuration file is validated
+before merging, even when the project replaces an invalid global value.
+Only the selected instruction file is read: an overridden global file need not
+exist or be readable. A selected file that is missing, unreadable, or not valid
+UTF-8 causes a configuration error before auto-selection or any AI task starts.
+Diagnostics identify the setting and error cause without including file contents.
+Configuration lookup locations are unchanged.
+
+For a nonblank value, fdsx preserves all characters, including leading/trailing
+whitespace and braces, then adds two newline characters and the resolved task
+body. Only the task body receives variable substitution. An unset or disabled
+prefix leaves the body unchanged, with no added separator. This works with both
+inline task prompts and existing task `prompt_file` inputs.
+
+The prefix is sent once per AI task invocation across all LLM providers,
+including parallel branches, map iterations, loops, retries, provider escalation,
+and retries with structured-output feedback. It is excluded from workflow
+auto-selection, extraction fallback/recovery calls, system commands, and hooks.
+It is configured only at the global or project level.
+
+Each `run_flow` or `resume_flow` call reads the current configuration and selected
+instruction file once; it does not reload during that call. Resume uses the
+latest contents and file reference, including switching between file and inline text,
+disabling the prefix or removing a project override to inherit the global value.
+Invalid current settings prevent remaining tasks from starting. Consecutive task
+files use the existing per-`run_flow`/`resume_flow` configuration loading boundary.
+The checkpoint format does not change. Configuration loading raises `ValueError`
+for invalid prefix values and file reading/decoding failures; resume wraps setup
+errors in its existing `FlowExecutionError`. The CLI reports configuration errors
+on stderr and exits nonzero.
+
+This is ordinary prompt text, separate from provider-specific `system_prompt`
+or developer instruction options. It does not guarantee instruction priority,
+compliance, permissions, or command restrictions. Do not include secrets: the
+text is sent to the provider and may appear in existing prompt records. Provider
+stdout/stderr is also recorded in per-state logs, so echoed instructions can
+appear there even in quiet mode.
+
+## Output and failure diagnostics
+
+fdsx preserves Japanese and other Unicode characters in generated JSON for run
+records, hook data, map progress, and native structured provider results instead
+of converting them to `\uXXXX` escapes. The JSON format and parsed values are
+unchanged.
+
+Parallel branch entries in run records include `name`, `exit_code`, and `error`
+alongside provider details. Use these fields and per-branch stdout/stderr logs
+to investigate failures. Codex streaming `turn.failed` and `error` messages are
+preserved in stderr logs and, on a nonzero exit, supplement the returned stderr
+without being mixed into agent output. Quiet mode suppresses terminal streaming,
+not the saved logs. Logs may contain sensitive provider output.
+
 ## Project Configuration (`.fdsx/config.yaml`)
 
 Config is loaded from two sources (later wins):
@@ -578,8 +664,13 @@ workflows_dir: .fdsx/workflows    # (string, default: ".fdsx/workflows")
 default_tasks_dir: .fdsx/tasks    # (string, optional) default directory for bare `fdsx run`
                                   #   when no workflow, --tasks, or --tasks-dir is given
 
-# --- Auto-workflow selection ---
+# --- Common AI task instructions (choose inline text OR a UTF-8 file) ---
+prompt_prefix: "Explain changes briefly."
+# prompt_prefix_file: rules.md    # relative to this config file's directory
+
+# --- Workflow selection ---
 auto_workflow: false              # (bool, default: false) skip interactive confirmation UI
+manual_workflow: false            # (bool, default: false) disable AI workflow selection
 
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
@@ -736,7 +827,8 @@ run_hooks:
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
 | `fdsx run --tasks-dir <dir>` | Drain queued tasks sequentially until the directory is empty (workflow optional) |
 | `fdsx run ... --quiet` | Suppress stderr streaming output |
-| `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
+| `fdsx run ... --auto-workflow` | Auto-select and skip confirmation; override manual config |
+| `fdsx run ... --manual-workflow` | Disable AI selection and use the numbered workflow editor |
 | `fdsx run ... --confirm-workflow` | Show workflow confirmation UI (requires interactive mode) |
 | `fdsx run ... --continue-on-error` | Continue processing remaining entries on error in tasks-dir mode |
 | `fdsx resume --thread-id <id>` | Resume an interrupted or retryable failed execution from its checkpoint |
@@ -927,6 +1019,39 @@ List all executions:
 ```bash
 fdsx list
 ```
+
+### Manual workflow selection
+
+Use `fdsx run --tasks-dir .fdsx/tasks --manual-workflow` to choose workflows
+without calling the workflow-selection AI. To make this the default, set
+`manual_workflow: true` in `.fdsx/config.yaml` or the global
+`$XDG_CONFIG_HOME/fdsx/config.yaml` (normally `~/.config/fdsx/config.yaml`).
+This also applies to `fdsx run` with no arguments. Project settings override
+global settings, including `manual_workflow: false`.
+
+Manual mode preserves saved assignments before applying a workflow argument.
+With multiple candidates, unspecified tasks start unassigned in the existing
+numbered editor; with one candidate, it is assigned before confirmation.
+Enter a task number, then a workflow number to change an assignment; `c`
+confirms only when every task is assigned, and `q` cancels before execution.
+Confirmed assignments use the existing task YAML format. Project and global
+workflows remain available, with project workflows taking precedence for duplicates.
+
+- `--manual-workflow` or `manual_workflow: true` takes precedence over saved
+  `auto_workflow: true` and disables selection AI.
+- Explicit `--auto-workflow` overrides manual configuration, enables automatic
+  selection, and skips confirmation. It conflicts with both `--manual-workflow`
+  and `--confirm-workflow`.
+- `--confirm-workflow` works with manual mode and does not re-enable selection AI.
+  Explicit confirmation still requires interactive input.
+- Without interactive input, unresolved manual assignments produce an error:
+  supply a workflow argument or set `workflow` in each task. Fully assigned tasks
+  and single-candidate assignments can run without input.
+
+New task files discovered during a run inherit the mode and are confirmed at the
+next batch, before those tasks execute. Manual mode does not disable AI tasks
+inside workflows or change provider permissions. Direct single-workflow runs
+continue without a selection screen.
 
 ## License
 

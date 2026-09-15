@@ -205,6 +205,10 @@ class TestWaitHookEnvVars:
                   - command: "echo check_env"
             """,
         )
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("approve", "承認"),
+            encoding="utf-8",
+        )
         with (
             patch("fdsx.core.hooks.subprocess.run", side_effect=_capture_subprocess),
             patch("builtins.input", return_value="1"),
@@ -222,8 +226,10 @@ class TestWaitHookEnvVars:
         assert "FDSX_WAIT_CHOICES" in env, (
             "FDSX_WAIT_CHOICES missing from on_wait_start env"
         )
+        assert "承認" in env["FDSX_WAIT_CHOICES"]
+        assert "\\u" not in env["FDSX_WAIT_CHOICES"]
         choices = json.loads(env["FDSX_WAIT_CHOICES"])
-        assert "approve" in choices
+        assert "承認" in choices
 
     def test_on_wait_end_env_includes_wait_selection(self, tmp_path: Path) -> None:
         """The subprocess spawned by on_wait_end must have FDSX_WAIT_SELECTION in its env."""

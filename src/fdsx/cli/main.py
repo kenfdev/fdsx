@@ -6,7 +6,6 @@ from typing import Any
 import click
 import typer
 import typer.core
-from pydantic import ValidationError as PydanticValidationError
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
@@ -176,7 +175,12 @@ def run(
     auto_workflow: bool | None = typer.Option(
         None,
         "--auto-workflow",
-        help="Skip interactive workflow confirmation and auto-select (overrides config)",
+        help="Auto-select and skip confirmation; overrides manual_workflow config. Conflicts with --manual-workflow and --confirm-workflow.",
+    ),
+    manual_workflow: bool = typer.Option(
+        False,
+        "--manual-workflow",
+        help="Disable AI workflow selection and use the numbered editor; overrides auto_workflow config. Compatible with --confirm-workflow, conflicts with --auto-workflow.",
     ),
     confirm_workflow: bool | None = typer.Option(
         None,
@@ -198,11 +202,13 @@ def run(
 
     Shows an animated spinner during workflow auto-selection for tasks-dir mode.
     Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
-    Use --auto-workflow to skip the confirmation UI.
-    In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
+    Use --manual-workflow to disable selection AI and choose by number.
+    Use --auto-workflow to skip confirmation and override manual configuration.
+    In noninteractive terminals, assigned tasks auto-confirm; unresolved manual
+    assignments require an explicit workflow."""
     try:
         config = load_config()
-    except PydanticValidationError as e:
+    except ValueError as e:
         typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
     if tasks_dir is not None:
@@ -225,6 +231,13 @@ def run(
         ).expanduser()
         _validate_tasks_dir(resolved_tasks_dir)
         tasks_dir = resolved_tasks_dir
+
+    if manual_workflow and auto_workflow:
+        typer.echo(
+            "Error: --manual-workflow and --auto-workflow are mutually exclusive",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     if auto_workflow is not None and confirm_workflow is not None:
         typer.echo(
@@ -261,6 +274,12 @@ def run(
     if confirm_workflow is not None:
         effective_auto_workflow = not confirm_workflow
 
+    effective_manual_workflow = not auto_workflow and (
+        manual_workflow or config.manual_workflow
+    )
+    if effective_manual_workflow:
+        effective_auto_workflow = False
+
     current_thread_id = thread_id if thread_id else None
 
     _start_hooks = collect_run_hooks(
@@ -278,6 +297,7 @@ def run(
                 tasks_dir,
                 base_dir,
                 auto_workflow=effective_auto_workflow,
+                manual_workflow=effective_manual_workflow,
                 quiet=quiet,
                 continue_on_error=continue_on_error,
             )
@@ -538,7 +558,11 @@ def resume(
                 raise typer.Exit(code=2)
             key, value = pair.split("=", 1)
             updates[key] = value
-    config = load_config()
+    try:
+        config = load_config()
+    except ValueError as e:
+        typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     _start_hooks = collect_run_hooks(
         "on_run_start", global_run_hooks=config.run_hooks, project_run_hooks=None
     )

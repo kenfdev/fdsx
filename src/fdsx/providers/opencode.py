@@ -37,7 +37,7 @@ class OpenCodeOptions(BaseModel):
         if self.permission is None:
             return {}
         config = {"permission": self.permission}
-        return {"OPENCODE_CONFIG_CONTENT": json.dumps(config)}
+        return {"OPENCODE_CONFIG_CONTENT": json.dumps(config, ensure_ascii=False)}
 
 
 class OpenCodeProvider(ProviderBase):

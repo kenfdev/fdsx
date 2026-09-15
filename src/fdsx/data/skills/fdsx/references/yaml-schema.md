@@ -766,7 +766,7 @@ All provider option models use `extra="forbid"` — unknown keys cause validatio
 
 ## Config File
 
-`.fdsx/config.yaml` (project-level) or `~/.config/fdsx/config.yaml` (global). Project overrides global via deep merge.
+`.fdsx/config.yaml` (project-level) or `$XDG_CONFIG_HOME/fdsx/config.yaml` (global, default `~/.config/fdsx/config.yaml`). Project overrides global via deep merge, with whole-value replacement for common task instructions and the blocks noted below.
 
 ```yaml
 workflow_selector?:
@@ -777,6 +777,9 @@ workflow_selector?:
 
 workflows_dir?: string          # default: .fdsx/workflows — relative, no ".."
 auto_workflow?: bool            # default: false
+manual_workflow?: bool          # default: false; disable AI workflow selection
+prompt_prefix?: string          # literal AI task instructions; XOR with prompt_prefix_file
+prompt_prefix_file?: string     # UTF-8 file; relative to the declaring config folder
 default_tasks_dir?: string      # default: .fdsx/tasks/ — precedence: project → global → fallback
 
 providers?:
@@ -812,6 +815,32 @@ retry_escalation?:              # absent by default — global escalation target
 ```
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
+
+### Common task instructions
+
+`prompt_prefix` and `prompt_prefix_file` are configuration-only keys, mutually exclusive within each file even when empty. Both require strings; `null` and non-string values are errors. A file path must also be nonempty. Each configuration file is validated before merging, so a project override does not hide invalid global values.
+
+A project declaration of either key replaces the global choice completely, including switching between inline and file instructions. Omitting both inherits the global choice. Empty or whitespace-only inline text or file contents disable the prefix without falling back to global instructions.
+
+Relative file paths resolve from the declaring configuration file's directory, including inherited global paths. Absolute paths, `../`, symlinks, and home expansion (`~/`) are supported. Only the selected file is read; an overridden global file need not exist. Missing, unreadable, or invalid UTF-8 selected files fail configuration loading before workflow selection or AI tasks start. Errors identify the setting and cause without printing file contents.
+
+Nonblank text retains all characters, whitespace, braces, and file line endings. fdsx inserts it once before the resolved AI task body, separated by two newline characters. Variable substitution applies only to the body. Disabled instructions add no separator. Both task `prompt_template` and `prompt_file` are supported.
+
+The prefix applies across all LLM providers to tasks, parallel branches, map iterations, loops, retries, provider escalation, and structured-output feedback retries. It is excluded from workflow selection, extraction fallback/recovery, system commands, and hooks.
+
+Each `run_flow` or `resume_flow` call reads current configuration and the selected file once, without reloading mid-call. Resume uses the latest choice and contents without changing checkpoint format. Consecutive task files retain this per-call loading boundary. Invalid settings raise `ValueError`; resume wraps setup failures in `FlowExecutionError`. The CLI reports the failure on stderr and exits nonzero.
+
+These are ordinary prompt instructions, separate from provider system/developer options. They do not enforce permissions or instruction priority. Keep secrets out: providers receive the text and existing prompt or output logs may contain it, including in quiet mode.
+
+### Manual workflow selection
+
+`manual_workflow: true` disables workflow-selection AI for tasks-directory runs, including no-argument `fdsx run`. Project configuration can override a global `true` with `false`. Manual mode takes precedence over configured `auto_workflow: true`.
+
+Explicit `--auto-workflow` overrides manual configuration and skips confirmation; it conflicts with `--manual-workflow` and `--confirm-workflow`. Explicit `--manual-workflow` enables manual mode. `--confirm-workflow` can accompany manual mode, requires interactive input, and does not re-enable AI selection.
+
+Saved assignments precede a workflow argument. A single candidate fills unassigned tasks; multiple candidates leave them unassigned for the numbered editor. Without interactive input, unresolved assignments fail; provide a workflow argument or save `workflow` in each task. Fully assigned tasks can run without input unless confirmation is explicitly required. Newly discovered tasks retain the selection mode and are confirmed in the next batch. Project workflows take precedence over global duplicates. Direct single-workflow runs bypass selection; AI task execution and provider permissions are unchanged.
+
+### Other configuration rules
 
 **Hook merging:** During global → project config deep merge, all eight hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, `on_wait_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level. Wait-scope hooks (`on_wait_start`, `on_wait_end`) merge at global → project → flow → state (wait states only) level.
 

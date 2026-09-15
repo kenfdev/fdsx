@@ -95,6 +95,7 @@ class CodexProvider(ProviderBase):
         self,
         output_callback: Callable[[str], None],
         final_message_callback: Callable[[str], None] | None = None,
+        error_callback: Callable[[str], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None]]:
         """Create a streaming callback that parses Codex ``--json`` JSONL lines.
 
@@ -119,7 +120,8 @@ class CodexProvider(ProviderBase):
         - ``item.started`` + ``mcp_tool_call`` → ``[tool: {name}]``
         - ``item.completed`` + ``agent_message`` → ``item.text`` (accumulated)
         - ``item.completed`` + ``reasoning`` → ``[thinking] {text}``
-        - ``turn.failed`` → ``logger.warning``, no callback dispatch
+        - ``turn.failed`` / ``error`` → warning and optional error callback
+          (never included in agent output)
         """
         agent_message_parts: list[str] = []
 
@@ -161,13 +163,21 @@ class CodexProvider(ProviderBase):
                     if text:
                         output_callback(f"[thinking] {text}")
 
-            elif event_type == _EVENT_TURN_FAILED:
-                logger.warning("turn.failed event received: %s", event.get("error", ""))
-
-            elif event_type == _EVENT_ERROR:
-                logger.warning(
-                    "Codex error event: %s", event.get("message", str(event))
+            elif event_type in (_EVENT_TURN_FAILED, _EVENT_ERROR):
+                detail = event.get("error") or event.get("message")
+                if isinstance(detail, dict):
+                    detail = detail.get("message")
+                message = (
+                    detail.strip()
+                    if isinstance(detail, str) and detail.strip()
+                    else f"Codex {event_type} event without an error message"
                 )
+                if event_type == _EVENT_TURN_FAILED:
+                    logger.warning("turn.failed event received: %s", message)
+                else:
+                    logger.warning("Codex error event: %s", message)
+                if error_callback is not None:
+                    error_callback(message)
 
         def get_result() -> str | None:
             if agent_message_parts:
@@ -265,6 +275,13 @@ class CodexProvider(ProviderBase):
             if output_callback is not None:
                 args.extend(_STREAM_FORMAT_FLAGS)
                 final_message: list[str | None] = [None]
+                errors: list[str] = []
+
+                def capture_error(message: str) -> None:
+                    if message not in errors:
+                        errors.append(message)
+                        if stderr_callback is not None:
+                            stderr_callback(message)
 
                 def capture_final_message(message: str) -> None:
                     final_message[0] = message
@@ -272,6 +289,7 @@ class CodexProvider(ProviderBase):
                 stream_callback, get_result = self._make_stream_callback(
                     output_callback,
                     final_message_callback=capture_final_message,
+                    error_callback=capture_error,
                 )
                 result = _run_subprocess(
                     args=args,
@@ -282,6 +300,19 @@ class CodexProvider(ProviderBase):
                     inactivity_timeout=effective_inactivity,
                     on_process_start=on_process_start,
                 )
+                if result.exit_code != 0 and errors:
+                    diagnostics = (
+                        [result.stderr.strip()] if result.stderr.strip() else []
+                    )
+                    diagnostics.extend(
+                        message for message in errors if message not in diagnostics
+                    )
+                    result = ProviderResult(
+                        exit_code=result.exit_code,
+                        stdout=result.stdout,
+                        stderr="\n".join(diagnostics),
+                        final_message=result.final_message,
+                    )
                 if output_schema is not None:
                     result = add_schema_update_guidance(
                         result,

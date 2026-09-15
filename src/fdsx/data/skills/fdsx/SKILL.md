@@ -255,7 +255,7 @@ states:
 ## CLI Commands
 
 ```
-fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow] [--continue-on-error]
+fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--manual-workflow] [--confirm-workflow] [--continue-on-error]
 fdsx validate <workflow.yaml>
 fdsx resume --thread-id <id> [--from <state>] [--input KEY=VALUE] [--yes] [--base-dir <path>]
 fdsx list [--base-dir <path>]
@@ -267,7 +267,9 @@ fdsx --ci | --interactive        # global flags (mutually exclusive)
 
 For recovery with revised inputs (`resume --from ... --input ...`), approval with `--yes`, or preserved input history, read `references/resume.md` before preparing the command. These are CLI options, not workflow YAML fields.
 
-`--auto-workflow` and `--confirm-workflow` are mutually exclusive. `--auto-workflow` skips interactive workflow confirmation; `--confirm-workflow` forces the confirmation UI.
+`--auto-workflow` enables AI workflow selection, skips confirmation, and overrides `manual_workflow` configuration. It conflicts with both `--manual-workflow` and `--confirm-workflow`. `--confirm-workflow` requires interactive input and can be combined with manual mode.
+
+`--manual-workflow` (or config `manual_workflow: true`) disables selection AI in tasks-directory mode, including no-argument `fdsx run`. Saved assignments take precedence over a workflow argument. With one candidate, unassigned tasks receive it; with multiple candidates, use the numbered editor to assign them. Enter a task number then a workflow number; `c` confirms only fully assigned tasks, and `q` cancels. Without interactive input, supply a workflow argument or saved task assignments if multiple candidates leave tasks unassigned. New tasks discovered during a run use the same mode and are confirmed before execution. Direct single-workflow runs bypass selection. Manual mode does not disable AI tasks or change provider permissions.
 
 `--continue-on-error` (tasks-dir mode only): continue processing remaining entries when an error occurs instead of stopping.
 
@@ -396,12 +398,21 @@ Each run-scope hook command receives:
 
 Run-scope hooks are always warn-only — non-zero exits log a warning and never abort the run. Each hook has a 30-second subprocess timeout. Merging: global → project config concatenated (no flow or state level).
 
+## Output and failure diagnostics
+
+JSON written by fdsx for run records, hook data, map progress, and native structured provider results preserves Japanese and other Unicode characters rather than converting them to `\uXXXX` escapes. JSON consumers should still parse the values normally.
+
+For parallel failures, inspect each branch's `name`, `exit_code`, and `error` in the run record, plus its provider stdout/stderr logs. Codex streaming `turn.failed` and `error` messages are kept in stderr logs; on a nonzero exit they also supplement the returned stderr without becoming agent output. Quiet mode suppresses terminal streaming, not these log files. Treat logs as potentially sensitive.
+
 ## Config File
 
 `.fdsx/config.yaml` supports these options beyond provider settings:
 
 ```yaml
 auto_workflow: false            # skip workflow confirmation UI (default: false)
+manual_workflow: false          # disable AI workflow selection (wins over auto_workflow config)
+prompt_prefix: "Explain changes briefly." # shared AI task instructions
+# Alternatively, replace prompt_prefix with prompt_prefix_file: rules.md
 workflows_dir: .fdsx/workflows  # directory for workflow discovery
 default_tasks_dir: .fdsx/tasks/ # default tasks directory for no-arg fdsx run
 workflow_selector:
@@ -443,6 +454,14 @@ profiles:                       # named provider/model bundles
 `run_hooks` is a separate key from `hooks` and only supports `on_run_start` and `on_run_end`.
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
+
+### Common task instructions
+
+Set `prompt_prefix` (inline text) or `prompt_prefix_file` (UTF-8 file) in global or project configuration, not workflow YAML. Project settings replace the global choice; `prompt_prefix: ""` disables inherited instructions. Relative file paths resolve from the configuration file's folder. The nonblank text is prepended to each AI task as literal text followed by two newlines; only the task body receives variable substitution.
+
+This covers parallel branches, map iterations, loops, retries, and provider escalation. Workflow selection, extraction recovery, system commands, and hooks do not receive it. Each run/resume call loads the current instructions once; resume uses the latest configuration and file contents. This is ordinary prompt text, not a permissions mechanism. Keep secrets out because providers receive it and prompt/output logs may retain it.
+
+For file validation, override rules, whitespace handling, and load failures, read `references/yaml-schema.md#common-task-instructions` before configuring shared instructions.
 
 ## Common Patterns
 

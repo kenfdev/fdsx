@@ -167,6 +167,7 @@ def _create_task_node(
             provider=provider,
             provider_name=state.provider,
             prompt=resolved_prompt,
+            prompt_prefix=config.prompt_prefix if config is not None else "",
             command=resolved_command,
             model=state.model,
             timeout_seconds=state.timeout_seconds,
@@ -443,7 +444,7 @@ def _create_wait_notify_node(
                 event="on_wait_start",
                 extra_env={
                     "FDSX_WAIT_MESSAGE": resolved_message,
-                    "FDSX_WAIT_CHOICES": json.dumps(state.choices),
+                    "FDSX_WAIT_CHOICES": json.dumps(state.choices, ensure_ascii=False),
                 },
             )
 

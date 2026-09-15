@@ -368,7 +368,7 @@ class RunRecorder:
         file_path = thread_dir / RUN_FILENAME
 
         if file_path.exists():
-            with file_path.open() as f:
+            with file_path.open(encoding="utf-8") as f:
                 existing_log: dict[str, Any] = json.load(f)
 
             existing_states = existing_log.get("states", [])
@@ -381,7 +381,7 @@ class RunRecorder:
             self.started_at = existing_log.get("started_at", self.started_at)
 
         log_data = self.to_dict()
-        log_json = json.dumps(log_data, indent=2)
+        log_json = json.dumps(log_data, ensure_ascii=False, indent=2)
 
         fd = os.open(str(file_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:

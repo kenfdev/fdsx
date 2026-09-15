@@ -81,6 +81,7 @@ class ExecutionConfig:
     max_retries: int
     extract: "ExtractRule | None"
     stream_logger: "StreamLogger"
+    prompt_prefix: str = ""
     structured_output: "StructuredOutput | None" = None
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None
     summary_callback: Callable[[str], None] | None = None
@@ -201,6 +202,8 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                             "structured output contract. Correct this validation "
                             f"error and return only the JSON value:\n{validation_feedback}"
                         )
+                    if config.prompt_prefix.strip():
+                        active_prompt = f"{config.prompt_prefix}\n\n{active_prompt}"
                     result = active_provider.execute(
                         prompt=active_prompt,
                         model=active_model,
@@ -212,7 +215,10 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         output_schema=output_schema,
                     )
             except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                last_error = str(exc)
+                last_error = str(exc).strip() or (
+                    f"Provider {active_provider_name} timed out ({type(exc).__name__})"
+                )
+                config.stream_logger.on_stderr(last_error)
                 result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
                 continue
 
@@ -277,7 +283,11 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                 else:
                     break
             else:
-                last_error = result.stderr
+                last_error = result.stderr.strip() or (
+                    f"Provider {active_provider_name} exited with exit code "
+                    f"{result.exit_code} without an error message on stderr"
+                )
+                config.stream_logger.on_stderr(last_error)
     finally:
         config.stream_logger.close()
 
