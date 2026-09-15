@@ -444,7 +444,7 @@ def _create_wait_notify_node(
                 event="on_wait_start",
                 extra_env={
                     "FDSX_WAIT_MESSAGE": resolved_message,
-                    "FDSX_WAIT_CHOICES": json.dumps(state.choices),
+                    "FDSX_WAIT_CHOICES": json.dumps(state.choices, ensure_ascii=False),
                 },
             )
 

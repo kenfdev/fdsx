@@ -80,7 +80,7 @@ class GrokOptions(BaseModel):
         if self.agents and self.no_subagents:
             raise ValueError("agents requires no_subagents: false")
         try:
-            json.dumps(self.agents)
+            json.dumps(self.agents, ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             raise ValueError("agents must contain only JSON-compatible values") from exc
         return self
@@ -120,7 +120,9 @@ class GrokOptions(BaseModel):
             flags.extend(["--agent", self.agent])
         if self.agents:
             try:
-                encoded_agents = json.dumps(self.agents, separators=(",", ":"))
+                encoded_agents = json.dumps(
+                    self.agents, ensure_ascii=False, separators=(",", ":")
+                )
             except (TypeError, ValueError) as exc:
                 logger.error("grok_agents_serialization_failed", error=str(exc))
                 raise GrokProviderError(
@@ -479,7 +481,7 @@ class GrokProvider(ProviderBase):
         stream_result = parser.finish()
         final_text = stream_result.final_text
         if stream_result.structured_output is not None:
-            final_text = json.dumps(stream_result.structured_output)
+            final_text = json.dumps(stream_result.structured_output, ensure_ascii=False)
 
         missing_cli = (
             result.exit_code != 0

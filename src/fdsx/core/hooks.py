@@ -163,7 +163,7 @@ def write_hook_data(
     hooks_dir.chmod(0o700)
 
     file_path = hooks_dir / filename
-    json_bytes = json.dumps(data, indent=2).encode("utf-8")
+    json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
     fd = os.open(str(file_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:

@@ -273,7 +273,7 @@ class ClaudeProvider(ProviderBase):
                 _flush_buffer()
                 structured_result = event.get("structured_output")
                 if structured_result is not None:
-                    final_result[0] = json.dumps(structured_result)
+                    final_result[0] = json.dumps(structured_result, ensure_ascii=False)
                 else:
                     final_result[0] = event.get("result", "")
                 if final_message_callback is not None:
