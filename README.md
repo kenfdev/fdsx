@@ -616,6 +616,20 @@ text is sent to the provider and may appear in existing prompt records. Provider
 stdout/stderr is also recorded in per-state logs, so echoed instructions can
 appear there even in quiet mode.
 
+## Output and failure diagnostics
+
+fdsx preserves Japanese and other Unicode characters in generated JSON for run
+records, hook data, map progress, and native structured provider results instead
+of converting them to `\uXXXX` escapes. The JSON format and parsed values are
+unchanged.
+
+Parallel branch entries in run records include `name`, `exit_code`, and `error`
+alongside provider details. Use these fields and per-branch stdout/stderr logs
+to investigate failures. Codex streaming `turn.failed` and `error` messages are
+preserved in stderr logs and, on a nonzero exit, supplement the returned stderr
+without being mixed into agent output. Quiet mode suppresses terminal streaming,
+not the saved logs. Logs may contain sensitive provider output.
+
 ## Project Configuration (`.fdsx/config.yaml`)
 
 Config is loaded from two sources (later wins):
@@ -650,7 +664,11 @@ workflows_dir: .fdsx/workflows    # (string, default: ".fdsx/workflows")
 default_tasks_dir: .fdsx/tasks    # (string, optional) default directory for bare `fdsx run`
                                   #   when no workflow, --tasks, or --tasks-dir is given
 
-# --- Auto-workflow selection ---
+# --- Common AI task instructions (choose inline text OR a UTF-8 file) ---
+prompt_prefix: "Explain changes briefly."
+# prompt_prefix_file: rules.md    # relative to this config file's directory
+
+# --- Workflow selection ---
 auto_workflow: false              # (bool, default: false) skip interactive confirmation UI
 manual_workflow: false            # (bool, default: false) disable AI workflow selection
 
@@ -1034,7 +1052,6 @@ New task files discovered during a run inherit the mode and are confirmed at the
 next batch, before those tasks execute. Manual mode does not disable AI tasks
 inside workflows or change provider permissions. Direct single-workflow runs
 continue without a selection screen.
-
 
 ## License
 
