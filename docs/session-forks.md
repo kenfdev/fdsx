@@ -1,4 +1,9 @@
-# Native Pi session forks
+# Native session forks
+
+Pi's existing support is described below. The Claude CLI adapter also implements
+ordinary, parallel and map forks, but **native verification remains pending**.
+See [Claude's qualification boundary](claude-session-fork-qualification.md) before
+using it. No tested Claude version baseline or verified native support is claimed.
 
 `fork_from` names a top-level task in the same workflow. For example:
 
@@ -44,8 +49,8 @@ applies; failed child history does not carry over. File changes are never undone
 
 ## Validation
 
-Pi ordinary tasks, parallel branches and map iterator tasks support `fork_from`.
-Other providers and system tasks reject it. Sources must
+Pi and Claude ordinary tasks, parallel branches and map iterator tasks accept `fork_from`.
+Both endpoints must use the same provider. Other providers and system tasks reject it. Sources must
 be top-level ordinary tasks; branch names, iterator names, paths and external
 session IDs are not source references. A forked task may itself be a source.
 
@@ -56,7 +61,8 @@ unreachable fork destinations are rejected. Unreachable incoming paths do not
 invalidate an otherwise mandatory ancestor.
 
 Profiles resolve before these checks. Effective workflow/config retry escalation
-must retain provider `pi` on both endpoints; use `retry_escalation: false` to
+must retain the source provider on both endpoints; Claude also requires identical
+model strings, including escalation. Use `retry_escalation: false` to
 explicitly disable an incompatible inherited policy. Validation does not execute
 Pi and cannot guarantee that its runtime, selected models or native files exist.
 

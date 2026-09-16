@@ -47,7 +47,7 @@ def fork_destinations(
 
 
 def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> list[str]:
-    """Require strict dominance and effective Pi identity on both endpoints."""
+    """Require strict dominance and compatible effective provider identity."""
     errors: list[str] = []
     reachable = reachable_states(flow)
     escalation = flow.retry_escalation
@@ -65,9 +65,13 @@ def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> li
                 + "source must name a top-level ordinary AI task in this workflow"
             )
             continue
-        if source.provider != "pi" or destination.provider != "pi":
+        if (
+            source.provider not in {"pi", "claude"}
+            or destination.provider != source.provider
+        ):
             errors.append(
-                prefix + "both endpoints must use the same supported provider (pi)"
+                prefix
+                + "both endpoints must use the same supported provider (pi, claude)"
             )
         if name not in reachable:
             errors.append(prefix + "unreachable fork destinations are not supported")
@@ -78,9 +82,26 @@ def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> li
                 prefix
                 + "source must strictly precede the destination on every entry path, including the first loop visit"
             )
-        if isinstance(escalation, EscalationConfig) and escalation.provider != "pi":
+        if source.provider == "claude" and source.model != destination.model:
             errors.append(
                 prefix
-                + "effective retry_escalation must remain provider pi on both endpoints; use pi or disable inherited escalation"
+                + "Claude forks require identical models; model switching is not qualified"
+            )
+        if (
+            isinstance(escalation, EscalationConfig)
+            and escalation.provider != source.provider
+        ):
+            errors.append(
+                prefix
+                + f"effective retry_escalation must remain provider {source.provider} on both endpoints; disable incompatible inherited escalation"
+            )
+        if (
+            isinstance(escalation, EscalationConfig)
+            and source.provider == "claude"
+            and escalation.model != source.model
+        ):
+            errors.append(
+                prefix
+                + "Claude retry_escalation requires the same model; model switching is not qualified"
             )
     return errors

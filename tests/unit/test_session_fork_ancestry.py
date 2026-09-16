@@ -85,8 +85,12 @@ def split(left, right):
     ],
 )
 @pytest.mark.parametrize("kind", ["task", "parallel", "map"])
-def test_mandatory_first_visit_ancestor(start, states, valid, kind):
+@pytest.mark.parametrize("provider", ["pi", "claude"])
+def test_mandatory_first_visit_ancestor(start, states, valid, kind, provider):
     states = {name: dict(state) for name, state in states.items()}
+    for state in states.values():
+        if state["type"] == "task":
+            state["provider"] = provider
     if kind != "task":
         for name, state in list(states.items()):
             if "fork_from" not in state:
