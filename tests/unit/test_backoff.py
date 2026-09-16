@@ -41,9 +41,11 @@ class TestExponentialBackoff:
         state.extract = None
         state.result_path = "result"
         state.max_iterations = None
+        state.fork_from = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
+        flow.states = {}
 
         call_count = 0
         sleep_times = []
@@ -89,9 +91,11 @@ class TestExponentialBackoff:
         state.extract = None
         state.result_path = "result"
         state.max_iterations = None
+        state.fork_from = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
+        flow.states = {}
 
         call_count = 0
         sleep_times = []
@@ -136,9 +140,11 @@ class TestExponentialBackoff:
         state.extract = None
         state.result_path = "result"
         state.max_iterations = None
+        state.fork_from = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
+        flow.states = {}
 
         call_count = 0
         sleep_times = []
@@ -184,9 +190,11 @@ class TestExponentialBackoff:
         state.extract = None
         state.result_path = "result"
         state.max_iterations = None
+        state.fork_from = None
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
+        flow.states = {}
 
         call_count = 0
         sleep_times = []
@@ -236,6 +244,7 @@ class TestExponentialBackoff:
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
+        flow.states = {}
 
         call_count = 0
         sleep_times = []

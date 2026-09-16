@@ -208,6 +208,7 @@ def resume_flow(
             flow_path,
             input_keys=input_keys or None,
             config_profiles=config_profiles,
+            config=config,
         )
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")

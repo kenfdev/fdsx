@@ -21,6 +21,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Provider-independent JSON Schema validation for structured task and branch output
+- [Native Pi session forks](docs/session-forks.md) from preceding ordinary tasks with `fork_from`
 - Stable keyed upsert merging for iterative structured ledgers
 - Named parallel branches with required-branch boolean gates
 - One-based state iteration values for loop-aware prompts

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from jsonschema import SchemaError
@@ -10,11 +10,15 @@ from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
 from fdsx.models.flow import Flow, ParallelState, TaskState
 
+if TYPE_CHECKING:
+    from fdsx.core.config import FdsxConfig
+
 
 def load_flow(
     path: Path,
     input_keys: set[str] | None = None,
     config_profiles: dict[str, dict[str, Any]] | None = None,
+    config: "FdsxConfig | None" = None,
 ) -> tuple[Flow | None, list[str]]:
     """Load and validate a flow from a YAML file.
 
@@ -47,6 +51,12 @@ def load_flow(
 
     if flow is None:
         return None, ["Failed to parse flow"]
+
+    from fdsx.core.session_forks import validate_session_forks
+
+    fork_errors = validate_session_forks(flow, config)
+    if fork_errors:
+        return None, fork_errors
 
     var_errors = analyze_variable_references(flow, input_keys=input_keys)
 

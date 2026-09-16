@@ -218,6 +218,7 @@ def run_flow(
         flow_path,
         input_keys=set(inputs.keys()) if inputs else None,
         config_profiles=config_profiles,
+        config=fdsx_config,
     )
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")

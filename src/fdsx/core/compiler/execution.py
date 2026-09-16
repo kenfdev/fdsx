@@ -26,7 +26,13 @@ from fdsx.core.structured_output import (
     parse_structured_output,
     prepare_provider_schema,
 )
-from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
+from fdsx.providers.base import (
+    ProviderBase,
+    ProviderResult,
+    ProviderSessionError,
+    SessionRequest,
+    get_provider,
+)
 
 if TYPE_CHECKING:
     from fdsx.core.compiler.helpers import EscalationTarget
@@ -91,6 +97,7 @@ class ExecutionConfig:
     on_fallback: "Callable[[FallbackEvent], None] | None" = None
     escalation: "EscalationTarget | None" = None
     on_escalation_activated: Callable[[], None] | None = None
+    session_request: SessionRequest | None = None
 
 
 @dataclass
@@ -204,7 +211,19 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         )
                     if config.prompt_prefix.strip():
                         active_prompt = f"{config.prompt_prefix}\n\n{active_prompt}"
-                    result = active_provider.execute(
+                    execute = active_provider.execute
+                    if config.session_request is not None:
+                        native_execute = getattr(
+                            active_provider, "execute_with_session", None
+                        )
+                        if not callable(native_execute):
+                            raise ProviderSessionError(
+                                f"State '{config.session_request.state_name}': provider lacks native session support"
+                            )
+                        from functools import partial
+
+                        execute = partial(native_execute, config.session_request)
+                    result = execute(
                         prompt=active_prompt,
                         model=active_model,
                         timeout=config.timeout_seconds,

@@ -606,6 +606,7 @@ class TaskState(BaseModel):
     """Task state - executes a provider to generate output."""
 
     type: Literal["task"] = "task"
+    fork_from: str | None = Field(default=None, min_length=1)
     provider: str = Field(
         ...,
         description="Provider: claude|cursor|opencode|codex|gemini|grok|system",
@@ -1032,6 +1033,52 @@ class Flow(BaseModel):
         default=None,
         description="Workflow-level retry escalation override. false = disable inherited global default; None = inherit from config.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unsupported_fork_locations(cls, values: Any) -> Any:
+        if not isinstance(values, dict) or not isinstance(values.get("states"), dict):
+            return values
+        for name, state in values["states"].items():
+            if not isinstance(state, dict):
+                continue
+            if state.get("type") != "task" and "fork_from" in state:
+                raise ValueError(
+                    f"State '{name}': fork_from is supported only on ordinary tasks"
+                )
+            branches = state.get("branches", [])
+            for branch in branches if isinstance(branches, list) else []:
+                if isinstance(branch, dict) and "fork_from" in branch:
+                    raise ValueError(
+                        f"State '{name}': parallel branch fork_from is not supported yet"
+                    )
+            iterator = state.get("iterator", {})
+            if isinstance(iterator, dict):
+                tasks = iterator.get("states", [])
+                for task in tasks if isinstance(tasks, list) else []:
+                    if isinstance(task, dict) and "fork_from" in task:
+                        raise ValueError(
+                            f"State '{name}': map iterator fork_from is not supported yet"
+                        )
+        return values
+
+    @model_validator(mode="after")
+    def validate_session_fork_references(self) -> "Flow":
+        # Existing graph validators run below; defer the analysis until their
+        # preconditions hold so malformed next/start references remain useful.
+        from fdsx.core.graph_utils import get_next_states
+        from fdsx.core.session_forks import validate_session_forks
+
+        if self.start_at not in self.states or any(
+            target not in self.states
+            for state in self.states.values()
+            for target in get_next_states(state)
+        ):
+            return self
+        errors = validate_session_forks(self)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
     @model_validator(mode="before")
     @classmethod

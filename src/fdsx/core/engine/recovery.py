@@ -132,6 +132,9 @@ def build_recovery_update(
     update: dict[str, Any] = {
         "_meta": reset_meta,
         "_state_iterations": {},
+        # Recovery can bypass a failed repeated source. Discard all references
+        # so the new execution must actually rerun any required source.
+        "_session_references": {},
     }
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):

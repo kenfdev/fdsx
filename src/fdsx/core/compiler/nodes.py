@@ -38,7 +38,7 @@ from fdsx.models.flow import (
     TaskState,
     WaitState,
 )
-from fdsx.providers.base import get_provider
+from fdsx.providers.base import ProviderSessionError, SessionRequest, get_provider
 
 from .helpers import (
     _check_max_iterations,
@@ -100,6 +100,10 @@ def _create_task_node(
         if isinstance(state.structured_output, StructuredOutput)
         else None
     )
+    capture_session = any(
+        isinstance(candidate, TaskState) and candidate.fork_from == state_name
+        for candidate in flow.states.values()
+    )
 
     def _on_fallback(event: FallbackEvent) -> None:
         if recorder is not None:
@@ -160,11 +164,34 @@ def _create_task_node(
 
         max_retries = state.retry if state.retry is not None else 3
 
+        session_request = None
+        references = state_dict.get("_session_references", {})
+        if not isinstance(references, dict):
+            references = {}
+        if capture_session or state.fork_from is not None:
+            reference = None
+            if state.fork_from is not None:
+                reference = references.get(state.fork_from)
+                if (
+                    not isinstance(reference, dict)
+                    or reference.get("provider") != state.provider
+                ):
+                    structlog.get_logger(__name__).error(
+                        "session_reference_missing",
+                        state=state_name,
+                        source=state.fork_from,
+                    )
+                    raise ProviderSessionError(
+                        f"State '{state_name}': missing native session reference for '{state.fork_from}'; rerun the source task (older checkpoints cannot reconstruct history)"
+                    )
+            session_request = SessionRequest(state_name=state_name, source=reference)
+
         stream_logger = StreamLogger(
             state_name, log_dir, quiet=quiet, iteration=iteration
         )
         exec_config = ExecutionConfig(
             provider=provider,
+            session_request=session_request,
             provider_name=state.provider,
             prompt=resolved_prompt,
             prompt_prefix=config.prompt_prefix if config is not None else "",
@@ -261,6 +288,19 @@ def _create_task_node(
                 )
                 partial = set_jsonpath(state.result_file, partial, file_path)
                 variables_set = [*variables_set, state.result_file]
+
+        if capture_session:
+            if result.session_reference is None:
+                structlog.get_logger(__name__).error(
+                    "session_reference_missing", state=state_name
+                )
+                raise ProviderSessionError(
+                    f"State '{state_name}': provider did not publish a native session reference"
+                )
+            partial["_session_references"] = {
+                **references,
+                state_name: result.session_reference,
+            }
 
         duration = time.time() - start_time
         terminal.display_state_complete(state_name, duration)

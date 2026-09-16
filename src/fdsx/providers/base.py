@@ -39,6 +39,18 @@ class ProviderSchemaError(ProviderError):
     """Raised when an output schema cannot be prepared for a provider."""
 
 
+class ProviderSessionError(ProviderError):
+    """A required native conversation could not be selected or captured."""
+
+
+@dataclass(frozen=True)
+class SessionRequest:
+    """Opt-in native capture/fork contract, with provider-owned reference data."""
+
+    state_name: str
+    source: dict[str, str] | None = None
+
+
 def serialize_output_schema(output_schema: Any) -> str:
     """Serialize a provider-bound output schema with domain error translation."""
     try:
@@ -112,6 +124,7 @@ class ProviderResult:
     stdout: str
     stderr: str
     final_message: str | None = None
+    session_reference: dict[str, str] | None = None
 
 
 class ProviderBase(Protocol):
