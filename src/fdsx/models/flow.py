@@ -401,6 +401,7 @@ def _validate_provider_fields(
         "opencode",
         "codex",
         "gemini",
+        "pi",
         "grok",
         "system",
     }

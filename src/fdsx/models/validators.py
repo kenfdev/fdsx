@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import re
 
-VALID_PROVIDERS = frozenset({"claude", "cursor", "opencode", "codex", "gemini", "grok"})
+VALID_PROVIDERS = frozenset(
+    {"claude", "cursor", "opencode", "codex", "gemini", "pi", "grok"}
+)
 PROFILE_NAME_REGEX = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 
 

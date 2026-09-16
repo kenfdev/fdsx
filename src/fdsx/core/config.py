@@ -30,6 +30,7 @@ from fdsx.providers.cursor import CursorOptions
 from fdsx.providers.gemini import GeminiOptions
 from fdsx.providers.grok import GrokOptions
 from fdsx.providers.opencode import OpenCodeOptions
+from fdsx.providers.pi import PiOptions
 
 # Keys within HookConfig whose list values are concatenated (not replaced) during deep merge
 _HOOK_LIST_KEYS: frozenset[str] = frozenset(
@@ -116,6 +117,10 @@ class ProviderConfigs(BaseModel):
     gemini: GeminiOptions | None = Field(
         default=None,
         description="Gemini provider options",
+    )
+    pi: PiOptions | None = Field(
+        default=None,
+        description="pi provider options",
     )
     grok: GrokOptions | None = Field(
         default=None,
