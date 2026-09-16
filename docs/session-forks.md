@@ -2,8 +2,24 @@
 
 Pi's existing support is described below. The Claude CLI adapter also implements
 ordinary, parallel and map forks, but **native verification remains pending**.
-See [Claude's qualification boundary](claude-session-fork-qualification.md) before
-using it. No tested Claude version baseline or verified native support is claimed.
+No tested Claude version baseline or verified native support is claimed.
+
+The Codex adapter also has a local native-fork implementation with offline tests.
+Its exact source-inspected candidate is 0.154.0; **native qualification is pending**.
+This is an exact runtime version restriction, not a minimum supported version.
+Referenced sources run with `codex exec --json -`; destinations use
+`codex exec --json fork <saved-session-id> -`, with prompts on stdin and
+`-c ephemeral=false` to retain native history. Other execution options precede
+`fork`. Completed JSON events supply the saved source/child IDs; checkpoints
+contain only provider identity and session ID. No persistent server is managed.
+
+Codex destinations and retries create new children of the selected saved session.
+Later external changes to that usable session are inherited at fork time. Retain
+the same accessible Codex storage, including source and ancestor history; a child
+file or FDSX checkpoint alone is not a portable conversation backup. Missing
+history, incompatible versions and malformed completion metadata fail with the
+affected state and guidance to restore history or rerun the source. There is no
+fresh-session fallback. Model switching remains unqualified and is rejected.
 
 `fork_from` names a top-level task in the same workflow. For example:
 
@@ -49,7 +65,7 @@ applies; failed child history does not carry over. File changes are never undone
 
 ## Validation
 
-Pi and Claude ordinary tasks, parallel branches and map iterator tasks accept `fork_from`.
+Pi, Claude and Codex ordinary tasks, parallel branches and map iterator tasks accept `fork_from`.
 Both endpoints must use the same provider. Other providers and system tasks reject it. Sources must
 be top-level ordinary tasks; branch names, iterator names, paths and external
 session IDs are not source references. A forked task may itself be a source.
@@ -61,7 +77,7 @@ unreachable fork destinations are rejected. Unreachable incoming paths do not
 invalidate an otherwise mandatory ancestor.
 
 Profiles resolve before these checks. Effective workflow/config retry escalation
-must retain the source provider on both endpoints; Claude also requires identical
+must retain the source provider on both endpoints; Claude and Codex require identical
 model strings, including escalation. Use `retry_escalation: false` to
 explicitly disable an incompatible inherited policy. Validation does not execute
 Pi and cannot guarantee that its runtime, selected models or native files exist.

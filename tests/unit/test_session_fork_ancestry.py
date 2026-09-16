@@ -85,7 +85,7 @@ def split(left, right):
     ],
 )
 @pytest.mark.parametrize("kind", ["task", "parallel", "map"])
-@pytest.mark.parametrize("provider", ["pi", "claude"])
+@pytest.mark.parametrize("provider", ["pi", "claude", "codex"])
 def test_mandatory_first_visit_ancestor(start, states, valid, kind, provider):
     states = {name: dict(state) for name, state in states.items()}
     for state in states.values():

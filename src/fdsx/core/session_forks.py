@@ -66,12 +66,12 @@ def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> li
             )
             continue
         if (
-            source.provider not in {"pi", "claude"}
+            source.provider not in {"pi", "claude", "codex"}
             or destination.provider != source.provider
         ):
             errors.append(
                 prefix
-                + "both endpoints must use the same supported provider (pi, claude)"
+                + "both endpoints must use the same supported provider (pi, claude, codex)"
             )
         if name not in reachable:
             errors.append(prefix + "unreachable fork destinations are not supported")
@@ -82,10 +82,10 @@ def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> li
                 prefix
                 + "source must strictly precede the destination on every entry path, including the first loop visit"
             )
-        if source.provider == "claude" and source.model != destination.model:
+        if source.provider in {"claude", "codex"} and source.model != destination.model:
             errors.append(
                 prefix
-                + "Claude forks require identical models; model switching is not qualified"
+                + f"{source.provider.title()} forks require identical models; model switching is not qualified"
             )
         if (
             isinstance(escalation, EscalationConfig)
@@ -97,11 +97,11 @@ def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> li
             )
         if (
             isinstance(escalation, EscalationConfig)
-            and source.provider == "claude"
+            and source.provider in {"claude", "codex"}
             and escalation.model != source.model
         ):
             errors.append(
                 prefix
-                + "Claude retry_escalation requires the same model; model switching is not qualified"
+                + f"{source.provider.title()} retry_escalation requires the same model; model switching is not qualified"
             )
     return errors
