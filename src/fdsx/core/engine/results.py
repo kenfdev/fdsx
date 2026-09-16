@@ -123,5 +123,5 @@ class FlowResult:
     """Structured return value for run_flow and resume_flow."""
 
     results: dict[str, Any]
-    status: str  # "completed" | "aborted"
+    status: str  # "completed" | "aborted" | "max_loop_reached"
     abort_state: str | None = None

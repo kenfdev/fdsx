@@ -56,13 +56,14 @@ class TestSingleTaskConfirmation:
         )
         assert result == {(0, 0): Path("/workflows/plan.yaml")}
 
-    def test_auto_workflow_skips_confirmation(self):
+    def test_auto_workflow_skips_confirmation(self, monkeypatch):
         """auto_workflow=True should skip confirm_workflow_assignments_interactive."""
         from fdsx.core import engine
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tasks_dir = Path(tmpdir) / "tasks"
             project_root = tmpdir
+            monkeypatch.setenv("XDG_CONFIG_HOME", str(Path(tmpdir) / "xdg"))
 
             import yaml
 
@@ -151,3 +152,56 @@ class TestSingleTaskConfirmation:
         output = stream.getvalue()
         assert "WORKFLOW ASSIGNMENTS" in output
         assert result == workflow_assignments
+
+    def test_global_workflow_is_available_in_confirmation(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Global workflows should be selectable when the project has none."""
+        import yaml
+
+        from fdsx.core import engine
+
+        xdg_dir = tmp_path / "xdg"
+        global_workflows_dir = xdg_dir / "fdsx" / "workflows"
+        global_workflows_dir.mkdir(parents=True)
+        (global_workflows_dir / "global-plan.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "Global Plan",
+                    "description": "Globally available planning workflow",
+                    "start_at": "s",
+                    "states": {
+                        "s": {
+                            "type": "task",
+                            "provider": "system",
+                            "command": "echo done",
+                            "result_path": "$.result",
+                            "end": True,
+                        }
+                    },
+                }
+            )
+        )
+
+        project_root = tmp_path / "project"
+        tasks_dir = project_root / ".fdsx" / "tasks"
+        tasks_dir.mkdir(parents=True)
+        save_task_file(
+            tasks_dir / "001-test.yaml",
+            TaskFile(entries=[TaskEntry(description="Plan this change")]),
+        )
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_dir))
+
+        with (
+            patch("fdsx.core.mode.is_interactive", return_value=True),
+            patch("builtins.input", side_effect=["1", "q", "q"]),
+        ):
+            engine.run_tasks_dir(
+                None,
+                tasks_dir,
+                base_dir=project_root / ".fdsx",
+            )
+
+        output = capsys.readouterr().err
+        assert "Global Plan" in output
+        assert "No alternative workflows available to select." not in output

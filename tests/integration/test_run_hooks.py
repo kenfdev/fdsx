@@ -63,9 +63,9 @@ class TestComputeRunStatus:
         results = [{"status": "completed"}, {"status": "failed"}]
         assert _compute_run_status(results) == "partial"
 
-    def test_empty_returns_partial(self) -> None:
-        """Empty results list yields 'partial' (neither pure completed nor pure failed)."""
-        assert _compute_run_status([]) == "partial"
+    def test_empty_returns_completed(self) -> None:
+        """An empty task queue is a successful no-op."""
+        assert _compute_run_status([]) == "completed"
 
     def test_single_completed_returns_completed(self) -> None:
         """Single completed result yields 'completed'."""
@@ -271,10 +271,9 @@ class TestResumeHooksWiring:
         assert len(end_calls) == 1
         assert end_calls[0].kwargs["status"] == "failed"
 
-    def test_resume_fires_on_run_end_failed_on_no_checkpoint(
+    def test_resume_non_success_fires_on_run_end_once_with_result_status(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """'No checkpoint found' RuntimeError fires on_run_end with status='failed'."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".fdsx").mkdir()
 
@@ -282,7 +281,34 @@ class TestResumeHooksWiring:
             patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
             patch(
                 "fdsx.cli.main.engine.resume_flow",
-                side_effect=RuntimeError("No checkpoint found for thread"),
+                return_value=MagicMock(status="max_loop_reached"),
+            ),
+        ):
+            result = runner.invoke(app, ["resume", "--thread-id", "test-thread"])
+
+        assert result.exit_code == 1
+        end_calls = [
+            call
+            for call in mock_exec.call_args_list
+            if call.kwargs.get("event") == "on_run_end"
+        ]
+        assert len(end_calls) == 1
+        assert end_calls[0].kwargs["status"] == "max_loop_reached"
+
+    def test_resume_fires_on_run_end_failed_on_no_checkpoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Missing checkpoint fires on_run_end with status='failed'."""
+        from fdsx.core.engine import CheckpointNotFoundError
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        with (
+            patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
+            patch(
+                "fdsx.cli.main.engine.resume_flow",
+                side_effect=CheckpointNotFoundError("No checkpoint found for thread"),
             ),
         ):
             result = runner.invoke(app, ["resume", "--thread-id", "missing-thread"])
@@ -293,6 +319,46 @@ class TestResumeHooksWiring:
         ]
         assert len(end_calls) == 1
         assert end_calls[0].kwargs["status"] == "failed"
+
+    def test_resume_maps_checkpoint_error_type_without_parsing_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fdsx.core.engine import CheckpointNotFoundError
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        with patch(
+            "fdsx.cli.main.engine.resume_flow",
+            side_effect=CheckpointNotFoundError("storage lookup failed"),
+        ):
+            result = runner.invoke(
+                app,
+                ["resume", "--thread-id", "missing-thread"],
+            )
+
+        assert result.exit_code == 2
+        assert "storage lookup failed" in result.stderr
+
+    def test_resume_maps_locked_error_type_without_parsing_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fdsx.core.engine import RunLockedError
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".fdsx").mkdir()
+
+        with patch(
+            "fdsx.cli.main.engine.resume_flow",
+            side_effect=RunLockedError("thread is busy"),
+        ):
+            result = runner.invoke(
+                app,
+                ["resume", "--thread-id", "busy-thread"],
+            )
+
+        assert result.exit_code == 2
+        assert "thread is busy" in result.stderr
 
     def test_resume_fires_on_run_end_failed_on_exception(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

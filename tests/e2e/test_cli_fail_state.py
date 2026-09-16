@@ -144,7 +144,7 @@ class TestResumeAfterFail:
 
         assert proc.returncode == 1
 
-    def test_resume_after_fail_stderr_reproduces_summary_line(self, tmp_path):
+    def test_resume_after_fail_stderr_lists_recovery_candidate(self, tmp_path):
         thread_id = "e2e-resume-stderr"
         flow_path = tmp_path / "flow.yaml"
         flow_path.write_text(SIMPLE_FAIL_FLOW)
@@ -155,8 +155,8 @@ class TestResumeAfterFail:
             cwd=str(tmp_path),
         )
 
-        assert "aborted" in proc.stderr.lower()
-        assert "ServiceError" in proc.stderr
+        assert "explicit recovery state" in proc.stderr
+        assert "Eligible states: setup" in proc.stderr
 
     def test_resume_after_fail_does_not_add_new_run_json_entries(self, tmp_path):
         thread_id = "e2e-resume-no-entries"
@@ -170,6 +170,44 @@ class TestResumeAfterFail:
 
         count_after = len(json.loads(run_json_path.read_text())["states"])
         assert count_after == count_before
+
+    def test_resume_from_executed_state_recovers_same_thread(self, tmp_path):
+        thread_id = "e2e-recovery-from"
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(SIMPLE_FAIL_FLOW)
+        run_fdsx(["run", str(flow_path), "--thread-id", thread_id], cwd=str(tmp_path))
+
+        flow_path.write_text(
+            textwrap.dedent(
+                """\
+                name: simple-fail
+                description: Recover the failed workflow
+                start_at: setup
+                states:
+                  setup:
+                    type: task
+                    provider: system
+                    command: echo hello
+                    next: done
+                  done:
+                    type: task
+                    provider: system
+                    command: echo recovered
+                    end: true
+                  fail_it:
+                    type: fail
+                    error: ServiceError
+                    cause: downstream service unavailable
+                """
+            )
+        )
+        proc = run_fdsx(
+            ["resume", "--thread-id", thread_id, "--from", "setup"],
+            cwd=str(tmp_path),
+        )
+
+        assert proc.returncode == 0
+        assert "Recovering from state: setup" in proc.stderr
 
 
 class TestValidateFailFlows:

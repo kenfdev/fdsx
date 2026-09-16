@@ -217,7 +217,7 @@ class TestScenario4CheckpointResume:
                     "fdsx.providers.system.SystemProvider.execute",
                     side_effect=[
                         ProviderResult(exit_code=0, stdout="plan output", stderr=""),
-                        Exception("simulated crash on implement state"),
+                        RuntimeError("simulated crash on implement state"),
                     ],
                 ),
                 pytest.raises(RuntimeError, match="Flow execution failed"),
@@ -253,7 +253,7 @@ class TestScenario4CheckpointResume:
                     "fdsx.providers.system.SystemProvider.execute",
                     side_effect=[
                         ProviderResult(exit_code=0, stdout="plan output", stderr=""),
-                        Exception("simulated crash"),
+                        RuntimeError("simulated crash"),
                     ],
                 ),
                 pytest.raises(RuntimeError, match="simulated crash"),

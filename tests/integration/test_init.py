@@ -169,7 +169,7 @@ class TestConfigYamlContent:
         assert "codex" in parsed["providers"]
 
     def test_all_providers_max_permissions(self):
-        """All four providers get their respective max-permission keys."""
+        """All providers get their respective max-permission keys."""
         profile_assignments = {
             name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
             for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
@@ -179,6 +179,7 @@ class TestConfigYamlContent:
             ProviderSelection(provider="codex", model="codex-model"),
             ProviderSelection(provider="gemini", model="gemini-model"),
             ProviderSelection(provider="opencode", model="opencode-model"),
+            ProviderSelection(provider="grok", model="grok-4.5"),
         ]
         config_yaml = generate_config_yaml(profile_assignments, providers)
         parsed = yaml.safe_load(config_yaml)
@@ -190,6 +191,7 @@ class TestConfigYamlContent:
         )
         assert parsed["providers"]["gemini"]["yolo"] is True
         assert parsed["providers"]["opencode"]["permission"] == "auto-edit"
+        assert parsed["providers"]["grok"]["permission_mode"] == "bypassPermissions"
 
     def test_generated_yaml_is_parseable(self):
         """Round-trip: generate -> yaml.safe_load returns a valid dict."""
@@ -215,21 +217,13 @@ class TestConfigYamlContent:
 
 
 class TestConfigTemplateScaffold:
-    """Verify generated config.yaml contains the task_splitter scaffold block."""
+    """Verify generated config.yaml contains task queue configuration."""
 
     def _make_profile_assignments(self):
         return {
             name: ProviderSelection(provider="claude", model="claude-sonnet-4-7")
             for name in ["smarty", "doer", "specialist", "generalist", "behemoth"]
         }
-
-    def test_generated_config_contains_task_splitter_block(self):
-        config_yaml = generate_config_yaml(
-            self._make_profile_assignments(),
-            [ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
-        )
-        assert "task_splitter:" in config_yaml
-        assert "  profile: generalist" in config_yaml
 
     def test_generated_config_contains_default_tasks_dir_comment(self):
         config_yaml = generate_config_yaml(
@@ -244,8 +238,6 @@ class TestConfigTemplateScaffold:
             [ProviderSelection(provider="claude", model="claude-sonnet-4-7")],
         )
         assert "extra_instructions" in config_yaml
-        assert "Split into smaller tasks" in config_yaml
-        assert "Prefer fewer, larger tasks" in config_yaml
         assert "shared/ directory" in config_yaml
 
     def test_scaffold_generates_config_with_extra_instructions_examples(
@@ -264,8 +256,6 @@ class TestConfigTemplateScaffold:
         content = config_path.read_text()
 
         assert "extra_instructions" in content
-        assert "Split into smaller tasks" in content
-        assert "Prefer fewer, larger tasks" in content
         assert "shared/ directory" in content
 
 

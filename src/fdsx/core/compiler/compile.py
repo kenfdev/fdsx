@@ -4,7 +4,7 @@ import logging
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 
@@ -57,6 +57,13 @@ logger = logging.getLogger(__name__)
 _WHITE = 0
 _GRAY = 1
 _BLACK = 2
+_MAX_LOOP_NODE = "__max_loop_reached__"
+_RECOVERY_NODE = "__fdsx_recovery__"
+
+
+def _recovery_noop(_state: dict[str, Any]) -> dict[str, Any]:
+    """Provide a stable graph node used only to supersede pending work."""
+    return {}
 
 
 def _get_all_next_state_names(state: Any, flow_states: dict[str, Any]) -> list[str]:
@@ -111,7 +118,7 @@ def _make_loop_guard(target: str, max_loop: int) -> Callable[[dict[str, Any]], s
     def route(state_dict: dict[str, Any]) -> str:
         iters = state_dict.get("_state_iterations", {})
         if iters.get(target, 0) >= max_loop:
-            return END
+            return _MAX_LOOP_NODE
         return target
 
     return route
@@ -129,7 +136,7 @@ def _wrap_routing_with_loop_guard(
         if destination in loop_back_targets:
             iters = state_dict.get("_state_iterations", {})
             if iters.get(destination, 0) >= max_loop:
-                return END
+                return _MAX_LOOP_NODE
         return destination
 
     return route
@@ -148,6 +155,21 @@ class CompiledGraph:
         self.graph = graph
         self.entry_point = entry_point
         self.result_paths = result_paths
+
+    def prepare_recovery(
+        self,
+        config: dict[str, Any],
+        update: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Supersede pending work and create a clean recovery checkpoint."""
+        return cast(
+            dict[str, Any],
+            self.graph.update_state(
+                config,
+                update,
+                as_node=_RECOVERY_NODE,
+            ),
+        )
 
 
 def _wrap_with_hooks(
@@ -287,6 +309,9 @@ def compile_flow(
 
     schema = _build_state_schema(flow, input_keys)
     graph: StateGraph[Any] = StateGraph(schema)
+    recovery_node: Any = _recovery_noop
+    graph.add_node(_RECOVERY_NODE, recovery_node)
+    graph.add_edge(_RECOVERY_NODE, END)
 
     if checkpointer is None:
         has_wait = any(isinstance(s, WaitState) for s in flow.states.values())
@@ -504,6 +529,18 @@ def compile_flow(
     loop_back_targets_by_source: dict[str, set[str]] = {}
     for src, tgt in loop_back_edges:
         loop_back_targets_by_source.setdefault(src, set()).add(tgt)
+    if loop_back_edges:
+
+        def mark_max_loop(state_dict: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "_meta": {
+                    **state_dict.get("_meta", {}),
+                    "terminal_status": "max_loop_reached",
+                }
+            }
+
+        graph.add_node(_MAX_LOOP_NODE, mark_max_loop)  # type: ignore[call-overload]
+        graph.add_edge(_MAX_LOOP_NODE, END)
 
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
@@ -517,10 +554,17 @@ def compile_flow(
             # Outgoing: collector → next state (NOT dispatch node)
             next_s = _get_next_state(state)
             if next_s:
-                graph.add_edge(
-                    f"_collect_{state_name}",
-                    END if next_s == "END" else next_s,
-                )
+                if next_s in loop_back_targets_by_source.get(state_name, set()):
+                    graph.add_conditional_edges(
+                        f"_collect_{state_name}",
+                        _make_loop_guard(next_s, flow.max_loop),
+                        {next_s: next_s, _MAX_LOOP_NODE: _MAX_LOOP_NODE},
+                    )
+                else:
+                    graph.add_edge(
+                        f"_collect_{state_name}",
+                        END if next_s == "END" else next_s,
+                    )
             continue  # Skip the regular edge-adding below for ParallelState
 
         if isinstance(state, WaitState):
@@ -529,10 +573,17 @@ def compile_flow(
             # already added in the node-registration loop above.
             next_s = _get_next_state(state)
             if next_s:
-                graph.add_edge(
-                    f"_{state_name}_int",
-                    END if next_s == "END" else next_s,
-                )
+                if next_s in loop_back_targets_by_source.get(state_name, set()):
+                    graph.add_conditional_edges(
+                        f"_{state_name}_int",
+                        _make_loop_guard(next_s, flow.max_loop),
+                        {next_s: next_s, _MAX_LOOP_NODE: _MAX_LOOP_NODE},
+                    )
+                else:
+                    graph.add_edge(
+                        f"_{state_name}_int",
+                        END if next_s == "END" else next_s,
+                    )
             continue  # Skip the regular edge-adding below for WaitState
 
         next_state = _get_next_state(state)
@@ -544,7 +595,7 @@ def compile_flow(
                 graph.add_conditional_edges(
                     state_name,
                     _make_loop_guard(next_state, flow.max_loop),
-                    {next_state: next_state, END: END},
+                    {next_state: next_state, _MAX_LOOP_NODE: _MAX_LOOP_NODE},
                 )
             else:
                 graph.add_edge(state_name, next_state)
@@ -561,7 +612,7 @@ def compile_flow(
                 routing_fn = _wrap_routing_with_loop_guard(
                     routing_fn, loop_back_targets, flow.max_loop
                 )
-                path_map[END] = END
+                path_map[_MAX_LOOP_NODE] = _MAX_LOOP_NODE
             graph.add_conditional_edges(
                 state_name,
                 routing_fn,

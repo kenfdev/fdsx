@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -306,13 +307,63 @@ states:
         assert flow is not None
 
         config = FdsxConfig(
-            task_splitter={"provider": "pi", "model": "ignored"},
             workflow_selector={"provider": "pi", "model": "ignored"},
             profiles={"pi_profile": {"provider": "pi", "model": "ignored"}},
             providers={"pi": {"inactivity_timeout": 10}},
         )
-        assert config.task_splitter is not None
-        assert config.task_splitter.provider == "pi"
+        assert config.workflow_selector is not None
+        assert config.workflow_selector.provider == "pi"
+
+
+class TestPiStructuredOutput:
+    """Pi works with the schema-aware execution interface from main."""
+
+    @pytest.mark.parametrize("large_prompt", [False, True])
+    def test_schema_guidance_reaches_pi_and_output_is_validated(
+        self, tmp_path: Path, large_prompt: bool
+    ) -> None:
+        schema = {
+            "type": "object",
+            "properties": {"approved": {"type": "boolean"}},
+            "required": ["approved"],
+        }
+        (tmp_path / "schema.json").write_text(json.dumps(schema))
+        prompt = "x" * ARG_MAX_STDIN_THRESHOLD if large_prompt else "Review this"
+        (tmp_path / "prompt.txt").write_text(prompt)
+        flow_path = _write_flow(
+            tmp_path / "pi-schema.yaml",
+            """
+name: Pi Structured Output
+description: Validate pi schema-aware execution
+start_at: review
+states:
+  review:
+    type: task
+    provider: pi
+    model: openai/gpt-4o
+    prompt_file: prompt.txt
+    structured_output:
+      schema: schema.json
+      result_path: $.review
+    end: true
+""",
+        )
+        fake = ProviderResult(exit_code=0, stdout='{"approved": true}', stderr="")
+        with patch("fdsx.providers.pi._run_subprocess", return_value=fake) as run:
+            result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
+
+        assert result.status == "completed"
+        assert result.results["review"] == {"approved": True}
+        run.assert_called_once()
+        kwargs = run.call_args.kwargs
+        sent_prompt = kwargs["stdin_data"] if large_prompt else kwargs["args"][2]
+        assert sent_prompt.startswith(prompt)
+        assert "Return only a JSON object or array" in sent_prompt
+        assert '"approved"' in sent_prompt
+        if large_prompt:
+            assert kwargs["args"] == ["pi", "-p", "--model", "openai/gpt-4o"]
+        else:
+            assert kwargs["stdin_data"] is None
 
 
 class TestPiDefaultsInWorkflowExecution:

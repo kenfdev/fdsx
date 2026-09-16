@@ -93,7 +93,11 @@ def _resolve_profile_on_dict(
 
     extra_fields = {k: v for k, v in profile.items() if k not in ("provider", "model")}
     if extra_fields:
-        item["provider_options"] = extra_fields
+        state_options = item.get("provider_options")
+        if isinstance(state_options, dict):
+            item["provider_options"] = {**extra_fields, **state_options}
+        else:
+            item["provider_options"] = extra_fields
 
     del item["profile"]
 
@@ -251,7 +255,7 @@ def resolve_profiles_in_flow(
 def resolve_profiles_in_config(
     data: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
-    """Resolve profile references in task_splitter and workflow_selector config.
+    """Resolve profile references in workflow selector and extraction config.
 
     Operates on raw YAML dicts BEFORE Pydantic validation.
 
@@ -267,7 +271,7 @@ def resolve_profiles_in_config(
     if profiles is None or not isinstance(profiles, dict):
         profiles = {}
 
-    for config_key in ("task_splitter", "workflow_selector", "extraction_fallback"):
+    for config_key in ("workflow_selector", "extraction_fallback"):
         config_item = data.get(config_key)
         if not isinstance(config_item, dict):
             continue

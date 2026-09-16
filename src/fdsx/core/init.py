@@ -42,17 +42,12 @@ CONFIG_TEMPLATE = """\
 #   behemoth:
 #     provider: claude
 #     model: claude-opus-4-6
-# task_splitter:
-#   profile: generalist
 # workflow_selector:
 #   profile: generalist
 #
 # default_tasks_dir: .fdsx/tasks/
 #
 # extra_instructions:
-#   task_splitter:
-#     - "Split into smaller tasks when complexity is high"
-#     - "Prefer fewer, larger tasks for simple changes"
 #   workflow_selector:
 #     - "Place shared utilities in the shared/ directory"
 """
@@ -347,6 +342,7 @@ _MAX_PERMISSION_OPTIONS: dict[str, dict[str, Any]] = {
     "codex": {"dangerously_bypass_approvals_and_sandbox": True},
     "gemini": {"yolo": True},
     "opencode": {"permission": "auto-edit"},
+    "grok": {"permission_mode": "bypassPermissions"},
 }
 
 _PROFILE_ROLE_COMMENTS: dict[str, str] = {
@@ -399,9 +395,6 @@ def generate_config_yaml(
             lines.append(f"  {provider_name}:")
             for key, value in provider_config.items():
                 lines.append(f"    {key}: {value}")
-
-    lines.append("task_splitter:")
-    lines.append("  profile: generalist")
 
     lines.append("workflow_selector:")
     lines.append("  profile: generalist")

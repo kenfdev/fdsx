@@ -3,7 +3,7 @@ import logging
 import subprocess
 import threading
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +14,7 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    append_structured_output_guidance,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class GeminiProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute Gemini CLI with a prompt.
 
@@ -84,6 +86,7 @@ class GeminiProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
+        prompt = append_structured_output_guidance(prompt, output_schema)
         use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         args = ["gemini", "-p"]
         if use_stdin:

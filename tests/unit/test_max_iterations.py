@@ -13,7 +13,7 @@ Tests verify:
 import pytest
 from pydantic import ValidationError
 
-from fdsx.core.compiler import _check_max_iterations
+from fdsx.core.compiler import MaxIterationsReachedError, _check_max_iterations
 from fdsx.models.flow import ChoiceState, ParallelState, PassState, TaskState, WaitState
 
 
@@ -126,7 +126,7 @@ class TestCheckMaxIterations:
             end=True,
         )
         with pytest.raises(
-            RuntimeError,
+            MaxIterationsReachedError,
             match="State 'plan' reached max_iterations limit \\(3\\)",
         ):
             _check_max_iterations("plan", state, 4)
@@ -135,7 +135,7 @@ class TestCheckMaxIterations:
         """Raises when iteration == max_iterations + 1 (strictly exceeds)."""
         state = PassState(max_iterations=2, end=True)
         with pytest.raises(
-            RuntimeError,
+            MaxIterationsReachedError,
             match="State 'review' reached max_iterations limit \\(2\\)",
         ):
             _check_max_iterations("review", state, 3)

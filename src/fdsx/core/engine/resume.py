@@ -2,46 +2,104 @@
 
 import json
 import sys
+from collections.abc import Callable, Mapping
+from contextvars import Token
+from copy import deepcopy
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 from typing import Any, Literal, cast
 
+import structlog
+from langchain_core.runnables.config import RunnableConfig
+from langgraph.errors import InvalidUpdateError
 from langgraph.types import Command
+from structlog.contextvars import bind_contextvars, reset_contextvars
 
 from fdsx.checkpoint.manager import CheckpointManager
-from fdsx.core.compiler import compile_flow
+from fdsx.core.compiler import MaxIterationsReachedError, compile_flow
 from fdsx.core.config import load_config
-from fdsx.core.hooks import (
-    HookAbortError,
-    collect_workflow_hooks,
-    execute_workflow_hooks,
-)
+from fdsx.core.hooks import execute_workflow_hooks
 from fdsx.core.loader import load_flow
 from fdsx.display.terminal import (
     _sanitize_output,
-    display_completion_summary,
     display_wait_prompt,
 )
 from fdsx.logging import RunRecorder
-from fdsx.logging.recorder import LOGS_DIR_NAME, RUN_FILENAME, RUNS_DIR_NAME
+from fdsx.logging.recorder import (
+    LOGS_DIR_NAME,
+    RUN_FILENAME,
+    RUNS_DIR_NAME,
+    InputRevisionError,
+)
 from fdsx.models.task import load_task_file, save_task_file
 
-from .interrupts import handle_interrupts
-from .results import (
-    FlowResult,
-    _calc_elapsed,
-    _detect_abort_status,
-    _extract_results,
-    _find_failed_state,
-    _sanitize_state_for_log,
+from .errors import CheckpointNotFoundError, FlowExecutionError, RunLockedError
+from .lifecycle import (
+    GraphExecutionPlan,
+    TerminalContext,
+    emit_completion_event,
+    execute_lifecycle,
+    finalize_failed_execution,
 )
+from .recovery import (
+    InputUpdateCancelledError,
+    RecoveryStateRequiredError,
+    RecoveryValidationError,
+    build_recovery_update,
+    recovery_state_required_message,
+    reset_recovery_progress,
+    validate_recovery_request,
+)
+from .results import FlowResult, _detect_abort_status
 from .signals import SignalHandler
-from .validate import FailStateTermination
+
+logger = structlog.get_logger(__name__)
+
+
+def _update_task_entry(
+    state: dict[str, Any],
+    *,
+    thread_id: str,
+    status: str,
+    failed_state: str | None,
+) -> None:
+    """Best-effort update of the tasks-directory entry stored in flow metadata."""
+    meta = state.get("_meta", {})
+    task_file_path_value = meta.get("task_file_path")
+    task_entry_index = meta.get("task_entry_index")
+    if task_file_path_value is None or task_entry_index is None:
+        return
+
+    try:
+        task_file_path = Path(task_file_path_value)
+        task_file = load_task_file(task_file_path)
+        entry = task_file.entries[task_entry_index]
+        new_status = "completed" if status == "completed" else "failed"
+        entry.status = cast(
+            Literal["pending", "running", "completed", "failed"], new_status
+        )
+        entry.thread_id = thread_id
+        entry.error = (
+            (
+                f"workflow aborted at state '{failed_state}'"
+                if status == "aborted"
+                else status
+            )
+            if status != "completed"
+            else None
+        )
+        save_task_file(task_file_path, task_file)
+    except (FileNotFoundError, IndexError, ValueError):
+        pass
 
 
 def resume_flow(
     thread_id: str,
     base_dir: Path | None = None,
     flow_path: Path | None = None,
+    from_state: str | None = None,
+    input_updates: dict[str, str] | None = None,
+    confirm_inputs: Callable[[dict[str, Any], dict[str, str], str], bool] | None = None,
 ) -> FlowResult:
     """Resume a flow from a checkpoint.
 
@@ -49,6 +107,10 @@ def resume_flow(
         thread_id: The thread ID to resume
         base_dir: Base directory for checkpoints (.fdsx/). Defaults to '.fdsx/'.
         flow_path: Optional path to the flow YAML file. Required if not stored in checkpoint.
+        from_state: Optional executed state name for an explicit recovery jump.
+        input_updates: Whole-value replacements for saved execution input keys.
+        confirm_inputs: Approval of old values, submitted values, and restart target.
+            Called under the thread lock after validation and before mutations.
 
     Returns:
         Final state variables as result dict.
@@ -59,24 +121,58 @@ def resume_flow(
     if base_dir is None:
         base_dir = CheckpointManager.DEFAULT_BASE_DIR
 
+    input_updates = deepcopy(input_updates)
     checkpoint_manager = CheckpointManager(base_dir=base_dir)
 
     if not checkpoint_manager.verify_checkpoint(thread_id):
-        raise RuntimeError(f"No checkpoint found for thread ID {thread_id}")
+        raise CheckpointNotFoundError(f"No checkpoint found for thread ID {thread_id}")
 
     if not checkpoint_manager.acquire_lock(thread_id):
         locked, pid = checkpoint_manager.is_locked(thread_id)
         if locked:
-            raise RuntimeError(f"Thread {thread_id} is locked by PID {pid}")
+            raise RunLockedError(f"Thread {thread_id} is locked by PID {pid}")
+        raise RunLockedError(f"Could not acquire lock for thread {thread_id}")
 
     print(f"Resuming from thread: {_sanitize_output(thread_id)}", file=sys.stderr)
 
     recorder: RunRecorder | None = None
+    terminal_context: TerminalContext | None = None
     last_state: dict[str, Any] = {}
+    context_tokens: Mapping[str, Token[Any]] | None = None
+    inputs_approved = input_updates is None
 
     try:
         checkpointer = checkpoint_manager.get_checkpointer()
+        checkpoint_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        checkpoint_tuple = checkpointer.get_tuple(checkpoint_config)
+        input_keys: set[str] = set()
+        has_input_metadata = False
+        if checkpoint_tuple is not None:
+            channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+            checkpoint_meta = channel_values.get("_meta", {})
+            if isinstance(checkpoint_meta, dict):
+                stored_input_keys = checkpoint_meta.get("input_keys", [])
+                has_input_metadata = "input_keys" in checkpoint_meta and isinstance(
+                    stored_input_keys, list
+                )
+                if isinstance(stored_input_keys, list):
+                    input_keys = {
+                        key for key in stored_input_keys if isinstance(key, str)
+                    }
 
+        if input_updates is not None:
+            if from_state is None:
+                raise RecoveryValidationError("Input updates require --from <state>")
+            if not has_input_metadata:
+                raise RecoveryValidationError(
+                    "Saved input-key metadata is required for input updates"
+                )
+            if set(input_updates) - input_keys:
+                raise RecoveryValidationError(
+                    "Input updates contain unknown input keys"
+                )
+
+        existing_log: dict[str, Any] = {}
         if flow_path is None or not flow_path.exists():
             # Read flow_path from run.json sidecar (written by RunRecorder on first run)
             _effective_base = (
@@ -86,8 +182,8 @@ def resume_flow(
             if run_log_path.is_file():
                 try:
                     with run_log_path.open() as f:
-                        _run_log = json.load(f)
-                    _flow_path_str = _run_log.get("flow_path")
+                        existing_log = json.load(f)
+                    _flow_path_str = existing_log.get("flow_path")
                     if _flow_path_str:
                         flow_path = Path(_flow_path_str)
                 except (json.JSONDecodeError, OSError, KeyError):
@@ -108,9 +204,17 @@ def resume_flow(
                 name: prof.model_dump() for name, prof in config.profiles.items()
             }
 
-        flow, errors = load_flow(flow_path, config_profiles=config_profiles)
+        flow, errors = load_flow(
+            flow_path,
+            input_keys=input_keys or None,
+            config_profiles=config_profiles,
+        )
         if flow is None:
             raise RuntimeError(f"Failed to load flow for resume: {', '.join(errors)}")
+        context_tokens = bind_contextvars(
+            thread_id=thread_id,
+            flow_name=flow.name,
+        )
 
         from fdsx.models.flow import ParallelState, WaitState
 
@@ -140,11 +244,28 @@ def resume_flow(
 
         compiled = compile_flow(
             flow,
+            input_keys=input_keys or None,
             checkpointer=checkpointer,
             recorder=recorder,
             config=config,
             log_dir=resume_log_dir,
             on_process_start=handler.register_process,
+        )
+        terminal_context = TerminalContext(
+            thread_id=thread_id,
+            flow=flow,
+            recorder=recorder,
+            result_paths=compiled.result_paths,
+            base_dir=base_dir,
+            global_hooks=config.hooks,
+            workflow_hook_executor=execute_workflow_hooks,
+            status_detector=_detect_abort_status,
+            on_terminal=lambda state, status, failed_state: _update_task_entry(
+                state,
+                thread_id=thread_id,
+                status=status,
+                failed_state=failed_state,
+            ),
         )
 
         parallel_extra = sum(
@@ -160,46 +281,112 @@ def resume_flow(
             "recursion_limit": recursion_limit,
             "configurable": {"thread_id": thread_id},
         }
+        latest_resume_config = resume_config
 
         state_info = compiled.graph.get_state(resume_config)
+        if state_info.values:
+            last_state = dict(state_info.values)
         existing_meta = state_info.values.get("_meta", {}) if state_info.values else {}
-        if "run_dir" not in existing_meta:
-            updated_meta = {**existing_meta, "run_dir": str(resume_run_dir)}
-            compiled.graph.update_state(resume_config, {"_meta": updated_meta})
-
-        state_info = compiled.graph.get_state(resume_config)
-
         _terminal_failure = (
             (state_info.values or {}).get("_meta", {}).get("terminal_failure")
         )
-        if _terminal_failure is not None:
-            display_completion_summary(
-                recorder.flow_name,
-                _calc_elapsed(recorder),
-                _terminal_failure.get("state"),
-                "workflow aborted",
-                error_name=_terminal_failure.get("error"),
-                error_cause=_terminal_failure.get("cause"),
+        _terminal_status = (
+            (state_info.values or {}).get("_meta", {}).get("terminal_status")
+        )
+        _max_iterations_failure = any(
+            isinstance(getattr(task, "error", None), MaxIterationsReachedError)
+            for task in state_info.tasks
+        )
+        recovery_command: Command[Any] | None = None
+        if from_state is not None:
+            validate_recovery_request(
+                flow,
+                existing_log,
+                from_state,
+                {**dict(state_info.values or {}), **(input_updates or {})},
+                config,
             )
-            execute_workflow_hooks(
-                collect_workflow_hooks(
-                    "on_workflow_end",
-                    global_hooks=config.hooks,
-                    project_hooks=None,
-                    flow_hooks=flow.hooks,
-                ),
-                status="aborted",
-                event="on_workflow_end",
-                thread_id=thread_id,
-                flow_name=recorder.flow_name,
+            saved_values = dict(state_info.values or {})
+            recovery_update = build_recovery_update(flow, saved_values)
+            recovery_update["_meta"].setdefault("run_dir", str(resume_run_dir))
+            if input_updates is not None:
+                old_inputs = {key: saved_values.get(key) for key in input_keys}
+                try:
+                    approved = confirm_inputs is not None and confirm_inputs(
+                        deepcopy(old_inputs), deepcopy(input_updates), from_state
+                    )
+                except (OSError, RuntimeError, ValueError, EOFError) as error:
+                    logger.warning(
+                        "input_update_confirmation_failed", thread_id=thread_id
+                    )
+                    raise InputUpdateCancelledError(
+                        "Interactive approval could not be obtained"
+                    ) from error
+                if not approved:
+                    raise InputUpdateCancelledError(
+                        "Input update canceled or interactive approval unavailable"
+                    )
+                inputs_approved = True
+            if input_updates is not None or existing_meta.get("input_revisions"):
+                old_inputs = {key: saved_values.get(key) for key in input_keys}
+                effective_inputs = {**old_inputs, **(input_updates or {})}
+                inputs_changed = any(
+                    saved_values.get(key) != value
+                    for key, value in (input_updates or {}).items()
+                )
+                try:
+                    snapshot = recorder.preserve_recovery_snapshot(
+                        resume_run_dir,
+                        saved_values,
+                        existing_log,
+                        effective_inputs,
+                        from_state,
+                    )
+                except InputRevisionError as error:
+                    raise RecoveryValidationError(
+                        "Could not preserve recovery snapshot"
+                    ) from error
+                history_key = (
+                    "input_revisions" if inputs_changed else "recovery_snapshots"
+                )
+                recovery_update["_meta"][history_key] = [
+                    *existing_meta.get(history_key, []),
+                    snapshot,
+                ]
+                recovery_update["_meta"]["input_values"] = effective_inputs
+                recovery_update.update(input_updates or {})
+            reset_recovery_progress(flow, saved_values)
+            resume_config = compiled.prepare_recovery(resume_config, recovery_update)
+            state_info = compiled.graph.get_state(resume_config)
+            recovery_command = Command(goto=from_state)
+            recorder.record_recovery(from_state)
+            print(
+                f"Recovering from state: {_sanitize_output(from_state)}",
+                file=sys.stderr,
             )
-            return FlowResult(
-                results={},
-                status="aborted",
-                abort_state=_terminal_failure.get("state"),
+        elif (
+            _terminal_status in {"max_loop_reached", "max_iterations_reached"}
+            or _terminal_failure is not None
+            or existing_log.get("status") == "aborted"
+            or _max_iterations_failure
+        ):
+            raise RecoveryStateRequiredError(
+                recovery_state_required_message(flow, existing_log)
             )
 
-        with handler:
+        if from_state is None and "run_dir" not in existing_meta:
+            compiled.graph.update_state(
+                resume_config,
+                {"_meta": {**existing_meta, "run_dir": str(resume_run_dir)}},
+            )
+            state_info = compiled.graph.get_state(resume_config)
+
+        stream_config = resume_config
+        resume_config = latest_resume_config
+
+        def prepare_resume_input() -> Command[Any] | None:
+            if recovery_command is not None:
+                return recovery_command
             if state_info.tasks:
                 payload = None
                 for task in state_info.tasks:
@@ -217,183 +404,75 @@ def resume_flow(
                     state_name = payload.get("state_name", "wait")
 
                     user_selection = display_wait_prompt(state_name, message, choices)
+                    return Command(resume=user_selection)
+            return None
 
-                    for chunk in compiled.graph.stream(
-                        Command(resume=user_selection),
-                        config=resume_config,
-                        stream_mode="values",
-                        version="v2",
-                    ):
-                        last_state = chunk["data"]
-                else:
-                    # Error/pending task (no interrupt) — re-execute from checkpoint
-                    for chunk in compiled.graph.stream(
-                        None, config=resume_config, stream_mode="values", version="v2"
-                    ):
-                        last_state = chunk["data"]
-            else:
-                for chunk in compiled.graph.stream(
-                    None, config=resume_config, stream_mode="values", version="v2"
-                ):
-                    last_state = chunk["data"]
-
-            # Continue handling any further interrupts (e.g. multi-Wait flows)
-            last_state = handle_interrupts(compiled.graph, resume_config, last_state)
-
-        # Read authoritative state from checkpointer after resume completes
-        final_state_info = compiled.graph.get_state(resume_config)
-        if final_state_info.values:
-            last_state = final_state_info.values
-
-        results = _extract_results(last_state, compiled.result_paths)
-        status: str = "completed"
-        failed_state: str | None = None
-        if recorder is not None:
-            status, abort_info = _detect_abort_status(recorder)
-            failed_state = abort_info.state_name if abort_info is not None else None
-            # T024: fire on_workflow_end with terminal status on resume completion
-            execute_workflow_hooks(
-                collect_workflow_hooks(
-                    "on_workflow_end",
-                    global_hooks=config.hooks,
-                    project_hooks=None,
-                    flow_hooks=flow.hooks,
-                ),
-                status=status,
-                event="on_workflow_end",
-                thread_id=thread_id,
-                flow_name=recorder.flow_name,
-            )
-            recorder.finalize(_sanitize_state_for_log(last_state), status)
-            recorder.save(base_dir=base_dir)
-            if failed_state is not None:
-                display_completion_summary(
-                    recorder.flow_name,
-                    _calc_elapsed(recorder),
-                    failed_state,
-                    "workflow aborted",
-                    error_name=abort_info.error_name
-                    if abort_info is not None
-                    else None,
-                    error_cause=abort_info.error_cause
-                    if abort_info is not None
-                    else None,
-                )
-            else:
-                display_completion_summary(recorder.flow_name, _calc_elapsed(recorder))
-
-        # Best-effort: update task YAML entry if stored in _meta
-        _meta = last_state.get("_meta", {})
-        _task_file_path_str = _meta.get("task_file_path")
-        _task_entry_index = _meta.get("task_entry_index")
-        if _task_file_path_str is not None and _task_entry_index is not None:
-            try:
-                _task_file_path = Path(_task_file_path_str)
-                _task_file = load_task_file(_task_file_path)
-                _entry = _task_file.entries[_task_entry_index]
-                _new_status = "failed" if status == "aborted" else "completed"
-                _entry.status = cast(
-                    Literal["pending", "running", "completed", "failed"], _new_status
-                )
-                _entry.thread_id = thread_id
-                _entry.error = (
-                    f"workflow aborted at state '{failed_state}'"
-                    if status == "aborted"
-                    else None
-                )
-                save_task_file(_task_file_path, _task_file)
-            except (FileNotFoundError, IndexError, ValueError):
-                pass  # best-effort: do not raise if file is missing or index is invalid
-
-        return FlowResult(results=results, status=status, abort_state=failed_state)
-    except FailStateTermination as fst:
-        if checkpoint_manager is not None:
-            try:
-                _fst_state_info = compiled.graph.get_state(resume_config)
-                _existing_meta = (
-                    _fst_state_info.values.get("_meta", {})
-                    if _fst_state_info.values
-                    else {}
-                )
-                compiled.graph.update_state(
-                    resume_config,
-                    {
-                        "_meta": {
-                            **_existing_meta,
-                            "terminal_failure": {
-                                "state": fst.state_name,
-                                "error": fst.error,
-                                "cause": fst.cause,
-                            },
-                        }
-                    },
-                )
-            except Exception:
-                pass
-        results = _extract_results(last_state, compiled.result_paths)
-        status = "aborted"
-        abort_info = None
-        failed_state = fst.state_name
-        if recorder is not None:
-            _, abort_info = _detect_abort_status(recorder)
-            failed_state = (
-                abort_info.state_name if abort_info is not None else fst.state_name
-            )
-            execute_workflow_hooks(
-                collect_workflow_hooks(
-                    "on_workflow_end",
-                    global_hooks=config.hooks,
-                    project_hooks=None,
-                    flow_hooks=flow.hooks if flow is not None else None,
-                ),
-                status=status,
-                event="on_workflow_end",
-                thread_id=thread_id,
-                flow_name=recorder.flow_name,
-            )
-            recorder.finalize(_sanitize_state_for_log(last_state), status)
-            recorder.save(base_dir=base_dir)
-            display_completion_summary(
-                recorder.flow_name,
-                _calc_elapsed(recorder),
-                failed_state,
-                "workflow aborted",
-                error_name=abort_info.error_name if abort_info is not None else None,
-                error_cause=abort_info.error_cause if abort_info is not None else None,
-            )
-        return FlowResult(results=results, status=status, abort_state=failed_state)
-    except Exception as e:
-        if recorder is not None:
-            recorder.finalize(_sanitize_state_for_log(last_state), "error")
-            recorder.save(base_dir=base_dir)
-            # T024: fire on_workflow_end with failed/aborted status on exception path
-            _abort_detect, _ = _detect_abort_status(recorder)
-            _end_status = (
-                "aborted"
-                if _abort_detect == "aborted" or isinstance(e, HookAbortError)
-                else "failed"
-            )
-            execute_workflow_hooks(
-                collect_workflow_hooks(
-                    "on_workflow_end",
-                    global_hooks=config.hooks,
-                    project_hooks=None,
-                    flow_hooks=flow.hooks if flow is not None else None,
-                ),
-                status=_end_status,
-                event="on_workflow_end",
-                thread_id=thread_id,
-                flow_name=recorder.flow_name,
-            )
-            failed = _find_failed_state(recorder)
-            failed_state_name = failed[0] if failed else "unknown"
-            error_message = failed[1] if (failed and failed[1]) else str(e)
-            display_completion_summary(
-                recorder.flow_name,
-                _calc_elapsed(recorder),
-                failed_state_name,
-                error_message,
-            )
-        raise RuntimeError(f"Flow resume failed: {e}") from e
+        return execute_lifecycle(
+            GraphExecutionPlan(
+                graph=compiled.graph,
+                signal_handler=handler,
+                prepare_stream_input=prepare_resume_input,
+                stream_config=stream_config,
+                continuation_config=resume_config,
+                initial_state=last_state,
+                checkpointed=True,
+            ),
+            terminal_context,
+            error_prefix="Flow resume failed",
+        )
+    except InputUpdateCancelledError:
+        logger.info("input_update_cancelled", thread_id=thread_id)
+        raise
+    except RecoveryValidationError as error:
+        logger.warning(
+            "recovery_validation_failed",
+            thread_id=thread_id,
+            from_state=from_state,
+            error=str(error),
+        )
+        if terminal_context is not None:
+            emit_completion_event(terminal_context, status="recovery_failed")
+        raise
+    except FlowExecutionError:
+        raise
+    except (
+        InvalidUpdateError,
+        SQLiteError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+    ) as error:
+        logger.error(
+            "flow_resume_setup_failed",
+            thread_id=thread_id,
+            error=str(error),
+        )
+        if inputs_approved and recorder is not None and terminal_context is not None:
+            finalize_failed_execution(terminal_context, last_state, error)
+        raise FlowExecutionError(f"Flow resume failed: {error}") from error
     finally:
-        checkpoint_manager.release_lock(thread_id)
+        if context_tokens is not None:
+            reset_contextvars(**context_tokens)
+        active_error = sys.exc_info()[0] is not None
+        try:
+            checkpoint_manager.release_lock(thread_id)
+        except (
+            InvalidUpdateError,
+            SQLiteError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as cleanup_error:
+            logger.error(
+                "checkpoint_lock_release_failed",
+                thread_id=thread_id,
+                error=str(cleanup_error),
+            )
+            if not active_error:
+                raise FlowExecutionError(
+                    f"Failed to release checkpoint lock for thread {thread_id}"
+                ) from cleanup_error

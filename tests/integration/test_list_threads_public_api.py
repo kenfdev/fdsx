@@ -61,7 +61,7 @@ class TestListThreadsPublicAPI:
             pytest.raises(RuntimeError, match="Flow execution failed"),
             patch(
                 "fdsx.core.engine.interrupts.display_wait_prompt",
-                side_effect=Exception("simulated crash"),
+                side_effect=RuntimeError("simulated crash"),
             ),
         ):
             engine.run_flow(
@@ -179,7 +179,7 @@ states:
             patch("fdsx.providers.claude._run_subprocess", return_value=fake),
             patch(
                 "fdsx.core.engine.interrupts.display_wait_prompt",
-                side_effect=Exception("simulated crash"),
+                side_effect=RuntimeError("simulated crash"),
             ),
         ):
             engine.run_flow(

@@ -3,17 +3,19 @@ name: fdsx
 description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
-  configuring fdsx providers (claude, cursor, codex, opencode, gemini), setting up
+  configuring fdsx providers (claude, cursor, codex, opencode, gemini, grok), setting up
   profiles, adding hooks, using choice/parallel/loop/wait/pass/map/fail states,
   running fdsx CLI commands, debugging workflow validation errors, or asking
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
   agent workflow", "multi-step AI pipeline", "provider options", "checkpoint
-  resume", "map state", "iterator", "extraction fallback".
+  resume", "map state", "iterator", "extraction fallback", "structured output",
+  "JSON Schema output", "parallel gate", "state iteration", "max loop",
+  "resume input updates", "input revision history".
 ---
 
 # fdsx Workflow Authoring Guide
 
-fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
+fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`, `grok`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
 
 ## Quick Start
 
@@ -52,9 +54,9 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 
 | Type | Purpose | Key Fields |
 |------|---------|------------|
-| `task` | Execute a provider (LLM or shell command) | `provider`, `model`, `prompt_template`, `result_path`, `result_file` |
+| `task` | Execute a provider (LLM or shell command) | `provider`, `model`, `prompt_template`, `result_path` or `structured_output` |
 | `choice` | Branch based on variable values | `choices` (list of rules), `default` |
-| `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `result_file`, `min_success` |
+| `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `min_success` or `gate` |
 | `pass` | Data transformation / aggregation | `parameters`, `aggregate` |
 | `wait` | Human input via terminal prompt | `mode: prompt`, `message`, `choices`, `result_path` |
 | `map` | Iterate over an array, execute sub-workflow per item | `items_path`, `iterator`, `result_path`, `fail_fast` |
@@ -66,11 +68,12 @@ States that support routing use either `next` (go to state) or `end: true` (term
 
 | Provider | CLI Command | Requires | Options Key |
 |----------|------------|----------|-------------|
-| `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools`, `system_prompt`, `append_system_prompt` |
-| `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `sandbox`, `approval_policy`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
-| `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
+| `claude` | `claude -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `effort`, `permission_mode`, `dangerously_skip_permissions`, `allowed_tools`, `disallowed_tools`, `system_prompt`, `append_system_prompt` |
+| `codex` | `codex exec --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `reasoning_effort`, `sandbox`, `approval_policy`, `developer_instructions`, `agents_enabled`, `full_auto`, `dangerously_bypass_approvals_and_sandbox` |
+| `opencode` | `opencode run -m <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `variant`, `permission` (passed via `OPENCODE_CONFIG_CONTENT` env var) |
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
 | `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` |
+| `grok` | `grok --single <prompt> --model <model> --output-format streaming-json` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `sandbox`, `allow`, `deny`, `tools`, `disallowed_tools`, `reasoning_effort`, `max_turns`, `on_max_turns`, `no_subagents`, `no_plan`, `cross_session_memory`, `disable_web_search`, `verbatim`, `cwd`, `agent`, `agents`, `rules`, `system_prompt_override` |
 | `system` | `sh -c <command>` | `command` | (none) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
@@ -113,7 +116,7 @@ prompt_template: "Review this code: {implementation}"
 
 Variables resolve from `$.results.<state_name>.output` or from `--input` CLI arguments. Use `result_path: $.foo` to store a state's output at `$.foo`.
 
-Global variables automatically available in every state: `{task}` and `{source}` (injected at runtime for batch execution), and `{run_path}` (injected in all execution modes; resolves to the absolute path of the current run directory, e.g. `.fdsx/runs/<thread-id>`).
+Global variables automatically available in every state: `{task}` and `{source}` (injected at runtime for batch execution), `{run_path}` (the absolute current run directory), and `{state.iteration}` (the current state's one-based execution count).
 
 ## Extraction
 
@@ -132,6 +135,64 @@ extract:
 ```
 
 `result_path` and `extract.result_path` must not overlap. Branch `extract.result_path` must not use reserved keys: `output`, `exit_code`, `error`.
+
+## Structured Output
+
+Use `structured_output` on a task state or parallel branch when later states need a validated JSON object or list:
+
+```yaml
+structured_output:
+  schema: schemas/ledger.schema.json  # relative to the workflow YAML
+  result_path: $.ledger
+  merge:                              # optional
+    strategy: upsert
+    key: id
+```
+
+Claude, Codex, and Grok use native CLI schema enforcement while retaining streaming. Gemini, Cursor, and OpenCode receive JSON-only schema guidance in the prompt. In every case, the final provider value is parsed and validated locally as one JSON value. A single Markdown code fence around the complete value may be removed; embedded JSON inside prose is not searched. The value must be an object or list and satisfy the referenced JSON Schema. Schema files are loaded and checked during workflow loading, before any provider executes.
+
+Extra fields are allowed by default: `additionalProperties: false` and `unevaluatedProperties: false` are ignored, including in nested or composite schemas, and unknown fields remain in workflow state. Required fields, known-property schemas, all other constraints, JSON syntax, and the object/list requirement are unchanged. Set `allow_extra_fields: false` to reject unknown fields strictly.
+
+Validation failures use the state's or branch's existing `retry` count. LLM retries receive bounded validation feedback without the previous raw output. A `system` command is not retried after structured-output validation fails. Raw provider output remains in run logs.
+
+`structured_output` is mutually exclusive with a task's legacy `result_path` and `extract`, and with a branch's `extract`. The structured value is authoritative in workflow state.
+
+### Keyed upsert merge
+
+`merge.strategy: upsert` applies to lists of objects and requires a single top-level `result_path`. Every object must contain the configured key, and an update batch cannot repeat a key. Matching keys replace the complete existing object without moving it; new keys append; omitted existing objects remain. There is no implicit deletion. Merge state is local to one run and survives checkpoint resume.
+
+### Required-branch gates
+
+Parallel branches may have stable, unique `name` values. A parallel state can calculate a boolean gate from selected required branches:
+
+```yaml
+review:
+  type: parallel
+  branches:
+    - name: security
+      provider: claude
+      model: claude-sonnet-4-6
+      prompt_template: "Review: {implementation}"
+      structured_output:
+        schema: schemas/review.schema.json
+        result_path: $.review
+    - name: style
+      provider: codex
+      model: gpt-5.4
+      prompt_template: "Advise on style: {implementation}"
+      structured_output:
+        schema: schemas/review.schema.json
+        result_path: $.review
+  result_path: $.reviews
+  gate:
+    required: [security]
+    field: $.review.approved
+    expected: true
+    result_path: $.approved
+  next: route
+```
+
+Required branches must be named and configure `structured_output`. A successful required branch with a different value sets the gate to `false`. A required execution/validation failure or missing gate field fails the parallel state. Unlisted branches are advisory: their failures are retained in the results but do not block the gate. Branch results include `name`. `gate` and `min_success` are mutually exclusive.
 
 ### Global Extraction Fallback
 
@@ -186,7 +247,7 @@ states:
 ```
 
 `ExtractionFallback` fields:
-- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
+- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
 - `model` — model string passed to the provider binary. Required when `provider` is set.
 - `profile` — named profile. XOR with `provider` + `model`. Exactly one of `provider + model` or `profile` must be set.
 - `extra_instructions` — optional string appended to the recovery prompt.
@@ -194,23 +255,29 @@ states:
 ## CLI Commands
 
 ```
-fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--confirm-workflow] [--continue-on-error]
+fdsx run [<workflow.yaml>] [--input KEY=VALUE] [--tasks-dir <dir>] [--thread-id <id>] [--quiet] [--auto-workflow] [--manual-workflow] [--confirm-workflow] [--continue-on-error]
 fdsx validate <workflow.yaml>
-fdsx resume --thread-id <id> [--base-dir <path>]
+fdsx resume --thread-id <id> [--from <state>] [--input KEY=VALUE] [--yes] [--base-dir <path>]
 fdsx list [--base-dir <path>]
-fdsx add <task-file> [--split] [--force]
+fdsx add <task-file> [<task-file> ...]
 fdsx init [--skill]
 fdsx --version
 fdsx --ci | --interactive        # global flags (mutually exclusive)
 ```
 
-`--auto-workflow` and `--confirm-workflow` are mutually exclusive. `--auto-workflow` skips interactive workflow confirmation; `--confirm-workflow` forces the confirmation UI.
+For recovery with revised inputs (`resume --from ... --input ...`), approval with `--yes`, or preserved input history, read `references/resume.md` before preparing the command. These are CLI options, not workflow YAML fields.
+
+`--auto-workflow` enables AI workflow selection, skips confirmation, and overrides `manual_workflow` configuration. It conflicts with both `--manual-workflow` and `--confirm-workflow`. `--confirm-workflow` requires interactive input and can be combined with manual mode.
+
+`--manual-workflow` (or config `manual_workflow: true`) disables selection AI in tasks-directory mode, including no-argument `fdsx run`. Saved assignments take precedence over a workflow argument. With one candidate, unassigned tasks receive it; with multiple candidates, use the numbered editor to assign them. Enter a task number then a workflow number; `c` confirms only fully assigned tasks, and `q` cancels. Without interactive input, supply a workflow argument or saved task assignments if multiple candidates leave tasks unassigned. New tasks discovered during a run use the same mode and are confirmed before execution. Direct single-workflow runs bypass selection. Manual mode does not disable AI tasks or change provider permissions.
 
 `--continue-on-error` (tasks-dir mode only): continue processing remaining entries when an error occurs instead of stopping.
 
 When `fdsx run` is invoked with no workflow, no `--tasks-dir`, and no `--input`, it falls back to the `default_tasks_dir` config value (default: `.fdsx/tasks/`) and runs in tasks-dir mode.
 
-`fdsx add <task-file>` adds a task file to the batch execution queue. Use `--split` to invoke the LLM task splitter to break the file into multiple task files in `.fdsx/tasks/`. Use `--force` to clear existing tasks before writing.
+`fdsx add <task-file> [<task-file> ...]` appends one task per source file to the configured default task queue, preserving argument order and source contents. Existing queued tasks are never deleted.
+
+Tasks-directory runs process entries sequentially and rescan for newly added task files until the active queue is empty. An empty queue is a successful no-op. Only one runner may drain a given tasks directory at a time.
 
 `fdsx init` initializes a new fdsx project with interactive provider and template selection. Use `--skill` to install only the Claude Code skill without scaffolding `.fdsx/`.
 
@@ -300,7 +367,7 @@ Each workflow-scope hook command receives:
 - **Environment variables:** `FDSX_HOOKS`, `FDSX_STATUS`, `FDSX_FLOW_NAME`, `FDSX_THREAD_ID`
 - `FDSX_STATE_NAME` and `FDSX_DATA_PATH` are **not** set
 
-`FDSX_STATUS` values: `starting` (on_workflow_start), `completed`, `failed`, or `aborted` (on_workflow_end).
+`FDSX_STATUS` values: `starting` (on_workflow_start), `completed`, `failed`, `aborted`, or `max_loop_reached` (on_workflow_end).
 
 `FDSX_HOOKS` contains `on_workflow_start` or `on_workflow_end`.
 
@@ -308,7 +375,7 @@ Workflow-scope hooks are always warn-only — non-zero exits log a warning and n
 
 ### Run-scope hooks (`on_run_start`, `on_run_end`)
 
-Run once per CLI invocation — outside any individual workflow or flow context. Configured under a **separate** `run_hooks:` key in `.fdsx/config.yaml` (not under `hooks:`). Not available in workflow YAML or at state level.
+Run once per CLI invocation, outside any individual workflow or flow context. For `resume --input`, hooks start only after validation and input approval; refusal runs neither start nor end hooks. Configured under a **separate** `run_hooks:` key in `.fdsx/config.yaml` (not under `hooks:`). Not available in workflow YAML or at state level.
 
 ```yaml
 # .fdsx/config.yaml
@@ -325,11 +392,17 @@ Each run-scope hook command receives:
 - **Environment variables:** `FDSX_HOOKS`, `FDSX_STATUS` only
 - `FDSX_STATE_NAME`, `FDSX_DATA_PATH`, `FDSX_FLOW_NAME`, and `FDSX_THREAD_ID` are **not set** (run hooks fire outside any flow/thread context)
 
-`FDSX_STATUS` values: `starting` (on_run_start), `completed`, `failed`, or `partial` (on_run_end; `partial` occurs in tasks-dir mode when some entries succeeded and some failed).
+`FDSX_STATUS` values: `starting` (on_run_start), `completed`, `failed`, `partial`, or `max_loop_reached` (on_run_end; `partial` is the tasks-directory aggregate when some entries succeed and some fail).
 
 `FDSX_HOOKS` contains `on_run_start` or `on_run_end`.
 
 Run-scope hooks are always warn-only — non-zero exits log a warning and never abort the run. Each hook has a 30-second subprocess timeout. Merging: global → project config concatenated (no flow or state level).
+
+## Output and failure diagnostics
+
+JSON written by fdsx for run records, hook data, map progress, and native structured provider results preserves Japanese and other Unicode characters rather than converting them to `\uXXXX` escapes. JSON consumers should still parse the values normally.
+
+For parallel failures, inspect each branch's `name`, `exit_code`, and `error` in the run record, plus its provider stdout/stderr logs. Codex streaming `turn.failed` and `error` messages are kept in stderr logs; on a nonzero exit they also supplement the returned stderr without becoming agent output. Quiet mode suppresses terminal streaming, not these log files. Treat logs as potentially sensitive.
 
 ## Config File
 
@@ -337,16 +410,15 @@ Run-scope hooks are always warn-only — non-zero exits log a warning and never 
 
 ```yaml
 auto_workflow: false            # skip workflow confirmation UI (default: false)
+manual_workflow: false          # disable AI workflow selection (wins over auto_workflow config)
+prompt_prefix: "Explain changes briefly." # shared AI task instructions
+# Alternatively, replace prompt_prefix with prompt_prefix_file: rules.md
 workflows_dir: .fdsx/workflows  # directory for workflow discovery
 default_tasks_dir: .fdsx/tasks/ # default tasks directory for no-arg fdsx run
 workflow_selector:
   provider: claude              # LLM for auto-selecting workflows
   model: claude-sonnet-4-6
   extra_instructions: "..."     # optional additional prompt instructions
-task_splitter:                  # must be explicitly present to enable batch splitting
-  provider: claude
-  model: claude-sonnet-4-6
-  extra_instructions: "..."
 extraction_fallback:            # global default when no per-rule fallback is configured
   provider: claude              # or use profile: <name> (XOR with provider + model)
   model: claude-sonnet-4-6
@@ -371,7 +443,7 @@ profiles:                       # named provider/model bundles
     model: claude-haiku-4-5-20251001
 ```
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+`workflow_selector` supports `profile: <name>` (XOR with `provider`/`model`).
 
 `extraction_fallback` at config level sets the project-wide default recovery LLM for extraction failures. Individual workflows can override it with their own `extraction_fallback:` field or disable it with `extraction_fallback: false`. When both global (`~/.config/fdsx/config.yaml`) and project (`.fdsx/config.yaml`) declare this block, the project block fully replaces the global one — fields are not merged.
 
@@ -383,13 +455,42 @@ Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 
+### Common task instructions
+
+Set `prompt_prefix` (inline text) or `prompt_prefix_file` (UTF-8 file) in global or project configuration, not workflow YAML. Project settings replace the global choice; `prompt_prefix: ""` disables inherited instructions. Relative file paths resolve from the configuration file's folder. The nonblank text is prepended to each AI task as literal text followed by two newlines; only the task body receives variable substitution.
+
+This covers parallel branches, map iterations, loops, retries, and provider escalation. Workflow selection, extraction recovery, system commands, and hooks do not receive it. Each run/resume call loads the current instructions once; resume uses the latest configuration and file contents. This is ordinary prompt text, not a permissions mechanism. Keep secrets out because providers receive it and prompt/output logs may retain it.
+
+For file validation, override rules, whitespace handling, and load failures, read `references/yaml-schema.md#common-task-instructions` before configuring shared instructions.
+
 ## Common Patterns
 
 **Loop (plan-implement-review cycle):**
 Set `max_loop` at flow level. Use a `choice` state to either loop back to `plan` or proceed to `done`.
 
+Prompts can use `{state.iteration}` to distinguish the first execution from later passes. If the workflow never routes to completion, reaching `max_loop` returns `FlowResult.status: max_loop_reached`, preserves partial results/checkpoint state, and is a non-success outcome: CLI exit is non-zero and tasks-directory entries are marked failed.
+
+**Recover after a terminal non-success outcome:**
+Fix the workflow or its inputs, then run
+`fdsx resume --thread-id <id> --from <state>`. This is a recovery jump on the
+same thread, not historical rewind: it combines the latest checkpoint's
+business data with the current workflow YAML and starts fresh runtime
+bookkeeping for loops, parallel branches, and maps. The target must exist in
+the current workflow, must have executed previously, cannot be a `fail` state,
+and must have its current required variables available. Completed executions
+cannot be recovered. Bare `fdsx resume` still retries ordinary pending
+task/provider failures; terminal `fail`, `abort_*`, `max_loop`, and
+`max_iterations` outcomes require `--from` and report eligible targets.
+If recovery reaches another non-success outcome, the user may intervene and
+issue another explicit `--from`; every recovery gets a fresh execution budget,
+and fdsx never repeats recovery automatically. Python callers use
+`resume_flow(<thread_id>, from_state="<state>")`.
+
 **Parallel review with aggregation:**
 Use `parallel` → `pass` (with `aggregate`) → `choice` to fan out reviews, aggregate votes, then branch on result.
+
+**Parallel review with required checks:**
+Name branches and use inline `gate` when selected branches need veto power while other branches remain advisory.
 
 **Human gate:**
 Use `wait` state with `mode: prompt` to pause for user input, then route with `choice`.
@@ -462,6 +563,11 @@ states:
 - `fail` state forbids `next`, `end`, and `max_iterations`
 - `result_file` must be a top-level `$.varname` path (no nesting)
 - Extract `result_path` must not use reserved keys: `output`, `exit_code`, `error`
+- `structured_output.schema` must be a readable, valid JSON Schema file relative to the workflow
+- `structured_output` forbids legacy raw/extract output configuration on the same task or branch
+- Merge-enabled structured output requires a top-level result path and identical merge configuration for task producers sharing that state channel
+- Parallel branch names must be unique; gate references must name existing structured-output branches
+- `gate` and `min_success` are mutually exclusive, and `gate.result_path` must be top-level
 - Map iterator states must all have `type: task` and unique `name` fields
 - `extraction_fallback` at flow level must have exactly one of `provider + model` or `profile` set (XOR); `provider` requires `model` and vice versa; `system` is forbidden as provider. Set to `false` to disable config-level inheritance.
 - `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, `map`, and `fail` states; `pass` state `hooks` accepts all six keys (workflow-scope and wait-scope keys are silently ignored at runtime)

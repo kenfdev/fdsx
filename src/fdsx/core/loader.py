@@ -1,11 +1,14 @@
+import json
 from pathlib import Path
 from typing import Any
 
 import yaml
+from jsonschema import SchemaError
+from jsonschema.validators import validator_for
 
 from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
-from fdsx.models.flow import Flow
+from fdsx.models.flow import Flow, ParallelState, TaskState
 
 
 def load_flow(
@@ -81,7 +84,55 @@ def _parse_and_validate_flow(
     if resolve_errors:
         return None, resolve_errors
 
+    schema_errors = _resolve_structured_output_schemas(flow, yaml_path)
+    if schema_errors:
+        return None, schema_errors
+
     return flow, errors
+
+
+def _resolve_structured_output_schemas(flow: Flow, yaml_path: Path) -> list[str]:
+    """Load and validate structured-output schemas relative to the workflow."""
+    errors: list[str] = []
+    yaml_dir = yaml_path.parent.resolve()
+    contracts: list[tuple[str, Any]] = []
+    for state_name, state in flow.states.items():
+        if isinstance(state, TaskState) and state.structured_output is not None:
+            contracts.append((f"State '{state_name}'", state.structured_output))
+        elif isinstance(state, ParallelState):
+            for index, branch in enumerate(state.branches):
+                if branch.structured_output is not None:
+                    contracts.append(
+                        (
+                            f"Parallel state '{state_name}' branch {index}",
+                            branch.structured_output,
+                        )
+                    )
+
+    for context, contract in contracts:
+        raw_path = Path(contract.schema_path)
+        if raw_path.is_absolute():
+            errors.append(f"{context}: schema must be a relative path")
+            continue
+        schema_path = (yaml_dir / raw_path).resolve()
+        try:
+            schema_path.relative_to(yaml_dir)
+        except ValueError:
+            errors.append(f"{context}: schema path escapes workflow directory")
+            continue
+        if not schema_path.is_file():
+            errors.append(f"{context}: schema not found: {contract.schema_path}")
+            continue
+        try:
+            with schema_path.open() as schema_file:
+                document = json.load(schema_file)
+            validator_class = validator_for(document)
+            validator_class.check_schema(document)
+        except (OSError, json.JSONDecodeError, SchemaError, TypeError) as exc:
+            errors.append(f"{context}: invalid schema '{contract.schema_path}': {exc}")
+            continue
+        contract.schema_document = document
+    return errors
 
 
 def _validate_prompt_file_path(

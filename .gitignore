@@ -27,8 +27,4 @@ build/
 !.fdsx/workflows/
 specs/
 
-# fdsx-ui package
-packages/fdsx-ui/node_modules/
-packages/fdsx-ui/dist/
-
 .tmp/

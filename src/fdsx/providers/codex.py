@@ -1,9 +1,12 @@
 import json
 import logging
 import subprocess
+import tempfile
 from collections.abc import Callable
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
@@ -12,10 +15,14 @@ from fdsx.providers.base import (
     DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
+    ProviderSchemaError,
     _run_subprocess,
+    add_schema_update_guidance,
+    serialize_output_schema,
 )
 
 logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # JSONL streaming format constants
@@ -43,8 +50,13 @@ class CodexOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    reasoning_effort: (
+        Literal["low", "medium", "high", "xhigh", "max", "ultra"] | None
+    ) = None
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] | None = None
     approval_policy: Literal["untrusted", "on-request", "never"] | None = None
+    developer_instructions: str | None = None
+    agents_enabled: bool | None = None
     full_auto: bool = False
     dangerously_bypass_approvals_and_sandbox: bool = False
     inactivity_timeout: int | None = None
@@ -52,10 +64,20 @@ class CodexOptions(BaseModel):
     def to_cli_flags(self) -> list[str]:
         """Translate options to Codex CLI flags."""
         flags: list[str] = []
+        if self.reasoning_effort is not None:
+            flags.extend(["-c", f'model_reasoning_effort="{self.reasoning_effort}"'])
         if self.sandbox is not None:
             flags.extend(["--sandbox", self.sandbox])
         if self.approval_policy is not None:
-            flags.extend(["--approval-policy", self.approval_policy])
+            flags.extend(["-c", f'approval_policy="{self.approval_policy}"'])
+        if self.developer_instructions is not None:
+            # JSON strings are valid TOML basic strings and safely preserve quotes,
+            # newlines, backslashes, and Unicode in Codex's key=value override.
+            encoded = json.dumps(self.developer_instructions, ensure_ascii=False)
+            flags.extend(["-c", f"developer_instructions={encoded}"])
+        if self.agents_enabled is not None:
+            enabled = str(self.agents_enabled).lower()
+            flags.extend(["-c", f"agents.enabled={enabled}"])
         if self.full_auto:
             flags.append("--full-auto")
         if self.dangerously_bypass_approvals_and_sandbox:
@@ -72,6 +94,8 @@ class CodexProvider(ProviderBase):
     def _make_stream_callback(
         self,
         output_callback: Callable[[str], None],
+        final_message_callback: Callable[[str], None] | None = None,
+        error_callback: Callable[[str], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None]]:
         """Create a streaming callback that parses Codex ``--json`` JSONL lines.
 
@@ -87,6 +111,8 @@ class CodexProvider(ProviderBase):
           complete. Concatenates all ``agent_message`` item texts. Returns
           ``None`` if no ``agent_message`` events were received (including
           partial collection on unexpected provider exit).
+        - ``final_message_callback``: receives each complete agent message so
+          the caller can preserve the last one separately from complete stdout.
 
         Event routing:
         - ``item.started`` + ``command_execution`` → ``[tool: {command}]``
@@ -94,7 +120,8 @@ class CodexProvider(ProviderBase):
         - ``item.started`` + ``mcp_tool_call`` → ``[tool: {name}]``
         - ``item.completed`` + ``agent_message`` → ``item.text`` (accumulated)
         - ``item.completed`` + ``reasoning`` → ``[thinking] {text}``
-        - ``turn.failed`` → ``logger.warning``, no callback dispatch
+        - ``turn.failed`` / ``error`` → warning and optional error callback
+          (never included in agent output)
         """
         agent_message_parts: list[str] = []
 
@@ -128,19 +155,29 @@ class CodexProvider(ProviderBase):
                     text = item.get("text", "")
                     if text:
                         agent_message_parts.append(text)
+                        if final_message_callback is not None:
+                            final_message_callback(text)
                         output_callback(text)
                 elif item_type == _ITEM_TYPE_REASONING:
                     text = item.get("text", "")
                     if text:
                         output_callback(f"[thinking] {text}")
 
-            elif event_type == _EVENT_TURN_FAILED:
-                logger.warning("turn.failed event received: %s", event.get("error", ""))
-
-            elif event_type == _EVENT_ERROR:
-                logger.warning(
-                    "Codex error event: %s", event.get("message", str(event))
+            elif event_type in (_EVENT_TURN_FAILED, _EVENT_ERROR):
+                detail = event.get("error") or event.get("message")
+                if isinstance(detail, dict):
+                    detail = detail.get("message")
+                message = (
+                    detail.strip()
+                    if isinstance(detail, str) and detail.strip()
+                    else f"Codex {event_type} event without an error message"
                 )
+                if event_type == _EVENT_TURN_FAILED:
+                    logger.warning("turn.failed event received: %s", message)
+                else:
+                    logger.warning("Codex error event: %s", message)
+                if error_callback is not None:
+                    error_callback(message)
 
         def get_result() -> str | None:
             if agent_message_parts:
@@ -159,6 +196,7 @@ class CodexProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute Codex CLI with a prompt.
 
@@ -171,7 +209,8 @@ class CodexProvider(ProviderBase):
                 When provided, ``--json`` is appended to the CLI invocation
                 and ``ProviderResult.stdout`` is populated from concatenated
                 ``agent_message`` item texts (falling back to partial content
-                on unexpected provider exit).
+                on unexpected provider exit). ``ProviderResult.final_message``
+                contains the last complete ``agent_message``.
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
             summary_callback: Optional callback for summary lines (ignored for Codex).
@@ -179,53 +218,139 @@ class CodexProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
-        use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
-        args = ["codex", "exec"]
-        if model:
-            args.extend(["--model", model])
-        args.extend(self.options.to_cli_flags())
-        if use_stdin:
-            stdin_data: str | None = prompt
-        else:
-            args.append(prompt)
-            stdin_data = None
+        schema_path: Path | None = None
+        if output_schema is not None:
+            encoded_schema = serialize_output_schema(output_schema)
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix="fdsx-codex-schema-",
+                    suffix=".json",
+                    delete=False,
+                ) as schema_file:
+                    schema_path = Path(schema_file.name)
+                    schema_file.write(encoded_schema)
+            except (OSError, UnicodeError) as exc:
+                if schema_path is not None:
+                    try:
+                        schema_path.unlink(missing_ok=True)
+                    except OSError as cleanup_exc:
+                        structured_logger.warning(
+                            "codex_schema_file_cleanup_failed",
+                            path=str(schema_path),
+                            error=str(cleanup_exc),
+                        )
+                structured_logger.error(
+                    "codex_schema_file_creation_failed",
+                    error=str(exc),
+                )
+                raise ProviderSchemaError(
+                    "Failed to create the Codex output schema file"
+                ) from exc
 
-        effective_inactivity = (
-            self.options.inactivity_timeout
-            if self.options.inactivity_timeout is not None
-            else DEFAULT_INACTIVITY_TIMEOUT
-        )
-        effective_timeout = (
-            timeout if timeout is not None else DEFAULT_EXECUTION_TIMEOUT
-        )
+        try:
+            use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
+            args = ["codex", "exec"]
+            if model:
+                args.extend(["--model", model])
+            args.extend(self.options.to_cli_flags())
+            if schema_path is not None:
+                args.extend(["--output-schema", str(schema_path)])
+            if use_stdin:
+                stdin_data: str | None = prompt
+            else:
+                args.append(prompt)
+                stdin_data = None
 
-        if output_callback is not None:
-            args.extend(_STREAM_FORMAT_FLAGS)
-            stream_callback, get_result = self._make_stream_callback(output_callback)
+            effective_inactivity = (
+                self.options.inactivity_timeout
+                if self.options.inactivity_timeout is not None
+                else DEFAULT_INACTIVITY_TIMEOUT
+            )
+            effective_timeout = (
+                timeout if timeout is not None else DEFAULT_EXECUTION_TIMEOUT
+            )
+
+            if output_callback is not None:
+                args.extend(_STREAM_FORMAT_FLAGS)
+                final_message: list[str | None] = [None]
+                errors: list[str] = []
+
+                def capture_error(message: str) -> None:
+                    if message not in errors:
+                        errors.append(message)
+                        if stderr_callback is not None:
+                            stderr_callback(message)
+
+                def capture_final_message(message: str) -> None:
+                    final_message[0] = message
+
+                stream_callback, get_result = self._make_stream_callback(
+                    output_callback,
+                    final_message_callback=capture_final_message,
+                    error_callback=capture_error,
+                )
+                result = _run_subprocess(
+                    args=args,
+                    timeout=effective_timeout,
+                    output_callback=stream_callback,
+                    stderr_callback=stderr_callback,
+                    stdin_data=stdin_data,
+                    inactivity_timeout=effective_inactivity,
+                    on_process_start=on_process_start,
+                )
+                if result.exit_code != 0 and errors:
+                    diagnostics = (
+                        [result.stderr.strip()] if result.stderr.strip() else []
+                    )
+                    diagnostics.extend(
+                        message for message in errors if message not in diagnostics
+                    )
+                    result = ProviderResult(
+                        exit_code=result.exit_code,
+                        stdout=result.stdout,
+                        stderr="\n".join(diagnostics),
+                        final_message=result.final_message,
+                    )
+                if output_schema is not None:
+                    result = add_schema_update_guidance(
+                        result,
+                        provider_name="Codex",
+                        schema_flag="--output-schema",
+                    )
+                parsed_stdout = get_result()
+                if parsed_stdout is not None:
+                    return ProviderResult(
+                        exit_code=result.exit_code,
+                        stdout=parsed_stdout,
+                        stderr=result.stderr,
+                        final_message=final_message[0],
+                    )
+                return result
+
             result = _run_subprocess(
                 args=args,
                 timeout=effective_timeout,
-                output_callback=stream_callback,
+                output_callback=output_callback,
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
                 inactivity_timeout=effective_inactivity,
                 on_process_start=on_process_start,
             )
-            parsed_stdout = get_result()
-            if parsed_stdout is not None:
-                return ProviderResult(
-                    exit_code=result.exit_code,
-                    stdout=parsed_stdout,
-                    stderr=result.stderr,
+            if output_schema is not None:
+                result = add_schema_update_guidance(
+                    result,
+                    provider_name="Codex",
+                    schema_flag="--output-schema",
                 )
             return result
-
-        return _run_subprocess(
-            args=args,
-            timeout=effective_timeout,
-            output_callback=output_callback,
-            stderr_callback=stderr_callback,
-            stdin_data=stdin_data,
-            inactivity_timeout=effective_inactivity,
-            on_process_start=on_process_start,
-        )
+        finally:
+            if schema_path is not None:
+                try:
+                    schema_path.unlink(missing_ok=True)
+                except OSError:
+                    structured_logger.warning(
+                        "codex_schema_file_cleanup_failed",
+                        path=str(schema_path),
+                    )

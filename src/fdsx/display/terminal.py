@@ -428,6 +428,7 @@ def display_completion_summary(
     error: str | None = None,
     error_name: str | None = None,
     error_cause: str | None = None,
+    route: list[str] | None = None,
 ) -> None:
     """Display workflow completion summary to stderr.
 
@@ -441,6 +442,7 @@ def display_completion_summary(
         error: Error message (None on success)
         error_name: Structured error name from a fail state (None if not a fail state)
         error_cause: Structured error cause from a fail state (None if not a fail state)
+        route: Recorded state visits in execution order, including repeated visits
     """
     flow_name_safe = _sanitize_output(flow_name)
     time_str = _format_elapsed(elapsed_seconds)
@@ -464,6 +466,12 @@ def display_completion_summary(
                 f"✗ Workflow '{flow_name_safe}' failed at state '{failed_state_safe}' — {error_str}",
                 file=sys.stderr,
             )
+
+    if route:
+        print(
+            "Route: " + " → ".join(_sanitize_output(name) for name in route),
+            file=sys.stderr,
+        )
 
 
 def display_wait_prompt(state_name: str, message: str, choices: list[str]) -> str:
@@ -842,3 +850,58 @@ def display_resume_command(
     stream.write(border + "\n")
     stream.write("\n")
     stream.flush()
+
+
+def confirm_input_updates(
+    old_inputs: dict[str, Any],
+    updates: dict[str, str],
+    from_state: str,
+    *,
+    yes: bool = False,
+) -> bool:
+    """Render differences and obtain approval unless explicitly supplied."""
+    import difflib
+    import json
+
+    import click
+
+    changed = False
+    for key, value in updates.items():
+        old = old_inputs.get(key)
+        if old == value:
+            continue
+        changed = True
+        old_text = (
+            old
+            if isinstance(old, str)
+            else json.dumps(old, ensure_ascii=False, indent=2)
+        )
+        proposed_text = (
+            value if isinstance(old, str) else json.dumps(value, ensure_ascii=False)
+        )
+        lines = difflib.unified_diff(
+            old_text.split("\n"),
+            proposed_text.split("\n"),
+            fromfile=f"{key} (saved)",
+            tofile=f"{key} (proposed)",
+            lineterm="",
+            n=3,
+        )
+        for line in lines:
+            print(_sanitize_output(line), file=sys.stderr)
+    if not changed:
+        print("Inputs are unchanged.", file=sys.stderr)
+    print(f"Restart state: {_sanitize_spinner_text(from_state)}", file=sys.stderr)
+    print("Warning: retained results may reflect old inputs.", file=sys.stderr)
+    if yes:
+        return True
+    if not sys.stdin.isatty():
+        print(
+            "Input updates require a terminal for approval or explicit --yes.",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        return click.confirm("Apply inputs and resume?", default=False, err=True)
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        return False

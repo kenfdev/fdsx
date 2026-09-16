@@ -3,7 +3,7 @@ import logging
 import subprocess
 import threading
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +14,8 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    add_schema_update_guidance,
+    serialize_output_schema,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,7 @@ class ClaudeOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     permission_mode: (
         Literal[
             "default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"
@@ -88,6 +91,8 @@ class ClaudeOptions(BaseModel):
     def to_cli_flags(self) -> list[str]:
         """Translate options to Claude CLI flags."""
         flags: list[str] = []
+        if self.effort is not None:
+            flags.extend(["--effort", self.effort])
         if self.permission_mode is not None:
             flags.extend(["--permission-mode", self.permission_mode])
         if self.dangerously_skip_permissions:
@@ -118,6 +123,7 @@ class ClaudeProvider(ProviderBase):
         summary_callback: Callable[[str], None] | None = None,
         on_tool_start: Callable[[], None] | None = None,
         on_tool_end: Callable[[], None] | None = None,
+        final_message_callback: Callable[[str], None] | None = None,
     ) -> tuple[Callable[[str], None], Callable[[], str | None], Callable[[], None]]:
         """Create a streaming callback that parses stream-json NDJSON lines.
 
@@ -135,6 +141,7 @@ class ClaudeProvider(ProviderBase):
           falling back to concatenated ``text_delta`` content on crash/missing
           result.
         - ``flush``: emits any remaining buffered text. Call after streaming ends.
+        - ``final_message_callback``: receives the result event's final text block.
         """
         text_parts: list[str] = []
         # Single-element list so the inner closure can rebind the value.
@@ -264,7 +271,13 @@ class ClaudeProvider(ProviderBase):
 
             elif event_type == _EVENT_RESULT:
                 _flush_buffer()
-                final_result[0] = event.get("result", "")
+                structured_result = event.get("structured_output")
+                if structured_result is not None:
+                    final_result[0] = json.dumps(structured_result, ensure_ascii=False)
+                else:
+                    final_result[0] = event.get("result", "")
+                if final_message_callback is not None:
+                    final_message_callback(final_result[0] or "")
                 if completion_event is not None:
                     completion_event.set()
 
@@ -297,6 +310,7 @@ class ClaudeProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute Claude CLI with a prompt.
 
@@ -310,6 +324,8 @@ class ClaudeProvider(ProviderBase):
                 --include-partial-messages`` is appended to the CLI invocation
                 and ``ProviderResult.stdout`` is populated from the ``result``
                 event (falling back to concatenated ``text_delta`` content).
+                ``ProviderResult.final_message`` contains the result event's
+                final text block.
             stderr_callback: Optional callback for streaming stderr lines
             on_process_start: Optional callback invoked after Popen creation
             summary_callback: Optional callback for summary lines ([tool: X],
@@ -328,6 +344,8 @@ class ClaudeProvider(ProviderBase):
         if model:
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
+        if output_schema is not None:
+            args.extend(["--json-schema", serialize_output_schema(output_schema)])
 
         effective_inactivity = (
             self.options.inactivity_timeout
@@ -343,6 +361,10 @@ class ClaudeProvider(ProviderBase):
             completion_event = threading.Event()
             suspend_fn: list[Callable[[], None] | None] = [None]
             resume_fn: list[Callable[[], None] | None] = [None]
+            final_message: list[str | None] = [None]
+
+            def capture_final_message(message: str) -> None:
+                final_message[0] = message
 
             def on_inactivity_hooks(
                 suspend: Callable[[], None], resume: Callable[[], None]
@@ -360,6 +382,7 @@ class ClaudeProvider(ProviderBase):
                 on_tool_end=lambda: (
                     resume_fn[0]() if resume_fn[0] is not None else None
                 ),
+                final_message_callback=capture_final_message,
             )
             result = _run_subprocess(
                 args=args,
@@ -372,6 +395,10 @@ class ClaudeProvider(ProviderBase):
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
             )
+            if output_schema is not None:
+                result = add_schema_update_guidance(
+                    result, provider_name="Claude", schema_flag="--json-schema"
+                )
             flush()
             parsed_stdout = get_result()
             if parsed_stdout is not None:
@@ -379,10 +406,11 @@ class ClaudeProvider(ProviderBase):
                     exit_code=result.exit_code,
                     stdout=parsed_stdout,
                     stderr=result.stderr,
+                    final_message=final_message[0],
                 )
             return result
 
-        return _run_subprocess(
+        result = _run_subprocess(
             args=args,
             timeout=effective_timeout,
             output_callback=output_callback,
@@ -391,3 +419,8 @@ class ClaudeProvider(ProviderBase):
             inactivity_timeout=effective_inactivity,
             on_process_start=on_process_start,
         )
+        if output_schema is not None:
+            result = add_schema_update_guidance(
+                result, provider_name="Claude", schema_flag="--json-schema"
+            )
+        return result

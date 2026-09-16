@@ -141,6 +141,23 @@ class TestClaudeWithPermissionMode:
 
         assert "--dangerously-skip-permissions" in captured_args[0]
 
+    def test_claude_provider_appends_effort_flag(self):
+        """ClaudeProvider.execute() appends the configured effort level."""
+        provider = ClaudeProvider(ClaudeOptions(effort="max"))
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            return FAKE_SUCCESS
+
+        with patch(
+            "fdsx.providers.claude._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(prompt="hello", model="claude-opus")
+
+        args = captured_args[0]
+        assert args[args.index("--effort") + 1] == "max"
+
 
 # ---------------------------------------------------------------------------
 # T019-2: config + workflow merge flows to execute()
@@ -299,6 +316,31 @@ class TestTaskLevelOverride:
         provider = get_provider("claude", {"permission_mode": "dontAsk"})
         assert isinstance(provider, ClaudeProvider)
         assert provider.options.permission_mode == "dontAsk"
+
+    def test_reasoning_option_uses_existing_precedence(self):
+        """Task reasoning option overrides workflow and config values."""
+        config = FdsxConfig(
+            providers=ProviderConfigs(
+                codex=CodexOptions(reasoning_effort="low"),
+            )
+        )
+        flow = _make_single_task_flow(
+            provider="codex",
+            model="gpt-5.6",
+            flow_providers={"codex": {"reasoning_effort": "medium"}},
+            task_provider_options={"reasoning_effort": "high"},
+        )
+
+        merged = _merge_provider_options(
+            config,
+            flow,
+            "codex",
+            flow.states["step1"].provider_options,
+            state_name="step1",
+        )  # type: ignore[union-attr]
+
+        assert merged is not None
+        assert merged["reasoning_effort"] == "high"
 
     def test_pi_task_options_override_config_and_workflow_defaults(self):
         """Task-level pi provider_options win over config and workflow defaults."""
@@ -559,9 +601,27 @@ class TestParallelBranchesWithMixedProviders:
         assert "--sandbox" in args
         assert "workspace-write" in args
 
+    def test_codex_provider_appends_reasoning_effort_config(self):
+        """CodexProvider.execute() appends model_reasoning_effort config."""
+        provider = CodexProvider(CodexOptions(reasoning_effort="ultra"))
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            return FAKE_SUCCESS
+
+        with patch(
+            "fdsx.providers.codex._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(prompt="do work", model="gpt-5.6")
+
+        args = captured_args[0]
+        config_index = args.index("-c")
+        assert args[config_index + 1] == 'model_reasoning_effort="ultra"'
+
     def test_opencode_provider_flags_applied(self):
-        """OpenCodeProvider.execute() appends any to_cli_flags() output."""
-        options = OpenCodeOptions()  # currently no flags
+        """OpenCodeProvider.execute() appends --variant before the prompt."""
+        options = OpenCodeOptions(variant="high")
         provider = OpenCodeProvider(options)
 
         captured_args: list[list[str]] = []
@@ -577,14 +637,31 @@ class TestParallelBranchesWithMixedProviders:
 
         # Prompt must still be the last arg
         args = captured_args[0]
+        assert args[args.index("--variant") + 1] == "high"
         assert args[-1] == "do work"
 
-    def test_get_provider_codex_with_approval_policy(self):
-        """get_provider('codex', options) returns CodexProvider with correct options."""
+    def test_codex_approval_policy_uses_supported_config_override(self):
+        """Codex approval_policy reaches exec as a supported config override."""
         provider = get_provider("codex", {"approval_policy": "never"})
         assert isinstance(provider, CodexProvider)
         assert provider.options.approval_policy == "never"
-        assert "--approval-policy" in provider.options.to_cli_flags()
+
+        captured_args: list[list[str]] = []
+
+        def fake_run_subprocess(args, **kwargs):
+            captured_args.append(list(args))
+            return FAKE_SUCCESS
+
+        with patch(
+            "fdsx.providers.codex._run_subprocess", side_effect=fake_run_subprocess
+        ):
+            provider.execute(prompt="do work", model="gpt-5.6")
+
+        args = captured_args[0]
+        assert args[:2] == ["codex", "exec"]
+        config_index = args.index("-c")
+        assert args[config_index + 1] == 'approval_policy="never"'
+        assert "--approval-policy" not in args
 
     def test_merge_for_different_providers_are_independent(self):
         """Merging options for claude does not affect codex and vice versa."""

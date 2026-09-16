@@ -99,3 +99,4 @@ class TestCodexStreamLifecycle:
             "Final answer",
         ]
         assert result.stdout == "First pass\nFinal answer"
+        assert result.final_message == "Final answer"

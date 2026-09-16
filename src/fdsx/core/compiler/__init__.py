@@ -8,6 +8,7 @@ to work without changes.
 from .aggregation import _aggregate
 from .compile import CompiledGraph, FlowState, _wrap_with_hooks, compile_flow
 from .helpers import (
+    MaxIterationsReachedError,
     _check_max_iterations,
     _extract_result_paths,
     _get_next_state,
@@ -22,6 +23,7 @@ from .routing import _create_routing_function, _evaluate_condition, _resolve_jso
 __all__ = [
     "CompiledGraph",
     "FlowState",
+    "MaxIterationsReachedError",
     "_aggregate",
     "_check_max_iterations",
     "_create_branch_executor",

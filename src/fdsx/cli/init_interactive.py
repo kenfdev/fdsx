@@ -12,6 +12,7 @@ MODEL_PRESETS: dict[str, list[str]] = {
     "claude": ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"],
     "codex": ["o4-mini", "o3", "codex-mini"],
     "gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "grok": ["grok-4.5"],
 }
 
 PROVIDER_DOCS: dict[str, str] = {
@@ -19,6 +20,7 @@ PROVIDER_DOCS: dict[str, str] = {
     "codex": "https://platform.openai.com/docs/models",
     "gemini": "https://ai.google.dev/gemini-api/docs/models",
     "opencode": "https://opencode.ai/docs",
+    "grok": "https://docs.x.ai/build/overview",
 }
 
 PROFILE_ROLES: dict[str, str] = {

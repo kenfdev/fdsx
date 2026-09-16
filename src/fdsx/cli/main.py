@@ -8,7 +8,6 @@ import click
 import structlog
 import typer
 import typer.core
-from pydantic import ValidationError as PydanticValidationError
 
 from fdsx import __version__
 from fdsx.checkpoint.manager import CheckpointManager
@@ -24,13 +23,15 @@ from fdsx.cli.init_interactive import (
 )
 from fdsx.core import engine
 from fdsx.core.batch import (
-    COMPLETED_SUBDIR,
     TASKS_DIR,
-    split_tasks_to_groups,
-    write_task_files,
+    queue_task_files,
 )
-from fdsx.core.config import TaskSplitterConfig, load_config
-from fdsx.core.engine import FlowValidationError
+from fdsx.core.config import load_config
+from fdsx.core.engine import (
+    CheckpointNotFoundError,
+    FlowValidationError,
+    RunLockedError,
+)
 from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
 from fdsx.core.init import (
     check_conflicts,
@@ -41,11 +42,12 @@ from fdsx.core.init import (
     scaffold,
 )
 from fdsx.core.mode import is_interactive, set_interactive_mode
+from fdsx.core.resolve import resolve_workflow_yaml
 from fdsx.core.thread_id import generate_thread_id
-from fdsx.display.terminal import Spinner, _sanitize_output, display_resume_command
+from fdsx.display.terminal import _sanitize_output, display_resume_command
 from fdsx.models.init import InitConfig
 
-EXEMPT_SUBCOMMANDS = frozenset({"init", "validate"})
+EXEMPT_SUBCOMMANDS = frozenset({"init", "resolve", "validate"})
 
 _RAW_ARGS_KEY = "_fdsx_raw_args"
 
@@ -195,7 +197,12 @@ def run(
     auto_workflow: bool | None = typer.Option(
         None,
         "--auto-workflow",
-        help="Skip interactive workflow confirmation and auto-select (overrides config)",
+        help="Auto-select and skip confirmation; overrides manual_workflow config. Conflicts with --manual-workflow and --confirm-workflow.",
+    ),
+    manual_workflow: bool = typer.Option(
+        False,
+        "--manual-workflow",
+        help="Disable AI workflow selection and use the numbered editor; overrides auto_workflow config. Compatible with --confirm-workflow, conflicts with --auto-workflow.",
     ),
     confirm_workflow: bool | None = typer.Option(
         None,
@@ -217,11 +224,13 @@ def run(
 
     Shows an animated spinner during workflow auto-selection for tasks-dir mode.
     Displays an interactive numbered-list CUI for workflow confirmation (in interactive terminals).
-    Use --auto-workflow to skip the confirmation UI.
-    In non-interactive (non-TTY) terminals, auto-confirms without prompting."""
+    Use --manual-workflow to disable selection AI and choose by number.
+    Use --auto-workflow to skip confirmation and override manual configuration.
+    In noninteractive terminals, assigned tasks auto-confirm; unresolved manual
+    assignments require an explicit workflow."""
     try:
         config = load_config()
-    except PydanticValidationError as e:
+    except ValueError as e:
         typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
     if tasks_dir is not None:
@@ -244,6 +253,13 @@ def run(
         ).expanduser()
         _validate_tasks_dir(resolved_tasks_dir)
         tasks_dir = resolved_tasks_dir
+
+    if manual_workflow and auto_workflow:
+        typer.echo(
+            "Error: --manual-workflow and --auto-workflow are mutually exclusive",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     if auto_workflow is not None and confirm_workflow is not None:
         typer.echo(
@@ -280,6 +296,12 @@ def run(
     if confirm_workflow is not None:
         effective_auto_workflow = not confirm_workflow
 
+    effective_manual_workflow = not auto_workflow and (
+        manual_workflow or config.manual_workflow
+    )
+    if effective_manual_workflow:
+        effective_auto_workflow = False
+
     current_thread_id = thread_id if thread_id else None
 
     _start_hooks = collect_run_hooks(
@@ -297,6 +319,7 @@ def run(
                 tasks_dir,
                 base_dir,
                 auto_workflow=effective_auto_workflow,
+                manual_workflow=effective_manual_workflow,
                 quiet=quiet,
                 continue_on_error=continue_on_error,
             )
@@ -311,7 +334,7 @@ def run(
                 workflow, inputs, current_thread_id, base_dir, quiet=quiet
             )
             execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
-            if result.status == "aborted":
+            if result.status != "completed":
                 raise typer.Exit(code=1)
     except FlowValidationError as e:
         typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
@@ -348,6 +371,8 @@ def _display_resume_on_error(
 
 def _compute_run_status(results: list[dict[str, object]]) -> str:
     """Compute aggregate status for a tasks-dir run from individual task results."""
+    if not results:
+        return "completed"
     statuses = {r.get("status") for r in results}
     if statuses == {"completed"}:
         return "completed"
@@ -501,45 +526,114 @@ def validate(
 
 
 @app.command()
+def resolve(
+    workflow: Path = typer.Argument(..., help="Path to the YAML workflow file"),
+) -> None:
+    """Print a resolved YAML workflow without executing it."""
+    try:
+        is_valid, errors, _flow_name = engine.validate_flow(workflow)
+    except ValueError as e:
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
+    if not is_valid:
+        for error in errors:
+            typer.echo(f"Error: {_sanitize_output(str(error))}", err=True)
+        raise typer.Exit(code=2)
+
+    typer.echo(resolve_workflow_yaml(workflow), nl=False)
+
+
+@app.command()
 def resume(
     thread_id: str = typer.Option(..., "--thread-id", help="Thread ID to resume"),
     base_dir: Path | None = typer.Option(
         None, "--base-dir", help="Base directory for checkpoints (default: .fdsx/)"
     ),
+    from_state: str | None = typer.Option(
+        None,
+        "--from",
+        help="Executed state to start an explicit recovery jump from",
+    ),
+    input_vars: list[str] | None = typer.Option(
+        None,
+        "--input",
+        help="Replace an existing input (KEY=VALUE, repeatable; requires --from)",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Approve submitted input updates without prompting (required without a terminal)",
+    ),
 ) -> None:
-    """Resume a flow from a checkpoint."""
-    config = load_config()
+    """Resume a flow from a checkpoint.
+
+    Input updates require interactive approval or explicit --yes.
+    """
+    from fdsx.display.terminal import confirm_input_updates
+
+    updates: dict[str, str] | None = None
+    if input_vars:
+        updates = {}
+        for pair in input_vars:
+            if "=" not in pair:
+                typer.echo("Invalid input format. Use KEY=VALUE", err=True)
+                raise typer.Exit(code=2)
+            key, value = pair.split("=", 1)
+            updates[key] = value
+    try:
+        config = load_config()
+    except ValueError as e:
+        typer.echo(f"Configuration error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     _start_hooks = collect_run_hooks(
         "on_run_start", global_run_hooks=config.run_hooks, project_run_hooks=None
     )
     _end_hooks = collect_run_hooks(
         "on_run_end", global_run_hooks=config.run_hooks, project_run_hooks=None
     )
-    execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+    started = False
+
+    def approve(old: dict[str, Any], proposed: dict[str, str], target: str) -> bool:
+        nonlocal started
+        if not confirm_input_updates(old, proposed, target, yes=yes):
+            return False
+        execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+        started = True
+        return True
+
+    if updates is None:
+        execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+        started = True
     try:
-        result = engine.resume_flow(thread_id, base_dir)
+        if updates is None:
+            result = engine.resume_flow(thread_id, base_dir, from_state=from_state)
+        else:
+            result = engine.resume_flow(
+                thread_id,
+                base_dir,
+                from_state=from_state,
+                input_updates=updates,
+                confirm_inputs=approve,
+            )
         execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
-        if result.status == "aborted":
-            raise typer.Exit(code=1)
+    except (CheckpointNotFoundError, RunLockedError) as e:
+        if started:
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     except RuntimeError as e:
         error_msg = str(e)
-        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
-        if "No checkpoint found" in error_msg:
-            typer.echo(
-                f"Error: No checkpoint found for thread ID {_sanitize_output(thread_id)}",
-                err=True,
-            )
-            raise typer.Exit(code=2) from None
-        elif "locked by PID" in error_msg:
-            typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
-            raise typer.Exit(code=2) from None
-        else:
-            typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
-            raise typer.Exit(code=1) from None
+        if started:
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
+        raise typer.Exit(code=1) from None
     except Exception as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
+        if started:
+            execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         raise typer.Exit(code=1) from None
+    if result.status != "completed":
+        raise typer.Exit(code=1)
 
 
 @app.command(name="list")
@@ -576,81 +670,25 @@ def list_flows(
 
 @app.command()
 def add(
-    task_file: Path = typer.Argument(..., help="Path to the task file"),
-    split: bool = typer.Option(
-        False, "--split", help="Split the task file into multiple task files"
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Clear existing tasks directory before writing"
-    ),
+    task_files: list[Path] = typer.Argument(..., help="Paths to task files"),
 ) -> None:
-    """Add a task file to the batch execution queue.
-
-    When --split is specified, reads task_splitter configuration from .fdsx/config.yaml
-    (or defaults) and splits the task file into individual task files in .fdsx/tasks/.
-    Shows an animated spinner during LLM splitting. In non-interactive (non-TTY) terminals,
-    prints plain log lines instead of animation.
-    """
-    if not task_file.exists():
-        typer.echo(f"Error: Task file not found: {task_file}", err=True)
-        raise typer.Exit(code=2)
-
-    config = load_config()
-    task_splitter = config.task_splitter or TaskSplitterConfig()
-
-    tasks_dir = Path(TASKS_DIR)
-
-    if tasks_dir.exists() and any(
-        entry for entry in tasks_dir.iterdir() if entry.name != COMPLETED_SUBDIR
-    ):
-        if not force:
-            typer.echo(
-                f"Error: Tasks directory '{TASKS_DIR}' is not empty. "
-                "Use --force to clear and overwrite.",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        if tasks_dir.is_symlink():
-            typer.echo(
-                f"Error: Tasks directory '{TASKS_DIR}' is a symlink. Refusing to delete.",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        for f in tasks_dir.glob("*.yaml"):
-            f.unlink()
-        typer.echo(f"Cleared existing task files in {TASKS_DIR}/", err=True)
-
-    single_task = not split
-
+    """Append task files to the batch execution queue."""
     try:
-        task_content = task_file.read_text()
-
-        with Spinner("Splitting tasks...") as spinner:
-            groups = split_tasks_to_groups(
-                task_content,
-                task_splitter,
-                single_task=single_task,
-                progress=spinner.update,
-            )
-
-            if not groups:
-                typer.echo("No tasks were generated from the input file.", err=True)
-                return
-
-            spinner.update(f"Writing {len(groups)} task file(s)...")
-            created_files = write_task_files(groups, tasks_dir, source=str(task_file))
+        config = load_config()
+        tasks_dir = Path(config.default_tasks_dir or TASKS_DIR).expanduser()
+        created_files = queue_task_files(task_files, tasks_dir)
 
         typer.echo(
-            f"Created {len(created_files)} task file(s) in {TASKS_DIR}/", err=True
+            f"Created {len(created_files)} task file(s) in {tasks_dir}/", err=True
         )
         for f in created_files:
             typer.echo(f"  {f}", err=True)
 
-    except RuntimeError as e:
-        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        raise typer.Exit(code=1) from None
     except ValueError as e:
-        typer.echo(f"Error parsing tasks: {_sanitize_output(str(e))}", err=True)
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
+    except (OSError, UnicodeError) as e:
+        typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=1) from None
 
 

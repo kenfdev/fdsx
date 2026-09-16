@@ -2,6 +2,7 @@ import logging
 import shutil
 import subprocess
 from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -12,6 +13,7 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    append_structured_output_guidance,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,7 @@ class PiProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute pi CLI with a prompt."""
         if shutil.which("pi") is None:
@@ -80,6 +83,7 @@ class PiProvider(ProviderBase):
                 "pi binary not found on PATH. Ensure pi is installed and available."
             )
 
+        prompt = append_structured_output_guidance(prompt, output_schema)
         use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         args = ["pi", "-p"]
         if use_stdin:

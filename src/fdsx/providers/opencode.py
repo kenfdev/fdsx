@@ -3,7 +3,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from fdsx.providers.base import (
     ARG_MAX_STDIN_THRESHOLD,
@@ -12,6 +12,7 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     _run_subprocess,
+    append_structured_output_guidance,
 )
 
 
@@ -20,19 +21,23 @@ class OpenCodeOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    variant: str | None = Field(default=None, min_length=1)
     permission: str | dict[str, Any] | None = None
     inactivity_timeout: int | None = None
 
     def to_cli_flags(self) -> list[str]:
-        """Translate options to OpenCode CLI flags (none currently defined)."""
-        return []
+        """Translate options to OpenCode CLI flags."""
+        flags: list[str] = []
+        if self.variant is not None:
+            flags.extend(["--variant", self.variant])
+        return flags
 
     def to_env(self) -> dict[str, str]:
         """Build extra environment variables for the OpenCode subprocess."""
         if self.permission is None:
             return {}
         config = {"permission": self.permission}
-        return {"OPENCODE_CONFIG_CONTENT": json.dumps(config)}
+        return {"OPENCODE_CONFIG_CONTENT": json.dumps(config, ensure_ascii=False)}
 
 
 class OpenCodeProvider(ProviderBase):
@@ -53,6 +58,7 @@ class OpenCodeProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute OpenCode CLI with a prompt.
 
@@ -69,6 +75,7 @@ class OpenCodeProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
+        prompt = append_structured_output_guidance(prompt, output_schema)
         use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
         args = ["opencode", "run"]
         if model:

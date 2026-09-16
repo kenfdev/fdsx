@@ -15,11 +15,16 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Parallel execution with branch aggregation
 - Map state for iterating over arrays with sub-workflows
 - Persistent batch task processing with crash-resilient resume
-- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, OpenCode, and system commands)
+- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, Grok, OpenCode, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
+- Provider-independent JSON Schema validation for structured task and branch output
+- Stable keyed upsert merging for iterative structured ledgers
+- Named parallel branches with required-branch boolean gates
+- One-based state iteration values for loop-aware prompts
+- Explicit non-success outcomes when a workflow reaches `max_loop`
 - Global and per-flow extraction fallback and retry escalation
 - Workflow auto-selection via LLM-based matching
 
@@ -80,14 +85,14 @@ name: MyWorkflow                # (string, REQUIRED) human-readable flow name
 description: What this flow does # (string, REQUIRED) flow description
 start_at: first_state           # (string, REQUIRED) name of the initial state; must exist in `states`
 version: "1.0"                  # (string, optional) version identifier
-max_loop: 10                    # (int, default: 10) max times any state can be re-entered before aborting
+max_loop: 10                    # (int, default: 10) max loop iterations; exhaustion returns max_loop_reached
 
 # --- Profiles: named provider+model bundles (optional) ---
 # Define here or in .fdsx/config.yaml. Workflow-level overrides config-level.
 # Extra fields beyond provider/model are passed as provider_options.
 profiles:
   smarty:
-    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini
+    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini, grok
     model: claude-opus-4-6      # (string, REQUIRED) model name
   doer:
     provider: opencode
@@ -163,7 +168,7 @@ states:
 
     # --- Provider (pick ONE approach) ---
     # Approach A: explicit provider + model
-    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, system
+    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, grok, system
     model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
     # Approach B: profile reference (mutually exclusive with provider/model)
     # profile: smarty
@@ -181,6 +186,14 @@ states:
     result_path: $.plan                 # (string, REQUIRED) JSONPath where raw output is stored
     result_file: $.plan_ref             # (string, optional) stores absolute path of a result file
                                         #   must be a simple $.varname (no nesting)
+    # Alternatively, configure structured_output instead of result_path/extract:
+    # structured_output:
+    #   schema: schemas/plan.schema.json # relative to this workflow YAML
+    #   result_path: $.plan              # stores the parsed object/list, not a JSON string
+    #   allow_extra_fields: false         # optional; default true, false rejects extras
+    #   merge:                            # optional; lists of objects only
+    #     strategy: upsert
+    #     key: id                        # replace by key, append new keys, retain omissions
 
     # --- Extraction: parse structured signals from LLM output (optional) ---
     extract:
@@ -248,7 +261,8 @@ states:
   parallel_review:
     type: parallel                      # (REQUIRED) literal "parallel"
     branches:                           # (list, REQUIRED) each branch is an independent execution
-      - provider: claude                # same provider rules as task
+      - name: quality                   # (string, optional) stable branch identity
+        provider: claude                # same provider rules as task
         model: claude-sonnet-4-6
         # Alternatively, use a profile reference (mutually exclusive with provider/model):
         # profile: smarty
@@ -265,7 +279,8 @@ states:
         provider_options:               # (map, optional) per-branch overrides
           permission_mode: plan
 
-      - provider: codex
+      - name: security
+        provider: codex
         model: gpt-5.4
         prompt_file: review-security.md
         extract:
@@ -276,6 +291,13 @@ states:
     result_path: $.reviews              # (string, REQUIRED) JSONPath for the results array
     result_file: $.reviews_ref          # (string, optional) path to result file
     min_success: 2                      # (int, optional) minimum branches that must succeed
+    # Or use a required-branch gate instead of min_success:
+    # Required branches must replace extract with structured_output.
+    # gate:
+    #   required: [quality, security]   # named branches with veto power
+    #   field: $.review.approved        # branch-local structured output field
+    #   expected: true
+    #   result_path: $.approved         # top-level boolean for a following choice
     max_iterations: 3                   # (int, optional)
     hooks:                              # (optional) on_state_start / on_state_end only
     next: aggregate_reviews             # next / end — same rules as task
@@ -377,6 +399,61 @@ states:
                                         # it terminates the flow immediately on entry
 ```
 
+### Structured Output and Convergence
+
+Task states and parallel branches can validate complete provider stdout against a JSON Schema before it enters workflow state:
+
+```yaml
+states:
+  update_ledger:
+    type: task
+    provider: claude
+    model: claude-sonnet-4-6
+    prompt_template: "Produce ledger update {state.iteration} as JSON"
+    structured_output:
+      schema: schemas/ledger.schema.json
+      result_path: $.ledger
+      merge:
+        strategy: upsert
+        key: id
+    next: review
+
+  review:
+    type: parallel
+    branches:
+      - name: security
+        provider: claude
+        model: claude-sonnet-4-6
+        prompt_template: "Review the ledger: {ledger}"
+        structured_output:
+          schema: schemas/review.schema.json
+          result_path: $.review
+      - name: style
+        provider: codex
+        model: gpt-5.4
+        prompt_template: "Give advisory feedback for: {ledger}"
+        structured_output:
+          schema: schemas/review.schema.json
+          result_path: $.review
+    result_path: $.reviews
+    gate:
+      required: [security]
+      field: $.review.approved
+      expected: true
+      result_path: $.approved
+    end: true
+```
+
+The schema path is relative to the workflow file and is loaded and checked before provider execution. Claude, Codex, and Grok also receive the schema through their native CLI schema controls while retaining streaming; Gemini, Cursor, and OpenCode receive JSON-only schema guidance in the prompt. fdsx always parses and validates the final value locally, regardless of native support. Complete output must be one JSON object or list; a single outer Markdown code fence is allowed. Validation failures use the state's normal retry count and provide bounded corrective feedback. The `system` provider is not retried for a structured-output validation failure.
+
+Extra fields are allowed by default: `additionalProperties: false` and `unevaluatedProperties: false` are non-fatal, including inside nested and composite schemas. Unknown fields are retained in workflow state; required fields, known-property schemas, enum/pattern/numeric constraints, JSON syntax, and the object/list requirement remain enforced. Set `allow_extra_fields: false` to reject unknown fields strictly.
+
+`merge.strategy: upsert` requires a top-level result path and lists of objects containing the configured key. Matching objects are replaced in place, new keys append, and omitted existing objects remain. A batch with missing or duplicate keys is rejected.
+
+With `gate`, required named branches must execute successfully and provide schema-valid output. A valid value different from `expected` sets the boolean result to `false`; execution, validation, or missing-field failures on required branches fail the parallel state. Unlisted advisory branch failures remain in the results without blocking the gate. `gate` and `min_success` are mutually exclusive.
+
+Reaching `max_loop` returns `FlowResult.status == "max_loop_reached"`, preserves partial results and checkpoint state, passes that status to workflow-end hooks, produces a non-zero CLI exit, and marks tasks-directory entries failed.
+
 ### Hook Environment
 
 Every hook command receives context via **environment variables** and **positional arguments**.
@@ -386,7 +463,7 @@ Every hook command receives context via **environment variables** and **position
 | Variable | Description | Example |
 |---|---|---|
 | `FDSX_STATE_NAME` | Name of the current state | `plan` |
-| `FDSX_STATUS` | Lifecycle status | `starting`, `completed`, or `failed` |
+| `FDSX_STATUS` | Lifecycle status | `starting`, `completed`, `failed`, `aborted`, `partial`, or `max_loop_reached` depending on hook scope |
 | `FDSX_DATA_PATH` | Path to the state data JSON file | `.fdsx/runs/<thread_id>/hooks/plan/input.json` |
 | `FDSX_THREAD_ID` | Current run thread ID | `abc123` |
 | `FDSX_FLOW_NAME` | Name of the flow | `MyWorkflow` |
@@ -465,6 +542,93 @@ iterator:
 | `{task}` | Task description passed via `--input task=...` or from batch task entry |
 | `{source}` | Source origin passed via `--input source=...` or from batch task file |
 | `{run_path}` | Absolute path of the current run's data directory (`<base_dir>/runs/<thread_id>`). Read-only — cannot be overridden by `--input` or a state's `result_path`. Use it to share files between states: write to `{run_path}/artifact.txt` in one state and read from it in the next. |
+| `{state.iteration}` | One-based execution count for the current state. The first entry is `1`; loop re-entry increments it. |
+
+## Common task instructions
+
+Set `prompt_prefix` in `$XDG_CONFIG_HOME/fdsx/config.yaml` (by default
+`~/.config/fdsx/config.yaml`) or the project's `.fdsx/config.yaml` to share
+instructions across workflows without editing AGENTS.md:
+
+```yaml
+prompt_prefix: |
+  Explain changes briefly.
+  Run the relevant local tests before finishing.
+```
+
+Alternatively, put the instructions in a UTF-8 file:
+
+```yaml
+prompt_prefix_file: rules.md
+```
+
+Relative paths are based on the folder containing the configuration file:
+this example reads `.fdsx/rules.md` for project configuration, or
+`$XDG_CONFIG_HOME/fdsx/rules.md` for global configuration. Inherited global
+paths keep that base; neither the current working directory nor the workflow
+folder is used. Absolute paths, parent references (`../`), symlinks, and `~/`
+(expanded to the home folder) are supported. File line endings are preserved.
+
+Do not specify `prompt_prefix` and `prompt_prefix_file` in the same configuration,
+even if one value is empty. The project choice replaces the global choice
+completely, including when switching between inline text and a file.
+Omitting both keys inherits the global value; `prompt_prefix: ""` disables it,
+as does a string
+containing only spaces, tabs, or newlines. An empty or whitespace-only file also
+disables the prefix without falling back to the global value.
+An empty file path is invalid; use an existing empty file or `prompt_prefix: ""`
+to disable instructions. A missing value, explicit `null`, or
+non-string value is a configuration error. Each configuration file is validated
+before merging, even when the project replaces an invalid global value.
+Only the selected instruction file is read: an overridden global file need not
+exist or be readable. A selected file that is missing, unreadable, or not valid
+UTF-8 causes a configuration error before auto-selection or any AI task starts.
+Diagnostics identify the setting and error cause without including file contents.
+Configuration lookup locations are unchanged.
+
+For a nonblank value, fdsx preserves all characters, including leading/trailing
+whitespace and braces, then adds two newline characters and the resolved task
+body. Only the task body receives variable substitution. An unset or disabled
+prefix leaves the body unchanged, with no added separator. This works with both
+inline task prompts and existing task `prompt_file` inputs.
+
+The prefix is sent once per AI task invocation across all LLM providers,
+including parallel branches, map iterations, loops, retries, provider escalation,
+and retries with structured-output feedback. It is excluded from workflow
+auto-selection, extraction fallback/recovery calls, system commands, and hooks.
+It is configured only at the global or project level.
+
+Each `run_flow` or `resume_flow` call reads the current configuration and selected
+instruction file once; it does not reload during that call. Resume uses the
+latest contents and file reference, including switching between file and inline text,
+disabling the prefix or removing a project override to inherit the global value.
+Invalid current settings prevent remaining tasks from starting. Consecutive task
+files use the existing per-`run_flow`/`resume_flow` configuration loading boundary.
+The checkpoint format does not change. Configuration loading raises `ValueError`
+for invalid prefix values and file reading/decoding failures; resume wraps setup
+errors in its existing `FlowExecutionError`. The CLI reports configuration errors
+on stderr and exits nonzero.
+
+This is ordinary prompt text, separate from provider-specific `system_prompt`
+or developer instruction options. It does not guarantee instruction priority,
+compliance, permissions, or command restrictions. Do not include secrets: the
+text is sent to the provider and may appear in existing prompt records. Provider
+stdout/stderr is also recorded in per-state logs, so echoed instructions can
+appear there even in quiet mode.
+
+## Output and failure diagnostics
+
+fdsx preserves Japanese and other Unicode characters in generated JSON for run
+records, hook data, map progress, and native structured provider results instead
+of converting them to `\uXXXX` escapes. The JSON format and parsed values are
+unchanged.
+
+Parallel branch entries in run records include `name`, `exit_code`, and `error`
+alongside provider details. Use these fields and per-branch stdout/stderr logs
+to investigate failures. Codex streaming `turn.failed` and `error` messages are
+preserved in stderr logs and, on a nonzero exit, supplement the returned stderr
+without being mixed into agent output. Quiet mode suppresses terminal streaming,
+not the saved logs. Logs may contain sensitive provider output.
 
 ## Project Configuration (`.fdsx/config.yaml`)
 
@@ -500,24 +664,21 @@ workflows_dir: .fdsx/workflows    # (string, default: ".fdsx/workflows")
 default_tasks_dir: .fdsx/tasks    # (string, optional) default directory for bare `fdsx run`
                                   #   when no workflow, --tasks, or --tasks-dir is given
 
-# --- Auto-workflow selection ---
+# --- Common AI task instructions (choose inline text OR a UTF-8 file) ---
+prompt_prefix: "Explain changes briefly."
+# prompt_prefix_file: rules.md    # relative to this config file's directory
+
+# --- Workflow selection ---
 auto_workflow: false              # (bool, default: false) skip interactive confirmation UI
+manual_workflow: false            # (bool, default: false) disable AI workflow selection
 
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
   profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini
+  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini, grok
   # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.
-
-# --- Task splitter: LLM used by `fdsx add --split` ---
-task_splitter:
-  profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude")
-  # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
-  extra_instructions: |           # (string, optional) appended to the split prompt
-    Group related tasks together.
 
 # --- Global extraction fallback (optional) ---
 # Applied when extraction strategies all fail and no per-rule fallback is configured.
@@ -544,6 +705,8 @@ retry_escalation:
 providers:
 
   claude:
+    effort: high                         # (string, optional) one of:
+                                         #   low, medium, high, xhigh, max
     permission_mode: bypassPermissions  # (string, optional) one of:
                                         #   default, acceptEdits, bypassPermissions, dontAsk, plan, auto
     dangerously_skip_permissions: true   # (bool, default: false)
@@ -560,14 +723,19 @@ providers:
     inactivity_timeout: 600              # (int, optional) seconds before killing inactive subprocess
 
   codex:
+    reasoning_effort: high               # (string, optional) one of:
+                                         #   low, medium, high, xhigh, max, ultra
     sandbox: workspace-write             # (string, optional) one of:
                                          #   read-only, workspace-write, danger-full-access
     approval_policy: never               # (string, optional) one of: untrusted, on-request, never
+    developer_instructions: "Stay within the assigned task."  # (string, optional)
+    agents_enabled: false                # (bool, optional) enable/disable Codex subagents
     full_auto: false                     # (bool, default: false)
     dangerously_bypass_approvals_and_sandbox: false  # (bool, default: false)
     inactivity_timeout: 600              # (int, optional)
 
   opencode:
+    variant: high                        # (string, optional) model-specific variant
     permission: "allow"                  # (string or map, optional)
                                          #   passed as OPENCODE_CONFIG_CONTENT env var
     inactivity_timeout: 600              # (int, optional)
@@ -579,6 +747,28 @@ providers:
     include_directories: []              # (list of strings, default: []) extra directories to include
     extensions: []                       # (list of strings, default: []) extensions to enable
     policy: []                           # (list of strings, default: []) policy files to apply
+    inactivity_timeout: 600              # (int, optional)
+
+  grok:
+    permission_mode: dontAsk             # default; default|acceptEdits|auto|dontAsk|bypassPermissions|plan
+    sandbox: workspace                   # (string, optional) Grok sandbox profile; unset by default
+    allow: []                            # (list of strings) repeatable permission allow rules
+    deny: []                             # (list of strings) repeatable permission deny rules
+    tools: []                            # (list of strings) built-in tool allowlist
+    disallowed_tools: []                 # (list of strings) built-in tools to remove
+    reasoning_effort: high               # (string, optional)
+    max_turns: 20                        # (positive int, optional)
+    on_max_turns: fail                   # fail (default) or return_partial
+    no_subagents: true                   # default: true
+    no_plan: true                        # default: true
+    cross_session_memory: off            # off (default), on, or inherit
+    disable_web_search: false            # default: false
+    verbatim: true                       # default: true
+    cwd: /workspace/project              # (string, optional)
+    agent: reviewer                      # (string, optional) agent name or definition path
+    agents: {}                           # JSON-compatible map; requires no_subagents: false when non-empty
+    rules: "Review carefully"            # mutually exclusive with system_prompt_override
+    # system_prompt_override: "..."      # replaces Grok's normal system prompt
     inactivity_timeout: 600              # (int, optional)
 
 # --- Global hooks (optional) ---
@@ -635,19 +825,26 @@ run_hooks:
 | `fdsx run` | Execute tasks from default tasks directory (`default_tasks_dir` or `.fdsx/tasks/`) |
 | `fdsx run <workflow.yaml>` | Execute a workflow |
 | `fdsx run <workflow.yaml> --input key=value` | Pass input variables |
-| `fdsx run --tasks-dir <dir>` | Persistent batch execution (workflow optional) |
+| `fdsx run --tasks-dir <dir>` | Drain queued tasks sequentially until the directory is empty (workflow optional) |
 | `fdsx run ... --quiet` | Suppress stderr streaming output |
-| `fdsx run ... --auto-workflow` | Skip workflow confirmation UI |
+| `fdsx run ... --auto-workflow` | Auto-select and skip confirmation; override manual config |
+| `fdsx run ... --manual-workflow` | Disable AI selection and use the numbered workflow editor |
 | `fdsx run ... --confirm-workflow` | Show workflow confirmation UI (requires interactive mode) |
 | `fdsx run ... --continue-on-error` | Continue processing remaining entries on error in tasks-dir mode |
-| `fdsx resume --thread-id <id>` | Resume from checkpoint |
+| `fdsx resume --thread-id <id>` | Resume an interrupted or retryable failed execution from its checkpoint |
+| `fdsx resume --thread-id <id> --from <state>` | Recover a non-successful execution by jumping to a previously executed state |
 | `fdsx resume --thread-id <id> --base-dir <dir>` | Resume with custom base directory |
 | `fdsx validate <workflow.yaml>` | Validate YAML syntax |
+| `fdsx resolve <workflow.yaml>` | Print normalized YAML with prompt files and referenced profiles resolved for inspection |
 | `fdsx list` | List recent runs |
 | `fdsx list --base-dir <dir>` | List runs from custom base directory |
-| `fdsx add <task_file>` | Add a task file to the batch execution queue (single task) |
-| `fdsx add <task_file> --split` | Split a task file into individual task files |
-| `fdsx add <task_file> --split --force` | Clear existing tasks directory before splitting |
+| `fdsx add <task_file>...` | Append one or more files to the default task queue in argument order |
+
+`fdsx add` copies each source file verbatim into one queued task. It appends after
+existing active and completed sequence numbers and honors `default_tasks_dir`.
+`fdsx run` processes one task at a time, rescans for tasks added while it is active,
+and exits successfully when the queue is empty. Only one runner may drain a given
+tasks directory at a time.
 
 ## Example Workflow
 
@@ -735,10 +932,126 @@ Flows automatically persist state after each step. If interrupted (Ctrl+C, crash
 fdsx resume --thread-id <thread_id>
 ```
 
+For a terminal non-success outcome such as `fail`, `abort_*`, `max_loop`, or
+`max_iterations`, fix the workflow or its inputs and explicitly select a
+previously executed state:
+
+```bash
+fdsx resume --thread-id <thread_id> --from review
+```
+
+The equivalent Python API is:
+
+```python
+from fdsx.core.engine import resume_flow
+
+result = resume_flow("<thread_id>", from_state="review")
+```
+
+To replace existing execution inputs during recovery, repeat `--input KEY=VALUE`:
+
+```bash
+fdsx resume --thread-id <thread_id> --from review --input 'task=Revised requirements'
+```
+
+`--from` is required even when submitted values are identical. Only saved input
+keys are accepted; unspecified values remain unchanged. The terminal shows line
+differences, the restart state, and a warning that retained results may reflect
+old inputs. Interactive confirmation is required unless you pass `--yes` to
+approve the submitted values and restart state without prompting:
+
+```bash
+fdsx resume --thread-id <thread_id> --from review --input 'task=Revised requirements' --yes
+```
+
+Without a terminal, input updates require explicit `--yes`; otherwise the command
+exits with code 1 without changing saved data or running states or hooks.
+Cancellation has the same effect. `--yes` does not bypass validation or locking,
+and has no effect on ordinary resume without input updates or wait-state choices.
+
+Recovery keeps the same thread and runs normal workflow verification and routing.
+Changed inputs preserve full saved values, the prior run record, and copies of
+fdsx-managed result files under `runs/<thread_id>/revisions/`; the checkpoint's
+`_meta.input_revisions` links these snapshots. New runs also retain initial inputs
+in `_meta.initial_inputs`. Older runs preserve only history still available when
+updated. Identical inputs record a recovery attempt without a new input revision;
+its full snapshot and managed files are linked by `_meta.recovery_snapshots`
+in the same archive directory. After the first input revision, explicit recovery
+without new inputs also archives the values and managed files it is about to
+replace. Each snapshot includes the prior checkpoint metadata and run record,
+so earlier revisions and reviews remain traceable after summary rewrites.
+
+Snapshot publication precedes the single SQLite checkpoint update that stores
+both accepted inputs and their history reference, under the existing thread lock.
+If the process exits before that checkpoint commits, the old inputs remain
+current; an unreferenced snapshot or `.pending` directory may remain and does not
+represent an accepted revision. If it exits after commit, the new inputs and
+published history remain together. Resume with an explicit `--from` to retry
+interrupted recovery. This uses the existing local filesystem and SQLite
+persistence; it does not reconstruct missing archives. For older executions,
+only values and artifacts available at the first update can be preserved, not
+already overwritten requirements or reviews.
+
+Tasks-directory resume retains the original task entry and thread. Its normal
+status updates still occur, but edited task descriptions and source files are
+not imported into checkpoint inputs. Submit existing-input replacements explicitly;
+resume does not start another batch or rewrite those descriptions.
+
+External-tool files are not archived. Changing a file behind an unchanged input
+path does not import its contents: submit the desired input value explicitly.
+
+This is a recovery jump, not a rewind. It uses the latest checkpoint's business
+data together with the current workflow YAML, starts the selected state with
+fresh loop/parallel/map runtime bookkeeping, and continues on the same thread.
+It does not reconstruct historical state from before the failure. The target
+must be a previously executed state in the current workflow, cannot be a
+`fail` state, and must have all variables it currently requires. A successful
+execution cannot be recovered. Running terminal resume without `--from` prints
+the eligible states; ordinary pending task/provider failures retain the
+existing bare-resume retry behavior.
+
+If the recovered workflow reaches another non-success outcome, fix the problem
+and invoke `--from` (or `from_state`) again. Each explicit invocation gets a
+fresh execution budget; fdsx never starts another recovery attempt
+automatically.
+
 List all executions:
 ```bash
 fdsx list
 ```
+
+### Manual workflow selection
+
+Use `fdsx run --tasks-dir .fdsx/tasks --manual-workflow` to choose workflows
+without calling the workflow-selection AI. To make this the default, set
+`manual_workflow: true` in `.fdsx/config.yaml` or the global
+`$XDG_CONFIG_HOME/fdsx/config.yaml` (normally `~/.config/fdsx/config.yaml`).
+This also applies to `fdsx run` with no arguments. Project settings override
+global settings, including `manual_workflow: false`.
+
+Manual mode preserves saved assignments before applying a workflow argument.
+With multiple candidates, unspecified tasks start unassigned in the existing
+numbered editor; with one candidate, it is assigned before confirmation.
+Enter a task number, then a workflow number to change an assignment; `c`
+confirms only when every task is assigned, and `q` cancels before execution.
+Confirmed assignments use the existing task YAML format. Project and global
+workflows remain available, with project workflows taking precedence for duplicates.
+
+- `--manual-workflow` or `manual_workflow: true` takes precedence over saved
+  `auto_workflow: true` and disables selection AI.
+- Explicit `--auto-workflow` overrides manual configuration, enables automatic
+  selection, and skips confirmation. It conflicts with both `--manual-workflow`
+  and `--confirm-workflow`.
+- `--confirm-workflow` works with manual mode and does not re-enable selection AI.
+  Explicit confirmation still requires interactive input.
+- Without interactive input, unresolved manual assignments produce an error:
+  supply a workflow argument or set `workflow` in each task. Fully assigned tasks
+  and single-candidate assignments can run without input.
+
+New task files discovered during a run inherit the mode and are confirmed at the
+next batch, before those tasks execute. Manual mode does not disable AI tasks
+inside workflows or change provider permissions. Direct single-workflow runs
+continue without a selection screen.
 
 ## License
 

@@ -38,10 +38,9 @@ class TestCLIE2EPhase2:
         assert result.returncode == 0
 
     def test_loop_flow_yaml_runs(self):
-        """Test loop_flow.yaml runs successfully via CLI with loop behavior."""
+        """Test loop exhaustion is a non-success CLI outcome."""
         result = run_fdsx(["run", fixture_path("loop_flow.yaml")])
-        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert result.returncode == 1, f"stderr: {result.stderr}"
         # FR-1.3: No JSON on stdout
         assert result.stdout == ""
-        # FR-1.1: Completion message on stderr
-        assert "completed successfully" in result.stderr
+        assert "max_loop_reached" in result.stderr

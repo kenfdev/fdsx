@@ -13,21 +13,16 @@ from masking the leak, so the only code path that closes the pipe FDs is
 CPython's synchronous refcount cleanup would close the pipes on return and the
 tests would pass against either HEAD, making them worthless as a TDD anchor.
 
-Pattern: 20 iterations (iteration 0 is warm-up, iterations 1-19 assert flat).
+Pattern: 20 iterations, asserting that every retained process has closed pipes.
 """
 
 import subprocess
 import threading
 from collections.abc import Callable
-from pathlib import Path
 
 from fdsx.providers.base import _run_subprocess
 
 ITERATIONS = 20
-
-
-def _fd_count() -> int:
-    return len(list(Path("/dev/fd").iterdir()))
 
 
 def _retain(
@@ -39,64 +34,49 @@ def _retain(
     return _cb
 
 
-def test_run_subprocess_fd_count_is_flat_after_warmup() -> None:
-    """FD count stays flat across 20 normal-exit _run_subprocess calls."""
+def _assert_pipes_closed(process: subprocess.Popen[str]) -> None:
+    assert process.stdout is not None
+    assert process.stderr is not None
+    assert process.stdout.closed
+    assert process.stderr.closed
+
+
+def test_run_subprocess_closes_pipes_after_normal_exit() -> None:
+    """Pipes are closed after normal-exit _run_subprocess calls."""
     retained: list[subprocess.Popen[str]] = []
-    baseline: int | None = None
-    for i in range(ITERATIONS):
+    for _ in range(ITERATIONS):
         _run_subprocess(["echo", "x"], on_process_start=_retain(retained))
-        count = _fd_count()
-        if i == 0:
-            baseline = count
-        else:
-            assert count == baseline, (
-                f"FD leak at iteration {i + 1}: expected {baseline}, got {count}"
-            )
+        _assert_pipes_closed(retained[-1])
 
 
-def test_run_subprocess_fd_count_is_flat_after_timeout() -> None:
-    """FD count stays flat across 20 timeout-path _run_subprocess calls."""
+def test_run_subprocess_closes_pipes_after_timeout() -> None:
+    """Pipes are closed after timeout-path _run_subprocess calls."""
     retained: list[subprocess.Popen[str]] = []
-    baseline: int | None = None
-    for i in range(ITERATIONS):
+    for _ in range(ITERATIONS):
         _run_subprocess(
             ["sh", "-c", "sleep 5"],
             timeout=0.2,  # type: ignore[arg-type]
             on_process_start=_retain(retained),
         )
-        count = _fd_count()
-        if i == 0:
-            baseline = count
-        else:
-            assert count == baseline, (
-                f"FD leak at iteration {i + 1}: expected {baseline}, got {count}"
-            )
+        _assert_pipes_closed(retained[-1])
 
 
-def test_run_subprocess_fd_count_is_flat_after_inactivity_kill() -> None:
-    """FD count stays flat across 20 inactivity-kill _run_subprocess calls."""
+def test_run_subprocess_closes_pipes_after_inactivity_kill() -> None:
+    """Pipes are closed after inactivity-kill _run_subprocess calls."""
     retained: list[subprocess.Popen[str]] = []
-    baseline: int | None = None
-    for i in range(ITERATIONS):
+    for _ in range(ITERATIONS):
         _run_subprocess(
             ["sh", "-c", "sleep 10"],
             inactivity_timeout=1,
             on_process_start=_retain(retained),
         )
-        count = _fd_count()
-        if i == 0:
-            baseline = count
-        else:
-            assert count == baseline, (
-                f"FD leak at iteration {i + 1}: expected {baseline}, got {count}"
-            )
+        _assert_pipes_closed(retained[-1])
 
 
-def test_run_subprocess_fd_count_is_flat_after_completion_event() -> None:
-    """FD count stays flat across 20 completion-event _run_subprocess calls."""
+def test_run_subprocess_closes_pipes_after_completion_event() -> None:
+    """Pipes are closed after completion-event _run_subprocess calls."""
     retained: list[subprocess.Popen[str]] = []
-    baseline: int | None = None
-    for i in range(ITERATIONS):
+    for _ in range(ITERATIONS):
         event = threading.Event()
         timer = threading.Timer(0.05, event.set)
         timer.start()
@@ -106,10 +86,4 @@ def test_run_subprocess_fd_count_is_flat_after_completion_event() -> None:
             on_process_start=_retain(retained),
         )
         timer.cancel()
-        count = _fd_count()
-        if i == 0:
-            baseline = count
-        else:
-            assert count == baseline, (
-                f"FD leak at iteration {i + 1}: expected {baseline}, got {count}"
-            )
+        _assert_pipes_closed(retained[-1])

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+import structlog
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -27,6 +28,7 @@ from fdsx.providers.claude import ClaudeOptions
 from fdsx.providers.codex import CodexOptions
 from fdsx.providers.cursor import CursorOptions
 from fdsx.providers.gemini import GeminiOptions
+from fdsx.providers.grok import GrokOptions
 from fdsx.providers.opencode import OpenCodeOptions
 from fdsx.providers.pi import PiOptions
 
@@ -51,46 +53,6 @@ _SHALLOW_MERGE_KEYS: frozenset[str] = frozenset({"profiles"})
 _FULL_REPLACE_KEYS: frozenset[str] = frozenset(
     {"retry_escalation", "extraction_fallback"}
 )
-
-
-class TaskSplitterConfig(BaseModel):
-    """Configuration for batch task splitting (formerly TaskSplitter in flow.py)."""
-
-    profile: str | None = Field(
-        default=None,
-        description="Profile name for provider/model configuration",
-    )
-    provider: str = Field(
-        default="claude",
-        description="Provider name (claude/opencode/codex)",
-    )
-    model: str = Field(
-        default="claude-sonnet-4-6",
-        description="Model name",
-    )
-    extra_instructions: str | None = Field(
-        default=None,
-        description="Additional instructions appended to the task split prompt",
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_profile_xor(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if isinstance(values, dict):
-            has_profile = "profile" in values and values["profile"] is not None
-            has_provider = "provider" in values
-            has_model = "model" in values
-            if has_profile and (has_provider or has_model):
-                raise ValueError(
-                    "profile and (provider|model) are mutually exclusive. "
-                    "Use either profile reference or explicit provider/model, not both."
-                )
-        return values
-
-    @field_validator("provider")
-    @classmethod
-    def validate_provider(cls, v: str) -> str:
-        return validate_llm_provider(v, "task_splitter")
 
 
 class WorkflowSelectorConfig(BaseModel):
@@ -160,6 +122,10 @@ class ProviderConfigs(BaseModel):
         default=None,
         description="pi provider options",
     )
+    grok: GrokOptions | None = Field(
+        default=None,
+        description="Grok provider options",
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -182,10 +148,18 @@ class RunHookConfig(BaseModel):
 class FdsxConfig(BaseModel):
     """Top-level fdsx configuration."""
 
-    task_splitter: TaskSplitterConfig | None = Field(
-        default=None,
-        description="Batch task splitting configuration (must be explicitly configured)",
-    )
+    prompt_prefix: str = Field(default="", strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_task_splitter(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "task_splitter" in values:
+            raise ValueError(
+                "task_splitter has been removed. Delete the task_splitter section; "
+                "fdsx add now queues each input file directly."
+            )
+        return values
+
     workflow_selector: WorkflowSelectorConfig = Field(
         default_factory=WorkflowSelectorConfig,
         description="Workflow auto-selection configuration",
@@ -201,6 +175,10 @@ class FdsxConfig(BaseModel):
     auto_workflow: bool = Field(
         default=False,
         description="Skip confirmation for auto-selected workflows",
+    )
+    manual_workflow: bool = Field(
+        default=False,
+        description="Disable AI workflow selection and confirm assignments in the numbered editor",
     )
     providers: ProviderConfigs | None = Field(
         default=None,
@@ -348,6 +326,8 @@ def load_config(
     """
     defaults = FdsxConfig()
 
+    global_dir = None
+    proj_config_dir = None
     raw_global: dict[str, Any] = {}
     if load_global:
         global_dir = _resolve_xdg_config_dir()
@@ -361,9 +341,17 @@ def load_config(
         if proj_config_dir is not None:
             raw_project = _load_yaml(proj_config_dir / "config.yaml")
 
+    prefix = _resolve_prompt_prefix(
+        [("global", raw_global, global_dir), ("project", raw_project, proj_config_dir)]
+    )
+
     # Merge user configs first (without defaults) so profile resolution
     # sees only explicitly-provided keys — no false XOR from defaults.
     user_merged: dict[str, Any] = _deep_merge(raw_global, raw_project)
+    user_merged.pop("prompt_prefix_file", None)
+    # The prefix has already been validated by _resolve_prompt_prefix. Keep its
+    # contents out of model-validation inputs, which can appear in diagnostics.
+    user_merged.pop("prompt_prefix", None)
 
     user_merged, profile_errors = resolve_profiles_in_config(user_merged)
     if profile_errors:
@@ -372,4 +360,54 @@ def load_config(
     # Now merge with defaults to fill in missing fields
     merged: dict[str, Any] = _deep_merge(defaults.model_dump(), user_merged)
 
-    return FdsxConfig.model_validate(merged)
+    config = FdsxConfig.model_validate(merged)
+    config.prompt_prefix = prefix
+    return config
+
+
+def _resolve_prompt_prefix(
+    sources: list[tuple[str, dict[str, Any], Path | None]],
+) -> str:
+    """Validate both sources, then read only the selected instruction file.
+
+    File paths belong to the source configuration, not to the runtime model:
+    callers receive only resolved text through the existing prompt_prefix field.
+    """
+    selected: tuple[str, dict[str, Any], Path | None] | None = None
+    for source, raw, directory in sources:
+        keys = [key for key in ("prompt_prefix", "prompt_prefix_file") if key in raw]
+        reason = ""
+        if len(keys) == 2:
+            reason = "prompt_prefix and prompt_prefix_file are mutually exclusive"
+        else:
+            for key in keys:
+                if not isinstance(raw[key], str):
+                    reason = f"{key} must be a string; null is not allowed"
+                elif key == "prompt_prefix_file" and not raw[key]:
+                    reason = "prompt_prefix_file must not be an empty path"
+        if reason:
+            structlog.get_logger(__name__).error(
+                "invalid_prompt_prefix", source=source, reason=reason
+            )
+            raise ValueError(f"{source} config: {reason}")
+        if keys:
+            selected = (source, raw, directory)
+    if selected is None:
+        return ""
+    source, raw, directory = selected
+    if "prompt_prefix" in raw:
+        return str(raw["prompt_prefix"])
+    try:
+        path = Path(raw["prompt_prefix_file"]).expanduser()
+        if not path.is_absolute() and directory is not None:
+            path = directory / path
+        with path.open(encoding="utf-8", newline="") as stream:
+            return stream.read()
+    except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+        # Do not stringify decode errors (which can contain instruction bytes)
+        # or expose their exception chain to callers/loggers.
+        reason = type(error).__name__
+        structlog.get_logger(__name__).error(
+            "invalid_prompt_prefix_file", source=source, reason=reason
+        )
+        raise ValueError(f"prompt_prefix_file in {source} config: {reason}") from None

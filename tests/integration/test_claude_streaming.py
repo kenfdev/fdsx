@@ -92,6 +92,7 @@ class TestClaudeStreamingEndToEnd:
             )
 
         assert result.stdout == FIXTURE_RESULT_TEXT
+        assert result.final_message == FIXTURE_RESULT_TEXT
 
     def test_output_callback_receives_text_lines(self) -> None:
         """output_callback must be called with buffered, line-delimited text."""

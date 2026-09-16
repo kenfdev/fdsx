@@ -134,6 +134,15 @@ class TestBuildStateSchemaAlwaysTypedDict:
         assert "task" in annotations
         assert "context" in annotations
 
+    def test_builtin_task_inputs_always_appear_in_annotations(self):
+        """Resume schemas retain task inputs without the original input_keys."""
+        flow = _load(INPUT_KEYS_FLOW_YAML)
+        schema = _build_state_schema(flow)
+
+        annotations = schema.__annotations__
+        assert "task" in annotations
+        assert "source" in annotations
+
     def test_internal_keys_always_present(self):
         """_meta and _state_iterations internal keys must always be present."""
         flow = _load(LINEAR_FLOW_YAML)

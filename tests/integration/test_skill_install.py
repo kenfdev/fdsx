@@ -46,6 +46,10 @@ class TestInstallSkill:
         assert (skill_dir / "SKILL.md").exists()
         assert (skill_dir / "references").is_dir()
         assert (skill_dir / "references" / "yaml-schema.md").exists()
+        with get_bundled_skill_path() as bundled:
+            assert (skill_dir / "references" / "resume.md").read_text() == (
+                bundled / "references" / "resume.md"
+            ).read_text()
         assert len(result) > 0
 
     def test_returns_list_of_created_relative_paths(self, tmp_path):

@@ -20,13 +20,19 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fdsx.core.extraction import extract_value
+from fdsx.core.structured_output import (
+    StructuredOutputValidationError,
+    create_structured_output_validator,
+    parse_structured_output,
+    prepare_provider_schema,
+)
 from fdsx.providers.base import ProviderBase, ProviderResult, get_provider
 
 if TYPE_CHECKING:
     from fdsx.core.compiler.helpers import EscalationTarget
     from fdsx.core.extraction_fallback import FallbackEvent, ResolvedFallback
     from fdsx.logging.stream_logger import StreamLogger
-    from fdsx.models.flow import ExtractRule
+    from fdsx.models.flow import ExtractRule, StructuredOutput
 
 
 @dataclass
@@ -75,6 +81,8 @@ class ExecutionConfig:
     max_retries: int
     extract: "ExtractRule | None"
     stream_logger: "StreamLogger"
+    prompt_prefix: str = ""
+    structured_output: "StructuredOutput | None" = None
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None
     summary_callback: Callable[[str], None] | None = None
     resolved_fallback: "ResolvedFallback | None" = None
@@ -100,6 +108,7 @@ class ExecutionResult:
     result: ProviderResult
     extracted: Any | None
     last_error: str
+    structured_value: dict[str, Any] | list[Any] | None = None
     last_provider_name: str = ""
 
 
@@ -135,9 +144,11 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     last_error = _NO_ATTEMPTS_ERROR
     result = ProviderResult(exit_code=1, stdout="", stderr="")
     extracted: Any | None = None
+    structured_value: dict[str, Any] | list[Any] | None = None
     escalation_notified = False
     last_used_provider_name = config.provider_name
     active_model: str | None = None
+    validation_feedback: str | None = None
 
     try:
         for attempt in range(config.max_retries + 1):
@@ -172,21 +183,87 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                         summary_callback=config.summary_callback,
                     )
                 else:
+                    active_prompt = config.prompt
+                    output_schema: Any | None = None
+                    if config.structured_output is not None:
+                        schema_document = config.structured_output.schema_document
+                        if schema_document is None:
+                            raise StructuredOutputValidationError(
+                                "Structured output schema was not loaded"
+                            )
+                        output_schema = prepare_provider_schema(
+                            schema_document,
+                            allow_extra_fields=config.structured_output.allow_extra_fields,
+                        )
+                    if validation_feedback is not None:
+                        active_prompt = (
+                            f"{config.prompt}\n\n"
+                            "Your previous response did not satisfy the required "
+                            "structured output contract. Correct this validation "
+                            f"error and return only the JSON value:\n{validation_feedback}"
+                        )
+                    if config.prompt_prefix.strip():
+                        active_prompt = f"{config.prompt_prefix}\n\n{active_prompt}"
                     result = active_provider.execute(
-                        prompt=config.prompt,
+                        prompt=active_prompt,
                         model=active_model,
                         timeout=config.timeout_seconds,
                         output_callback=config.stream_logger.on_stdout,
                         stderr_callback=config.stream_logger.on_stderr,
                         on_process_start=config.on_process_start,
                         summary_callback=config.summary_callback,
+                        output_schema=output_schema,
                     )
             except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                last_error = str(exc)
+                last_error = str(exc).strip() or (
+                    f"Provider {active_provider_name} timed out ({type(exc).__name__})"
+                )
+                config.stream_logger.on_stderr(last_error)
                 result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
                 continue
 
             if result.exit_code == 0:
+                if config.structured_output is not None:
+                    schema_document = config.structured_output.schema_document
+                    if schema_document is None:
+                        raise StructuredOutputValidationError(
+                            "Structured output schema was not loaded"
+                        )
+                    validator = create_structured_output_validator(
+                        schema_document,
+                        allow_extra_fields=config.structured_output.allow_extra_fields,
+                    )
+                    candidates = (
+                        [result.final_message]
+                        if result.final_message is not None
+                        else []
+                    )
+                    if result.stdout != result.final_message:
+                        candidates.append(result.stdout)
+                    # The final message is the authoritative response. Keep its
+                    # actionable error if the compatibility fallback also fails.
+                    primary_error: StructuredOutputValidationError | None = None
+                    for candidate in candidates:
+                        try:
+                            structured_value = parse_structured_output(
+                                candidate, validator
+                            )
+                        except StructuredOutputValidationError as exc:
+                            if primary_error is None:
+                                primary_error = exc
+                            continue
+                        break
+                    if structured_value is None:
+                        if primary_error is None:
+                            primary_error = StructuredOutputValidationError(
+                                "Provider returned no structured output candidate"
+                            )
+                        last_error = str(primary_error)[:1000]
+                        validation_feedback = last_error
+                        if active_provider_name == "system":
+                            break
+                        continue
+                    break
                 if config.extract:
                     extracted = extract_value(
                         result.stdout.strip(),
@@ -206,13 +283,18 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                 else:
                     break
             else:
-                last_error = result.stderr
+                last_error = result.stderr.strip() or (
+                    f"Provider {active_provider_name} exited with exit code "
+                    f"{result.exit_code} without an error message on stderr"
+                )
+                config.stream_logger.on_stderr(last_error)
     finally:
         config.stream_logger.close()
 
     return ExecutionResult(
         result=result,
         extracted=extracted,
+        structured_value=structured_value,
         last_error=last_error,
         last_provider_name=last_used_provider_name,
     )

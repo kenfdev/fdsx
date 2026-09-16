@@ -9,16 +9,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-
-  - package-ecosystem: "npm"
-    directory: "/packages/fdsx-ui"
-    schedule:
-      interval: "weekly"
-    versioning-strategy: "increase"
-    open-pull-requests-limit: 10
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"

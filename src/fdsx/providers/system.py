@@ -1,5 +1,6 @@
 import subprocess
 from collections.abc import Callable
+from typing import Any
 
 from fdsx.providers.base import ProviderBase, ProviderResult, _run_subprocess
 
@@ -17,6 +18,7 @@ class SystemProvider(ProviderBase):
         stderr_callback: Callable[[str], None] | None = None,
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
+        output_schema: Any | None = None,
     ) -> ProviderResult:
         """Execute a shell command.
 

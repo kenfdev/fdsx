@@ -143,16 +143,14 @@ class TestVariableSubstitutionInCause:
 
 
 class TestCheckpointSentinel:
-    def test_resume_after_fail_returns_aborted_result(self, tmp_path, monkeypatch):
+    def test_resume_after_fail_requires_recovery_state(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         flow_path = _write_flow(tmp_path, SIMPLE_FAIL_FLOW)
         thread_id = "t-resume-aborted"
 
         run_flow(flow_path, thread_id=thread_id, base_dir=tmp_path)
-        result = resume_flow(thread_id, base_dir=tmp_path)
-
-        assert result.status == "aborted"
-        assert result.abort_state == "fail_it"
+        with pytest.raises(RuntimeError, match="explicit recovery state"):
+            resume_flow(thread_id, base_dir=tmp_path)
 
     def test_resume_after_fail_does_not_append_new_state_entries(
         self, tmp_path, monkeypatch
@@ -164,7 +162,8 @@ class TestCheckpointSentinel:
         run_flow(flow_path, thread_id=thread_id, base_dir=tmp_path)
         state_count_before = len(_read_run_json(tmp_path, thread_id)["states"])
 
-        resume_flow(thread_id, base_dir=tmp_path)
+        with pytest.raises(RuntimeError, match="explicit recovery state"):
+            resume_flow(thread_id, base_dir=tmp_path)
 
         state_count_after = len(_read_run_json(tmp_path, thread_id)["states"])
         assert state_count_after == state_count_before

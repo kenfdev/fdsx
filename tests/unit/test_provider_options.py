@@ -38,6 +38,22 @@ class TestClaudeOptions:
         opts = ClaudeOptions(permission_mode="acceptEdits")
         assert opts.to_cli_flags() == ["--permission-mode", "acceptEdits"]
 
+    def test_claude_options_effort_valid(self):
+        """Supported effort levels must be accepted."""
+        for value in ("low", "medium", "high", "xhigh", "max"):
+            opts = ClaudeOptions(effort=value)
+            assert opts.effort == value
+
+    def test_claude_options_effort_invalid(self):
+        """Unsupported effort levels must be rejected."""
+        with pytest.raises(ValidationError):
+            ClaudeOptions(effort="ultra")
+
+    def test_claude_options_to_cli_flags_effort(self):
+        """effort maps to --effort <value>."""
+        opts = ClaudeOptions(effort="high")
+        assert opts.to_cli_flags() == ["--effort", "high"]
+
     def test_claude_options_to_cli_flags_dangerously_skip(self):
         """dangerously_skip_permissions=True maps to --dangerously-skip-permissions."""
         opts = ClaudeOptions(dangerously_skip_permissions=True)
@@ -76,12 +92,15 @@ class TestClaudeOptions:
     def test_claude_options_to_cli_flags_combined(self):
         """All fields set together produce correct combined flags in order."""
         opts = ClaudeOptions(
+            effort="high",
             permission_mode="bypassPermissions",
             dangerously_skip_permissions=True,
             allowed_tools=["Bash"],
             disallowed_tools=["Write"],
         )
         assert opts.to_cli_flags() == [
+            "--effort",
+            "high",
             "--permission-mode",
             "bypassPermissions",
             "--dangerously-skip-permissions",
@@ -117,15 +136,53 @@ class TestCodexOptions:
         with pytest.raises(ValidationError):
             CodexOptions(approval_policy="unknown")
 
+    def test_codex_options_reasoning_effort_valid(self):
+        """Supported reasoning effort levels must be accepted."""
+        for value in ("low", "medium", "high", "xhigh", "max", "ultra"):
+            opts = CodexOptions(reasoning_effort=value)
+            assert opts.reasoning_effort == value
+
+    def test_codex_options_reasoning_effort_invalid(self):
+        """Unsupported reasoning effort levels must be rejected."""
+        with pytest.raises(ValidationError):
+            CodexOptions(reasoning_effort="minimal")
+
+    def test_codex_options_to_cli_flags_reasoning_effort(self):
+        """reasoning_effort maps to the Codex config override."""
+        opts = CodexOptions(reasoning_effort="xhigh")
+        assert opts.to_cli_flags() == ["-c", 'model_reasoning_effort="xhigh"']
+
     def test_codex_options_to_cli_flags_sandbox(self):
         """sandbox maps to --sandbox <value>."""
         opts = CodexOptions(sandbox="workspace-write")
         assert opts.to_cli_flags() == ["--sandbox", "workspace-write"]
 
     def test_codex_options_to_cli_flags_approval_policy(self):
-        """approval_policy maps to --approval-policy <value>."""
+        """approval_policy maps to a Codex config override."""
         opts = CodexOptions(approval_policy="on-request")
-        assert opts.to_cli_flags() == ["--approval-policy", "on-request"]
+        assert opts.to_cli_flags() == ["-c", 'approval_policy="on-request"']
+
+    def test_codex_options_to_cli_flags_developer_instructions(self):
+        """developer_instructions maps to a safely quoted Codex config override."""
+        opts = CodexOptions(
+            developer_instructions='Review "carefully".\nDo not delegate.'
+        )
+        assert opts.to_cli_flags() == [
+            "-c",
+            'developer_instructions="Review \\"carefully\\".\\nDo not delegate."',
+        ]
+
+    @pytest.mark.parametrize(
+        ("enabled", "expected"),
+        [
+            (True, "agents.enabled=true"),
+            (False, "agents.enabled=false"),
+        ],
+    )
+    def test_codex_options_to_cli_flags_agents_enabled(self, enabled, expected):
+        """agents_enabled maps to the Codex multi-agent configuration switch."""
+        opts = CodexOptions(agents_enabled=enabled)
+        assert opts.to_cli_flags() == ["-c", expected]
 
     def test_codex_options_to_cli_flags_full_auto(self):
         """full_auto=True maps to --full-auto."""
@@ -155,16 +212,25 @@ class TestCodexOptions:
     def test_codex_options_to_cli_flags_combined(self):
         """All fields set together produce correct combined flags in order."""
         opts = CodexOptions(
+            reasoning_effort="high",
             sandbox="workspace-write",
             approval_policy="on-request",
+            developer_instructions="Stay focused.",
+            agents_enabled=False,
             full_auto=True,
             dangerously_bypass_approvals_and_sandbox=True,
         )
         assert opts.to_cli_flags() == [
+            "-c",
+            'model_reasoning_effort="high"',
             "--sandbox",
             "workspace-write",
-            "--approval-policy",
-            "on-request",
+            "-c",
+            'approval_policy="on-request"',
+            "-c",
+            'developer_instructions="Stay focused."',
+            "-c",
+            "agents.enabled=false",
             "--full-auto",
             "--dangerously-bypass-approvals-and-sandbox",
         ]
@@ -174,9 +240,19 @@ class TestOpenCodeOptions:
     """T007: Tests for OpenCodeOptions model."""
 
     def test_opencode_options_to_cli_flags_empty(self):
-        """to_cli_flags() always returns an empty list."""
+        """Default options produce no CLI flags."""
         opts = OpenCodeOptions()
         assert opts.to_cli_flags() == []
+
+    def test_opencode_options_to_cli_flags_variant(self):
+        """variant maps to --variant <value>."""
+        opts = OpenCodeOptions(variant="high")
+        assert opts.to_cli_flags() == ["--variant", "high"]
+
+    def test_opencode_options_variant_empty_rejected(self):
+        """An empty variant must be rejected."""
+        with pytest.raises(ValidationError):
+            OpenCodeOptions(variant="")
 
     def test_opencode_options_forbids_extra(self):
         """Extra fields must be rejected."""

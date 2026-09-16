@@ -15,6 +15,8 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [IteratorDef](#iteratordef)
 - [IteratorTaskState](#iteratortaskstate)
 - [Branch (parallel)](#branch)
+- [StructuredOutput](#structuredoutput)
+- [ParallelGate](#parallelgate)
 - [ExtractRule](#extractrule)
 - [ExtractionFallback](#extractionfallback)
 - [ChoiceRule](#choicerule)
@@ -37,7 +39,7 @@ description: string             # required — min 1 char
 start_at: string                # required — must match a key in states
 states: {name: State}           # required — map of state definitions
 version?: string                # optional
-max_loop?: int                  # default: 10 — max loop iterations
+max_loop?: int                  # default: 10 — terminal loop safety guard
 providers?: {name: {k: v}}      # optional — workflow-level provider configs
 hooks?: HookConfig              # optional — flow-level hooks (full HookConfig including workflow-scope keys)
 profiles?: {name: {k: v}}       # optional — raw provider/model/extras dicts
@@ -53,11 +55,19 @@ retry_escalation?: EscalationConfig | false        # optional — false disables
 
 **`retry_escalation`** controls the retry escalation target for the entire workflow. When set to `false`, it disables any config-level `retry_escalation` for this workflow. When set to an `EscalationConfig` object (`provider` + `model`), it overrides the config-level target. When omitted (`null`/absent), the config-level `retry_escalation` applies.
 
+Reaching `max_loop` is not successful completion. Execution stops with `FlowResult.status == "max_loop_reached"`, preserving partial result paths and checkpoint state. Workflow-end hooks receive that status, the CLI exits non-zero, and tasks-directory entries are marked failed.
+
 **Validation:**
 - `start_at` must exist in `states`
 - All `next` references across all states must exist in `states`
 - At least one path from `start_at` must reach termination (`end: true` or a `fail` state)
-- `task_splitter` field is rejected (removed; configure in config.yaml instead)
+- `task_splitter` field is rejected because task splitting has been removed
+
+**Built-in template variables:**
+- `{task}` — task description input
+- `{source}` — task source input
+- `{run_path}` — absolute current run directory
+- `{state.iteration}` — one-based execution count for the current state
 
 ---
 
@@ -65,7 +75,7 @@ retry_escalation?: EscalationConfig | false        # optional — false disables
 
 ```yaml
 type: "task"                    # literal discriminator
-provider: string                # required — claude|cursor|codex|opencode|gemini|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
@@ -73,6 +83,7 @@ command?: string                # required for system, forbidden for LLM provide
 result_path?: string            # optional — JSONPath for output (e.g. $.plan)
 result_file?: string            # optional — top-level $.varname only (no nesting)
 extract?: ExtractRule           # optional — output extraction
+structured_output?: StructuredOutput  # optional — validated JSON object/list
 max_iterations?: int            # optional — >=1, max times state can be entered
 retry?: int                     # default: 3
 timeout_seconds?: int           # optional — per-state timeout override
@@ -88,6 +99,7 @@ end?: bool                      # XOR with next — terminate flow
 - `prompt_template` and `prompt_file` are mutually exclusive
 - `next` and `end` are mutually exclusive
 - `result_path` and `extract.result_path` must not overlap (when both are set)
+- `structured_output` is mutually exclusive with `result_path` and `extract`
 - `result_file` must match `$.varname` (no dots or brackets after `$.`)
 - System provider: requires `command`, forbids `prompt_template`/`prompt_file`/`model`
 - LLM providers: require `model` + (`prompt_template` or `prompt_file`), forbid `command`
@@ -116,11 +128,20 @@ branches: [Branch]              # required — parallel branch definitions
 result_path: string             # required — JSONPath for results array
 result_file?: string            # optional — top-level $.varname only
 min_success?: int               # optional — minimum successful branches
+gate?: ParallelGate             # optional — required named-branch boolean gate
 max_iterations?: int            # optional — >=1
 hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end
 end?: bool                      # XOR with next
 ```
+
+**Validation:**
+- Branch `name` values must be unique within the parallel state
+- `gate` and `min_success` are mutually exclusive
+- Every `gate.required` entry must name an existing branch that configures `structured_output`
+- `gate.result_path` must be a single top-level state key
+
+With a gate, failures from branches not listed in `required` are retained as advisory error results and do not fail the parallel state. Required branch execution/validation failures and missing gate fields fail the parallel state.
 
 ---
 
@@ -231,7 +252,7 @@ Used inside `IteratorDef.states`:
 ```yaml
 type: "task"                    # literal discriminator (only "task" allowed)
 name: string                    # required — state name within the iterator
-provider: string                # required — claude|cursor|codex|opencode|gemini|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
@@ -261,12 +282,14 @@ provider_options?: {k: v}       # optional — per-task provider option override
 Used inside `ParallelState.branches`:
 
 ```yaml
-provider: string                # required — claude|cursor|codex|opencode|gemini|system
+name?: string                   # optional — stable identity; required when referenced by a gate
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
 model?: string                  # required for LLM providers
 prompt_template?: string        # XOR with prompt_file
 prompt_file?: string            # XOR with prompt_template
 command?: string                # required for system provider
 extract?: ExtractRule           # optional
+structured_output?: StructuredOutput  # optional — validated branch-local JSON
 retry?: int                     # default: 3
 timeout_seconds?: int           # optional
 provider_options?: {k: v}       # optional
@@ -274,7 +297,61 @@ provider_options?: {k: v}       # optional
 
 **Profile shorthand:** Use `profile: <name>` instead of `provider`/`model`. Resolved pre-validation; XOR with explicit provider/model.
 
-Same provider validation rules as TaskState. `extract.result_path` must not use reserved keys: `output`, `exit_code`, `error`.
+Same provider validation rules as TaskState. `extract.result_path` must not use reserved keys: `output`, `exit_code`, `error`. `structured_output` and `extract` are mutually exclusive. Parallel result entries include the configured branch `name`.
+
+---
+
+## StructuredOutput
+
+Used on `TaskState.structured_output` and `Branch.structured_output`:
+
+```yaml
+structured_output:
+  schema: string                # required — JSON Schema file relative to workflow YAML
+  result_path: string           # required — destination for parsed object/list
+  allow_extra_fields?: boolean  # optional — default true; false rejects extras
+  merge?:                       # optional — keyed list merge
+    strategy: "upsert"          # only supported strategy
+    key: string                 # required — stable object key, min 1 char
+```
+
+**Runtime behavior:**
+- Complete provider stdout is parsed as one JSON value; embedded fragments in prose are not extracted
+- One outer Markdown code fence around the complete JSON value is accepted
+- The parsed value must be an object or list and satisfy the schema
+- By default, `additionalProperties: false` and `unevaluatedProperties: false`
+  are ignored and unknown fields are retained
+- `allow_extra_fields: false` restores strict rejection of unknown fields
+- Required fields, known-property schemas, and all other constraints remain enforced
+- Schema files are loaded and the schema itself is validated at workflow-load time
+- Runtime parse/schema failures use the existing `retry` count and bounded validation feedback
+- The previous raw response is not copied into a retry prompt; raw output remains in run logs
+- The `system` provider is not retried after structured-output validation failure
+
+**Upsert behavior:**
+- `result_path` must be a single top-level state key when `merge` is configured
+- Existing state and each update batch must be lists of objects
+- Every object must contain `key`; duplicate key values in one update batch are rejected
+- Matching keys replace the complete object without changing its position
+- New keys append; omitted existing keys remain; deletion is not defined
+- Merge is scoped to one workflow run and survives checkpoint resume
+- Task producers sharing a merge-enabled state channel must declare identical merge configuration
+
+---
+
+## ParallelGate
+
+Used on `ParallelState.gate`:
+
+```yaml
+gate:
+  required: [string]            # required — non-empty unique branch-name list
+  field: string                 # required — branch-local JSONPath
+  expected: any                 # required — value each required branch must match
+  result_path: string           # required — top-level boolean state destination
+```
+
+The gate is `true` only when every required branch succeeds, produces schema-valid structured output, and has `expected` at `field`. A valid different value produces `false`. Required execution/validation failures or a missing field fail the parallel state. Unlisted branches are advisory and do not affect the gate.
 
 ---
 
@@ -287,7 +364,7 @@ extract:
   result_path: string           # required — JSONPath for extracted value
   fallback?:                    # optional — per-rule LLM classification fallback
     type: "llm_classify"
-    provider?: string           # XOR with profile — claude|cursor|codex|opencode|gemini
+    provider?: string           # XOR with profile — claude|cursor|codex|opencode|gemini|grok
     model?: string              # required when provider is set
     profile?: string            # XOR with provider+model
     prompt: string              # required — classification prompt
@@ -314,7 +391,7 @@ Used at **flow level** (`Flow.extraction_fallback`) and in **config files** (`Fd
 
 ```yaml
 extraction_fallback:
-  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini (system forbidden)
+  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok (system forbidden)
   model?: string                # required when provider is set
   profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
@@ -331,7 +408,7 @@ extraction_fallback: false      # disables config-level extraction_fallback for 
 **Validation:**
 - `provider + model` and `profile` are mutually exclusive (XOR) — exactly one group must be provided
 - When `provider` is set, `model` is required; `provider` without `model` raises a validation error
-- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`); `system` is forbidden
+- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`); `system` is forbidden
 - Uses `extra="forbid"` — unknown keys cause validation errors
 
 ---
@@ -435,7 +512,7 @@ Each command receives:
 - `FDSX_HOOKS` — lifecycle event name: `on_workflow_start` or `on_workflow_end`
 - `FDSX_STATUS` — lifecycle status:
   - `on_workflow_start`: always `starting`
-  - `on_workflow_end`: `completed`, `failed`, or `aborted`
+  - `on_workflow_end`: `completed`, `failed`, `aborted`, or `max_loop_reached`
 - `FDSX_FLOW_NAME` — name of the flow
 - `FDSX_THREAD_ID` — current run thread ID
 - `FDSX_STATE_NAME` and `FDSX_DATA_PATH` are **not set** for workflow hooks
@@ -532,9 +609,9 @@ run_hooks:
 
 **Scope:** `run_hooks` is a **separate top-level key** in `.fdsx/config.yaml` and `~/.config/fdsx/config.yaml`. It is distinct from `hooks:` (which contains state/workflow/wait lifecycle events). Using `on_run_start`/`on_run_end` inside `hooks:` raises a validation error.
 
-**`on_run_start`** fires once at the start of a `fdsx run` or `fdsx resume` CLI invocation, before any workflow or checkpoint logic executes.
+**`on_run_start`** normally fires once at the start of a `fdsx run` or `fdsx resume` CLI invocation. For `fdsx resume --input`, it is delayed until checkpoint/recovery validation and input approval succeed.
 
-**`on_run_end`** fires once when the CLI invocation exits (success, failure, or partial completion for tasks-dir runs).
+**`on_run_end`** fires once when a started CLI invocation exits (success, failure, or partial completion for tasks-dir runs). Input-update rejection before approval runs neither run hook. See `resume.md` for approval and history rules.
 
 Each command receives:
 
@@ -544,7 +621,7 @@ Each command receives:
 - `FDSX_HOOKS` — lifecycle event name: `on_run_start` or `on_run_end`
 - `FDSX_STATUS` — lifecycle status:
   - `on_run_start`: always `starting`
-  - `on_run_end`: `completed`, `failed`, or `partial` (tasks-dir aggregate)
+  - `on_run_end`: `completed`, `failed`, `partial` (tasks-dir aggregate), or `max_loop_reached` (single-flow loop exhaustion)
 - `FDSX_STATE_NAME`, `FDSX_DATA_PATH`, `FDSX_FLOW_NAME`, and `FDSX_THREAD_ID` are **not set** for run hooks
 
 **Failure policy:** Always warn-only — `on_failure` is ignored. Non-zero exit codes and timeouts log a warning and never raise. Each hook has a 30-second subprocess timeout.
@@ -560,7 +637,7 @@ Uses `extra="forbid"` — unknown keys cause validation errors.
 ```yaml
 profiles:
   <name>:                       # must match: ^[a-zA-Z][a-zA-Z0-9_-]*$
-    provider: string            # required — claude|cursor|codex|opencode|gemini
+    provider: string            # required — claude|cursor|codex|opencode|gemini|grok
     model: string               # required
     # extra fields allowed (passed through as provider_options)
 ```
@@ -577,6 +654,7 @@ Options set via `provider_options` on tasks/branches, or globally in config. All
 
 ```yaml
 provider_options:
+  effort?: low|medium|high|xhigh|max
   permission_mode?: default|acceptEdits|bypassPermissions|dontAsk|plan|auto
   dangerously_skip_permissions?: bool   # default: false
   allowed_tools?: [string]
@@ -592,17 +670,35 @@ provider_options:
 
 ```yaml
 provider_options:
+  reasoning_effort?: low|medium|high|xhigh|max|ultra
   sandbox?: read-only|workspace-write|danger-full-access
   approval_policy?: untrusted|on-request|never
+  developer_instructions?: string       # additional Codex developer instructions
+  agents_enabled?: bool                 # maps to agents.enabled
   full_auto?: bool                      # default: false
   dangerously_bypass_approvals_and_sandbox?: bool  # default: false
   inactivity_timeout?: int              # default: 300
 ```
 
+`approval_policy` is passed to `codex exec` as an inline
+`approval_policy="<value>"` configuration override. Codex does not expose an
+`--approval-policy` option on the `exec` subcommand.
+
+`developer_instructions` is passed as the Codex
+`developer_instructions="<value>"` configuration override. It supports normal
+fdsx variable substitution. `agents_enabled` maps to the Codex
+`agents.enabled` configuration switch; set it to `false` to prevent the state
+from spawning subagents.
+
+Codex does not accept Claude's `system_prompt` or `append_system_prompt`
+options. Using either option with Codex raises a validation error directing the
+workflow author to `developer_instructions`.
+
 ### OpenCode
 
 ```yaml
 provider_options:
+  variant?: string                       # non-empty, passed as --variant
   permission?: string|{k: v}           # passed via OPENCODE_CONFIG_CONTENT env var
   inactivity_timeout?: int              # default: 300
 ```
@@ -654,21 +750,43 @@ CLI binary invoked: `pi -p <prompt> [--model <model>] [--tools <csv>] [--exclude
 
 **Requirements:** The `pi` CLI binary must be in `PATH`. If it is absent, `PiProvider` raises `PiProviderError` at execution time.
 
+### Grok
+
+```yaml
+provider_options:
+  permission_mode?: default|acceptEdits|auto|dontAsk|bypassPermissions|plan  # default: dontAsk
+  sandbox?: string                       # optional Grok sandbox profile
+  allow?: [string]                       # repeatable permission allow rules
+  deny?: [string]                        # repeatable permission deny rules
+  tools?: [string]                       # built-in tool allowlist
+  disallowed_tools?: [string]            # built-in tools to remove
+  reasoning_effort?: string
+  max_turns?: int                        # positive integer
+  on_max_turns?: fail|return_partial     # default: fail
+  no_subagents?: bool                    # default: true
+  no_plan?: bool                         # default: true
+  cross_session_memory?: off|on|inherit  # default: off
+  disable_web_search?: bool              # default: false
+  verbatim?: bool                        # default: true
+  cwd?: string
+  agent?: string                         # agent name or definition path
+  agents?: {name: definition}            # requires no_subagents: false when non-empty
+  rules?: string                         # mutually exclusive with system_prompt_override
+  system_prompt_override?: string        # mutually exclusive with rules
+  inactivity_timeout?: int               # default: 300
+```
+
+Grok always runs headlessly with `streaming-json`, auto-update disabled, and its user-question tool disabled. `dontAsk` prevents approval prompts but is not a sandbox and does not disable intrinsically safe or explicitly allowed tools. Grok planning, subagents, and cross-session memory are disabled by default. Native JSON Schema output remains streaming and is always validated again by fdsx.
+
 All provider option models use `extra="forbid"` — unknown keys cause validation errors.
 
 ---
 
 ## Config File
 
-`.fdsx/config.yaml` (project-level) or `~/.config/fdsx/config.yaml` (global). Project overrides global via deep merge.
+`.fdsx/config.yaml` (project-level) or `$XDG_CONFIG_HOME/fdsx/config.yaml` (global, default `~/.config/fdsx/config.yaml`). Project overrides global via deep merge, with whole-value replacement for common task instructions and the blocks noted below.
 
 ```yaml
-task_splitter?:                 # absent by default; must be added to enable batch splitting
-  profile?: string              # XOR with provider/model
-  provider?: string             # default: claude (when task_splitter is present)
-  model?: string                # default: claude-sonnet-4-6 (when task_splitter is present)
-  extra_instructions?: string
-
 workflow_selector?:
   profile?: string              # XOR with provider/model
   provider?: string             # default: claude
@@ -677,6 +795,9 @@ workflow_selector?:
 
 workflows_dir?: string          # default: .fdsx/workflows — relative, no ".."
 auto_workflow?: bool            # default: false
+manual_workflow?: bool          # default: false; disable AI workflow selection
+prompt_prefix?: string          # literal AI task instructions; XOR with prompt_prefix_file
+prompt_prefix_file?: string     # UTF-8 file; relative to the declaring config folder
 default_tasks_dir?: string      # default: .fdsx/tasks/ — precedence: project → global → fallback
 
 providers?:
@@ -686,6 +807,7 @@ providers?:
   opencode?: OpenCodeOptions
   gemini?: GeminiOptions
   pi?: PiOptions
+  grok?: GrokOptions
 
 hooks?: HookConfig              # workflow/state/wait lifecycle hooks applied to all flows
                                 # accepts: on_state_start, on_state_end, on_workflow_start,
@@ -700,22 +822,48 @@ profiles?:
   <name>: ProfileConfig
 
 extraction_fallback?:           # absent by default — global LLM fallback when no per-rule fallback is set
-  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini (system forbidden)
+  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok (system forbidden)
   model?: string                # required when provider is set
   profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
 
 retry_escalation?:              # absent by default — global escalation target for all flows
-  provider: string              # required — claude|cursor|codex|opencode|gemini (system forbidden)
+  provider: string              # required — claude|cursor|codex|opencode|gemini|grok (system forbidden)
   model: string                 # required — exact model string for the escalation provider
   provider_options?: {k: v}     # optional — passed to the escalation provider
 ```
 
 Config uses `extra="forbid"` — unknown keys cause validation errors.
 
+### Common task instructions
+
+`prompt_prefix` and `prompt_prefix_file` are configuration-only keys, mutually exclusive within each file even when empty. Both require strings; `null` and non-string values are errors. A file path must also be nonempty. Each configuration file is validated before merging, so a project override does not hide invalid global values.
+
+A project declaration of either key replaces the global choice completely, including switching between inline and file instructions. Omitting both inherits the global choice. Empty or whitespace-only inline text or file contents disable the prefix without falling back to global instructions.
+
+Relative file paths resolve from the declaring configuration file's directory, including inherited global paths. Absolute paths, `../`, symlinks, and home expansion (`~/`) are supported. Only the selected file is read; an overridden global file need not exist. Missing, unreadable, or invalid UTF-8 selected files fail configuration loading before workflow selection or AI tasks start. Errors identify the setting and cause without printing file contents.
+
+Nonblank text retains all characters, whitespace, braces, and file line endings. fdsx inserts it once before the resolved AI task body, separated by two newline characters. Variable substitution applies only to the body. Disabled instructions add no separator. Both task `prompt_template` and `prompt_file` are supported.
+
+The prefix applies across all LLM providers to tasks, parallel branches, map iterations, loops, retries, provider escalation, and structured-output feedback retries. It is excluded from workflow selection, extraction fallback/recovery, system commands, and hooks.
+
+Each `run_flow` or `resume_flow` call reads current configuration and the selected file once, without reloading mid-call. Resume uses the latest choice and contents without changing checkpoint format. Consecutive task files retain this per-call loading boundary. Invalid settings raise `ValueError`; resume wraps setup failures in `FlowExecutionError`. The CLI reports the failure on stderr and exits nonzero.
+
+These are ordinary prompt instructions, separate from provider system/developer options. They do not enforce permissions or instruction priority. Keep secrets out: providers receive the text and existing prompt or output logs may contain it, including in quiet mode.
+
+### Manual workflow selection
+
+`manual_workflow: true` disables workflow-selection AI for tasks-directory runs, including no-argument `fdsx run`. Project configuration can override a global `true` with `false`. Manual mode takes precedence over configured `auto_workflow: true`.
+
+Explicit `--auto-workflow` overrides manual configuration and skips confirmation; it conflicts with `--manual-workflow` and `--confirm-workflow`. Explicit `--manual-workflow` enables manual mode. `--confirm-workflow` can accompany manual mode, requires interactive input, and does not re-enable AI selection.
+
+Saved assignments precede a workflow argument. A single candidate fills unassigned tasks; multiple candidates leave them unassigned for the numbered editor. Without interactive input, unresolved assignments fail; provide a workflow argument or save `workflow` in each task. Fully assigned tasks can run without input unless confirmation is explicitly required. Newly discovered tasks retain the selection mode and are confirmed in the next batch. Project workflows take precedence over global duplicates. Direct single-workflow runs bypass selection; AI task execution and provider permissions are unchanged.
+
+### Other configuration rules
+
 **Hook merging:** During global → project config deep merge, all eight hook list keys (`on_state_start`, `on_state_end`, `on_workflow_start`, `on_workflow_end`, `on_run_start`, `on_run_end`, `on_wait_start`, `on_wait_end`) are **concatenated** (base + override), not replaced. This means hooks defined in global config are prepended to hooks defined in project config. Flow-level and state-level hooks are further appended at runtime in global → project → flow → state order. Run-scope hooks (`on_run_start`, `on_run_end`) only merge at global → project level; they are not present at flow or state level. Wait-scope hooks (`on_wait_start`, `on_wait_end`) merge at global → project → flow → state (wait states only) level.
 
-Both `workflow_selector` and `task_splitter` support `profile: <name>` (XOR with `provider`/`model`).
+`workflow_selector` supports `profile: <name>` (XOR with `provider`/`model`).
 
 `profiles` defined here are merged with workflow-level profiles (workflow-level overrides config-level per name).
 
