@@ -1191,6 +1191,55 @@ def test_internal_common_ancestor_loads_and_validates_after_rejoin(
     assert not native.executions
 
 
+@pytest.mark.parametrize(
+    "wrong_reply", [None, "change", "cedar", "pine", "BIRCH", "ELM", "sibling"]
+)
+def test_smoke_example_checks_every_child_output(tmp_path, native, wrong_reply):
+    """Exercise the shipped YAML offline, including each negative check.
+
+    Scripted replies test the checker, not real model recall. Native requests
+    independently establish that every child selects the same outer endpoint.
+    """
+    example = Path(__file__).resolve().parents[2] / "examples/session_fork_smoke.yaml"
+    path = tmp_path / "smoke.yaml"
+    path.write_text(example.read_text())
+    data = yaml.safe_load(path.read_text())
+    states = data["states"]
+    replies = {
+        "seed": (states["seed"]["prompt_template"], "ORCHID"),
+        "change": (states["change"]["prompt_template"], "ORCHID:MAPLE"),
+        "sibling": (states["sibling"]["prompt_template"], "ORCHID"),
+    }
+    for branch in states["parallel_children"]["branches"]:
+        replies[branch["name"]] = (
+            branch["prompt_template"],
+            "ORCHID:" + branch["name"].upper(),
+        )
+    template = states["map_children"]["iterator"]["states"][0]["prompt_template"]
+    for item in states["prepare_items"]["parameters"]["plant_labels"]:
+        replies[item] = (template.replace("{item}", item), "ORCHID:" + item)
+    for name, (prompt, output) in replies.items():
+        native.responses[prompt] = [
+            ProviderResult(0, "UNKNOWN" if name == wrong_reply else output, "")
+        ]
+        if name != "seed":
+            assert "ORCHID" not in prompt
+
+    assert CliRunner().invoke(app, ["validate", str(path)]).exit_code == 0
+    result = run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert result.status == ("completed" if wrong_reply is None else "aborted")
+    assert len(native.executions) == 7
+    assert len(native.forks) == 6
+    assert len({child for _, child in native.forks}) == 6
+    assert {request["path"] for request, _ in native.forks} == {
+        str(native.executions[0][1])
+    }
+    assert {request["endpoint"] for request, _ in native.forks} == {"entry-0"}
+    assert all(
+        execution[2] == [replies["seed"][0]] for execution in native.executions[1:]
+    )
+
+
 def test_replanned_map_resume_skips_only_current_visit_completed_items(
     tmp_path, native
 ):

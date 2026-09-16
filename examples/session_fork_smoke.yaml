@@ -1,9 +1,13 @@
 # Run: uv run fdsx run examples/session_fork_smoke.yaml
-# Requires Pi >= 0.85.1 and access to the model below. Makes 3 model calls.
-# Expected: seed = ORCHID, change = ORCHID:MAPLE, sibling = ORCHID.
-# No result variables are inserted into prompts: recall must come from the fork.
+# Requires Pi >= 0.85.1 and access to the model below. Makes 7 model calls.
+# Expected: change=ORCHID:MAPLE, parallel=ORCHID:CEDAR / ORCHID:PINE,
+# map=ORCHID:BIRCH / ORCHID:ELM, final sibling=ORCHID.
+# Only seed reveals ORCHID. No previous outputs are inserted into child prompts.
+# Tools and retries are disabled. Exact output mismatches fail the workflow.
+# This checks recall/isolation, not retry/resume or distinct native session IDs.
+# Conversation isolation does not isolate files in the shared working directory.
 name: session-fork-smoke
-description: Check inherited conversation and isolation between sibling Pi forks
+description: Check ordinary, parallel and map forks inherit only the outer seed
 start_at: seed
 retry_escalation: false
 extraction_fallback: false
@@ -20,8 +24,9 @@ states:
     profile: smoke
     retry: 0
     prompt_template: >-
-      This is a conversation memory test. The current password is ORCHID.
-      Remember it for later turns. Reply with only the current password.
+      This is a conversation memory test using plant names as toy labels.
+      The current plant label is ORCHID.
+      Remember it for later turns. Reply with only the current plant label.
     result_path: $.seed_reply
     next: change
 
@@ -31,12 +36,66 @@ states:
     retry: 0
     fork_from: seed
     prompt_template: >-
-      Recall the current password from our conversation.
-      Now change the current password to MAPLE and remember the change.
-      Reply with only OLD:NEW, replacing OLD with the previous password
-      and NEW with the new password. Do not use spaces or Markdown.
-      If you cannot recall the previous password, use UNKNOWN for OLD.
+      Recall the current plant label from our conversation.
+      Now change the current plant label to MAPLE and remember the change.
+      Reply with only OLD:NEW, replacing OLD with the previous plant label
+      and NEW with the new plant label. Do not use spaces or Markdown.
+      If you cannot recall the previous plant label, use UNKNOWN for OLD.
     result_path: $.change_reply
+    next: parallel_children
+
+  parallel_children:
+    type: parallel
+    branches:
+      - name: cedar
+        profile: smoke
+        retry: 0
+        fork_from: seed
+        prompt_template: >-
+          Recall the current plant label from our conversation.
+          Change it to CEDAR and remember the change.
+          Reply with only OLD:NEW, where OLD is the previous plant label and NEW
+          is the new plant label. Use UNKNOWN for OLD if you cannot recall it.
+          Do not guess or use spaces or Markdown.
+      - name: pine
+        profile: smoke
+        retry: 0
+        fork_from: seed
+        prompt_template: >-
+          Recall the current plant label from our conversation.
+          Change it to PINE and remember the change.
+          Reply with only OLD:NEW, where OLD is the previous plant label and NEW
+          is the new plant label. Use UNKNOWN for OLD if you cannot recall it.
+          Do not guess or use spaces or Markdown.
+    result_path: $.parallel_replies
+    next: prepare_items
+
+  prepare_items:
+    type: pass
+    parameters:
+      plant_labels: [BIRCH, ELM]
+    next: map_children
+
+  map_children:
+    type: map
+    items_path: $.plant_labels
+    fail_fast: true
+    iterator:
+      states:
+        # Deliberately shadows the outer source name. fork_from must select
+        # the top-level seed, never the preceding item's local task.
+        - name: seed
+          profile: smoke
+          retry: 0
+          fork_from: seed
+          prompt_template: >-
+            Recall the current plant label from our conversation.
+            Change it to {item} and remember the change.
+            Reply with only OLD:NEW, where OLD is the previous plant label and NEW
+            is the new plant label. Use UNKNOWN for OLD if you cannot recall it.
+            Do not guess or use spaces or Markdown.
+          result_path: $.item_reply
+    result_path: $.map_replies
     next: sibling
 
   sibling:
@@ -45,8 +104,8 @@ states:
     retry: 0
     fork_from: seed
     prompt_template: >-
-      What is the current password from our conversation?
-      Reply with only the password, without spaces or Markdown.
+      What is the current plant label from our conversation?
+      Reply with only the plant label, without spaces or Markdown.
       If you cannot recall it, reply UNKNOWN. Do not guess.
     result_path: $.sibling_reply
     next: check_change
@@ -57,6 +116,42 @@ states:
       - variable: $.change_reply
         operator: equals
         value: "ORCHID:MAPLE"
+        next: check_parallel_cedar
+    default: failed
+
+  check_parallel_cedar:
+    type: choice
+    choices:
+      - variable: $.parallel_replies[0].output
+        operator: equals
+        value: "ORCHID:CEDAR"
+        next: check_parallel_pine
+    default: failed
+
+  check_parallel_pine:
+    type: choice
+    choices:
+      - variable: $.parallel_replies[1].output
+        operator: equals
+        value: "ORCHID:PINE"
+        next: check_map_birch
+    default: failed
+
+  check_map_birch:
+    type: choice
+    choices:
+      - variable: $.map_replies[0]
+        operator: equals
+        value: "ORCHID:BIRCH"
+        next: check_map_elm
+    default: failed
+
+  check_map_elm:
+    type: choice
+    choices:
+      - variable: $.map_replies[1]
+        operator: equals
+        value: "ORCHID:ELM"
         next: check_sibling
     default: failed
 
@@ -72,10 +167,10 @@ states:
   passed:
     type: task
     provider: system
-    command: "echo 'PASS: both forks recalled the source; the sibling did not inherit the change.'"
+    command: "echo 'PASS: ordinary, parallel and map children recalled the outer seed; final sibling still recalled ORCHID.'"
     end: true
 
   failed:
     type: fail
     error: SessionForkSmokeFailed
-    cause: "Expected change=ORCHID:MAPLE and sibling=ORCHID. Check task outputs; formatting differences also fail this check."
+    cause: "Expected change=ORCHID:MAPLE, parallel=ORCHID:CEDAR / ORCHID:PINE, map=ORCHID:BIRCH / ORCHID:ELM, sibling=ORCHID. Check outputs; formatting differences also fail."
