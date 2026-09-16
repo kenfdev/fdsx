@@ -1,4 +1,4 @@
-# Native Pi forks from ordinary tasks
+# Native Pi session forks
 
 `fork_from` names a top-level task in the same workflow. For example:
 
@@ -44,8 +44,8 @@ applies; failed child history does not carry over. File changes are never undone
 
 ## Validation
 
-Only ordinary Pi tasks are supported initially. Other providers, system tasks,
-parallel branches and map iterator destinations reject `fork_from`. Sources must
+Pi ordinary tasks, parallel branches and map iterator tasks support `fork_from`.
+Other providers and system tasks reject it. Sources must
 be top-level ordinary tasks; branch names, iterator names, paths and external
 session IDs are not source references. A forked task may itself be a source.
 
@@ -127,3 +127,69 @@ The local Pi 0.85.1 distribution was inspected without invoking a provider:
 Automated tests use synthetic native-format files and mocked provider subprocesses.
 They establish FDSX routing, retries and persistence, not installed Pi semantics or
 model quality. Real-provider verification requires separate explicit approval.
+
+## Parallel reviewers and map items
+
+After an ordinary `plan` task, a parallel destination can use:
+
+```yaml
+reviewers:
+  type: parallel
+  branches:
+    - name: correctness
+      provider: pi
+      model: openai/gpt-5.4
+      fork_from: plan
+      prompt_template: Review correctness against the plan.
+    - name: tests
+      provider: pi
+      model: openai/gpt-5.4
+      fork_from: plan
+      prompt_template: Review test coverage against the plan.
+  result_path: $.reviews
+  end: true
+```
+
+A map destination can use the same outer source for every item:
+
+```yaml
+implement_items:
+  type: map
+  items_path: $.items
+  iterator:
+    states:
+      - name: implement
+        provider: pi
+        model: openai/gpt-5.4
+        fork_from: plan
+        prompt_template: Implement {item} using the plan.
+        result_path: $.implemented
+  result_path: $.results
+  end: true
+```
+
+The outer plan must precede the containing parallel/map state on every entry
+path. Iterator names never override outer source resolution, even when an
+iterator is also named `plan`. Internal tasks cannot publish fork sources.
+Every branch, item and retry gets a new native child of the selected completed
+outer endpoint. Siblings never update that source reference. Same-provider and
+escalation requirements apply to each effective branch/iterator configuration.
+
+Resume uses persisted outer references for pending or rerun work. Completed map
+items retain the existing progress-based skip behavior within that map visit.
+A new outer visit to a fork-enabled map starts new items, so replanning supplies
+the latest completed source instead of reusing a previous visit’s results. Interrupted parallel
+work may run again; this adds no exactly-once guarantee. Missing metadata or
+missing/corrupt native sessions fail through existing branch failure, required
+gate and map fail-fast policies, without blank-conversation fallback. All
+children still share the working directory; conversation isolation provides no
+filesystem rollback or tool isolation.
+
+Map iterator tasks also accept `structured_output: {schema: answer.json,
+result_path: "$.answer"}` alongside their existing raw `result_path`. The schema
+is loaded relative to the workflow, and the validated value is available to later
+iterator tasks at `$.answer`. If the last iterator task uses structured output,
+the map aggregates its validated values. Invalid output retries from a fresh fork
+of the outer source; exhausted retries follow the map's `fail_fast` policy.
+`extract` and structured output are mutually exclusive; iterator structured
+output does not support `merge`.

@@ -100,9 +100,10 @@ def _create_task_node(
         if isinstance(state.structured_output, StructuredOutput)
         else None
     )
+    from fdsx.core.session_forks import fork_destinations
+
     capture_session = any(
-        isinstance(candidate, TaskState) and candidate.fork_from == state_name
-        for candidate in flow.states.values()
+        candidate.fork_from == state_name for _, _, candidate in fork_destinations(flow)
     )
 
     def _on_fallback(event: FallbackEvent) -> None:

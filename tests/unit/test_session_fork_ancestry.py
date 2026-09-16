@@ -84,7 +84,36 @@ def split(left, right):
         ),
     ],
 )
-def test_mandatory_first_visit_ancestor(start, states, valid):
+@pytest.mark.parametrize("kind", ["task", "parallel", "map"])
+def test_mandatory_first_visit_ancestor(start, states, valid, kind):
+    states = {name: dict(state) for name, state in states.items()}
+    if kind != "task":
+        for name, state in list(states.items()):
+            if "fork_from" not in state:
+                continue
+            child = {
+                key: value
+                for key, value in state.items()
+                if key not in {"type", "next", "end"}
+            }
+            outer = {
+                key: value for key, value in state.items() if key in {"next", "end"}
+            }
+            if kind == "parallel":
+                states[name] = dict(
+                    type=kind, branches=[child], result_path="$.results", **outer
+                )
+            else:
+                states[name] = dict(
+                    type=kind,
+                    items_path="$.items",
+                    iterator={
+                        "states": [dict(name="plan", result_path="$.value", **child)]
+                    },
+                    result_path="$.results",
+                    **outer,
+                )
+
     definition = dict(
         name="graph", description="Ancestry", start_at=start, states=states
     )

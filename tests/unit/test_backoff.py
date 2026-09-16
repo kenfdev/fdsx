@@ -237,6 +237,7 @@ class TestExponentialBackoff:
         branch.timeout_seconds = 30
         branch.retry = 2
         branch.extract = None
+        branch.fork_from = None
         branch.command = None
 
         parallel_state = MagicMock()

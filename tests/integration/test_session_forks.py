@@ -82,7 +82,7 @@ class NativeFixture:
             header = dict(
                 type="session",
                 version=3,
-                id=str(uuid5(NAMESPACE_URL, f"child-{len(self.forks)}")),
+                id=str(uuid5(NAMESPACE_URL, str(path))),
                 timestamp="2026-09-16T00:00:00Z",
                 cwd=str(Path.cwd()),
                 parentSession=request["path"],
@@ -689,19 +689,13 @@ def test_profile_provider_mismatch_is_rejected_on_either_endpoint(
     assert not native.executions
 
 
-@pytest.mark.parametrize("location", ["parallel", "branch", "map", "iterator", "pass"])
+@pytest.mark.parametrize("location", ["parallel", "map", "pass"])
 def test_unsupported_fork_locations_are_explicit_errors(tmp_path, native, location):
     branch = dict(provider="pi", model="test", prompt_template="branch")
     iterator = dict(name="inner", **task("inner"))
     state = {
         "parallel": dict(
             type="parallel", branches=[branch], result_path="$.parallel", end=True
-        ),
-        "branch": dict(
-            type="parallel",
-            branches=[{**branch, "fork_from": "plan"}],
-            result_path="$.parallel",
-            end=True,
         ),
         "map": dict(
             type="map",
@@ -710,17 +704,9 @@ def test_unsupported_fork_locations_are_explicit_errors(tmp_path, native, locati
             result_path="$.mapped",
             end=True,
         ),
-        "iterator": dict(
-            type="map",
-            items_path="$.items",
-            iterator={"states": [{**iterator, "fork_from": "plan"}]},
-            result_path="$.mapped",
-            end=True,
-        ),
         "pass": dict(type="pass", end=True),
     }[location]
-    if location not in {"branch", "iterator"}:
-        state["fork_from"] = "plan"
+    state["fork_from"] = "plan"
     path = write_flow(
         tmp_path, {"plan": task("plan", next="destination"), "destination": state}
     )
@@ -728,3 +714,525 @@ def test_unsupported_fork_locations_are_explicit_errors(tmp_path, native, locati
     assert flow is None
     assert "fork_from" in " ".join(errors)
     assert not native.executions
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+def test_outer_plan_fans_out_to_independent_children(tmp_path, native, kind):
+    path = internal_flow(tmp_path, kind, model="other/model")
+    native.responses["child0"] = [ProviderResult(1, "", "retry")]
+    result = run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert result.status == "completed"
+    assert len(native.forks) == 3
+    assert len({str(path) for _, path in native.forks}) == 3
+    assert (
+        len({(request["path"], request["endpoint"]) for request, _ in native.forks})
+        == 1
+    )
+    assert all(execution[2] == ["plan"] for execution in native.executions[1:])
+    assert len(native.executions) == 4
+    outputs = result.results["results"]
+    if kind == "parallel":
+        assert [row["output"] for row in outputs] == ["child0 output", "child1 output"]
+    else:
+        assert outputs == ["child0 output", "child1 output"]
+    parent_history = native.executions[0][1].read_text()
+    assert "child0" not in parent_history and "child1" not in parent_history
+
+
+def internal_flow(tmp_path, kind, **options):
+    child = dict(provider="pi", model="vendor/model", fork_from="plan", retry=1)
+    child.update(options)
+    if kind == "parallel":
+        destination = dict(
+            type="parallel",
+            branches=[
+                dict(**child, name=f"child{i}", prompt_template=f"child{i}")
+                for i in range(2)
+            ],
+            result_path="$.results",
+            end=True,
+        )
+    else:
+        destination = dict(
+            type="map",
+            items_path="$.items",
+            iterator={
+                "states": [
+                    dict(
+                        **child,
+                        name="plan",
+                        prompt_template="child{item}",
+                        result_path="$.value",
+                    )
+                ]
+            },
+            result_path="$.results",
+            end=True,
+        )
+    return write_flow(
+        tmp_path,
+        {
+            "plan": task("plan", next="items"),
+            "items": dict(type="pass", parameters={"items": [0, 1]}, next="children"),
+            "children": destination,
+        },
+    )
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+def test_internal_resume_and_retry_keep_outer_source(tmp_path, native, kind):
+    path = internal_flow(tmp_path, kind)
+
+    def interrupt(action, session):
+        if action == "child1":
+            raise RuntimeError("interrupted child")
+
+    native.on_execute = interrupt
+    with pytest.raises(RuntimeError, match="interrupted child"):
+        run_flow(path, thread_id="internal-resume", base_dir=tmp_path / ".fdsx")
+    native.on_execute = None
+    native.responses["child1"] = [ProviderResult(1, "", "retry after resume")]
+    result = resume_flow("internal-resume", tmp_path / ".fdsx", path)
+    assert result.status == "completed"
+    actions = [execution[0] for execution in native.executions]
+    assert actions.count("plan") == 1
+    assert actions.count("child1") == 3
+    if kind == "map":
+        assert actions.count("child0") == 1
+        assert result.results["results"] == ["child0 output", "child1 output"]
+    assert all(execution[2] == ["plan"] for execution in native.executions[1:])
+    assert len({request["path"] for request, _ in native.forks}) == 1
+    assert len({str(path) for _, path in native.forks}) == len(native.forks)
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+@pytest.mark.parametrize("failure", ["missing", "corrupt", "fork", "metadata"])
+def test_internal_native_failure_never_runs_blank_child(
+    tmp_path, native, kind, failure
+):
+    path = internal_flow(tmp_path, kind)
+    # Stop after source publication using the existing wait/resume seam.
+    data = yaml.safe_load(path.read_text())
+    data["states"]["items"]["next"] = "wait"
+    data["states"]["wait"] = dict(
+        type="wait",
+        mode="prompt",
+        message="Continue",
+        choices=["yes"],
+        result_path="$.approval",
+        next="children",
+    )
+    path.write_text(yaml.safe_dump(data))
+    with (
+        patch(
+            "fdsx.core.engine.interrupts.display_wait_prompt",
+            side_effect=RuntimeError("interrupted"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        run_flow(path, thread_id="internal-failure", base_dir=tmp_path / ".fdsx")
+    source = native.executions[0][1]
+    if failure == "metadata":
+        from fdsx.checkpoint.manager import CheckpointManager
+        from fdsx.core.compiler import compile_flow
+
+        flow, errors = load_flow(path)
+        assert flow is not None, errors
+        saver = CheckpointManager(tmp_path / ".fdsx").get_checkpointer()
+        try:
+            graph = compile_flow(flow, checkpointer=saver).graph
+            checkpoint_config = {"configurable": {"thread_id": "internal-failure"}}
+            saved = graph.get_state(checkpoint_config).values
+            assert set(saved["_session_references"]) == {"plan"}
+            assert set(saved["_session_references"]["plan"]) == {
+                "provider",
+                "path",
+                "id",
+                "endpoint",
+                "sha256",
+                "size",
+            }
+            graph.update_state(
+                checkpoint_config, {"_session_references": {}}, as_node="items"
+            )
+        finally:
+            saver.conn.close()
+    elif failure == "missing":
+        source.unlink()
+    elif failure == "corrupt":
+        source.write_text("invalid native history")
+    else:
+        native.fork_failure = True
+    with (
+        patch("builtins.input", return_value="1"),
+        pytest.raises(
+            RuntimeError,
+            match="missing native session reference"
+            if failure == "metadata"
+            else "Pi session",
+        ),
+    ):
+        resume_flow("internal-failure", tmp_path / ".fdsx", path)
+    assert [execution[0] for execution in native.executions] == ["plan"]
+    assert not native.forks
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+@pytest.mark.parametrize("source", ["unknown", "child0", "children"])
+def test_internal_invalid_sources_rejected_by_loader_and_cli(
+    tmp_path, native, kind, source
+):
+    path = internal_flow(tmp_path, kind, fork_from=source)
+    flow, errors = load_flow(path)
+    assert flow is None
+    assert "top-level ordinary AI task" in " ".join(errors)
+    result = CliRunner().invoke(app, ["validate", str(path)])
+    assert result.exit_code != 0
+    assert "fork_from" in result.output
+    assert not native.executions
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+def test_internal_effective_profiles_and_escalation(tmp_path, native, kind):
+    path = internal_flow(tmp_path, kind)
+    data = yaml.safe_load(path.read_text())
+    children = data["states"]["children"]
+    tasks = (
+        children["branches"] if kind == "parallel" else children["iterator"]["states"]
+    )
+    for child in tasks:
+        child.pop("provider")
+        child.pop("model")
+        child["profile"] = "reviewer"
+    data["profiles"] = {"reviewer": dict(provider="codex", model="test")}
+    path.write_text(yaml.safe_dump(data))
+    assert "same supported provider" in " ".join(load_flow(path)[1])
+    data["profiles"]["reviewer"]["provider"] = "pi"
+    data["retry_escalation"] = dict(provider="codex", model="test")
+    path.write_text(yaml.safe_dump(data))
+    assert "retry_escalation" in " ".join(load_flow(path)[1])
+    data["retry_escalation"] = dict(provider="pi", model="other-vendor/model")
+    path.write_text(yaml.safe_dump(data))
+    native.responses["child0"] = [ProviderResult(1, "", "retry")]
+    assert run_flow(path, base_dir=tmp_path / ".fdsx").status == "completed"
+    retries = [execution for execution in native.executions if execution[0] == "child0"]
+    assert "other-vendor/model" in retries[-1][3]
+    assert all(execution[2] == ["plan"] for execution in retries)
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+def test_internal_structured_retry_forks_original_source(tmp_path, native, kind):
+    (tmp_path / "schema.json").write_text(
+        '{"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}'
+    )
+    path = internal_flow(
+        tmp_path,
+        kind,
+        structured_output={"schema": "schema.json", "result_path": "$.answer"},
+    )
+    native.responses["child0"] = [
+        ProviderResult(0, "invalid", ""),
+        ProviderResult(0, '{"ok":true}', ""),
+    ]
+    native.responses["child1"] = [ProviderResult(0, '{"ok":true}', "")]
+    result = run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert result.status == "completed"
+    if kind == "parallel":
+        assert all(row["answer"] == {"ok": True} for row in result.results["results"])
+    else:
+        assert result.results["results"] == [{"ok": True}, {"ok": True}]
+    assert len(native.forks) == 3
+    assert len({path for _, path in native.forks}) == 3
+    assert {request["path"] for request, _ in native.forks} == {
+        str(native.executions[0][1])
+    }
+    assert {request["endpoint"] for request, _ in native.forks} == {"entry-0"}
+    assert all(execution[2] == ["plan"] for execution in native.executions[1:])
+    assert "child" not in native.executions[0][1].read_text()
+
+
+@pytest.mark.parametrize("fail_fast", [True, False])
+def test_map_structured_retry_exhaustion_preserves_failure_policy(
+    tmp_path, native, fail_fast
+):
+    (tmp_path / "schema.json").write_text('{"type":"object","required":["ok"]}')
+    path = internal_flow(
+        tmp_path,
+        "map",
+        structured_output={"schema": "schema.json", "result_path": "$.answer"},
+    )
+    data = yaml.safe_load(path.read_text())
+    data["states"]["children"]["fail_fast"] = fail_fast
+    path.write_text(yaml.safe_dump(data))
+    native.responses["child0"] = [
+        ProviderResult(0, "invalid", ""),
+        ProviderResult(0, "{}", ""),
+    ]
+    native.responses["child1"] = [ProviderResult(0, '{"ok":true}', "")]
+    with pytest.raises(
+        RuntimeError,
+        match="iteration 0 failed" if fail_fast else "1 of 2 iterations failed",
+    ):
+        run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert [execution[0] for execution in native.executions] == [
+        "plan",
+        "child0",
+        "child0",
+    ] + ([] if fail_fast else ["child1"])
+    assert all(execution[2] == ["plan"] for execution in native.executions[1:])
+    assert len({path for _, path in native.forks}) == len(native.executions) - 1
+
+
+@pytest.mark.parametrize("schema", ["missing.json", "../outside.json"])
+def test_map_structured_schema_errors_rejected_before_execution(
+    tmp_path, native, schema
+):
+    path = internal_flow(
+        tmp_path, "map", structured_output={"schema": schema, "result_path": "$.answer"}
+    )
+    flow, errors = load_flow(path)
+    assert flow is None
+    assert "Map state 'children' task 'plan': schema" in " ".join(errors)
+    assert CliRunner().invoke(app, ["validate", str(path)]).exit_code != 0
+    assert not native.executions
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+def test_internal_replanning_uses_latest_outer_endpoint(tmp_path, native, kind):
+    path = internal_flow(tmp_path, kind)
+    data = yaml.safe_load(path.read_text())
+    children = data["states"]["children"]
+    children.pop("end")
+    children["next"] = "route"
+    data["states"]["route"] = dict(
+        type="choice",
+        choices=[
+            dict(
+                variable="$._state_iterations.plan",
+                operator="less_than",
+                value=2,
+                next="plan",
+            )
+        ],
+        default="done",
+    )
+    data["states"]["done"] = dict(type="pass", end=True)
+    path.write_text(yaml.safe_dump(data))
+    assert run_flow(path, base_dir=tmp_path / ".fdsx").status == "completed"
+    sources = [
+        execution[1] for execution in native.executions if execution[0] == "plan"
+    ]
+    assert len(sources) == 2
+    assert [request["path"] for request, _ in native.forks] == [str(sources[0])] * 2 + [
+        str(sources[1])
+    ] * 2
+    assert all(
+        execution[2] == ["plan"]
+        for execution in native.executions
+        if execution[0] != "plan"
+    )
+
+
+@pytest.mark.parametrize(
+    "policy", ["min_success", "required_gate", "fail_fast", "continue_items"]
+)
+def test_internal_fork_errors_follow_existing_failure_policy(tmp_path, native, policy):
+    kind = "parallel" if policy in {"min_success", "required_gate"} else "map"
+    path = internal_flow(tmp_path, kind)
+    data = yaml.safe_load(path.read_text())
+    children = data["states"]["children"]
+    if kind == "parallel":
+        children["min_success"] = 1
+        if policy == "required_gate":
+            children.pop("min_success")
+            (tmp_path / "gate.json").write_text(
+                '{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"]}'
+            )
+            children["branches"][0]["structured_output"] = {
+                "schema": "gate.json",
+                "result_path": "$.answer",
+            }
+            children["gate"] = dict(
+                required=["child0"],
+                field="$.ok",
+                expected=True,
+                result_path="$.approved",
+            )
+    else:
+        children["fail_fast"] = policy == "fail_fast"
+    path.write_text(yaml.safe_dump(data))
+    preparation_count = 0
+
+    def fail_first(**kwargs):
+        nonlocal preparation_count
+        if "-e" in kwargs["args"]:
+            preparation_count += 1
+            if kind == "map" and preparation_count == 1:
+                return ProviderResult(1, "", "native failure")
+            if kind == "parallel":
+                # Select by child request prompt is unavailable at preparation;
+                # Failing both exercises the configured collector policy.
+                return ProviderResult(1, "", "native failure")
+        return native(**kwargs)
+
+    with (
+        patch("fdsx.providers.pi._run_subprocess", side_effect=fail_first),
+        pytest.raises(RuntimeError),
+    ):
+        run_flow(path, base_dir=tmp_path / ".fdsx")
+    if policy == "continue_items":
+        assert [execution[0] for execution in native.executions] == ["plan", "child1"]
+    else:
+        assert [execution[0] for execution in native.executions] == ["plan"]
+    if policy == "fail_fast":
+        assert preparation_count == 1
+
+
+@pytest.mark.parametrize(
+    "policy", ["min_success", "advisory_failure", "required_failure"]
+)
+def test_parallel_mixed_native_fork_failure_preserves_policy(tmp_path, native, policy):
+    from fdsx.providers.pi_sessions import new_session_directory
+
+    (tmp_path / "gate.json").write_text(
+        '{"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}'
+    )
+    path = internal_flow(tmp_path, "parallel", retry=0)
+    data = yaml.safe_load(path.read_text())
+    children = data["states"]["children"]
+    if policy == "min_success":
+        children["min_success"] = 1
+    else:
+        for branch in children["branches"]:
+            branch["structured_output"] = {
+                "schema": "gate.json",
+                "result_path": "$.answer",
+            }
+        children["gate"] = dict(
+            required=["child0"],
+            field="$.answer.ok",
+            expected=True,
+            result_path="$.approved",
+        )
+    path.write_text(yaml.safe_dump(data))
+    failed_name = "child0" if policy == "required_failure" else "child1"
+    directories = {}
+    rejected = []
+
+    def allocate(state):
+        directory = new_session_directory(state)
+        directories[str(directory)] = state
+        return directory
+
+    def fail_selected(**kwargs):
+        if "-e" in kwargs["args"]:
+            request = json.loads(kwargs["env"]["FDSX_PI_FORK_REQUEST"])
+            if directories[request["directory"]] == (
+                "children_branch1" if failed_name == "child0" else "children_branch2"
+            ):
+                rejected.append(request)
+                return ProviderResult(1, "", "native failure")
+        return native(**kwargs)
+
+    for name in ("child0", "child1"):
+        native.responses[name] = [ProviderResult(0, '{"ok":true}', "")]
+    with (
+        patch("fdsx.providers.pi_sessions.new_session_directory", side_effect=allocate),
+        patch("fdsx.providers.pi._run_subprocess", side_effect=fail_selected),
+    ):
+        if policy == "required_failure":
+            with pytest.raises(RuntimeError, match="required branch 'child0' failed"):
+                run_flow(path, base_dir=tmp_path / ".fdsx")
+        else:
+            result = run_flow(path, base_dir=tmp_path / ".fdsx")
+            assert result.status == "completed"
+            rows = {row["name"]: row for row in result.results["results"]}
+            assert rows["child0"]["exit_code"] == 0
+            assert rows["child1"]["exit_code"] != 0
+            assert "Pi" in rows["child1"]["error"]
+            if policy == "advisory_failure":
+                assert result.results["approved"] is True
+    assert len(rejected) == 1
+    assert len(native.forks) == 1
+    assert {execution[0] for execution in native.executions} == {
+        "plan",
+        "child1" if failed_name == "child0" else "child0",
+    }
+    assert native.executions[1][2] == ["plan"]
+    assert "--session" in native.executions[1][3]
+
+
+@pytest.mark.parametrize("kind", ["parallel", "map"])
+def test_internal_common_ancestor_loads_and_validates_after_rejoin(
+    tmp_path, native, kind
+):
+    path = internal_flow(tmp_path, kind)
+    data = yaml.safe_load(path.read_text())
+    data["states"]["items"]["next"] = "split"
+    data["states"].update(
+        {
+            "split": dict(
+                type="choice",
+                choices=[
+                    dict(
+                        variable="$.items", operator="equals", value=[0, 1], next="left"
+                    )
+                ],
+                default="right",
+            ),
+            "left": dict(type="pass", next="children"),
+            "right": dict(type="pass", next="children"),
+        }
+    )
+    path.write_text(yaml.safe_dump(data))
+    flow, errors = load_flow(path)
+    assert flow is not None, errors
+    assert CliRunner().invoke(app, ["validate", str(path)]).exit_code == 0
+    assert not native.executions
+
+
+def test_replanned_map_resume_skips_only_current_visit_completed_items(
+    tmp_path, native
+):
+    path = internal_flow(tmp_path, "map")
+    data = yaml.safe_load(path.read_text())
+    children = data["states"]["children"]
+    children.pop("end")
+    children["next"] = "route"
+    data["states"]["route"] = dict(
+        type="choice",
+        choices=[
+            dict(
+                variable="$._state_iterations.plan",
+                operator="less_than",
+                value=2,
+                next="plan",
+            )
+        ],
+        default="done",
+    )
+    data["states"]["done"] = dict(type="pass", end=True)
+    path.write_text(yaml.safe_dump(data))
+
+    def interrupt_second_visit(action, session):
+        if (
+            action == "child1"
+            and sum(execution[0] == "plan" for execution in native.executions) == 2
+        ):
+            raise RuntimeError("interrupted second visit")
+
+    native.on_execute = interrupt_second_visit
+    with pytest.raises(RuntimeError, match="interrupted second visit"):
+        run_flow(path, thread_id="replan-map", base_dir=tmp_path / ".fdsx")
+    native.on_execute = None
+    native.responses["child1"] = [ProviderResult(1, "", "retry")]
+    assert resume_flow("replan-map", tmp_path / ".fdsx", path).status == "completed"
+    actions = [execution[0] for execution in native.executions]
+    assert actions.count("plan") == 2
+    assert actions.count("child0") == 2
+    sources = [
+        execution[1] for execution in native.executions if execution[0] == "plan"
+    ]
+    assert [request["path"] for request, _ in native.forks] == [str(sources[0])] * 2 + [
+        str(sources[1])
+    ] * 4

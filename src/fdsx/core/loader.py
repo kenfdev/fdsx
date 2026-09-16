@@ -8,7 +8,7 @@ from jsonschema.validators import validator_for
 
 from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
-from fdsx.models.flow import Flow, ParallelState, TaskState
+from fdsx.models.flow import Flow, MapState, ParallelState, TaskState
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
@@ -116,6 +116,16 @@ def _resolve_structured_output_schemas(flow: Flow, yaml_path: Path) -> list[str]
                         (
                             f"Parallel state '{state_name}' branch {index}",
                             branch.structured_output,
+                        )
+                    )
+
+        elif isinstance(state, MapState):
+            for task in state.iterator.states:
+                if task.structured_output is not None:
+                    contracts.append(
+                        (
+                            f"Map state '{state_name}' task '{task.name}'",
+                            task.structured_output,
                         )
                     )
 

@@ -89,7 +89,7 @@ def _create_branch_executor(
     ]
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
-        from fdsx.core.compiler.execution import ExecutionConfig, execute_with_retry
+        from fdsx.core.compiler.execution import ExecutionConfig, execute_internal_task
         from fdsx.logging.stream_logger import StreamLogger
 
         branch_index: int = state_dict.get("_branch_index", 0)
@@ -206,7 +206,9 @@ def _create_branch_executor(
             escalation=esc_target,
             on_escalation_activated=on_esc,
         )
-        exec_result = execute_with_retry(exec_config)
+        exec_result = execute_internal_task(
+            exec_config, state_dict, branch_log_name, branch.fork_from
+        )
         result = exec_result.result
         extracted = exec_result.extracted
         structured_value = exec_result.structured_value

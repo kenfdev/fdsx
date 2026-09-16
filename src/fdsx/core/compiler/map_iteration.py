@@ -87,7 +87,12 @@ def _read_map_progress(run_dir: str, state_name: str) -> dict[str, Any] | None:
 
 
 def _write_map_progress(
-    run_dir: str, state_name: str, completed_iterations: int, results: list[Any]
+    run_dir: str,
+    state_name: str,
+    completed_iterations: int,
+    results: list[Any],
+    *,
+    state_iteration: int | None = None,
 ) -> None:
     """Write map progress to checkpoint file atomically."""
     progress_dir = _safe_progress_dir(run_dir, state_name)
@@ -99,6 +104,8 @@ def _write_map_progress(
         "completed_iterations": completed_iterations,
         "results": results,
     }
+    if state_iteration is not None:
+        progress_data["state_iteration"] = state_iteration
     fd = os.open(str(temp_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(progress_data, f, ensure_ascii=False)
@@ -122,7 +129,7 @@ def _create_map_node(
     """
 
     def node(state_dict: dict[str, Any]) -> dict[str, Any]:
-        from fdsx.core.compiler.execution import ExecutionConfig, execute_with_retry
+        from fdsx.core.compiler.execution import ExecutionConfig, execute_internal_task
         from fdsx.logging.stream_logger import StreamLogger
 
         start_time = time.time()
@@ -171,6 +178,19 @@ def _create_map_node(
 
         run_dir = state_dict.get("_meta", {}).get("run_dir", "") or ""
         progress = _read_map_progress(run_dir, state_name)
+        # Fork-enabled maps must execute again on a new outer visit (for example
+        # after replanning), while resumes of the same visit keep completed items.
+        progress_iteration = (
+            iteration
+            if any(task.fork_from is not None for task in state.iterator.states)
+            else None
+        )
+        if (
+            progress_iteration is not None
+            and progress is not None
+            and progress.get("state_iteration", iteration) != iteration
+        ):
+            progress = None
         if progress and len(progress.get("results", [])) <= len(items):
             start_idx = progress["completed_iterations"]
             results = list(progress["results"])
@@ -290,6 +310,7 @@ def _create_map_node(
                     timeout_seconds=iter_state.timeout_seconds,
                     max_retries=max_retries,
                     extract=iter_state.extract,
+                    structured_output=iter_state.structured_output,
                     stream_logger=stream_logger,
                     on_process_start=on_process_start,
                     summary_callback=stream_logger.on_summary,
@@ -300,12 +321,20 @@ def _create_map_node(
                     escalation=iter_esc_target,
                     on_escalation_activated=on_iter_esc,
                 )
-                exec_result = execute_with_retry(exec_config)
+                exec_result = execute_internal_task(
+                    exec_config,
+                    state_dict,
+                    f"{state_name}.{iter_state.name}",
+                    iter_state.fork_from,
+                )
                 result = exec_result.result
                 extracted = exec_result.extracted
                 last_error = exec_result.last_error
 
-                if result.exit_code != 0:
+                if result.exit_code != 0 or (
+                    iter_state.structured_output is not None
+                    and exec_result.structured_value is None
+                ):
                     stream_logger.close()
                     orig = iter_state.provider
                     last = exec_result.last_provider_name or orig
@@ -353,7 +382,13 @@ def _create_map_node(
                             )
                         results.append(None)
                         n_failed += 1
-                        _write_map_progress(run_dir, state_name, idx + 1, results)
+                        _write_map_progress(
+                            run_dir,
+                            state_name,
+                            idx + 1,
+                            results,
+                            state_iteration=progress_iteration,
+                        )
                         break
 
                 if iter_state.extract:
@@ -396,7 +431,13 @@ def _create_map_node(
                                 )
                             results.append(None)
                             n_failed += 1
-                            _write_map_progress(run_dir, state_name, idx + 1, results)
+                            _write_map_progress(
+                                run_dir,
+                                state_name,
+                                idx + 1,
+                                results,
+                                state_iteration=progress_iteration,
+                            )
                             break
                     iter_result = extracted
                     iter_context = set_jsonpath(
@@ -412,10 +453,20 @@ def _create_map_node(
                     )
 
                 iter_steps[iter_state.name] = {"results": iter_result}
+                if iter_state.structured_output is not None:
+                    iter_context = set_jsonpath(
+                        iter_state.structured_output.result_path,
+                        iter_context,
+                        exec_result.structured_value,
+                    )
 
             else:
                 last_iter_state = state.iterator.states[-1]
-                if last_iter_state.extract:
+                if last_iter_state.structured_output is not None:
+                    last_result = resolve_jsonpath(
+                        last_iter_state.structured_output.result_path, iter_context
+                    )
+                elif last_iter_state.extract:
                     last_result = resolve_jsonpath(
                         last_iter_state.extract.result_path, iter_context
                     )
@@ -428,7 +479,13 @@ def _create_map_node(
                         last_iter_state.result_path, iter_context
                     )
                 results.append(last_result)
-                _write_map_progress(run_dir, state_name, idx + 1, results)
+                _write_map_progress(
+                    run_dir,
+                    state_name,
+                    idx + 1,
+                    results,
+                    state_iteration=progress_iteration,
+                )
                 display_map_iteration_complete(
                     state_name, idx, len(items), duration=time.time() - iter_start_time
                 )

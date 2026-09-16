@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from fdsx.core.extraction import extract_value
 from fdsx.core.structured_output import (
     StructuredOutputValidationError,
@@ -317,3 +319,36 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
         last_error=last_error,
         last_provider_name=last_used_provider_name,
     )
+
+
+def execute_internal_task(
+    config: ExecutionConfig,
+    outer_state: dict[str, Any],
+    state_name: str,
+    fork_from: str | None,
+) -> ExecutionResult:
+    """Use outer source metadata and preserve internal-task failure policies."""
+    try:
+        if fork_from is not None:
+            references = outer_state.get("_session_references", {})
+            reference = (
+                references.get(fork_from) if isinstance(references, dict) else None
+            )
+            if (
+                not isinstance(reference, dict)
+                or reference.get("provider") != config.provider_name
+            ):
+                raise ProviderSessionError(
+                    f"State '{state_name}': missing native session reference for '{fork_from}'; rerun the source task (older checkpoints cannot reconstruct history)"
+                )
+            config.session_request = SessionRequest(
+                state_name=state_name, source=reference
+            )
+        return execute_with_retry(config)
+    except ProviderSessionError as exc:
+        structlog.get_logger(__name__).error(
+            "internal_task_session_failed", state=state_name, error=str(exc)
+        )
+        return ExecutionResult(
+            result=ProviderResult(1, "", str(exc)), extracted=None, last_error=str(exc)
+        )

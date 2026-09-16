@@ -484,6 +484,8 @@ class EscalationConfig(BaseModel):
 class Branch(BaseModel):
     """Parallel branch definition."""
 
+    fork_from: str | None = Field(default=None, min_length=1)
+
     name: str | None = Field(default=None, min_length=1)
     provider: str = Field(..., description="Provider name")
     model: str | None = Field(
@@ -836,6 +838,18 @@ class WaitState(BaseModel):
 class IteratorTaskState(BaseModel):
     """Task state for use inside iterator definitions."""
 
+    fork_from: str | None = Field(default=None, min_length=1)
+    structured_output: StructuredOutput | None = None
+
+    @model_validator(mode="after")
+    def validate_structured_output(self) -> "IteratorTaskState":
+        if self.structured_output is not None:
+            if self.extract is not None:
+                raise ValueError("structured_output and extract are mutually exclusive")
+            if self.structured_output.merge is not None:
+                raise ValueError("Iterator structured_output does not support merge")
+        return self
+
     type: Literal["task"] = "task"
     name: str = Field(..., description="State name within the iterator")
     provider: str = Field(
@@ -1046,20 +1060,6 @@ class Flow(BaseModel):
                 raise ValueError(
                     f"State '{name}': fork_from is supported only on ordinary tasks"
                 )
-            branches = state.get("branches", [])
-            for branch in branches if isinstance(branches, list) else []:
-                if isinstance(branch, dict) and "fork_from" in branch:
-                    raise ValueError(
-                        f"State '{name}': parallel branch fork_from is not supported yet"
-                    )
-            iterator = state.get("iterator", {})
-            if isinstance(iterator, dict):
-                tasks = iterator.get("states", [])
-                for task in tasks if isinstance(tasks, list) else []:
-                    if isinstance(task, dict) and "fork_from" in task:
-                        raise ValueError(
-                            f"State '{name}': map iterator fork_from is not supported yet"
-                        )
         return values
 
     @model_validator(mode="after")
