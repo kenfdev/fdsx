@@ -6,6 +6,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 
 - [Flow (top-level)](#flow-top-level)
 - [TaskState](#taskstate)
+- [Session forks](#session-forks)
 - [ChoiceState](#choicestate)
 - [ParallelState](#parallelstate)
 - [PassState](#passstate)
@@ -75,7 +76,8 @@ Reaching `max_loop` is not successful completion. Execution stops with `FlowResu
 
 ```yaml
 type: "task"                    # literal discriminator
-provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|pi|system
+fork_from?: string              # optional — preceding top-level task; see Session forks
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
@@ -103,6 +105,55 @@ end?: bool                      # XOR with next — terminate flow
 - `result_file` must match `$.varname` (no dots or brackets after `$.`)
 - System provider: requires `command`, forbids `prompt_template`/`prompt_file`/`model`
 - LLM providers: require `model` + (`prompt_template` or `prompt_file`), forbid `command`
+
+---
+
+## Session forks
+
+`fork_from: plan` is a direct field on tasks, parallel branches and map iterator
+tasks. It names a top-level ordinary task in the same workflow, not a native
+session ID. A source needs no fork setting itself; a successfully forked ordinary
+task can become a later source. To review planning independently of implementation,
+set `fork_from: plan` on both destinations.
+
+**Validation and configuration:**
+- Both endpoints must use the same effective FDSX provider after profile resolution.
+- Pi, Claude, Codex and Grok accept forks. Cursor, Gemini, OpenCode and system reject them.
+- The source must strictly precede the destination on every route, including the
+  first loop visit. For parallel/map destinations, check the containing outer state.
+- Reject self-reference, unreachable destinations, optional-branch sources and
+  branch/iterator-local sources. An iterator name cannot shadow an outer source.
+- Effective retry escalation must stay with the source provider on both endpoints.
+  Claude, Codex and Grok also require identical model IDs, including escalation.
+  Use `retry_escalation: false` to disable an incompatible inherited policy.
+- Loading and `fdsx validate` are offline; acceptance is not proof of native support.
+
+| Provider | Native selection and runtime boundary |
+| --- | --- |
+| Pi | Baseline 0.85.1, session format v3. Forks the saved completed endpoint; later appends are excluded and changes to the saved prefix fail. Same-provider model changes are allowed. |
+| Claude | `--resume <saved-id> --fork-session`. Uses the saved session's usable conversation at fork time. Native qualification and a tested version baseline remain pending. |
+| Codex | `exec --json fork <saved-id> -`, with persistent history. Exact candidate 0.154.0, not a verified minimum; native qualification pending. |
+| Grok | `--resume <saved-id> --fork-session --session-id <fresh-UUID>`. Exact candidate 1.0.30, accepting bare version output or hexadecimal build metadata with `[stable]`. Recall/isolation smoke checks passed; full native qualification pending. |
+
+**Execution and recovery:**
+- Each destination and each execution/structured-output retry creates a distinct
+  native child of the selected source, never a failed child. File changes remain.
+- Publish references only after successful output validation. Successful replanning
+  replaces the reference; failed replanning does not enable stale-context fallback.
+- Ordinary resume restores references. Explicit `resume --from`, including input
+  updates, clears them: choose a target that reruns required sources.
+- Completed map items are retained within a resumed visit. A new outer visit to a
+  fork-enabled map starts fresh work using the latest source.
+- Keep native history and ancestors accessible. Pi references require their saved
+  paths; Codex requires its retained native storage; Grok requires native storage
+  (`$GROK_HOME/sessions`, default `~/.grok/sessions`) and the original working directory.
+  Claude also requires its saved native session to remain available.
+- Checkpoints contain references, not conversation backups. Missing/unusable history
+  or metadata fails without starting fresh. No transcript replay, daemon management,
+  filesystem rollback or exactly-once execution is provided.
+- Real qualification requires separate approval per invocation, covering workspace,
+  model costs and session/file writes. Record tested limits rather than treating
+  mocked tests or one recall check as proof of native durability and preservation.
 
 ---
 
@@ -252,12 +303,14 @@ Used inside `IteratorDef.states`:
 ```yaml
 type: "task"                    # literal discriminator (only "task" allowed)
 name: string                    # required — state name within the iterator
-provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|pi|system
+fork_from?: string              # optional — preceding outer task; see Session forks
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
 prompt_file?: string            # XOR with prompt_template; relative path
 command?: string                # required for system, forbidden for LLM providers
-result_path: string             # required — JSONPath for result
+result_path: string             # required — JSONPath for raw result
+structured_output?: StructuredOutput  # optional — validated JSON; merge forbidden
 result_file?: string            # optional — top-level $.varname only (no nesting)
 extract?: ExtractRule           # optional — output extraction
 retry?: int                     # default: 3
@@ -283,7 +336,8 @@ Used inside `ParallelState.branches`:
 
 ```yaml
 name?: string                   # optional — stable identity; required when referenced by a gate
-provider: string                # required — claude|cursor|codex|opencode|gemini|grok|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|pi|system
+fork_from?: string              # optional — preceding outer task; see Session forks
 model?: string                  # required for LLM providers
 prompt_template?: string        # XOR with prompt_file
 prompt_file?: string            # XOR with prompt_template
@@ -303,7 +357,7 @@ Same provider validation rules as TaskState. `extract.result_path` must not use 
 
 ## StructuredOutput
 
-Used on `TaskState.structured_output` and `Branch.structured_output`:
+Used on `TaskState.structured_output`, `Branch.structured_output` and `IteratorTaskState.structured_output`. Iterator tasks keep their required raw `result_path` as well, forbid `extract` and `merge`, and expose the validated value at the structured result path. If the final iterator task uses structured output, the map aggregates its validated values:
 
 ```yaml
 structured_output:
@@ -364,7 +418,7 @@ extract:
   result_path: string           # required — JSONPath for extracted value
   fallback?:                    # optional — per-rule LLM classification fallback
     type: "llm_classify"
-    provider?: string           # XOR with profile — claude|cursor|codex|opencode|gemini|grok
+    provider?: string           # XOR with profile — claude|cursor|codex|opencode|gemini|grok|pi
     model?: string              # required when provider is set
     profile?: string            # XOR with provider+model
     prompt: string              # required — classification prompt
@@ -391,7 +445,7 @@ Used at **flow level** (`Flow.extraction_fallback`) and in **config files** (`Fd
 
 ```yaml
 extraction_fallback:
-  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok (system forbidden)
+  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok|pi (system forbidden)
   model?: string                # required when provider is set
   profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
@@ -408,7 +462,7 @@ extraction_fallback: false      # disables config-level extraction_fallback for 
 **Validation:**
 - `provider + model` and `profile` are mutually exclusive (XOR) — exactly one group must be provided
 - When `provider` is set, `model` is required; `provider` without `model` raises a validation error
-- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`); `system` is forbidden
+- `provider` must be one of the LLM providers (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`, `pi`); `system` is forbidden
 - Uses `extra="forbid"` — unknown keys cause validation errors
 
 ---
@@ -637,7 +691,7 @@ Uses `extra="forbid"` — unknown keys cause validation errors.
 ```yaml
 profiles:
   <name>:                       # must match: ^[a-zA-Z][a-zA-Z0-9_-]*$
-    provider: string            # required — claude|cursor|codex|opencode|gemini|grok
+    provider: string            # required — claude|cursor|codex|opencode|gemini|grok|pi
     model: string               # required
     # extra fields allowed (passed through as provider_options)
 ```
@@ -822,13 +876,13 @@ profiles?:
   <name>: ProfileConfig
 
 extraction_fallback?:           # absent by default — global LLM fallback when no per-rule fallback is set
-  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok (system forbidden)
+  provider?: string             # XOR with profile — claude|cursor|codex|opencode|gemini|grok|pi (system forbidden)
   model?: string                # required when provider is set
   profile?: string              # XOR with provider+model — resolved from profiles
   extra_instructions?: string   # optional — appended to the recovery prompt
 
 retry_escalation?:              # absent by default — global escalation target for all flows
-  provider: string              # required — claude|cursor|codex|opencode|gemini|grok (system forbidden)
+  provider: string              # required — claude|cursor|codex|opencode|gemini|grok|pi (system forbidden)
   model: string                 # required — exact model string for the escalation provider
   provider_options?: {k: v}     # optional — passed to the escalation provider
 ```
