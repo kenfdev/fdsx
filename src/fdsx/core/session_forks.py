@@ -83,28 +83,11 @@ def validate_session_forks(flow: Flow, config: "FdsxConfig | None" = None) -> li
                 + "source must strictly precede the destination on every entry path, including the first loop visit"
             )
         if (
-            source.provider in {"claude", "codex", "grok"}
-            and source.model != destination.model
-        ):
-            errors.append(
-                prefix
-                + f"{source.provider.title()} forks require identical models; model switching is not qualified"
-            )
-        if (
             isinstance(escalation, EscalationConfig)
             and escalation.provider != source.provider
         ):
             errors.append(
                 prefix
                 + f"effective retry_escalation must remain provider {source.provider} on both endpoints; disable incompatible inherited escalation"
-            )
-        if (
-            isinstance(escalation, EscalationConfig)
-            and source.provider in {"claude", "codex", "grok"}
-            and escalation.model != source.model
-        ):
-            errors.append(
-                prefix
-                + f"{source.provider.title()} retry_escalation requires the same model; model switching is not qualified"
             )
     return errors

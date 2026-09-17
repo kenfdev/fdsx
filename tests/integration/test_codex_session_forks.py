@@ -401,7 +401,6 @@ def test_mixed_providers_rejected_by_loader_and_cli(tmp_path, native, provider):
     "escalation",
     [
         dict(provider="pi", model="gpt-test"),
-        dict(provider="codex", model="other-model"),
     ],
 )
 def test_incompatible_escalation_rejected(tmp_path, native, escalation):
@@ -580,12 +579,15 @@ def test_effective_profiles_inherited_escalation_and_opt_out(tmp_path, native):
     assert native.calls[-1]["parent"] == native.calls[0]["child"]
 
 
-def test_model_switch_rejected_before_execution(tmp_path, native):
+def test_model_switch_forks_source_with_requested_model(tmp_path, native):
     child = task("child", fork_from="plan", end=True)
     child["model"] = "other-model"
     path = write_flow(tmp_path, {"plan": task("plan", next="child"), "child": child})
-    assert "identical models" in " ".join(load_flow(path)[1])
-    assert not native.calls
+    assert run_flow(path, base_dir=tmp_path / ".fdsx").status == "completed"
+    source, destination = native.calls
+    assert destination["parent"] == source["child"]
+    args = destination["args"]
+    assert args[args.index("--model") + 1] == "other-model"
 
 
 @pytest.mark.parametrize(
@@ -628,17 +630,20 @@ def test_session_large_prompt_timeout_and_callbacks(native):
     assert result.session_reference["session_id"] == call["child"]
 
 
-def test_same_model_escalation_keeps_source(tmp_path, native):
+@pytest.mark.parametrize("model", ["gpt-test", "other-model"])
+def test_model_escalation_keeps_source(tmp_path, native, model):
     child = task("child", fork_from="plan", end=True)
     child["retry"] = 1
     path = write_flow(
         tmp_path,
         {"plan": task("plan", next="child"), "child": child},
-        retry_escalation=dict(provider="codex", model="gpt-test"),
+        retry_escalation=dict(provider="codex", model=model),
     )
     native.responses["child"] = [dict(is_error=True)]
     assert run_flow(path, base_dir=tmp_path / ".fdsx").status == "completed"
     assert len(native.calls) == 3
+    args = native.calls[-1]["args"]
+    assert args[args.index("--model") + 1] == model
     assert (
         native.calls[1]["parent"]
         == native.calls[2]["parent"]

@@ -5,8 +5,8 @@ qualification is pending**. Session execution accepts only candidate 1.0.30
 (bare version or hexadecimal build metadata with `[stable]`), not a verified
 minimum. Sources use `--session-id <fresh-UUID>`; destinations and retries use
 `--resume <saved-id> --fork-session --session-id <fresh-child-UUID>`. Completion
-metadata must match the requested child ID. Effective model IDs must match,
-including escalation; no cross-model compatibility is claimed.
+metadata must match the requested child ID. Same-provider model switching is
+allowed, including escalation; native cross-model verification remains pending.
 
 Keep Grok source sessions and ancestors under `$GROK_HOME/sessions` (default
 `~/.grok/sessions`) and the original working directory accessible across resume.
@@ -36,7 +36,8 @@ the same accessible Codex storage, including source and ancestor history; a chil
 file or FDSX checkpoint alone is not a portable conversation backup. Missing
 history, incompatible versions and malformed completion metadata fail with the
 affected state and guidance to restore history or rerun the source. There is no
-fresh-session fallback. Model switching remains unqualified and is rejected.
+fresh-session fallback. Same-provider model switching is allowed; native
+cross-model verification remains pending.
 
 `fork_from` names a top-level task in the same workflow. For example:
 
@@ -94,8 +95,10 @@ unreachable fork destinations are rejected. Unreachable incoming paths do not
 invalidate an otherwise mandatory ancestor.
 
 Profiles resolve before these checks. Effective workflow/config retry escalation
-must retain the source provider on both endpoints; Claude, Codex and Grok require identical
-model strings, including escalation. Use `retry_escalation: false` to
+must retain the source provider on both endpoints. All supported providers allow
+different model strings for destinations and same-provider retry escalation.
+The destination or escalation model is passed to the provider CLI; its availability
+and history compatibility remain the provider's responsibility. Use `retry_escalation: false` to
 explicitly disable an incompatible inherited policy. Validation does not execute
 Pi and cannot guarantee that its runtime, selected models or native files exist.
 

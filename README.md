@@ -439,11 +439,13 @@ states:
 The source must be a top-level task guaranteed to finish before the destination
 on every route. Parallel branches and map items can fork the same outer source.
 Each retry creates a new child; failed child conversations do not carry over.
-Forks do not isolate or roll back files. Both ends must use the same provider.
+Forks do not isolate or roll back files. Both ends must use the same provider,
+but may use different models. Same-provider model changes are also allowed during
+retry escalation. Model availability and history compatibility depend on the provider CLI.
 
 Pi uses its saved completed endpoint (baseline 0.85.1). Claude, Codex and Grok
-integrations select the saved session's usable conversation at fork time and
-require matching model IDs; **full native qualification remains pending**.
+integrations select the saved session's usable conversation at fork time;
+**full native qualification, including cross-model behavior, remains pending**.
 Cursor, Gemini, OpenCode and system forks are rejected. Ordinary resume restores
 references, but `resume --from` clears them: restart required source tasks before
 fork destinations. Native history must remain available; checkpoints are not backups.
