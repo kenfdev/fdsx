@@ -38,5 +38,5 @@ def validate_flow(flow_path: Path) -> tuple[bool, list[str], str | None]:
             name: prof.model_dump() for name, prof in config.profiles.items()
         }
 
-    flow, errors = load_flow(flow_path, config_profiles=config_profiles)
+    flow, errors = load_flow(flow_path, config_profiles=config_profiles, config=config)
     return flow is not None, errors, flow.name if flow else None

@@ -323,6 +323,7 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
     # 4. Internal tracking keys
     annotations.setdefault("_meta", Any)
     annotations.setdefault("_state_iterations", Any)
+    annotations.setdefault("_session_references", Any)
 
     # 5. Managed channel for loop control (Phase 4)
     annotations["remaining_steps"] = RemainingSteps

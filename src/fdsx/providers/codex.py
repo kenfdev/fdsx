@@ -5,6 +5,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
+from uuid import UUID
 
 import structlog
 from pydantic import BaseModel, ConfigDict
@@ -16,6 +17,8 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
     ProviderSchemaError,
+    ProviderSessionError,
+    SessionRequest,
     _run_subprocess,
     add_schema_update_guidance,
     serialize_output_schema,
@@ -43,6 +46,112 @@ _ITEM_TYPE_REASONING = "reasoning"
 _ITEM_TYPE_COMMAND_EXECUTION = "command_execution"
 _ITEM_TYPE_FILE_CHANGE = "file_change"
 _ITEM_TYPE_MCP_TOOL_CALL = "mcp_tool_call"
+
+
+class _CodexSession:
+    """Per-invocation metadata, never shared between concurrent children.
+
+    Reader callbacks record protocol failures; domain errors are raised on the
+    calling thread. Native diagnostics are deliberately not forwarded or logged.
+    """
+
+    def __init__(self, request: SessionRequest) -> None:
+        self.request = request
+        self.source_id: str | None = None
+        self.ids: list[str] = []
+        self.malformed = False
+        self.failed = False
+        self.completed = 0
+        if request.source is not None:
+            source_id = request.source.get("session_id")
+            if request.source.get("provider") != "codex" or not self.valid_id(
+                source_id
+            ):
+                raise self.error("source reference is invalid")
+            self.source_id = source_id
+
+    @staticmethod
+    def valid_id(value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            return str(UUID(value)) == value.lower()
+        except ValueError:
+            return False
+
+    def error(self, reason: str) -> ProviderSessionError:
+        structured_logger.error(
+            "codex_session_failed", state=self.request.state_name, reason=reason
+        )
+        return ProviderSessionError(
+            f"State '{self.request.state_name}': Codex native session {reason}; "
+            "verify exec fork CLI compatibility and retained source/ancestor history "
+            "in the same Codex storage, then rerun the source task. "
+            "No fresh-session fallback was attempted."
+        )
+
+    def wrap(self, callback: Callable[[str], None]) -> Callable[[str], None]:
+        def consume(line: str) -> None:
+            if not line.strip():
+                return
+            try:
+                event = json.loads(line)
+            except (ValueError, RecursionError):
+                self.malformed = True
+                return
+            if not isinstance(event, dict):
+                self.malformed = True
+                return
+            kind = event.get("type")
+            if kind == "thread.started":
+                value = event.get("thread_id")
+                if not self.valid_id(value):
+                    self.malformed = True
+                else:
+                    self.ids.append(str(value))
+            elif kind in (_EVENT_ERROR, _EVENT_TURN_FAILED):
+                self.failed = True
+            elif kind == "turn.completed":
+                self.completed += 1
+            elif kind in (_EVENT_ITEM_STARTED, _EVENT_ITEM_COMPLETED):
+                item = event.get("item")
+                if not isinstance(item, dict) or any(
+                    key in item and not isinstance(item[key], str)
+                    for key in ("type", "text", "command", "name")
+                ):
+                    self.malformed = True
+                    return
+                callback(line)
+
+        return consume
+
+    def finish(
+        self, result: ProviderResult, output: str | None, final_message: str | None
+    ) -> ProviderResult:
+        if result.exit_code != 0 or self.failed:
+            return ProviderResult(
+                result.exit_code or 1,
+                "",
+                str(
+                    self.error(
+                        "execution failed (history or CLI options may be incompatible)"
+                    )
+                ),
+            )
+        if self.malformed or len(self.ids) != 1 or self.completed != 1:
+            raise self.error("completion metadata is missing, malformed, or ambiguous")
+        child = self.ids[0]
+        if self.source_id is not None and child.lower() == self.source_id.lower():
+            raise self.error("child reference reuses the source")
+        if output is None:
+            raise self.error("completion output is missing")
+        return ProviderResult(
+            0,
+            output,
+            "",
+            final_message=final_message,
+            session_reference={"provider": "codex", "session_id": child},
+        )
 
 
 class CodexOptions(BaseModel):
@@ -90,6 +199,11 @@ class CodexProvider(ProviderBase):
 
     def __init__(self, options: CodexOptions | None = None) -> None:
         self.options: CodexOptions = options if options is not None else CodexOptions()
+
+    def execute_with_session(
+        self, request: SessionRequest, **kwargs: Any
+    ) -> ProviderResult:
+        return self.execute(session_request=request, **kwargs)
 
     def _make_stream_callback(
         self,
@@ -197,6 +311,7 @@ class CodexProvider(ProviderBase):
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
         output_schema: Any | None = None,
+        session_request: SessionRequest | None = None,
     ) -> ProviderResult:
         """Execute Codex CLI with a prompt.
 
@@ -218,6 +333,19 @@ class CodexProvider(ProviderBase):
         Returns:
             ProviderResult with exit code and output
         """
+        session = (
+            _CodexSession(session_request) if session_request is not None else None
+        )
+        if session is not None:
+            # Source-inspected candidate only, not a verified minimum version.
+            # Newer versions may change the persistence or JSON contract.
+            version = _run_subprocess(
+                args=["codex", "--version"], timeout=10, inactivity_timeout=10
+            )
+            if version.exit_code != 0 or version.stdout.strip() != "codex-cli 0.154.0":
+                raise session.error(
+                    "requires source-inspected candidate codex-cli 0.154.0; native qualification is pending"
+                )
         schema_path: Path | None = None
         if output_schema is not None:
             encoded_schema = serialize_output_schema(output_schema)
@@ -251,14 +379,25 @@ class CodexProvider(ProviderBase):
 
         try:
             use_stdin = len(prompt.encode("utf-8")) >= ARG_MAX_STDIN_THRESHOLD
+            stdin_data: str | None
             args = ["codex", "exec"]
             if model:
                 args.extend(["--model", model])
             args.extend(self.options.to_cli_flags())
             if schema_path is not None:
                 args.extend(["--output-schema", str(schema_path)])
-            if use_stdin:
-                stdin_data: str | None = prompt
+            if session is not None:
+                # Persist native history even when user configuration is ephemeral.
+                # All exec options precede the subcommand (not all are global).
+                args.extend(["-c", "ephemeral=false", "--json"])
+                if session.source_id is not None:
+                    args.extend(["fork", session.source_id])
+                args.append("-")
+                stdin_data = prompt
+                output_callback = output_callback or (lambda line: None)
+                stderr_callback = None  # Native errors can contain private prompts.
+            elif use_stdin:
+                stdin_data = prompt
             else:
                 args.append(prompt)
                 stdin_data = None
@@ -273,7 +412,8 @@ class CodexProvider(ProviderBase):
             )
 
             if output_callback is not None:
-                args.extend(_STREAM_FORMAT_FLAGS)
+                if session is None:
+                    args.extend(_STREAM_FORMAT_FLAGS)
                 final_message: list[str | None] = [None]
                 errors: list[str] = []
 
@@ -294,12 +434,16 @@ class CodexProvider(ProviderBase):
                 result = _run_subprocess(
                     args=args,
                     timeout=effective_timeout,
-                    output_callback=stream_callback,
+                    output_callback=session.wrap(stream_callback)
+                    if session
+                    else stream_callback,
                     stderr_callback=stderr_callback,
                     stdin_data=stdin_data,
                     inactivity_timeout=effective_inactivity,
                     on_process_start=on_process_start,
                 )
+                if session is not None:
+                    return session.finish(result, get_result(), final_message[0])
                 if result.exit_code != 0 and errors:
                     diagnostics = (
                         [result.stderr.strip()] if result.stderr.strip() else []

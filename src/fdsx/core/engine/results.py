@@ -30,6 +30,7 @@ def _sanitize_state_for_log(state: dict[str, Any]) -> dict[str, Any]:
         and not k.startswith("__")
         and not k.startswith("_br_")
         and not k.startswith("_state_")
+        and k != "_session_references"
     }
 
 

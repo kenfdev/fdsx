@@ -458,6 +458,7 @@ class TestTaskNodeResultFileWiring:
 
         flow = MagicMock(spec=Flow)
         flow.providers = None
+        flow.states = {}
 
         with (
             patch("fdsx.core.compiler.nodes.get_provider") as mock_get_provider,

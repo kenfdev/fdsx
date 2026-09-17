@@ -4,7 +4,9 @@ import subprocess
 import threading
 from collections.abc import Callable
 from typing import Any, Literal
+from uuid import UUID
 
+import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fdsx.providers.base import (
@@ -13,6 +15,8 @@ from fdsx.providers.base import (
     DEFAULT_INACTIVITY_TIMEOUT,
     ProviderBase,
     ProviderResult,
+    ProviderSessionError,
+    SessionRequest,
     _run_subprocess,
     add_schema_update_guidance,
     serialize_output_schema,
@@ -115,6 +119,12 @@ class ClaudeProvider(ProviderBase):
         self.options: ClaudeOptions = (
             options if options is not None else ClaudeOptions()
         )
+
+    def execute_with_session(
+        self, request: SessionRequest, **kwargs: Any
+    ) -> ProviderResult:
+        """Capture native metadata without changing ordinary execution."""
+        return self.execute(session_request=request, **kwargs)
 
     def _make_stream_callback(
         self,
@@ -311,6 +321,7 @@ class ClaudeProvider(ProviderBase):
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
         output_schema: Any | None = None,
+        session_request: SessionRequest | None = None,
     ) -> ProviderResult:
         """Execute Claude CLI with a prompt.
 
@@ -344,6 +355,42 @@ class ClaudeProvider(ProviderBase):
         if model:
             args.extend(["--model", model])
         args.extend(self.options.to_cli_flags())
+        source_id = None
+        session_events: list[dict[str, Any]] = []
+        malformed_session_stream = False
+
+        def session_error(reason: str) -> ProviderSessionError:
+            state = session_request.state_name if session_request else "unknown"
+            structlog.get_logger(__name__).error(
+                "claude_session_failed", state=state, reason=reason
+            )
+            return ProviderSessionError(
+                f"State '{state}': Claude native session {reason}; verify CLI compatibility and retained native history, then rerun the source task. No fresh-session fallback was attempted."
+            )
+
+        def valid_id(value: Any) -> bool:
+            if not isinstance(value, str):
+                return False
+            try:
+                return str(UUID(value)) == value.lower()
+            except ValueError:
+                return False
+
+        if session_request is not None:
+            if session_request.source is not None:
+                source = session_request.source
+                source_id = source.get("session_id")
+                if source.get("provider") != "claude" or not valid_id(source_id):
+                    raise session_error("source reference is invalid")
+                args.extend(["--resume", str(source_id), "--fork-session"])
+            # Always stream for session requests, including quiet/direct callers.
+            # The existing parser keeps native metadata out of task output.
+            if output_callback is None:
+
+                def output_callback(line: str) -> None:
+                    pass
+
+            stderr_callback = None  # Native diagnostics may contain conversation text.
         if output_schema is not None:
             args.extend(["--json-schema", serialize_output_schema(output_schema)])
 
@@ -384,10 +431,45 @@ class ClaudeProvider(ProviderBase):
                 ),
                 final_message_callback=capture_final_message,
             )
+
+            def session_callback(line: str) -> None:
+                nonlocal malformed_session_stream
+                try:
+                    event = json.loads(line)
+                except (ValueError, RecursionError):
+                    malformed_session_stream = True
+                    return  # Never log malformed native data.
+                if not isinstance(event, dict):
+                    return
+                if event.get("type") == "result":
+                    session_events.append(event)
+                    if event.get("is_error"):
+                        completion_event.set()
+                        return
+                # Only parse known well-shaped envelopes at this boundary.
+                if event.get("type") == "stream_event" and not isinstance(
+                    event.get("event"), dict
+                ):
+                    return
+                try:
+                    stream_callback(line)
+                except (
+                    AttributeError,
+                    TypeError,
+                    KeyError,
+                    ValueError,
+                    RecursionError,
+                ):
+                    # Callbacks run on the subprocess reader thread. Translate
+                    # errors on the caller thread after the process completes.
+                    malformed_session_stream = True
+
             result = _run_subprocess(
                 args=args,
                 timeout=effective_timeout,
-                output_callback=stream_callback,
+                output_callback=session_callback
+                if session_request
+                else stream_callback,
                 stderr_callback=stderr_callback,
                 stdin_data=stdin_data,
                 completion_event=completion_event,
@@ -395,6 +477,50 @@ class ClaudeProvider(ProviderBase):
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
             )
+            if session_request is not None:
+                if malformed_session_stream:
+                    raise session_error("stream metadata is malformed")
+                if result.exit_code != 0 or any(
+                    e.get("is_error") for e in session_events
+                ):
+                    return ProviderResult(
+                        result.exit_code or 1,
+                        "",
+                        str(
+                            session_error(
+                                "execution failed (source history may be unavailable or CLI options incompatible)"
+                            )
+                        ),
+                    )
+                if len(session_events) != 1:
+                    raise session_error("completion metadata is missing or ambiguous")
+                event = session_events[0]
+                child_id = event.get("session_id")
+                if not valid_id(child_id) or (
+                    source_id is not None and str(child_id).lower() == source_id.lower()
+                ):
+                    raise session_error(
+                        "child reference is missing, invalid, or reuses the source"
+                    )
+                flush()
+                structured = event.get("structured_output")
+                output = (
+                    json.dumps(structured, ensure_ascii=False)
+                    if structured is not None
+                    else get_result()
+                )
+                if not isinstance(output, str):
+                    raise session_error("completion output is invalid")
+                return ProviderResult(
+                    0,
+                    output,
+                    "",
+                    final_message=final_message[0],
+                    session_reference={
+                        "provider": "claude",
+                        "session_id": str(child_id),
+                    },
+                )
             if output_schema is not None:
                 result = add_schema_update_guidance(
                     result, provider_name="Claude", schema_flag="--json-schema"

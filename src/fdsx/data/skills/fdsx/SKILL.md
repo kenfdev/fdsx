@@ -3,19 +3,19 @@ name: fdsx
 description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
-  configuring fdsx providers (claude, cursor, codex, opencode, gemini, grok), setting up
+  configuring fdsx providers (claude, cursor, codex, opencode, gemini, grok, pi), setting up
   profiles, adding hooks, using choice/parallel/loop/wait/pass/map/fail states,
   running fdsx CLI commands, debugging workflow validation errors, or asking
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
   agent workflow", "multi-step AI pipeline", "provider options", "checkpoint
   resume", "map state", "iterator", "extraction fallback", "structured output",
   "JSON Schema output", "parallel gate", "state iteration", "max loop",
-  "resume input updates", "input revision history".
+  "resume input updates", "input revision history", "fork_from", "session forks".
 ---
 
 # fdsx Workflow Authoring Guide
 
-fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`, `grok`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
+fdsx executes multi-step AI agent workflows defined in declarative YAML. It compiles workflow definitions into state machines, executes them by invoking LLM CLI tools (`claude`, `agent` (Cursor), `codex`, `opencode`, `gemini`, `grok`, `pi`) or shell commands as subprocesses, and manages checkpoint/resume across runs.
 
 ## Quick Start
 
@@ -74,11 +74,29 @@ States that support routing use either `next` (go to state) or `end: true` (term
 | `gemini` | `gemini -p <prompt> --model <model>` | `model`, `prompt_template` or `prompt_file` | `approval_mode`, `yolo`, `sandbox`, `include_directories`, `extensions`, `policy` |
 | `cursor` | `agent -p <prompt> --trust [--model <model>]` | `model`, `prompt_template` or `prompt_file` | `force`, `approve_mcps`, `sandbox` |
 | `grok` | `grok --single <prompt> --model <model> --output-format streaming-json` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `sandbox`, `allow`, `deny`, `tools`, `disallowed_tools`, `reasoning_effort`, `max_turns`, `on_max_turns`, `no_subagents`, `no_plan`, `cross_session_memory`, `disable_web_search`, `verbatim`, `cwd`, `agent`, `agents`, `rules`, `system_prompt_override` |
+| `pi` | `pi -p --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `allowed_tools`, `disallowed_tools`, `disable_tools` |
 | `system` | `sh -c <command>` | `command` | (none) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
 
 The `system` provider forbids `prompt_template`, `prompt_file`, and `model`. LLM providers forbid `command`.
+
+## Native Session Forks
+
+Use the direct `fork_from: plan` field on a task, parallel branch or map iterator
+task to inherit a preceding top-level task's conversation. It is separate from
+`provider_options` and from text substitution such as `{plan}`. Independent
+implementation and review tasks should both fork planning, not each other.
+
+Before authoring forks or choosing a recovery target, read
+[Session forks](references/yaml-schema.md#session-forks) for provider/version
+limits, mandatory source ordering, retry isolation and native-history retention.
+Pi support and Claude/Codex/Grok implementations have different qualification
+status and source-selection semantics. Real-provider checks need separate approval;
+mocked tests or successful recall alone do not establish full native support.
+
+Ordinary resume restores saved references. Explicit `resume --from`, with or
+without `--input`, clears them: rerun required sources before dependent forks.
 
 ## Profiles
 
@@ -138,7 +156,7 @@ extract:
 
 ## Structured Output
 
-Use `structured_output` on a task state or parallel branch when later states need a validated JSON object or list:
+Use `structured_output` on a task state, parallel branch or map iterator task when later states need a validated JSON object or list:
 
 ```yaml
 structured_output:
@@ -155,7 +173,7 @@ Extra fields are allowed by default: `additionalProperties: false` and `unevalua
 
 Validation failures use the state's or branch's existing `retry` count. LLM retries receive bounded validation feedback without the previous raw output. A `system` command is not retried after structured-output validation fails. Raw provider output remains in run logs.
 
-`structured_output` is mutually exclusive with a task's legacy `result_path` and `extract`, and with a branch's `extract`. The structured value is authoritative in workflow state.
+`structured_output` is mutually exclusive with a task's legacy `result_path` and `extract`, and with a branch's `extract`. The structured value is authoritative in workflow state. Iterator tasks retain their required raw `result_path` alongside `structured_output.result_path`; they forbid `extract` and structured `merge`. When the final iterator task uses structured output, the map aggregates validated values.
 
 ### Keyed upsert merge
 
@@ -247,7 +265,7 @@ states:
 ```
 
 `ExtractionFallback` fields:
-- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
+- `provider` — LLM provider (`claude`, `cursor`, `codex`, `opencode`, `gemini`, `grok`, `pi`; `system` is forbidden). XOR with `profile`. Must be paired with `model`.
 - `model` — model string passed to the provider binary. Required when `provider` is set.
 - `profile` — named profile. XOR with `provider` + `model`. Exactly one of `provider + model` or `profile` must be set.
 - `extra_instructions` — optional string appended to the recovery prompt.

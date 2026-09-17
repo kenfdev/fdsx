@@ -305,6 +305,13 @@ def compile_flow(
     Returns:
         CompiledGraph with the compiled state machine
     """
+    from fdsx.core.engine.validate import FlowValidationError
+    from fdsx.core.session_forks import validate_session_forks
+
+    fork_errors = validate_session_forks(flow, config)
+    if fork_errors:
+        logger.error("session_fork_validation_failed")
+        raise FlowValidationError("; ".join(fork_errors))
     result_paths = _extract_result_paths(flow)
 
     schema = _build_state_schema(flow, input_keys)

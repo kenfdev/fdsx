@@ -15,12 +15,13 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Parallel execution with branch aggregation
 - Map state for iterating over arrays with sub-workflows
 - Persistent batch task processing with crash-resilient resume
-- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, Grok, OpenCode, and system commands)
+- Multiple LLM provider support (Claude, Cursor, Codex, Gemini, Grok, OpenCode, Pi, and system commands)
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Provider-independent JSON Schema validation for structured task and branch output
+- [Native session forks](docs/session-forks.md) with `fork_from` for tasks, parallel branches and map items; Pi support plus Claude/Codex/Grok integrations with native qualification pending
 - Stable keyed upsert merging for iterative structured ledgers
 - Named parallel branches with required-branch boolean gates
 - One-based state iteration values for loop-aware prompts
@@ -92,7 +93,7 @@ max_loop: 10                    # (int, default: 10) max loop iterations; exhaus
 # Extra fields beyond provider/model are passed as provider_options.
 profiles:
   smarty:
-    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini, grok
+    provider: claude            # (string, REQUIRED) one of: claude, cursor, codex, opencode, gemini, grok, pi
     model: claude-opus-4-6      # (string, REQUIRED) model name
   doer:
     provider: opencode
@@ -168,7 +169,7 @@ states:
 
     # --- Provider (pick ONE approach) ---
     # Approach A: explicit provider + model
-    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, grok, system
+    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, grok, pi, system
     model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
     # Approach B: profile reference (mutually exclusive with provider/model)
     # profile: smarty
@@ -398,6 +399,59 @@ states:
                                         # Note: fail has no next, end, or max_iterations —
                                         # it terminates the flow immediately on entry
 ```
+
+### Native Session Forks
+
+Use `fork_from` to inherit an earlier task's conversation rather than inserting
+its final text into a prompt. Implementation and review can independently inherit
+planning while sharing the current working files:
+
+```yaml
+name: independent-review
+description: Implement and review the same plan
+start_at: plan
+retry_escalation: false
+profiles:
+  agent:
+    provider: pi
+    model: anthropic/claude-sonnet-4-6
+states:
+  plan:
+    type: task
+    profile: agent
+    prompt_template: Plan the requested change.
+    next: implement
+  implement:
+    type: task
+    profile: agent
+    fork_from: plan
+    prompt_template: Implement the plan in the current directory.
+    next: review
+  review:
+    type: task
+    profile: agent
+    fork_from: plan
+    prompt_template: Review the current files against the plan.
+    result_path: $.review
+    end: true
+```
+
+The source must be a top-level task guaranteed to finish before the destination
+on every route. Parallel branches and map items can fork the same outer source.
+Each retry creates a new child; failed child conversations do not carry over.
+Forks do not isolate or roll back files. Both ends must use the same provider.
+
+Pi uses its saved completed endpoint (baseline 0.85.1). Claude, Codex and Grok
+integrations select the saved session's usable conversation at fork time and
+require matching model IDs; **full native qualification remains pending**.
+Cursor, Gemini, OpenCode and system forks are rejected. Ordinary resume restores
+references, but `resume --from` clears them: restart required source tasks before
+fork destinations. Native history must remain available; checkpoints are not backups.
+
+See [session fork rules and provider limits](docs/session-forks.md) and the
+[Pi](examples/session_fork_smoke.yaml) / [Grok](examples/session_fork_smoke_grok.yaml)
+manual smoke examples. Real checks require separate execution approval and can
+incur model charges.
 
 ### Structured Output and Convergence
 
@@ -675,7 +729,7 @@ manual_workflow: false            # (bool, default: false) disable AI workflow s
 # --- Workflow selector: LLM used for auto-selecting workflows ---
 workflow_selector:
   profile: smarty                 # (string, optional) profile ref — mutually exclusive with provider/model
-  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini, grok
+  # provider: claude              # (string, default: "claude") one of: claude, cursor, codex, opencode, gemini, grok, pi
   # model: claude-sonnet-4-6     # (string, default: "claude-sonnet-4-6")
   extra_instructions: |           # (string, optional) appended to the selection prompt
     Prefer simple-impl for small tasks.

@@ -484,6 +484,8 @@ class EscalationConfig(BaseModel):
 class Branch(BaseModel):
     """Parallel branch definition."""
 
+    fork_from: str | None = Field(default=None, min_length=1)
+
     name: str | None = Field(default=None, min_length=1)
     provider: str = Field(..., description="Provider name")
     model: str | None = Field(
@@ -606,6 +608,7 @@ class TaskState(BaseModel):
     """Task state - executes a provider to generate output."""
 
     type: Literal["task"] = "task"
+    fork_from: str | None = Field(default=None, min_length=1)
     provider: str = Field(
         ...,
         description="Provider: claude|cursor|opencode|codex|gemini|grok|system",
@@ -835,6 +838,18 @@ class WaitState(BaseModel):
 class IteratorTaskState(BaseModel):
     """Task state for use inside iterator definitions."""
 
+    fork_from: str | None = Field(default=None, min_length=1)
+    structured_output: StructuredOutput | None = None
+
+    @model_validator(mode="after")
+    def validate_structured_output(self) -> "IteratorTaskState":
+        if self.structured_output is not None:
+            if self.extract is not None:
+                raise ValueError("structured_output and extract are mutually exclusive")
+            if self.structured_output.merge is not None:
+                raise ValueError("Iterator structured_output does not support merge")
+        return self
+
     type: Literal["task"] = "task"
     name: str = Field(..., description="State name within the iterator")
     provider: str = Field(
@@ -1032,6 +1047,38 @@ class Flow(BaseModel):
         default=None,
         description="Workflow-level retry escalation override. false = disable inherited global default; None = inherit from config.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unsupported_fork_locations(cls, values: Any) -> Any:
+        if not isinstance(values, dict) or not isinstance(values.get("states"), dict):
+            return values
+        for name, state in values["states"].items():
+            if not isinstance(state, dict):
+                continue
+            if state.get("type") != "task" and "fork_from" in state:
+                raise ValueError(
+                    f"State '{name}': fork_from is supported only on ordinary tasks"
+                )
+        return values
+
+    @model_validator(mode="after")
+    def validate_session_fork_references(self) -> "Flow":
+        # Existing graph validators run below; defer the analysis until their
+        # preconditions hold so malformed next/start references remain useful.
+        from fdsx.core.graph_utils import get_next_states
+        from fdsx.core.session_forks import validate_session_forks
+
+        if self.start_at not in self.states or any(
+            target not in self.states
+            for state in self.states.values()
+            for target in get_next_states(state)
+        ):
+            return self
+        errors = validate_session_forks(self)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
     @model_validator(mode="before")
     @classmethod

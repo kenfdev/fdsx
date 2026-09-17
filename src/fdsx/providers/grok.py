@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import tempfile
 import threading
@@ -6,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from uuid import UUID, uuid4
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -17,6 +19,8 @@ from fdsx.providers.base import (
     ProviderBase,
     ProviderError,
     ProviderResult,
+    ProviderSessionError,
+    SessionRequest,
     _run_subprocess,
     add_schema_update_guidance,
     serialize_output_schema,
@@ -361,6 +365,12 @@ class GrokProvider(ProviderBase):
     def __init__(self, options: GrokOptions | None = None) -> None:
         self.options = options if options is not None else GrokOptions()
 
+    def execute_with_session(
+        self, request: SessionRequest, **kwargs: Any
+    ) -> ProviderResult:
+        """Use native session creation/forking and capture completion metadata."""
+        return self.execute(session_request=request, **kwargs)
+
     def execute(
         self,
         prompt: str,
@@ -372,10 +382,57 @@ class GrokProvider(ProviderBase):
         on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
         summary_callback: Callable[[str], None] | None = None,
         output_schema: Any | None = None,
+        session_request: SessionRequest | None = None,
     ) -> ProviderResult:
         """Execute one unattended Grok task and normalize its event stream."""
         if model is None:
             raise GrokProviderError("Grok provider requires a model")
+
+        def session_error(reason: str) -> ProviderSessionError:
+            state = session_request.state_name if session_request else "unknown"
+            logger.error("grok_session_failed", state=state, reason=reason)
+            return ProviderSessionError(
+                f"State '{state}': Grok native session {reason}; verify CLI compatibility "
+                "and retained native history in the original workspace/GROK_HOME, "
+                "then rerun the source task. No fresh-session fallback was attempted."
+            )
+
+        session_flags: list[str] = []
+        child_id = str(uuid4()) if session_request is not None else None
+        if session_request is not None:
+            source = session_request.source
+            if source is not None:
+                source_id = source.get("session_id")
+                try:
+                    valid = (
+                        isinstance(source_id, str)
+                        and str(UUID(source_id)) == source_id.lower()
+                    )
+                except ValueError:
+                    valid = False
+                if source.get("provider") != "grok" or not valid:
+                    raise session_error("source reference is invalid")
+                session_flags.extend(["--resume", str(source_id), "--fork-session"])
+            session_flags.extend(["--session-id", str(child_id)])
+            stderr_callback = None  # Native errors may include conversation content.
+            # Candidate identified in the local distribution, not a verified
+            # minimum. Fail closed on other interfaces until qualified.
+            version = _run_subprocess(
+                args=["grok", "--no-auto-update", "--version"],
+                timeout=10,
+                inactivity_timeout=10,
+            )
+            if (
+                version.exit_code != 0
+                or re.fullmatch(
+                    r"grok 1\.0\.30(?: \([0-9a-f]+\) \[stable\])?",
+                    version.stdout.strip(),
+                )
+                is None
+            ):
+                raise session_error(
+                    "requires candidate grok 1.0.30; native qualification is pending"
+                )
 
         prompt_path: Path | None = None
         try:
@@ -406,6 +463,7 @@ class GrokProvider(ProviderBase):
 
         args = ["grok", "--no-auto-update", "--no-ask-user"]
         args.extend(self.options.to_cli_flags())
+        args.extend(session_flags)
         if output_schema is not None:
             args.extend(["--json-schema", serialize_output_schema(output_schema)])
         args.extend(
@@ -431,12 +489,37 @@ class GrokProvider(ProviderBase):
             on_tool_end=lambda: resume_fn[0]() if resume_fn[0] is not None else None,
         )
         stream_error: list[GrokProviderError | None] = [None]
+        session_events: list[dict[str, Any]] = []
+        invalid_session_stream = False
+        native_error = False
 
         def stream_callback(line: str) -> None:
+            nonlocal invalid_session_stream, native_error
             try:
+                if session_request is not None:
+                    if not line.strip():
+                        return
+                    event = json.loads(line)
+                    if not isinstance(event, dict):
+                        invalid_session_stream = True
+                        return
+                    if session_events:
+                        invalid_session_stream = True  # end must be terminal.
+                        return
+                    if event.get("type") == "error":
+                        native_error = True
+                        completion_event.set()
+                        return
+                    if event.get("type") == "end":
+                        session_events.append(event)
                 parser.feed(line)
             except GrokProviderError as exc:
                 stream_error[0] = exc
+                completion_event.set()
+            except (ValueError, RecursionError, TypeError, KeyError, AttributeError):
+                if session_request is None:
+                    raise
+                invalid_session_stream = True
                 completion_event.set()
             else:
                 if parser.ended:
@@ -462,7 +545,9 @@ class GrokProvider(ProviderBase):
                 timeout=effective_timeout,
                 output_callback=stream_callback,
                 stderr_callback=stderr_callback,
-                completion_event=completion_event,
+                # Native history may flush after the terminal stream event.
+                # Session execution must wait for process exit before publishing.
+                completion_event=completion_event if session_request is None else None,
                 inactivity_timeout=effective_inactivity,
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
@@ -479,6 +564,26 @@ class GrokProvider(ProviderBase):
                     )
 
         stream_result = parser.finish()
+        if session_request is not None:
+            if invalid_session_stream or stream_error[0] is not None:
+                raise session_error("stream metadata is malformed")
+            if result.exit_code != 0 or native_error:
+                return ProviderResult(
+                    result.exit_code or 1,
+                    "",
+                    str(
+                        session_error(
+                            "execution failed (history unavailable or CLI incompatible)"
+                        )
+                    ),
+                )
+            if (
+                len(session_events) != 1
+                or session_events[0].get("sessionId") != child_id
+            ):
+                raise session_error(
+                    "child reference is missing, invalid, or differs from the requested child"
+                )
         final_text = stream_result.final_text
         if stream_result.structured_output is not None:
             final_text = json.dumps(stream_result.structured_output, ensure_ascii=False)
@@ -529,6 +634,10 @@ class GrokProvider(ProviderBase):
             marker in normalized_reason
             for marker in ("cancel", "error", "fail", "refusal")
         ):
+            if session_request is not None:
+                return ProviderResult(
+                    1, "", str(session_error("did not complete successfully"))
+                )
             reason = stream_result.stop_reason or "error"
             return ProviderResult(
                 exit_code=1,
@@ -546,6 +655,9 @@ class GrokProvider(ProviderBase):
         return ProviderResult(
             exit_code=0,
             stdout=final_text,
-            stderr=result.stderr,
+            stderr="" if session_request is not None else result.stderr,
             final_message=final_text,
+            session_reference={"provider": "grok", "session_id": str(child_id)}
+            if session_request is not None
+            else None,
         )
