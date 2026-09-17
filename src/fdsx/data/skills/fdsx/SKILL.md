@@ -98,8 +98,10 @@ Pi support and Claude/Codex/Grok implementations have different qualification
 status and source-selection semantics. Real-provider checks need separate approval;
 mocked tests or successful recall alone do not establish full native support.
 
-Ordinary resume restores saved references. Explicit `resume --from`, with or
-without `--input`, clears them: rerun required sources before dependent forks.
+Ordinary resume and explicit `resume --from`, with or without `--input`, preserve
+saved references. Resume from a destination to fork its source's last successful
+session, or from the source to regenerate it. Revised inputs do not rewrite saved
+conversation history; choose the source if it needs to process those changes.
 
 ## Profiles
 

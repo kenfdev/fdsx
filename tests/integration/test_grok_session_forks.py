@@ -242,19 +242,25 @@ def test_replan_publication_after_validation(tmp_path, native):
     assert e["parent"] == d["child"]
 
 
-def test_failed_replan_recovery_clears_stale_references(tmp_path, native):
+@pytest.mark.parametrize("from_state", ["child", "plan"])
+def test_failed_replan_recovery_reuses_or_replaces_source(tmp_path, native, from_state):
     native.responses["plan"] = [{}, dict(is_error=True)]
     path = looping_flow(tmp_path)
     with pytest.raises(RuntimeError):
         run_flow(path, thread_id="replan", base_dir=tmp_path / ".fdsx")
     assert len(native.calls) == 3
-    with pytest.raises(RuntimeError, match="missing native session reference"):
-        resume_flow("replan", tmp_path / ".fdsx", path, from_state="child")
-    assert len(native.calls) == 3
-    assert (
-        resume_flow("replan", tmp_path / ".fdsx", path, from_state="plan").status
-        == "completed"
-    )
+    # End after recovery rather than reading the reset plan iteration counter.
+    data = yaml.safe_load(path.read_text())
+    data["states"]["route"] = dict(type="pass", end=True)
+    path.write_text(yaml.safe_dump(data))
+    result = resume_flow("replan", tmp_path / ".fdsx", path, from_state=from_state)
+    assert result.status == "completed"
+    if from_state == "child":
+        assert native.calls[3]["parent"] == native.calls[0]["child"]
+        assert native.calls[3]["child"] != native.calls[1]["child"]
+    else:
+        assert native.calls[3]["parent"] is None
+        assert native.calls[4]["parent"] == native.calls[3]["child"]
 
 
 @pytest.mark.parametrize("erase", [False, True])

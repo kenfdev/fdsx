@@ -446,9 +446,12 @@ retry escalation. Model availability and history compatibility depend on the pro
 Pi uses its saved completed endpoint (baseline 0.85.1). Claude, Codex and Grok
 integrations select the saved session's usable conversation at fork time;
 **full native qualification, including cross-model behavior, remains pending**.
-Cursor, Gemini, OpenCode and system forks are rejected. Ordinary resume restores
-references, but `resume --from` clears them: restart required source tasks before
-fork destinations. Native history must remain available; checkpoints are not backups.
+Cursor, Gemini, OpenCode and system forks are rejected. Both ordinary resume and
+`resume --from` preserve saved session references, including with `--input` updates.
+Resume from a fork destination to reuse its source's last successful session, or
+from the source to regenerate it. Each destination execution creates a new child,
+not a continuation of its previous attempt. Native history must remain available;
+checkpoints are not conversation backups.
 
 See [session fork rules and provider limits](docs/session-forks.md) and the
 [Pi](examples/session_fork_smoke.yaml) / [Grok](examples/session_fork_smoke_grok.yaml)

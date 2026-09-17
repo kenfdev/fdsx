@@ -141,9 +141,15 @@ execution under the existing failure rules; it does not select an older plan.
 An ordinary interrupted resume restores references and can fork planning without
 rerunning it. Old checkpoints lacking required metadata, or checkpoints referring
 to unavailable Pi data, fail with the affected state and recovery guidance.
-Explicit recovery (`resume --from`) clears all saved session references. Choose
-a recovery target that reruns required sources; jumping directly to a destination
-fails closed. This prevents skipping a failed replan and using its older context.
+Explicit recovery (`resume --from`) also preserves saved session references,
+including when updating inputs with `--input`. The recovery target is the user's
+choice: resume from a destination to fork its source's last successfully published
+session, or from the source to regenerate it. A failed replan does not replace the
+last successful reference, so explicitly skipping it can reuse that earlier session.
+Input updates change workflow inputs, not the source's existing conversation;
+restart the source when it should incorporate the revised inputs. Each destination
+attempt creates a new child rather than continuing the previous destination session.
+Missing or unusable references still fail with guidance to rerun the source.
 
 The SQLite checkpoint is a reference, not a backup of the native conversation.
 Retain accessible Pi files at their recorded paths when moving or resuming a run.
