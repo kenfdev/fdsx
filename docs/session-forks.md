@@ -1,14 +1,21 @@
 # Native session forks
 
-Grok ordinary, parallel and map forks have a local implementation and offline
-contract tests. **Native qualification remains incomplete; verified support is
-not claimed.** The candidate runtime is restricted to 1.0.30, identified from the
-local distribution, not a verified minimum. Destinations and retries use native
-`--resume <saved-id> --fork-session --session-id <fresh-child-UUID>`; referenced
-sources create fresh UUID sessions. Effective models must match, including
-escalation. Keep native Grok storage and the original workspace available for
-resume. See [Grok qualification and pending real checks](grok-session-forks.md)
-for evidence, retention/recovery requirements and the approval plan.
+Grok ordinary, parallel and map forks are implemented, but **full native
+qualification is pending**. Session execution accepts only candidate 1.0.30
+(bare version or hexadecimal build metadata with `[stable]`), not a verified
+minimum. Sources use `--session-id <fresh-UUID>`; destinations and retries use
+`--resume <saved-id> --fork-session --session-id <fresh-child-UUID>`. Completion
+metadata must match the requested child ID. Effective model IDs must match,
+including escalation; no cross-model compatibility is claimed.
+
+Keep Grok source sessions and ancestors under `$GROK_HOME/sessions` (default
+`~/.grok/sessions`) and the original working directory accessible across resume.
+Checkpoints contain only provider identity and session ID, not native history.
+Missing history, incompatible versions or invalid completion metadata fail
+without starting fresh; verify storage and CLI compatibility, then rerun the
+source. Real smoke checks with `grok-4.6` passed for recall and sibling isolation.
+Native parent-storage preservation, persisted child IDs, retry isolation, durable
+interrupted resume and deleted-history behavior still need real verification.
 
 Pi's existing support is described below. The Claude CLI adapter also implements
 ordinary, parallel and map forks, but **native verification remains pending**.
@@ -75,7 +82,7 @@ applies; failed child history does not carry over. File changes are never undone
 
 ## Validation
 
-Pi, Claude and Codex ordinary tasks, parallel branches and map iterator tasks accept `fork_from`.
+Pi, Claude, Codex and Grok ordinary tasks, parallel branches and map iterator tasks accept `fork_from`.
 Both endpoints must use the same provider. Other providers and system tasks reject it. Sources must
 be top-level ordinary tasks; branch names, iterator names, paths and external
 session IDs are not source references. A forked task may itself be a source.
@@ -87,7 +94,7 @@ unreachable fork destinations are rejected. Unreachable incoming paths do not
 invalidate an otherwise mandatory ancestor.
 
 Profiles resolve before these checks. Effective workflow/config retry escalation
-must retain the source provider on both endpoints; Claude and Codex require identical
+must retain the source provider on both endpoints; Claude, Codex and Grok require identical
 model strings, including escalation. Use `retry_escalation: false` to
 explicitly disable an incompatible inherited policy. Validation does not execute
 Pi and cannot guarantee that its runtime, selected models or native files exist.
@@ -141,20 +148,7 @@ Crashes after native execution but before output validation/checkpoint publicati
 can leave orphan sessions or cause a task to execute again. Exactly-once provider
 execution and recovery from deleted native history are not promised.
 
-## Interface evidence and test limits
-
-The local Pi 0.85.1 distribution was inspected without invoking a provider:
-
-- `docs/session-format.md`: v3 trees, stable entry IDs, storage, `forkFrom`,
-  `createBranchedSession`, `getBranch` and session metadata.
-- `docs/sdk.md`: native branching and session manager selection.
-- `docs/usage.md` and `docs/extensions.md`: explicit local extensions with
-  discovery disabled; `--session` and `--session-dir`.
-- Embedded source in the distributed `pi` executable: `SessionManager._buildIndex`
-  restores the final append as leaf; `forkFrom` changes cwd and session identity;
-  `createBranchedSession` selects the ancestor path and regenerates labels while
-  preserving compaction boundaries. `transformMessages` handles upstream model
-  changes natively, including thinking signatures and tool-call identifiers.
+## Test limits
 
 Automated tests use synthetic native-format files and mocked provider subprocesses.
 They establish FDSX routing, retries and persistence, not installed Pi semantics or

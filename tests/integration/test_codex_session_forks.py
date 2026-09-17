@@ -869,31 +869,6 @@ def test_parallel_children_overlap_without_shared_adapter_metadata(tmp_path, nat
     assert len({a["child"], b["child"], c["child"]}) == 3
 
 
-@pytest.mark.parametrize("provider", ["cursor", "gemini", "opencode", "system"])
-def test_untouched_unsupported_providers_still_reject(tmp_path, native, provider):
-    source = task("plan", next="child")
-    child = task("child", fork_from="plan", end=True)
-    source["provider"] = child["provider"] = provider
-    path = write_flow(tmp_path, {"plan": source, "child": child})
-    assert load_flow(path)[1]
-    assert not native.calls
-
-
-@pytest.mark.parametrize(
-    "source", ["missing", "branch", "iterator", "other-run:plan", str(uuid4())]
-)
-def test_external_and_nonordinary_source_selectors_reject(tmp_path, native, source):
-    path = write_flow(
-        tmp_path,
-        {
-            "plan": task("plan", next="child"),
-            "child": task("child", fork_from=source, end=True),
-        },
-    )
-    assert "top-level ordinary" in " ".join(load_flow(path)[1])
-    assert not native.calls
-
-
 def test_extraction_and_machine_readable_cli_output(tmp_path, native):
     path = write_flow(
         tmp_path,

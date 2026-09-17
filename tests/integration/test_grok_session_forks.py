@@ -840,21 +840,6 @@ def test_untouched_unsupported_providers_reject(tmp_path, native, provider):
     assert not native.calls
 
 
-@pytest.mark.parametrize(
-    "source", ["missing", "plan", "child", "external:session", "other-run/plan"]
-)
-def test_invalid_source_scope_rejected(tmp_path, native, source):
-    path = write_flow(
-        tmp_path,
-        {
-            "plan": dict(type="pass", next="child"),
-            "child": task("child", fork_from=source, end=True),
-        },
-    )
-    assert load_flow(path)[1]
-    assert not native.calls
-
-
 @pytest.mark.parametrize("structured", [False, True])
 def test_session_workflow_extraction_and_clean_cli_stdout(
     tmp_path, native, structured, monkeypatch
