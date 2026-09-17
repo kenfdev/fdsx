@@ -1,4 +1,4 @@
-"""Offline Codex CLI contract checks; these do not qualify native support."""
+"""Offline Grok CLI contract checks; these do not qualify native support."""
 
 import json
 from pathlib import Path
@@ -16,14 +16,14 @@ from fdsx.core.compiler import compile_flow
 from fdsx.core.engine import resume_flow, run_flow
 from fdsx.core.loader import load_flow
 from fdsx.providers.base import ProviderResult, ProviderSessionError, SessionRequest
-from fdsx.providers.codex import CodexProvider
+from fdsx.providers.grok import GrokProvider
 
 
 def task(prompt, **kwargs):
     return dict(
         type="task",
-        provider="codex",
-        model="gpt-test",
+        provider="grok",
+        model="grok-4.6",
         prompt_template=prompt,
         retry=0,
         **kwargs,
@@ -35,7 +35,7 @@ def write_flow(tmp_path, states, **kwargs):
     path.write_text(
         yaml.safe_dump(
             dict(
-                name="codex-forks",
+                name="grok-forks",
                 description="offline",
                 start_at="plan",
                 states=states,
@@ -49,6 +49,7 @@ def write_flow(tmp_path, states, **kwargs):
 class NativeCLI:
     def __init__(self):
         self.calls = []
+        self.version = "grok 1.0.30"
         self.responses = {}
         self.interrupt = None
         self.lock = Lock()
@@ -56,18 +57,18 @@ class NativeCLI:
 
     def __call__(self, **kwargs):
         args = kwargs["args"]
-        if args == ["codex", "--version"]:
-            return ProviderResult(0, "codex-cli 0.154.0\n", "")
-        prompt = kwargs["stdin_data"] or args[2]
+        if "--version" in args:
+            return ProviderResult(0, self.version, "")
+        prompt = (
+            Path(args[args.index("--prompt-file") + 1]).read_text()
+            if "--prompt-file" in args
+            else args[args.index("--single") + 1]
+        )
         action = prompt.split("\n")[0]
-        parent = args[args.index("fork") + 1] if "fork" in args else None
-        assert args[:2] == ["codex", "exec"]
-        assert "resume" not in args
-        assert "--json" in args
-        assert args[-1] == "-"
-        assert "ephemeral=false" in args
+        parent = args[args.index("--resume") + 1] if "--resume" in args else None
+        assert ("--fork-session" in args) == (parent is not None)
         with self.lock:
-            child = str(uuid4())
+            child = args[args.index("--session-id") + 1]
             self.calls.append(
                 dict(
                     action=action, parent=parent, child=child, args=args, kwargs=kwargs
@@ -81,24 +82,25 @@ class NativeCLI:
             Path("code.txt").write_text("implemented")
         if action == "review":
             assert Path("code.txt").read_text() == "implemented"
-        output = response.get("result", action + " output")
+        event = dict(type="end", stopReason="end_turn", sessionId=child)
+        event.update(response)
+        if "session_id" in response:
+            event["sessionId"] = response["session_id"]
         if "structured_output" in response:
-            output = json.dumps(response["structured_output"])
-        events = [
-            dict(type="thread.started", thread_id=response.get("session_id", child)),
-            *self.stream_events,
-            dict(type="item.completed", item=dict(type="agent_message", text=output)),
-            dict(type="turn.completed", usage={}),
-        ]
-        if response.get("is_error"):
-            events = [dict(type="turn.failed", error={"message": "PRIVATE failure"})]
+            event["structuredOutput"] = response["structured_output"]
+        text = response.get("result", action + " output")
+        if event.get("is_error"):
+            event = dict(type="error", message="PRIVATE native failure")
         callback = kwargs.get("output_callback")
         if callback:
-            for event in events:
-                callback(json.dumps(event))
+            for stream_event in self.stream_events:
+                callback(json.dumps(stream_event))
+            if not response.get("is_error"):
+                callback(json.dumps(dict(type="text", data=text)))
+            callback(json.dumps(event))
         return ProviderResult(
             1 if response.get("is_error") else 0,
-            "\n".join(json.dumps(event) for event in events),
+            json.dumps(event),
             "PRIVATE native diagnostic",
         )
 
@@ -107,13 +109,17 @@ class NativeCLI:
 def native():
     fixture = NativeCLI()
     with (
-        patch("fdsx.providers.codex._run_subprocess", side_effect=fixture),
+        patch("fdsx.providers.grok._run_subprocess", side_effect=fixture),
         patch("fdsx.core.compiler.execution.time.sleep"),
     ):
         yield fixture
 
 
-def test_siblings_current_files_and_fork_chain(tmp_path, native):
+@pytest.mark.parametrize(
+    "version", ["grok 1.0.30", "grok 1.0.30 (04b7ffed98c6) [stable]\n"]
+)
+def test_siblings_current_files_and_fork_chain(tmp_path, native, version):
+    native.version = version
     path = write_flow(
         tmp_path,
         {
@@ -140,8 +146,8 @@ def test_siblings_current_files_and_fork_chain(tmp_path, native):
 @pytest.mark.parametrize("kind", ["task", "parallel", "map"])
 def test_retry_children_keep_selected_source(tmp_path, native, structured, kind):
     child = dict(
-        provider="codex",
-        model="gpt-test",
+        provider="grok",
+        model="grok-4.6",
         fork_from="plan",
         retry=1,
         prompt_template="child",
@@ -222,74 +228,6 @@ def looping_flow(tmp_path, structured=False):
     )
 
 
-@pytest.mark.parametrize("structured", [False, True])
-@pytest.mark.parametrize("kind", ["task", "parallel", "map"])
-def test_exhausted_retries_preserve_source_and_files(
-    tmp_path, native, structured, kind
-):
-    child = dict(
-        provider="codex",
-        model="gpt-test",
-        fork_from="plan",
-        prompt_template="implement",
-        retry=1,
-    )
-    if structured:
-        (tmp_path / "schema.json").write_text('{"type":"object","required":["ok"]}')
-        child["structured_output"] = dict(schema="schema.json", result_path="$.value")
-        native.responses["implement"] = [dict(structured_output={}) for _ in range(2)]
-    else:
-        native.responses["implement"] = [dict(is_error=True) for _ in range(2)]
-    if kind == "task":
-        destination = dict(type="task", **child, end=True)
-    elif kind == "parallel":
-        destination = dict(
-            type="parallel",
-            branches=[dict(name="implementation", **child)],
-            result_path="$.children",
-            end=True,
-        )
-    else:
-        destination = dict(
-            type="map",
-            items_path="$.items",
-            iterator=dict(
-                states=[dict(name="implementation", result_path="$.raw", **child)]
-            ),
-            result_path="$.children",
-            fail_fast=True,
-            end=True,
-        )
-    path = write_flow(
-        tmp_path,
-        {
-            "plan": task("plan", next="items"),
-            "items": dict(type="pass", parameters={"items": [0, 1]}, next="children"),
-            "children": destination,
-        },
-    )
-    with pytest.raises(RuntimeError):
-        run_flow(path, thread_id="exhausted", base_dir=tmp_path / ".fdsx")
-    source, first, second = native.calls
-    assert first["parent"] == second["parent"] == source["child"]
-    assert len({call["child"] for call in native.calls}) == 3
-    assert (tmp_path / "code.txt").read_text() == "implemented"
-    flow, errors = load_flow(path)
-    assert not errors
-    saver = CheckpointManager(tmp_path / ".fdsx").get_checkpointer()
-    try:
-        saved = (
-            compile_flow(flow, checkpointer=saver)
-            .graph.get_state({"configurable": {"thread_id": "exhausted"}})
-            .values
-        )
-        assert saved["_session_references"] == {
-            "plan": {"provider": "codex", "session_id": source["child"]}
-        }
-    finally:
-        saver.conn.close()
-
-
 def test_replan_publication_after_validation(tmp_path, native):
     native.responses["plan"] = [
         dict(result="bad"),
@@ -339,7 +277,7 @@ def test_interrupted_resume_reference_only_checkpoint(tmp_path, native, erase):
         config = {"configurable": {"thread_id": "resume"}}
         refs = graph.get_state(config).values["_session_references"]
         assert refs == {
-            "plan": {"provider": "codex", "session_id": native.calls[0]["child"]}
+            "plan": {"provider": "grok", "session_id": native.calls[0]["child"]}
         }
         if erase:
             graph.update_state(config, {"_session_references": {}}, as_node="plan")
@@ -368,23 +306,26 @@ def test_bad_native_metadata_fails_closed_without_leaking(native, caplog, damage
     ]
     output = []
     kwargs = dict(
-        prompt="child", stderr_callback=output.append, output_callback=output.append
+        prompt="child",
+        model="grok-4.6",
+        stderr_callback=output.append,
+        output_callback=output.append,
     )
-    request = SessionRequest("child", {"provider": "codex", "session_id": parent})
+    request = SessionRequest("child", {"provider": "grok", "session_id": parent})
     if damage == "error":
-        result = CodexProvider().execute_with_session(request, **kwargs)
+        result = GrokProvider().execute_with_session(request, **kwargs)
         assert result.exit_code != 0
         assert "rerun the source" in result.stderr
         assert "PRIVATE" not in result.stderr
     else:
-        with pytest.raises(ProviderSessionError, match=r"metadata|child reference"):
-            CodexProvider().execute_with_session(request, **kwargs)
+        with pytest.raises(ProviderSessionError, match="child reference"):
+            GrokProvider().execute_with_session(request, **kwargs)
     assert len(native.calls) == 1
     assert "PRIVATE" not in repr(output) + caplog.text
 
 
 @pytest.mark.parametrize(
-    "provider", ["pi", "claude", "cursor", "grok", "opencode", "gemini"]
+    "provider", ["pi", "codex", "cursor", "claude", "opencode", "gemini"]
 )
 def test_mixed_providers_rejected_by_loader_and_cli(tmp_path, native, provider):
     destination = task("child", fork_from="plan", end=True)
@@ -399,10 +340,7 @@ def test_mixed_providers_rejected_by_loader_and_cli(tmp_path, native, provider):
 
 @pytest.mark.parametrize(
     "escalation",
-    [
-        dict(provider="pi", model="gpt-test"),
-        dict(provider="codex", model="other-model"),
-    ],
+    [dict(provider="pi", model="grok-4.6"), dict(provider="grok", model="opus")],
 )
 def test_incompatible_escalation_rejected(tmp_path, native, escalation):
     path = write_flow(
@@ -418,7 +356,7 @@ def test_incompatible_escalation_rejected(tmp_path, native, escalation):
 
 
 def internal_flow(tmp_path, kind, **options):
-    child = dict(provider="codex", model="gpt-test", fork_from="plan", retry=0)
+    child = dict(provider="grok", model="grok-4.6", fork_from="plan", retry=0)
     if kind == "map":
         destination = dict(
             type="map",
@@ -534,7 +472,7 @@ def test_map_new_visit_and_interrupted_progress(tmp_path, native):
 
     with (
         patch(
-            "fdsx.providers.codex._run_subprocess", side_effect=interrupt_second_visit
+            "fdsx.providers.grok._run_subprocess", side_effect=interrupt_second_visit
         ),
         pytest.raises(RuntimeError, match="crash boundary"),
     ):
@@ -564,12 +502,12 @@ def test_effective_profiles_inherited_escalation_and_opt_out(tmp_path, native):
                 end=True,
             ),
         },
-        profiles={"same": dict(provider="codex", model="gpt-test")},
+        profiles={"same": dict(provider="grok", model="grok-4.6")},
     )
     config_dir = tmp_path / ".fdsx"
     config_dir.mkdir()
     (config_dir / "config.yaml").write_text(
-        "retry_escalation:\n  provider: claude\n  model: other\n"
+        "retry_escalation:\n  provider: codex\n  model: other\n"
     )
     assert CliRunner().invoke(app, ["validate", str(path)]).exit_code != 0
     assert not native.calls
@@ -582,7 +520,7 @@ def test_effective_profiles_inherited_escalation_and_opt_out(tmp_path, native):
 
 def test_model_switch_rejected_before_execution(tmp_path, native):
     child = task("child", fork_from="plan", end=True)
-    child["model"] = "other-model"
+    child["model"] = "opus"
     path = write_flow(tmp_path, {"plan": task("plan", next="child"), "child": child})
     assert "identical models" in " ".join(load_flow(path)[1])
     assert not native.calls
@@ -593,36 +531,38 @@ def test_model_switch_rejected_before_execution(tmp_path, native):
     [
         "not json PRIVATE",
         "[]",
-        '{"type":"item.completed","item":null}',
-        '{"type":"thread.started"}',
+        '{"type":"text","data":null}',
+        '{"type":"end","stopReason":"end_turn"}',
     ],
 )
 def test_malformed_stream_is_domain_error(payload, caplog):
     def malformed(**kwargs):
-        if kwargs["args"] == ["codex", "--version"]:
-            return ProviderResult(0, "codex-cli 0.154.0", "")
+        if "--version" in kwargs["args"]:
+            return ProviderResult(0, "grok 1.0.30", "")
         kwargs["output_callback"](payload)
         return ProviderResult(0, payload, "PRIVATE")
 
     with (
-        patch("fdsx.providers.codex._run_subprocess", side_effect=malformed),
+        patch("fdsx.providers.grok._run_subprocess", side_effect=malformed),
         pytest.raises(ProviderSessionError),
     ):
-        CodexProvider().execute_with_session(SessionRequest("plan"), prompt="plan")
+        GrokProvider().execute_with_session(
+            SessionRequest("plan"), prompt="plan", model="grok-4.6"
+        )
     assert "PRIVATE" not in caplog.text
 
 
 def test_session_large_prompt_timeout_and_callbacks(native):
     from fdsx.providers.base import ARG_MAX_STDIN_THRESHOLD
-    from fdsx.providers.codex import CodexOptions
+    from fdsx.providers.grok import GrokOptions
 
     prompt = "x" * ARG_MAX_STDIN_THRESHOLD
-    result = CodexProvider(CodexOptions(inactivity_timeout=17)).execute_with_session(
-        SessionRequest("plan"), prompt=prompt, timeout=29
+    result = GrokProvider(GrokOptions(inactivity_timeout=17)).execute_with_session(
+        SessionRequest("plan"), prompt=prompt, model="grok-4.6", timeout=29
     )
     call = native.calls[0]
-    assert call["args"][-1] == "-"
-    assert call["kwargs"]["stdin_data"] == prompt
+    assert "--prompt-file" in call["args"]
+    assert not Path(call["args"][call["args"].index("--prompt-file") + 1]).exists()
     assert call["kwargs"]["timeout"] == 29
     assert call["kwargs"]["inactivity_timeout"] == 17
     assert result.session_reference["session_id"] == call["child"]
@@ -634,7 +574,7 @@ def test_same_model_escalation_keeps_source(tmp_path, native):
     path = write_flow(
         tmp_path,
         {"plan": task("plan", next="child"), "child": child},
-        retry_escalation=dict(provider="codex", model="gpt-test"),
+        retry_escalation=dict(provider="grok", model="grok-4.6"),
     )
     native.responses["child"] = [dict(is_error=True)]
     assert run_flow(path, base_dir=tmp_path / ".fdsx").status == "completed"
@@ -650,21 +590,22 @@ def test_same_model_escalation_keeps_source(tmp_path, native):
 def test_native_timeout_and_unavailable_history_never_fall_back(exit_code):
     parent = str(uuid4())
     with patch(
-        "fdsx.providers.codex._run_subprocess",
+        "fdsx.providers.grok._run_subprocess",
         side_effect=[
-            ProviderResult(0, "codex-cli 0.154.0", ""),
+            ProviderResult(0, "grok 1.0.30", ""),
             ProviderResult(exit_code, "PRIVATE", "PRIVATE"),
         ],
     ) as subprocess:
-        result = CodexProvider().execute_with_session(
-            SessionRequest("child", {"provider": "codex", "session_id": parent}),
+        result = GrokProvider().execute_with_session(
+            SessionRequest("child", {"provider": "grok", "session_id": parent}),
             prompt="child",
+            model="grok-4.6",
         )
     assert result.exit_code == exit_code
     assert result.stdout == ""
     assert "PRIVATE" not in result.stderr
     assert subprocess.call_count == 2
-    assert "fork" in subprocess.call_args.kwargs["args"]
+    assert "--fork-session" in subprocess.call_args.kwargs["args"]
 
 
 def test_forked_source_reexecution_uses_upstream(tmp_path, native):
@@ -697,230 +638,254 @@ def test_forked_source_reexecution_uses_upstream(tmp_path, native):
 
 
 @pytest.mark.parametrize(
-    "version", ["codex-cli 0.153.0", "codex-cli 0.155.0", "PRIVATE", ""]
+    "version",
+    [
+        "grok 1.0.29",
+        "grok 1.0.31",
+        "grok 1.0.31 (04b7ffed98c6) [stable]",
+        "grok 1.0.300",
+        "grok 1.0.30-preview",
+        "grok 1.0.30 (04b7ffed98c6) [preview]",
+        "grok 1.0.30\nPRIVATE",
+        "PRIVATE",
+        "",
+    ],
 )
-def test_unqualified_versions_fail_before_prompt(version, caplog):
+def test_unqualified_version_rejected_before_session_execution(version, caplog):
     with (
         patch(
-            "fdsx.providers.codex._run_subprocess",
+            "fdsx.providers.grok._run_subprocess",
             return_value=ProviderResult(0, version, "PRIVATE"),
-        ) as run,
-        pytest.raises(ProviderSessionError, match=r"0\.154\.0"),
+        ) as call,
+        pytest.raises(ProviderSessionError, match=r"candidate grok 1\.0\.30") as error,
     ):
-        CodexProvider().execute_with_session(SessionRequest("plan"), prompt="plan")
-    assert run.call_count == 1
-    assert run.call_args.kwargs["args"] == ["codex", "--version"]
-    assert "PRIVATE" not in caplog.text
+        GrokProvider().execute_with_session(
+            SessionRequest("plan"), prompt="plan", model="grok-4.6"
+        )
+    assert call.call_count == 1
+    assert call.call_args.kwargs["args"] == ["grok", "--no-auto-update", "--version"]
+    assert "PRIVATE" not in str(error.value) + caplog.text
 
 
 @pytest.mark.parametrize(
     "source",
     [
-        {"provider": "pi", "session_id": str(uuid4())},
-        {"provider": "codex", "session_id": "--last"},
         {},
+        {"provider": "pi", "session_id": str(uuid4())},
+        {"provider": "grok", "session_id": "title"},
+        {"provider": "grok", "session_id": 12},
     ],
 )
-def test_invalid_saved_reference_rejected_before_subprocess(source):
+def test_unusable_reference_rejected_before_any_invocation(source):
     with (
-        patch("fdsx.providers.codex._run_subprocess") as run,
+        patch("fdsx.providers.grok._run_subprocess") as call,
         pytest.raises(ProviderSessionError, match="source reference"),
     ):
-        CodexProvider().execute_with_session(
-            SessionRequest("child", source), prompt="child"
+        GrokProvider().execute_with_session(
+            SessionRequest("child", source), prompt="child", model="grok-4.6"
         )
-    run.assert_not_called()
+    call.assert_not_called()
 
 
-def native_events(child, text="answer"):
-    return [
-        {"type": "thread.started", "thread_id": child},
-        {"type": "item.completed", "item": {"type": "agent_message", "text": text}},
-        {"type": "turn.completed", "usage": {}},
-    ]
+def test_concurrent_children_use_saved_source_after_external_change(tmp_path, native):
+    from threading import Barrier
 
+    barrier = Barrier(2)
+    history = {}
+    inherited = []
 
-@pytest.mark.parametrize(
-    "damage",
-    [
-        "duplicate_id",
-        "missing_id",
-        "missing_completion",
-        "duplicate_completion",
-        "array",
-        "item",
-        "text",
-        "json",
-    ],
-)
-def test_invalid_stream_never_publishes_reference(damage, caplog):
-    events = native_events(str(uuid4()))
-    if damage == "duplicate_id":
-        events.insert(1, events[0])
-    elif damage == "missing_id":
-        events.pop(0)
-    elif damage == "missing_completion":
-        events.pop()
-    elif damage == "duplicate_completion":
-        events.append(events[-1])
-    elif damage == "array":
-        events.append([])
-    elif damage == "item":
-        events.append({"type": "item.completed", "item": None})
-    elif damage == "text":
-        events.append(
-            {
-                "type": "item.completed",
-                "item": {"type": "agent_message", "text": ["PRIVATE"]},
-            }
+    def execute(**kwargs):
+        args = kwargs["args"]
+        if "--resume" in args:
+            source = args[args.index("--resume") + 1]
+            before = list(history[source])
+            barrier.wait(timeout=5)
+            result = native(**kwargs)
+            child = args[args.index("--session-id") + 1]
+            history[child] = [*before, "child turn"]
+            inherited.append(before)
+            assert history[source] == before
+            return result
+        result = native(**kwargs)
+        if "--session-id" in args:
+            history[args[args.index("--session-id") + 1]] = [
+                "plan",
+                "later external turn",
+            ]
+        return result
+
+    with patch("fdsx.providers.grok._run_subprocess", side_effect=execute):
+        assert (
+            run_flow(
+                internal_flow(tmp_path, "parallel"), base_dir=tmp_path / ".fdsx"
+            ).status
+            == "completed"
         )
-
-    def replay(**kwargs):
-        if kwargs["args"] == ["codex", "--version"]:
-            return ProviderResult(0, "codex-cli 0.154.0", "")
-        for event in events:
-            kwargs["output_callback"](json.dumps(event))
-        if damage == "json":
-            kwargs["output_callback"]("PRIVATE malformed")
-        return ProviderResult(0, "PRIVATE", "PRIVATE")
-
-    with (
-        patch("fdsx.providers.codex._run_subprocess", side_effect=replay),
-        pytest.raises(ProviderSessionError, match="metadata"),
-    ):
-        CodexProvider().execute_with_session(SessionRequest("plan"), prompt="plan")
-    assert "PRIVATE" not in caplog.text
+    parent = native.calls[0]["child"]
+    assert history[parent] == ["plan", "later external turn"]
+    assert inherited == [["plan", "later external turn"]] * 2
+    assert len({c["child"] for c in native.calls}) == 3
+    assert all(c["parent"] == parent for c in native.calls[1:])
 
 
 @pytest.mark.parametrize("structured", [False, True])
-def test_session_callbacks_schema_and_clean_output(structured):
-    from fdsx.providers.codex import CodexOptions
+def test_session_callbacks_output_and_inactivity_hooks(structured):
+    output, summaries, hooks = [], [], []
+    child = None
 
-    output, errors, starts = [], [], []
-    child = str(uuid4())
-    schema = {"type": "object", "required": ["ok"]} if structured else None
-    final = '{"ok":true}' if structured else "APPROVED"
-    paths = []
+    def replay(**kwargs):
+        nonlocal child
+        args = kwargs["args"]
+        if "--version" in args:
+            return ProviderResult(0, "grok 1.0.30", "")
+        child = args[args.index("--session-id") + 1]
+        kwargs["on_inactivity_hooks"](
+            lambda: hooks.append("suspend"), lambda: hooks.append("resume")
+        )
+        events = [
+            dict(type="thought", data="thinking\n"),
+            dict(type="tool_call", id="read", name="Read"),
+            dict(type="tool_call_update", id="read", status="completed"),
+            dict(type="text", data="APPROVED\ndone"),
+            dict(type="end", stopReason="end_turn", sessionId=child),
+        ]
+        if structured:
+            events[-1]["structuredOutput"] = {"ok": True}
+        for event in events:
+            kwargs["output_callback"](json.dumps(event))
+        assert kwargs["completion_event"] is None  # Wait for durable native exit.
+        assert kwargs["stderr_callback"] is None
+        return ProviderResult(0, "PRIVATE native envelope", "PRIVATE diagnostic")
+
+    with patch("fdsx.providers.grok._run_subprocess", side_effect=replay):
+        result = GrokProvider().execute_with_session(
+            SessionRequest("child", {"provider": "grok", "session_id": str(uuid4())}),
+            prompt="child",
+            model="grok-4.6",
+            output_callback=output.append,
+            summary_callback=summaries.append,
+            output_schema={"type": "object"} if structured else None,
+        )
+    assert output == ["APPROVED", "done"]
+    assert summaries == [
+        "[thinking] thinking",
+        "[tool: Read]",
+        "[tool update: read completed]",
+    ]
+    assert hooks == ["suspend", "resume"]
+    assert result.stdout == (
+        json.dumps({"ok": True}) if structured else "APPROVED\ndone"
+    )
+    assert result.final_message == result.stdout
+    assert result.session_reference == {"provider": "grok", "session_id": child}
+    assert result.stderr == ""
+    assert child not in "".join(output + summaries)
+
+
+@pytest.mark.parametrize("damage", ["duplicate", "nested", "integer"])
+def test_ambiguous_or_unparseable_stream_fails_privately(damage, caplog):
+    import sys
+    from threading import Thread
+
+    consumed, failures = [], []
 
     def replay(**kwargs):
         args = kwargs["args"]
-        if args == ["codex", "--version"]:
-            return ProviderResult(0, "codex-cli 0.154.0", "")
-        assert kwargs["timeout"] == 29
-        assert kwargs["inactivity_timeout"] == 17
-        assert kwargs["stderr_callback"] is None
-        assert "completion_event" not in kwargs  # never terminate before native flush
-        assert args.index("--sandbox") < args.index("fork")
-        if schema:
-            path = Path(args[args.index("--output-schema") + 1])
-            assert json.loads(path.read_text()) == schema
-            paths.append(path)
-        kwargs["on_process_start"]("synthetic-process")
-        events = native_events(child, final)
-        events.insert(
-            1,
-            {
-                "type": "item.started",
-                "item": {"type": "command_execution", "command": "echo check"},
-            },
+        if "--version" in args:
+            return ProviderResult(0, "grok 1.0.30", "")
+        child = args[args.index("--session-id") + 1]
+        end = json.dumps(dict(type="end", stopReason="end_turn", sessionId=child))
+        if damage == "duplicate":
+            lines = [end, end]
+        elif damage == "nested":
+            lines = ["[" * 10000 + "0" + "]" * 10000, end]
+        else:
+            limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+            if not limit:
+                pytest.skip("No integer decoding limit")
+            lines = ['{"PRIVATE":' + "9" * (limit + 1) + "}", end]
+
+        def read():
+            for line in lines:
+                kwargs["output_callback"](line)
+                consumed.append(True)
+
+        thread = Thread(target=read)
+        thread.start()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        return ProviderResult(0, "PRIVATE", "PRIVATE")
+
+    with (
+        patch("threading.excepthook", side_effect=failures.append),
+        patch("fdsx.providers.grok._run_subprocess", side_effect=replay),
+        pytest.raises(ProviderSessionError) as error,
+    ):
+        GrokProvider().execute_with_session(
+            SessionRequest("plan"), prompt="plan", model="grok-4.6"
         )
-        for event in events:
-            kwargs["output_callback"](json.dumps(event))
-        return ProviderResult(0, "PRIVATE raw stream", "PRIVATE diagnostics")
-
-    with patch("fdsx.providers.codex._run_subprocess", side_effect=replay):
-        result = CodexProvider(
-            CodexOptions(sandbox="read-only", inactivity_timeout=17)
-        ).execute_with_session(
-            SessionRequest("child", {"provider": "codex", "session_id": str(uuid4())}),
-            prompt="child",
-            timeout=29,
-            output_schema=schema,
-            output_callback=output.append,
-            stderr_callback=errors.append,
-            on_process_start=starts.append,
-        )
-    assert result.stdout == result.final_message == final
-    assert result.session_reference == {"provider": "codex", "session_id": child}
-    assert output == ["[tool: echo check]", final]
-    assert errors == []
-    assert starts == ["synthetic-process"]
-    assert all(not path.exists() for path in paths)
-
-
-def test_parallel_children_overlap_without_shared_adapter_metadata(tmp_path, native):
-    from threading import Barrier
-
-    rendezvous = Barrier(2, timeout=5)
-    original = native.__call__
-
-    def overlap(**kwargs):
-        if "fork" in kwargs["args"]:
-            rendezvous.wait()
-        return original(**kwargs)
-
-    with patch("fdsx.providers.codex._run_subprocess", side_effect=overlap):
-        result = run_flow(
-            internal_flow(tmp_path, "parallel"), base_dir=tmp_path / ".fdsx"
-        )
-    assert result.status == "completed"
-    a, b, c = native.calls
-    assert b["parent"] == c["parent"] == a["child"]
-    assert len({a["child"], b["child"], c["child"]}) == 3
+    assert not failures
+    assert len(consumed) == 2
+    assert "PRIVATE" not in str(error.value) + caplog.text
 
 
 @pytest.mark.parametrize("provider", ["cursor", "gemini", "opencode", "system"])
-def test_untouched_unsupported_providers_still_reject(tmp_path, native, provider):
+def test_untouched_unsupported_providers_reject(tmp_path, native, provider):
     source = task("plan", next="child")
     child = task("child", fork_from="plan", end=True)
     source["provider"] = child["provider"] = provider
     path = write_flow(tmp_path, {"plan": source, "child": child})
     assert load_flow(path)[1]
+    assert CliRunner().invoke(app, ["validate", str(path)]).exit_code == 2
     assert not native.calls
 
 
 @pytest.mark.parametrize(
-    "source", ["missing", "branch", "iterator", "other-run:plan", str(uuid4())]
+    "source", ["missing", "plan", "child", "external:session", "other-run/plan"]
 )
-def test_external_and_nonordinary_source_selectors_reject(tmp_path, native, source):
+def test_invalid_source_scope_rejected(tmp_path, native, source):
     path = write_flow(
         tmp_path,
         {
-            "plan": task("plan", next="child"),
+            "plan": dict(type="pass", next="child"),
             "child": task("child", fork_from=source, end=True),
         },
     )
-    assert "top-level ordinary" in " ".join(load_flow(path)[1])
+    assert load_flow(path)[1]
     assert not native.calls
 
 
-def test_extraction_and_machine_readable_cli_output(tmp_path, native):
-    path = write_flow(
-        tmp_path,
-        {
-            "plan": task("plan", next="child"),
-            "child": task(
-                "child",
-                fork_from="plan",
-                end=True,
-                result_path="$.answer",
-                extract={
-                    "strategy": ["keyword"],
-                    "pattern": "APPROVED|REJECTED",
-                    "result_path": "$.decision",
-                },
-            ),
-        },
-    )
-    native.responses["child"] = [{"result": "APPROVED"}]
+@pytest.mark.parametrize("structured", [False, True])
+def test_session_workflow_extraction_and_clean_cli_stdout(
+    tmp_path, native, structured, monkeypatch
+):
+    child = task("child", fork_from="plan", end=True)
+    native.responses["child"] = [dict(result="APPROVED")]
+    if structured:
+        (tmp_path / "schema.json").write_text(
+            json.dumps({"type": "object", "required": ["ok"]})
+        )
+        child["structured_output"] = dict(schema="schema.json", result_path="$.answer")
+        native.responses["child"] = [dict(structured_output={"ok": True})]
+    else:
+        child["result_path"] = "$.raw_answer"
+        child["extract"] = dict(
+            strategy=["keyword"], pattern="APPROVED|REJECTED", result_path="$.answer"
+        )
+    path = write_flow(tmp_path, {"plan": task("plan", next="child"), "child": child})
+    monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(app, ["run", str(path), "--quiet"])
     assert result.exit_code == 0, result.output
-    assert result.stdout == ""  # run writes its UI to stderr
-    native.responses["child"] = [{"result": "APPROVED"}]
-    value = run_flow(path, base_dir=tmp_path / "second-run").results
-    assert value["answer"] == value["decision"] == "APPROVED"
-    assert "session_id" not in json.dumps(value)
-    assert all(call["child"] not in result.stdout for call in native.calls)
+    assert result.stdout == ""
+    native.responses["child"] = [
+        dict(structured_output={"ok": True}) if structured else dict(result="APPROVED")
+    ]
+    workflow_result = run_flow(path, base_dir=tmp_path / "second-run")
+    assert workflow_result.results["answer"] == (
+        {"ok": True} if structured else "APPROVED"
+    )
+    assert "session" not in json.dumps(workflow_result.results)
+    assert all(c["child"] not in result.stdout for c in native.calls)
 
 
 def test_crash_after_native_completion_before_publication_reruns_source(
@@ -966,88 +931,3 @@ def test_crash_after_native_completion_before_publication_reruns_source(
     orphan, accepted, child = native.calls
     assert orphan["child"] != accepted["child"]
     assert child["parent"] == accepted["child"]
-
-
-def test_external_source_change_is_not_rejected_or_snapshotted(tmp_path, native):
-    path = write_flow(
-        tmp_path,
-        {
-            "plan": task("plan", next="implement"),
-            "implement": task("implement", fork_from="plan", next="review"),
-            "review": task(
-                "review", fork_from="plan", result_path="$.answer", end=True
-            ),
-        },
-    )
-    native_history = {}
-    original = native.__call__
-
-    def current_native_history(**kwargs):
-        if kwargs["args"] == ["codex", "--version"]:
-            return original(**kwargs)
-        action = kwargs["stdin_data"].split("\n")[0]
-        if action == "implement":
-            # Model an external continuation; FDSX must still select the saved ID.
-            native_history[native.calls[0]["child"]] = "externally continued"
-        if action == "review":
-            parent = kwargs["args"][kwargs["args"].index("fork") + 1]
-            native.responses["review"] = [{"result": native_history[parent]}]
-        result = original(**kwargs)
-        if action == "plan":
-            native_history[native.calls[0]["child"]] = "original"
-        return result
-
-    with patch(
-        "fdsx.providers.codex._run_subprocess", side_effect=current_native_history
-    ):
-        result = run_flow(path, base_dir=tmp_path / ".fdsx")
-    assert result.results["answer"] == "externally continued"
-    assert (
-        native.calls[1]["parent"]
-        == native.calls[2]["parent"]
-        == native.calls[0]["child"]
-    )
-
-
-@pytest.mark.parametrize("mode", ["empty_output", "error_event", "failed_turn"])
-def test_session_completion_failure_cleans_schema(mode, caplog):
-    paths = []
-
-    def replay(**kwargs):
-        args = kwargs["args"]
-        if args == ["codex", "--version"]:
-            return ProviderResult(0, "codex-cli 0.154.0", "")
-        paths.append(Path(args[args.index("--output-schema") + 1]))
-        events = native_events(str(uuid4()))
-        if mode == "empty_output":
-            events.pop(1)
-        else:
-            events.insert(
-                1,
-                {
-                    "type": "error" if mode == "error_event" else "turn.failed",
-                    "message": "PRIVATE",
-                },
-            )
-        for event in events:
-            kwargs["output_callback"](json.dumps(event))
-        return ProviderResult(0, "PRIVATE raw stream", "PRIVATE diagnostics")
-
-    with patch("fdsx.providers.codex._run_subprocess", side_effect=replay):
-        if mode == "empty_output":
-            with pytest.raises(ProviderSessionError, match="output is missing"):
-                CodexProvider().execute_with_session(
-                    SessionRequest("plan"),
-                    prompt="plan",
-                    output_schema={"type": "object"},
-                )
-        else:
-            result = CodexProvider().execute_with_session(
-                SessionRequest("plan"), prompt="plan", output_schema={"type": "object"}
-            )
-            assert result.exit_code == 1
-            assert result.session_reference is None
-            assert result.stdout == ""
-            assert "PRIVATE" not in result.stderr
-    assert paths and all(not path.exists() for path in paths)
-    assert "PRIVATE" not in caplog.text

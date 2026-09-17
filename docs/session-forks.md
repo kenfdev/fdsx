@@ -1,5 +1,15 @@
 # Native session forks
 
+Grok ordinary, parallel and map forks have a local implementation and offline
+contract tests. **Native qualification remains incomplete; verified support is
+not claimed.** The candidate runtime is restricted to 1.0.30, identified from the
+local distribution, not a verified minimum. Destinations and retries use native
+`--resume <saved-id> --fork-session --session-id <fresh-child-UUID>`; referenced
+sources create fresh UUID sessions. Effective models must match, including
+escalation. Keep native Grok storage and the original workspace available for
+resume. See [Grok qualification and pending real checks](grok-session-forks.md)
+for evidence, retention/recovery requirements and the approval plan.
+
 Pi's existing support is described below. The Claude CLI adapter also implements
 ordinary, parallel and map forks, but **native verification remains pending**.
 No tested Claude version baseline or verified native support is claimed.
