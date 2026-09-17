@@ -140,9 +140,11 @@ set `fork_from: plan` on both destinations.
 - Each destination and each execution/structured-output retry creates a distinct
   native child of the selected source, never a failed child. File changes remain.
 - Publish references only after successful output validation. Successful replanning
-  replaces the reference; failed replanning does not enable stale-context fallback.
-- Ordinary resume restores references. Explicit `resume --from`, including input
-  updates, clears them: choose a target that reruns required sources.
+  replaces the reference; failed replanning leaves the last successful reference intact.
+- Ordinary resume and explicit `resume --from`, including input updates, preserve
+  references. Choose a destination to reuse its source's last successful session,
+  even after a failed replan, or choose the source to regenerate it. Updated inputs
+  do not rewrite the saved conversation; rerun the source if it should process them.
 - Completed map items are retained within a resumed visit. A new outer visit to a
   fork-enabled map starts fresh work using the latest source.
 - Keep native history and ancestors accessible. Pi references require their saved

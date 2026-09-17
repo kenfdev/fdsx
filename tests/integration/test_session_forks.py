@@ -537,8 +537,9 @@ def test_older_checkpoint_without_references_fails_closed(tmp_path, native):
 
 
 @pytest.mark.parametrize("invalid_output", [False, True])
-def test_failed_replan_cannot_be_skipped_using_stale_reference(
-    tmp_path, native, invalid_output
+@pytest.mark.parametrize("from_state", ["implement", "plan"])
+def test_failed_replan_recovery_reuses_or_replaces_source(
+    tmp_path, native, invalid_output, from_state
 ):
     plan = task("plan", next="implement")
     if invalid_output:
@@ -576,19 +577,25 @@ def test_failed_replan_cannot_be_skipped_using_stale_reference(
     with pytest.raises(RuntimeError):
         run_flow(path, thread_id="failed-replan", base_dir=tmp_path / ".fdsx")
     assert [call[0] for call in native.executions] == ["plan", "implement", "plan"]
-    with pytest.raises(
-        RuntimeError, match="missing native session reference for 'plan'"
-    ):
-        resume_flow("failed-replan", tmp_path / ".fdsx", path, from_state="implement")
-    assert len(native.executions) == 3
     if invalid_output:
         native.responses["plan"] = [
             ProviderResult(0, "{}", ""),
             ProviderResult(0, "{}", ""),
         ]
-    result = resume_flow("failed-replan", tmp_path / ".fdsx", path, from_state="plan")
+    # End after recovery rather than reading the reset plan iteration counter.
+    data = yaml.safe_load(path.read_text())
+    data["states"]["route"] = dict(type="pass", end=True)
+    path.write_text(yaml.safe_dump(data))
+    result = resume_flow(
+        "failed-replan", tmp_path / ".fdsx", path, from_state=from_state
+    )
     assert result.status == "completed"
-    assert native.forks[-1][0]["path"] != native.forks[0][0]["path"]
+    if from_state == "implement":
+        assert native.forks[1][0]["path"] == native.forks[0][0]["path"]
+        assert native.forks[1][0]["endpoint"] == native.forks[0][0]["endpoint"]
+        assert native.forks[1][1] != native.forks[0][1]
+    else:
+        assert native.forks[1][0]["path"] != native.forks[0][0]["path"]
 
 
 def test_source_output_retry_publishes_only_validated_completion(tmp_path, native):

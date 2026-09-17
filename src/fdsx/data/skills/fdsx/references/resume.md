@@ -13,7 +13,7 @@ fdsx resume --thread-id <id> --from review --input 'task=Revised requirements'
 - Each submitted value replaces the whole saved value as a string. Unspecified inputs stay unchanged. Values may contain `=`; repeated keys use the last value.
 - The restart state must satisfy the normal recovery rules. Required variables are checked against the proposed inputs before approval.
 - Retained results may reflect old requirements. Select a restart state that reruns the checks needed for the revised inputs; recovery does not invalidate all earlier results automatically.
-- Explicit `--from` recovery clears native session references, even without input changes. For `fork_from` workflows, restart required source tasks before dependent destinations. Ordinary interrupted resume without `--from` restores the saved references.
+- Ordinary resume and explicit `--from` recovery preserve native session references, including with input changes. For `fork_from` workflows, choose a destination to fork its source's last successful session or choose the source to regenerate it. Input changes do not rewrite saved conversation history. Destination retries create new child sessions rather than continue the previous attempt; missing native history still requires rerunning the source.
 
 ## Obtain approval
 

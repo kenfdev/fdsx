@@ -223,19 +223,86 @@ def test_replan_publication_after_validation(tmp_path, native):
     assert e["parent"] == d["child"]
 
 
-def test_failed_replan_recovery_clears_stale_references(tmp_path, native):
+@pytest.mark.parametrize("from_state", ["child", "plan"])
+def test_failed_replan_recovery_reuses_or_replaces_source(tmp_path, native, from_state):
     native.responses["plan"] = [{}, dict(is_error=True)]
     path = looping_flow(tmp_path)
     with pytest.raises(RuntimeError):
         run_flow(path, thread_id="replan", base_dir=tmp_path / ".fdsx")
     assert len(native.calls) == 3
-    with pytest.raises(RuntimeError, match="missing native session reference"):
-        resume_flow("replan", tmp_path / ".fdsx", path, from_state="child")
-    assert len(native.calls) == 3
-    assert (
-        resume_flow("replan", tmp_path / ".fdsx", path, from_state="plan").status
-        == "completed"
+    # End after recovery rather than reading the reset plan iteration counter.
+    data = yaml.safe_load(path.read_text())
+    data["states"]["route"] = dict(type="pass", end=True)
+    path.write_text(yaml.safe_dump(data))
+    result = resume_flow("replan", tmp_path / ".fdsx", path, from_state=from_state)
+    assert result.status == "completed"
+    if from_state == "child":
+        assert native.calls[3]["parent"] == native.calls[0]["child"]
+        assert native.calls[3]["child"] != native.calls[1]["child"]
+    else:
+        assert native.calls[3]["parent"] is None
+        assert native.calls[4]["parent"] == native.calls[3]["child"]
+
+
+@pytest.mark.parametrize("update_inputs", [False, True])
+@pytest.mark.parametrize("from_state", ["review", "plan"])
+def test_blocked_review_recovery_preserves_source_choice(
+    tmp_path, native, update_inputs, from_state
+):
+    native.responses["inspect"] = [dict(result="BLOCKED"), dict(result="APPROVED")]
+    path = write_flow(
+        tmp_path,
+        {
+            "plan": task("plan", next="review"),
+            "review": task(
+                "inspect\n{feedback}",
+                fork_from="plan",
+                result_path="$.decision",
+                next="route",
+            ),
+            "route": dict(
+                type="choice",
+                choices=[
+                    dict(
+                        variable="$.decision",
+                        operator="equals",
+                        value="APPROVED",
+                        next="done",
+                    )
+                ],
+                default="blocked",
+            ),
+            "blocked": dict(type="fail", error="BLOCKED", cause="Needs changes"),
+            "done": dict(type="pass", end=True),
+        },
     )
+    first = run_flow(
+        path,
+        thread_id="blocked",
+        base_dir=tmp_path / ".fdsx",
+        inputs={"feedback": "original"},
+    )
+    assert first.status == "aborted"
+    result = resume_flow(
+        "blocked",
+        tmp_path / ".fdsx",
+        path,
+        from_state=from_state,
+        input_updates={"feedback": "revised"} if update_inputs else None,
+        confirm_inputs=lambda *_: True,
+    )
+    assert result.status == "completed"
+    assert [call["action"] for call in native.calls] == (
+        ["plan", "inspect", "inspect"]
+        if from_state == "review"
+        else ["plan", "inspect", "plan", "inspect"]
+    )
+    source = native.calls[0] if from_state == "review" else native.calls[2]
+    assert native.calls[-1]["parent"] == source["child"]
+    assert native.calls[-1]["child"] != native.calls[1]["child"]
+    call = native.calls[-1]
+    prompt = call["kwargs"]["stdin_data"] or call["args"][2]
+    assert prompt == "inspect\n" + ("revised" if update_inputs else "original")
 
 
 @pytest.mark.parametrize("erase", [False, True])

@@ -122,7 +122,11 @@ def build_recovery_update(
     flow: Flow,
     state_values: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build the control-state reset applied before a recovery jump."""
+    """Reset control state while retaining published native session references.
+
+    The caller chooses whether to reuse a source or rerun it via the recovery
+    target. Only a successfully validated source execution replaces its reference.
+    """
     existing_meta = state_values.get("_meta", {})
     reset_meta = {
         key: value
@@ -132,9 +136,6 @@ def build_recovery_update(
     update: dict[str, Any] = {
         "_meta": reset_meta,
         "_state_iterations": {},
-        # Recovery can bypass a failed repeated source. Discard all references
-        # so the new execution must actually rerun any required source.
-        "_session_references": {},
     }
     for state_name, state in flow.states.items():
         if isinstance(state, ParallelState):
