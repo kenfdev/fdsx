@@ -87,6 +87,9 @@ Use the direct `fork_from: plan` field on a task, parallel branch or map iterato
 task to inherit a preceding top-level task's conversation. It is separate from
 `provider_options` and from text substitution such as `{plan}`. Independent
 implementation and review tasks should both fork planning, not each other.
+Keep the same provider at both ends; different models are allowed, including
+same-provider retry escalation. The provider CLI determines model availability
+and history compatibility.
 
 Before authoring forks or choosing a recovery target, read
 [Session forks](references/yaml-schema.md#session-forks) for provider/version

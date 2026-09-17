@@ -124,7 +124,8 @@ set `fork_from: plan` on both destinations.
 - Reject self-reference, unreachable destinations, optional-branch sources and
   branch/iterator-local sources. An iterator name cannot shadow an outer source.
 - Effective retry escalation must stay with the source provider on both endpoints.
-  Claude, Codex and Grok also require identical model IDs, including escalation.
+  All supported providers allow different destination and escalation model IDs;
+  model availability and history compatibility are checked by the provider CLI.
   Use `retry_escalation: false` to disable an incompatible inherited policy.
 - Loading and `fdsx validate` are offline; acceptance is not proof of native support.
 
