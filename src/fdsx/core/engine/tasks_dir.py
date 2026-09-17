@@ -3,6 +3,7 @@
 import hashlib
 import sys
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -22,6 +23,7 @@ from fdsx.display.terminal import (
 )
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 
+from .evaluation import validate_evaluation_file
 from .run import run_flow
 from .validate import FlowValidationError
 
@@ -211,6 +213,7 @@ def run_tasks_dir(
     continue_on_error: bool = False,
     *,
     manual_workflow: bool = False,
+    before_start: Callable[[], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Drain task files until no newly queued files remain.
 
@@ -239,6 +242,15 @@ def run_tasks_dir(
             f"Tasks directory is already being drained{owner}: {tasks_dir}"
         )
 
+    started = False
+
+    def start_once() -> None:
+        nonlocal started
+        if not started:
+            if before_start is not None:
+                before_start()
+            started = True
+
     try:
         return _drain_tasks_dir(
             workflow_path,
@@ -246,6 +258,7 @@ def run_tasks_dir(
             base_dir=base_dir,
             auto_workflow=auto_workflow,
             manual_workflow=manual_workflow,
+            before_start=start_once,
             quiet=quiet,
             continue_on_error=continue_on_error,
         )
@@ -262,6 +275,7 @@ def _drain_tasks_dir(
     continue_on_error: bool = False,
     *,
     manual_workflow: bool = False,
+    before_start: Callable[[], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Drain newly discovered task files without reacquiring the directory lock."""
     results: list[dict[str, Any]] = []
@@ -286,6 +300,8 @@ def _drain_tasks_dir(
         ]
         if not new_files:
             if not results:
+                if before_start is not None:
+                    before_start()
                 print("No tasks queued.", file=sys.stderr)
             return results
 
@@ -296,6 +312,7 @@ def _drain_tasks_dir(
             base_dir=base_dir,
             auto_workflow=auto_workflow,
             manual_workflow=manual_workflow,
+            before_start=before_start,
             quiet=quiet,
             continue_on_error=continue_on_error,
             task_files=new_files,
@@ -317,6 +334,7 @@ def _run_tasks_dir_snapshot(
     continue_on_error: bool = False,
     *,
     manual_workflow: bool = False,
+    before_start: Callable[[], None] | None = None,
     task_files: list[tuple[Path, TaskFile]],
 ) -> list[dict[str, Any]]:
     """Execute tasks from a directory of YAML task files with crash-resilient persistence.
@@ -488,6 +506,23 @@ def _run_tasks_dir_snapshot(
                     persist_root = global_workflows_dir
                 entry.workflow = _workflow_persist_id(wf_path, persist_root)
                 save_task_file(file_path, task_file)
+
+    # Resolve and validate every selected definition before any start hook or task.
+    selected = {
+        workflow_assignments.get((file_idx, entry_idx), workflow_path)
+        for file_idx, (_, task_file) in enumerate(task_files)
+        for entry_idx, _ in _filter_actionable_entries(task_file)
+    }
+    if None in selected:
+        logger.error("workflow_assignment_missing")
+        raise ValueError("No workflow available for one or more tasks")
+    for selected_path in selected:
+        if selected_path is not None:
+            validate_evaluation_file(
+                selected_path, base_dir=base_dir, input_keys={"task", "source"}
+            )
+    if before_start is not None:
+        before_start()
 
     for file_idx, (file_path, task_file) in enumerate(task_files):
         actionable = _filter_actionable_entries(task_file)

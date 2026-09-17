@@ -1,6 +1,7 @@
 """run_flow implementation for the engine package."""
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from sqlite3 import Error as SQLiteError
 from typing import Any
@@ -26,6 +27,7 @@ from fdsx.logging.recorder import FDSX_DIR_NAME, LOGS_DIR_NAME, RUNS_DIR_NAME
 from fdsx.models.flow import Flow, ParallelState, WaitState
 
 from .errors import FlowExecutionError, RunLockedError
+from .evaluation import validate_evaluation_key
 from .lifecycle import (
     GraphExecutionPlan,
     TerminalContext,
@@ -200,6 +202,7 @@ def run_flow(
     quiet: bool = False,
     task_file_path: Path | None = None,
     task_entry_index: int | None = None,
+    before_start: Callable[[], None] | None = None,
 ) -> FlowResult:
     """Load and execute a fresh workflow attempt."""
     if thread_id is None:
@@ -223,6 +226,9 @@ def run_flow(
     if flow is None:
         raise FlowValidationError(f"Flow validation failed: {', '.join(errors)}")
 
+    validate_evaluation_key(flow)
+    if before_start is not None:
+        before_start()
     context_tokens = bind_contextvars(thread_id=thread_id, flow_name=flow.name)
     checkpoint_manager: CheckpointManager | None = None
 

@@ -4,10 +4,21 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from fdsx.core import engine
 from fdsx.core.engine import FlowResult
 from fdsx.models.task import TaskEntry, TaskFile, load_task_file, save_task_file
 from tests import FIXTURES_DIR
+
+
+@pytest.fixture(autouse=True)
+def review_definition(tmp_path):
+    workflows = tmp_path / ".fdsx/workflows"
+    workflows.mkdir(parents=True)
+    text = (FIXTURES_DIR / "batch_flow.yaml").read_text()
+    (workflows / "review.yaml").write_text(text)
+    (tmp_path / "review.yaml").write_text(text)
 
 
 class TestWorkflowPersistence:

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from jsonschema import SchemaError
 from jsonschema.validators import validator_for
+from pydantic import ValidationError
 
 from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
@@ -87,8 +88,14 @@ def _parse_and_validate_flow(
 
     try:
         flow = Flow(**data)
-    except Exception as e:
-        return None, [f"Validation error: {e}"]
+    except ValidationError as e:
+        return None, [
+            "Validation error at "
+            + ".".join(str(part) for part in error["loc"])
+            + ": "
+            + error["msg"]
+            for error in e.errors(include_input=False, include_context=False)
+        ]
 
     flow, resolve_errors = _resolve_prompt_files(flow, yaml_path)
     if resolve_errors:
@@ -273,8 +280,14 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
 
     try:
         return Flow(**flow_dict), []
-    except Exception as e:
-        return flow, [f"Failed to re-validate flow after prompt_file resolution: {e}"]
+    except ValidationError as e:
+        return flow, [
+            "Validation error at "
+            + ".".join(str(part) for part in error["loc"])
+            + ": "
+            + error["msg"]
+            for error in e.errors(include_input=False, include_context=False)
+        ]
 
 
 def validate_flow(path: Path) -> tuple[bool, list[str]]:

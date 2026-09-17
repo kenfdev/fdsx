@@ -310,7 +310,13 @@ def run(
     _end_hooks = collect_run_hooks(
         "on_run_end", global_run_hooks=config.run_hooks, project_run_hooks=None
     )
-    execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+    run_started = False
+
+    def start_run() -> None:
+        nonlocal run_started
+        if not run_started:
+            execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
+            run_started = True
 
     try:
         if tasks_dir is not None:
@@ -320,6 +326,7 @@ def run(
                 base_dir,
                 auto_workflow=effective_auto_workflow,
                 manual_workflow=effective_manual_workflow,
+                before_start=start_run,
                 quiet=quiet,
                 continue_on_error=continue_on_error,
             )
@@ -331,7 +338,12 @@ def run(
             if current_thread_id is None:
                 current_thread_id = generate_thread_id()
             result = engine.run_flow(
-                workflow, inputs, current_thread_id, base_dir, quiet=quiet
+                workflow,
+                inputs,
+                current_thread_id,
+                base_dir,
+                quiet=quiet,
+                before_start=start_run,
             )
             execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
             if result.status != "completed":
@@ -594,19 +606,18 @@ def resume(
     started = False
 
     def approve(old: dict[str, Any], proposed: dict[str, str], target: str) -> bool:
-        nonlocal started
-        if not confirm_input_updates(old, proposed, target, yes=yes):
-            return False
-        execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
-        started = True
-        return True
+        return confirm_input_updates(old, proposed, target, yes=yes)
 
-    if updates is None:
+    def start_resume() -> None:
+        nonlocal started
         execute_run_hooks(_start_hooks, status="starting", event="on_run_start")
         started = True
+
     try:
         if updates is None:
-            result = engine.resume_flow(thread_id, base_dir, from_state=from_state)
+            result = engine.resume_flow(
+                thread_id, base_dir, from_state=from_state, before_start=start_resume
+            )
         else:
             result = engine.resume_flow(
                 thread_id,
@@ -614,22 +625,26 @@ def resume(
                 from_state=from_state,
                 input_updates=updates,
                 confirm_inputs=approve,
+                before_start=start_resume,
             )
         execute_run_hooks(_end_hooks, status=result.status, event="on_run_end")
+    except FlowValidationError as e:
+        typer.echo(f"Validation error: {_sanitize_output(str(e))}", err=True)
+        raise typer.Exit(code=2) from None
     except (CheckpointNotFoundError, RunLockedError) as e:
-        if started:
+        if started or updates is None:
             execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
         raise typer.Exit(code=2) from None
     except RuntimeError as e:
         error_msg = str(e)
-        if started:
+        if started or updates is None:
             execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         typer.echo(f"Error: {_sanitize_output(error_msg)}", err=True)
         raise typer.Exit(code=1) from None
     except Exception as e:
         typer.echo(f"Error: {_sanitize_output(str(e))}", err=True)
-        if started:
+        if started or updates is None:
             execute_run_hooks(_end_hooks, status="failed", event="on_run_end")
         raise typer.Exit(code=1) from None
     if result.status != "completed":

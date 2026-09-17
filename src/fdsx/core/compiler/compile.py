@@ -18,6 +18,7 @@ from fdsx.core.hooks import (
 )
 from fdsx.models.flow import (
     ChoiceState,
+    EvaluateState,
     FailState,
     Flow,
     HookEntry,
@@ -180,6 +181,7 @@ def _wrap_with_hooks(
     *,
     recorder: Any = None,
     fdsx_base_dir: Path | None = None,
+    summary_only: bool = False,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Wrap a node function with hook execution.
 
@@ -210,7 +212,7 @@ def _wrap_with_hooks(
         flow_name: str = recorder.flow_name if recorder is not None else ""
 
         input_data_path = write_hook_data(
-            state_dict,
+            {"state": state_name, "status": "starting"} if summary_only else state_dict,
             state_name=state_name,
             filename=INPUT_FILENAME,
             thread_id=thread_id,
@@ -241,7 +243,9 @@ def _wrap_with_hooks(
 
         try:
             output_data_path = write_hook_data(
-                {**state_dict, **result},
+                {"state": state_name, "status": status}
+                if summary_only
+                else {**state_dict, **result},
                 state_name=state_name,
                 filename=OUTPUT_FILENAME,
                 thread_id=thread_id,
@@ -355,7 +359,23 @@ def compile_flow(
         return on_s, on_c
 
     for state_name, state in flow.states.items():
-        if isinstance(state, TaskState):
+        if isinstance(state, EvaluateState):
+            from fdsx.core.compiler.evaluation import create_evaluate_node
+
+            on_state_start, on_state_end = _collect_state_hooks(state)
+            graph.add_node(
+                state_name,
+                _wrap_with_hooks(
+                    create_evaluate_node(state_name, state, recorder),
+                    state_name,
+                    on_state_start,
+                    on_state_end,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                    summary_only=True,
+                ),
+            )  # type: ignore[call-overload]
+        elif isinstance(state, TaskState):
             on_state_start, on_state_end = _collect_state_hooks(state)
             node = _create_task_node(
                 state_name,

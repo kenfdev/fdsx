@@ -9,6 +9,7 @@ from langgraph.managed import RemainingSteps
 from fdsx.core.config import _deep_merge
 from fdsx.models.flow import (
     EscalationConfig,
+    EvaluateState,
     Flow,
     MapState,
     ParallelState,
@@ -182,7 +183,9 @@ def _extract_result_paths(flow: Flow) -> list[str]:
     """Extract all result_path fields from a flow."""
     paths = []
     for _state_name, state in flow.states.items():
-        if isinstance(state, TaskState):
+        if isinstance(state, EvaluateState):
+            paths.append(state.result_path)
+        elif isinstance(state, TaskState):
             if state.structured_output:
                 paths.append(state.structured_output.result_path)
             if state.result_path:
@@ -259,7 +262,9 @@ def _build_state_schema(flow: Flow, input_keys: set[str] | None = None) -> type:
 
     # 2. All result_path / extract.result_path / aggregate.result_path top-level keys
     for _state_name, state in flow.states.items():
-        if isinstance(state, TaskState):
+        if isinstance(state, EvaluateState):
+            annotations.setdefault(state.result_path[2:], Any)
+        elif isinstance(state, TaskState):
             if state.structured_output:
                 k = _top_level_key(state.structured_output.result_path)
                 if k:

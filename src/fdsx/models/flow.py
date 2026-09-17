@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from fdsx.core.paths import parse_jsonpath
+from fdsx.models.evaluation import EvaluationDefinition
 from fdsx.models.validators import validate_llm_provider
 
 
@@ -706,6 +707,12 @@ class TaskState(BaseModel):
         return self
 
 
+class EvaluateState(EvaluationDefinition):
+    """Top-level evaluation; never a provider task."""
+
+    hooks: StateHookConfig | None = None
+
+
 class ChoiceState(BaseModel):
     """Choice state - branching based on variable values."""
 
@@ -1011,6 +1018,7 @@ class FailState(BaseModel):
 
 State = Annotated[
     TaskState
+    | EvaluateState
     | ChoiceState
     | ParallelState
     | PassState
@@ -1047,6 +1055,40 @@ class Flow(BaseModel):
         default=None,
         description="Workflow-level retry escalation override. false = disable inherited global default; None = inherit from config.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_nested_evaluation(cls, values: Any) -> Any:
+        if not isinstance(values, dict) or not isinstance(values.get("states"), dict):
+            return values
+        for name, state in values["states"].items():
+            if not isinstance(state, dict):
+                continue
+            if state.get("type") == "parallel" and isinstance(
+                state.get("branches"), list
+            ):
+                for index, branch in enumerate(state["branches"]):
+                    if isinstance(branch, dict) and branch.get("type") == "evaluate":
+                        raise ValueError(
+                            f"states.{name}.branches.{index}: evaluate is top-level only"
+                        )
+            if state.get("type") == "map":
+                iterator = state.get("iterator", {})
+                if isinstance(iterator, dict):
+                    nested = iterator.get("states", [])
+                    if not isinstance(nested, (dict, list)):
+                        continue
+                    entries = (
+                        nested.items()
+                        if isinstance(nested, dict)
+                        else enumerate(nested)
+                    )
+                    for index, task in entries:
+                        if isinstance(task, dict) and task.get("type") == "evaluate":
+                            raise ValueError(
+                                f"states.{name}.iterator.states.{index}: evaluate is top-level only"
+                            )
+        return values
 
     @model_validator(mode="before")
     @classmethod

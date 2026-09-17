@@ -19,6 +19,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
+- [Jev evaluation steps](docs/evaluation.md) with explicit materials, Choice/Noul/Score answers, and checkpoint reuse
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Provider-independent JSON Schema validation for structured task and branch output
 - [Native session forks](docs/session-forks.md) with `fork_from` for tasks, parallel branches and map items; Pi support plus Claude/Codex/Grok integrations with native qualification pending
