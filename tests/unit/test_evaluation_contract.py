@@ -117,8 +117,11 @@ def test_score_tolerance_scales_with_number_of_levels(delta, valid):
                 evaluate({"doc": "text"}, {"q": question}, location="assess")
 
 
-def test_json_string_can_be_transported_as_utf8():
-    # JSON permits escaped code points that are not standalone UTF-8 characters.
-    materials = {"doc": "\ud800"}
+@pytest.mark.parametrize("surrogate", ["\ud800", "\udfff"])
+def test_json_string_can_be_transported_as_utf8(surrogate):
+    # Escape lone surrogates, but keep valid Unicode in both keys and values.
+    materials = {"資料" + surrogate: {"doc": "日本語 😀" + surrogate}}
     encoded = encode_materials(materials, "assess")
     assert json.loads(encoded.encode("utf-8")) == materials
+    assert "資料" in encoded
+    assert "日本語 😀" in encoded

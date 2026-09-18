@@ -199,7 +199,10 @@ def encode_materials(materials: dict[str, Any], location: str) -> str:
         except RecursionError:
             raise _invalid(place, "material nesting is too deep") from None
     try:
-        return json.dumps(materials, allow_nan=False, ensure_ascii=False)
+        encoded = json.dumps(materials, allow_nan=False, ensure_ascii=False)
+        # Lone surrogates need JSON escapes to survive UTF-8 transport; valid
+        # Unicode (including Japanese and emoji) stays unchanged.
+        return encoded.encode("utf-8", errors="backslashreplace").decode("utf-8")
     except (TypeError, ValueError, RecursionError):
         raise _invalid(location, "materials cannot be encoded as JSON") from None
 
