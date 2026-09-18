@@ -1,8 +1,11 @@
 """Shared Jev boundary. No graph transitions, checkpoints, or provider fallback."""
 
+import hashlib
 import json
 import logging
 import math
+import os
+import re
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, cast
@@ -52,6 +55,8 @@ class EvaluationResult:
     requested_model: str
     reported_model: str
     answers: dict[str, EvaluationAnswer]
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +71,92 @@ class EvaluationResult:
 def _invalid(location: str, reason: str) -> EvaluationError:
     log.error("evaluation_failed", location=location, reason=reason)
     return EvaluationError(f"Evaluation {location}: {reason}")
+
+
+def _request_failed(
+    location: str, error: Exception, *, private_payload: str = ""
+) -> EvaluationError:
+    """Select diagnostic fields, never format the exception or full response body."""
+    from typesafe_sdk import (
+        TypeSafeAPIConnectionError,
+        TypeSafeAPIError,
+        TypeSafeAPIResponseValidationError,
+        TypeSafeAPITimeoutError,
+        TypeSafeAuthenticationError,
+        TypeSafeBadRequestError,
+        TypeSafeError,
+        TypeSafeInternalServerError,
+        TypeSafeNotFoundError,
+        TypeSafePermissionDeniedError,
+        TypeSafeRateLimitError,
+        TypeSafeUnprocessableEntityError,
+    )
+
+    # Subclasses must precede their parents, especially validation (an API error)
+    # and timeout (a connection error). Labels come from trusted classes, never
+    # from an arbitrary exception's class name, str, repr, cause or traceback.
+    known = (
+        (TypeSafeAPIResponseValidationError, "response_validation"),
+        (TypeSafeAPITimeoutError, "timeout"),
+        (TypeSafeAPIConnectionError, "connection"),
+        (TypeSafeBadRequestError, "http"),
+        (TypeSafeAuthenticationError, "http"),
+        (TypeSafePermissionDeniedError, "http"),
+        (TypeSafeNotFoundError, "http"),
+        (TypeSafeUnprocessableEntityError, "http"),
+        (TypeSafeRateLimitError, "http"),
+        (TypeSafeInternalServerError, "http"),
+        (TypeSafeAPIError, "http"),
+        (UnicodeEncodeError, "encoding"),
+        (UnicodeDecodeError, "encoding"),
+        (UnicodeTranslateError, "encoding"),
+        (UnicodeError, "encoding"),
+        (TypeSafeError, "sdk"),
+    )
+    category, exception_type = next(
+        (category, cls.__name__) for cls, category in known if isinstance(error, cls)
+    )
+    details: dict[str, str | int] = {
+        "category": category,
+        "exception_type": exception_type,
+    }
+    if isinstance(error, TypeSafeAPIError):
+        if type(error.status) is int and 100 <= error.status <= 599:
+            details["http_status"] = error.status
+        request_id = error.request_id
+        if (
+            type(request_id) is str
+            and 1 <= len(request_id) <= 128
+            and re.fullmatch(r"[A-Za-z0-9._-]+", request_id)
+        ):
+            # A syntactically valid header can still echo a credential/material.
+            # Retain only a stable fingerprint, not the externally supplied ID.
+            details["request_id_sha256"] = hashlib.sha256(
+                request_id.encode("ascii")
+            ).hexdigest()
+        body = error.body
+        detail = body.get("detail") if isinstance(body, dict) else None
+        error_type = detail.get("error_type") if isinstance(detail, dict) else None
+        # Accept new service codes without a fixed vocabulary. Do not copy free
+        # text, nested data, terminal controls, or echoed input/credentials.
+        api_key = os.environ.get("TYPESAFE_API_KEY", "")
+        if (
+            type(error_type) is str
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", error_type)
+            and error_type not in private_payload
+            and not (api_key and api_key in error_type)
+        ):
+            details["error_type"] = error_type
+            if error_type == "max_tokens_exceeded":
+                details["guidance"] = (
+                    "input limit exceeded; retrying the same input will not resolve "
+                    "this error; revise the materials or questions before resuming"
+                )
+    log.error(
+        "evaluation_failed", location=location, reason="Jev request failed", **details
+    )
+    diagnostic = ", ".join(f"{key}={value}" for key, value in details.items())
+    return EvaluationError(f"Evaluation {location}: Jev request failed ({diagnostic})")
 
 
 def _json_value(value: Any, location: str, ancestors: set[int]) -> None:
@@ -108,7 +199,10 @@ def encode_materials(materials: dict[str, Any], location: str) -> str:
         except RecursionError:
             raise _invalid(place, "material nesting is too deep") from None
     try:
-        return json.dumps(materials, allow_nan=False)
+        encoded = json.dumps(materials, allow_nan=False, ensure_ascii=False)
+        # Lone surrogates need JSON escapes to survive UTF-8 transport; valid
+        # Unicode (including Japanese and emoji) stays unchanged.
+        return encoded.encode("utf-8", errors="backslashreplace").decode("utf-8")
     except (TypeError, ValueError, RecursionError):
         raise _invalid(location, "materials cannot be encoded as JSON") from None
 
@@ -183,8 +277,19 @@ def evaluate(
                     },
                     model=model,
                 )
-        except (TypeSafeError, UnicodeError):
-            raise _invalid(location, "Jev request failed") from None
+        except (TypeSafeError, UnicodeError) as error:
+            raise _request_failed(
+                location,
+                error,
+                private_payload=state
+                + json.dumps(
+                    {
+                        name: question.model_dump()
+                        for name, question in questions.items()
+                    },
+                    ensure_ascii=False,
+                ),
+            ) from None
         try:
             raw_response = response.raw_http_response
         except TypeSafeError:
@@ -254,6 +359,14 @@ def evaluate(
                 }
             else:
                 raise _invalid(place, "answer type does not match question")
-        return EvaluationResult(model, response.model, answers)
+        # Missing service measurements remain unknown, not zero or estimates.
+        usage = response.usage
+        return EvaluationResult(
+            model,
+            response.model,
+            answers,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+        )
     finally:
         _evaluating.reset(token)

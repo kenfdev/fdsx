@@ -46,6 +46,7 @@ def create_evaluate_node(
                 recorder.record_state_error(name, str(error))
             raise
         if recorder is not None:
+            recorder.record_evaluation_diagnostics(name, result)
             recorder.record_state_complete(
                 name, "success", "", [definition.result_path]
             )
