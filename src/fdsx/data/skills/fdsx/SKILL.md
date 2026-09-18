@@ -3,14 +3,15 @@ name: fdsx
 description: >
   Expert guide for authoring, validating, and running fdsx declarative AI agent
   workflow YAML files. Use when writing fdsx workflows, editing workflow YAML,
-  configuring fdsx providers (claude, cursor, codex, opencode, gemini, grok, pi), setting up
+  configuring fdsx providers (claude, cursor, codex, opencode, gemini, grok, pi, jev), setting up
   profiles, adding hooks, using choice/parallel/loop/wait/pass/map/fail states,
   running fdsx CLI commands, debugging workflow validation errors, or asking
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
   agent workflow", "multi-step AI pipeline", "provider options", "checkpoint
   resume", "map state", "iterator", "extraction fallback", "structured output",
   "JSON Schema output", "parallel gate", "state iteration", "max loop",
-  "resume input updates", "input revision history", "fork_from", "session forks".
+  "resume input updates", "input revision history", "fork_from", "session forks",
+  "Jev evaluation", "evaluate state", "Noul", "x-fdsx-evaluation".
 ---
 
 # fdsx Workflow Authoring Guide
@@ -54,7 +55,8 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 
 | Type | Purpose | Key Fields |
 |------|---------|------------|
-| `task` | Execute a provider (LLM or shell command) | `provider`, `model`, `prompt_template`, `result_path` or `structured_output` |
+| `task` | Execute a provider (LLM, shell command, or Jev evaluation) | `provider`, `model`, `prompt_template`, `result_path` or `structured_output` |
+| `evaluate` | Evaluate explicit materials with Jev (top-level only) | `evaluator`, `input`, `questions`, `result_path` |
 | `choice` | Branch based on variable values | `choices` (list of rules), `default` |
 | `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `min_success` or `gate` |
 | `pass` | Data transformation / aggregation | `parameters`, `aggregate` |
@@ -76,10 +78,24 @@ States that support routing use either `next` (go to state) or `end: true` (term
 | `grok` | `grok --single <prompt> --model <model> --output-format streaming-json` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `sandbox`, `allow`, `deny`, `tools`, `disallowed_tools`, `reasoning_effort`, `max_turns`, `on_max_turns`, `no_subagents`, `no_plan`, `cross_session_memory`, `disable_web_search`, `verbatim`, `cwd`, `agent`, `agents`, `rules`, `system_prompt_override` |
 | `pi` | `pi -p --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `allowed_tools`, `disallowed_tools`, `disable_tools` |
 | `system` | `sh -c <command>` | `command` | (none) |
+| `jev` | Typesafe SDK (no CLI) | `model`, prompt, `structured_output`, `TYPESAFE_API_KEY` | (none; top-level tasks only) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
 
 The `system` provider forbids `prompt_template`, `prompt_file`, and `model`. LLM providers forbid `command`.
+
+## Jev Evaluation
+
+Use a top-level `task` with `provider: jev` when a prompt and shared JSON Schema
+should work with either Jev or an ordinary LLM. Use `type: evaluate`,
+`evaluator: jev` for explicit named materials and inline questions. Both return
+answers for subsequent `choice` routing, not action approval or permissions.
+
+Before authoring either format, switching a task between Jev and an LLM, or
+resuming across an evaluation, read [Jev evaluation](references/evaluation.md).
+It defines the supported schema subset, distinct result shapes, placement and
+retry restrictions, key preflight, and information boundaries. Jev uses the
+bundled SDK rather than LLM CLI options or timeouts.
 
 ## Native Session Forks
 
@@ -308,7 +324,7 @@ Shell commands that run at lifecycle events. There are four scopes with differen
 
 ### State-scope hooks (`on_state_start`, `on_state_end`)
 
-Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks on `task`, `choice`, `parallel`, `map`, and `fail` states **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start`, `on_workflow_end`, `on_wait_start`, or `on_wait_end` in those state blocks raises a validation error. **Exception:** `pass` state `hooks` blocks use the full `HookConfig` and accept all six keys (workflow-scope and wait-scope keys are silently ignored at runtime). **Wait state exception:** `wait` state `hooks` blocks use `WaitStateHookConfig`, which accepts `on_state_start`, `on_state_end`, `on_wait_start`, and `on_wait_end` — but not `on_workflow_start` or `on_workflow_end`.
+Run before/after individual state execution. Can be defined at flow level and per-state level. Per-state `hooks` blocks on `task`, `evaluate`, `choice`, `parallel`, `map`, and `fail` states **only** accept `on_state_start` and `on_state_end` — using `on_workflow_start`, `on_workflow_end`, `on_wait_start`, or `on_wait_end` in those state blocks raises a validation error. **Exception:** `pass` state `hooks` blocks use the full `HookConfig` and accept all six keys (workflow-scope and wait-scope keys are silently ignored at runtime). **Wait state exception:** `wait` state `hooks` blocks use `WaitStateHookConfig`, which accepts `on_state_start`, `on_state_end`, `on_wait_start`, and `on_wait_end` — but not `on_workflow_start` or `on_workflow_end`.
 
 ```yaml
 hooks:
