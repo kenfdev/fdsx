@@ -73,6 +73,10 @@ class RunRecorder:
             "source": "service",
             "requested_model": label(result.requested_model),
             "reported_model": label(result.reported_model),
+            "usage": {
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+            },
             "questions": [
                 {
                     "name": label(name),

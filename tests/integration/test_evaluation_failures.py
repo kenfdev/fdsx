@@ -106,7 +106,7 @@ CASES = [
 ]
 
 
-def wire(monkeypatch, case, request_id=REQUEST_ID):
+def wire(monkeypatch, case, request_id=REQUEST_ID, body=None):
     monkeypatch.setenv("TYPESAFE_API_KEY", KEY)
     sleeps = []
     monkeypatch.setattr("time.sleep", sleeps.append)
@@ -137,7 +137,7 @@ def wire(monkeypatch, case, request_id=REQUEST_ID):
                 request=req,
             )
         return httpx2.Response(
-            int(case), json={"message": PRIVATE}, headers=headers, request=req
+            int(case), json=body or {"message": PRIVATE}, headers=headers, request=req
         )
 
     monkeypatch.setattr(httpx2.Client, "request", request)
@@ -283,6 +283,99 @@ def test_exception_text_repr_and_class_names_are_not_copied(
     rendered += (tmp_path / ".fdsx/runs/failure/run.json").read_text()
     for secret in (PRIVATE, KEY, "PRIVATE_QUESTION", "PRIVATE_CRITERION"):
         assert secret not in rendered
+
+
+@pytest.mark.parametrize("kind", ["task", "evaluate"])
+@pytest.mark.parametrize("error_type", ["max_tokens_exceeded", "new_service_reason"])
+def test_service_reason_reaches_cli_and_record(tmp_path, monkeypatch, kind, error_type):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".fdsx").mkdir()
+    path = workflow(tmp_path, kind)
+    calls, sleeps = wire(
+        monkeypatch,
+        "400",
+        body={
+            "detail": {"error_type": error_type, "message": PRIVATE},
+            "Authorization": KEY,
+            "request": PRIVATE,
+        },
+    )
+    result = CliRunner().invoke(app, ["run", str(path)])
+    assert result.exit_code == 1
+    saved = next((tmp_path / ".fdsx/runs").glob("*/run.json")).read_text()
+    for text in (result.output, saved):
+        assert f"error_type={error_type}" in text
+        assert "http_status=400" in text
+        assert "request_id_sha256=" in text
+        if error_type == "max_tokens_exceeded":
+            assert "retrying the same input will not resolve" in text
+        for secret in (PRIVATE, KEY, "Authorization"):
+            assert secret not in text
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    "error_type", [PRIVATE, KEY, {"message": PRIVATE}, "bad\ncode"]
+)
+def test_error_type_does_not_expose_echoed_secrets(
+    tmp_path, monkeypatch, capsys, caplog, error_type
+):
+    monkeypatch.chdir(tmp_path)
+    path = workflow(tmp_path, "task")
+    wire(monkeypatch, "400", body={"detail": {"error_type": error_type}})
+    with pytest.raises(FlowExecutionError) as failure:
+        run_flow(path, thread_id="redacted", base_dir=tmp_path / ".fdsx")
+    output = capsys.readouterr()
+    text = str(failure.value) + output.out + output.err + caplog.text
+    text += (tmp_path / ".fdsx/runs/redacted/run.json").read_text()
+    assert "error_type=" not in text
+    for secret in (PRIVATE, KEY, "bad\\ncode"):
+        assert secret not in text
+
+
+@pytest.mark.parametrize("kind", ["task", "evaluate"])
+@pytest.mark.parametrize(
+    "usage", [{"input_tokens": 123, "output_tokens": 7}, {}, {"input_tokens": 0}]
+)
+def test_unicode_and_usage_through_shared_boundary(tmp_path, monkeypatch, kind, usage):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TYPESAFE_API_KEY", KEY)
+    path = workflow(tmp_path, kind)
+    material = "日本語の材料 😀"
+    path.write_text(path.read_text().replace(PRIVATE, material))
+    sent = []
+
+    def request(client, method, url, **kwargs):
+        payload = json.loads(kwargs["content"])
+        sent.append(payload["state"])
+        return httpx2.Response(
+            200,
+            request=httpx2.Request(method, url),
+            json={
+                "model": "jev-1.13.0",
+                "usage": usage,
+                "answers": {
+                    "action": {
+                        "type": "choice",
+                        "choice": "go",
+                        "probabilities": {"go": 1.0, "stop": 0.0},
+                        "confidence": 1.0,
+                    }
+                },
+            },
+        )
+
+    monkeypatch.setattr(httpx2.Client, "request", request)
+    run_flow(path, thread_id="usage", base_dir=tmp_path / ".fdsx")
+    assert len(sent) == 1
+    assert material in sent[0]
+    assert json.loads(sent[0]) == {"prompt" if kind == "task" else "document": material}
+    saved = json.loads((tmp_path / ".fdsx/runs/usage/run.json").read_text())
+    assert saved["states"][0]["evaluation"]["usage"] == {
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+    }
 
 
 def test_cli_preserves_safe_failure_without_traceback(tmp_path, monkeypatch, caplog):
