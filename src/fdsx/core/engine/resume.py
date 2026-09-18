@@ -34,6 +34,7 @@ from fdsx.logging.recorder import (
 from fdsx.models.task import load_task_file, save_task_file
 
 from .errors import CheckpointNotFoundError, FlowExecutionError, RunLockedError
+from .evaluation import validate_evaluation_key
 from .lifecycle import (
     GraphExecutionPlan,
     TerminalContext,
@@ -52,6 +53,7 @@ from .recovery import (
 )
 from .results import FlowResult, _detect_abort_status
 from .signals import SignalHandler
+from .validate import FlowValidationError
 
 logger = structlog.get_logger(__name__)
 
@@ -100,6 +102,7 @@ def resume_flow(
     from_state: str | None = None,
     input_updates: dict[str, str] | None = None,
     confirm_inputs: Callable[[dict[str, Any], dict[str, str], str], bool] | None = None,
+    before_start: Callable[[], None] | None = None,
 ) -> FlowResult:
     """Resume a flow from a checkpoint.
 
@@ -285,6 +288,11 @@ def resume_flow(
         latest_resume_config = resume_config
 
         state_info = compiled.graph.get_state(resume_config)
+        validate_evaluation_key(
+            flow, [from_state] if from_state is not None else state_info.next
+        )
+        if before_start is not None and input_updates is None:
+            before_start()
         if state_info.values:
             last_state = dict(state_info.values)
         existing_meta = state_info.values.get("_meta", {}) if state_info.values else {}
@@ -328,6 +336,8 @@ def resume_flow(
                         "Input update canceled or interactive approval unavailable"
                     )
                 inputs_approved = True
+                if before_start is not None:
+                    before_start()
             if input_updates is not None or existing_meta.get("input_revisions"):
                 old_inputs = {key: saved_values.get(key) for key in input_keys}
                 effective_inputs = {**old_inputs, **(input_updates or {})}
@@ -434,7 +444,7 @@ def resume_flow(
         if terminal_context is not None:
             emit_completion_event(terminal_context, status="recovery_failed")
         raise
-    except FlowExecutionError:
+    except (FlowExecutionError, FlowValidationError):
         raise
     except (
         InvalidUpdateError,

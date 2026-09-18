@@ -1,6 +1,6 @@
 """Parallel state node factories for the compiler package."""
 
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 import time
 from collections.abc import Callable
 from pathlib import Path

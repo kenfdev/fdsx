@@ -19,6 +19,7 @@ fdsx enables you to define AI agent workflows in YAML, combining the durability 
 - Named profiles for reusable provider/model configuration
 - Webhook notifications on wait states
 - Lifecycle hooks (on_state_start / on_state_end / on_workflow_start / on_workflow_end / on_run_start / on_run_end / on_wait_start / on_wait_end) at global, project, flow, and state level
+- [Jev evaluation](#jev-evaluation) via schema-based tasks or explicit evaluation states, with Choice/Noul/Score answers and checkpoint reuse
 - Output extraction with JSON, regex, keyword strategies and LLM fallback
 - Provider-independent JSON Schema validation for structured task and branch output
 - [Native session forks](docs/session-forks.md) with `fork_from` for tasks, parallel branches and map items; Pi support plus Claude/Codex/Grok integrations with native qualification pending
@@ -76,7 +77,7 @@ fdsx run simple_flow.yaml
 
 ## Workflow YAML Schema
 
-Below is the full annotated schema. Every field is shown with its type, default, and constraints as inline comments.
+Below is the annotated workflow schema. For Jev-specific task restrictions and the additional `evaluate` state, see [Jev Evaluation](#jev-evaluation) and its [full reference](docs/evaluation.md).
 
 ```yaml
 # ============================================================
@@ -169,7 +170,8 @@ states:
 
     # --- Provider (pick ONE approach) ---
     # Approach A: explicit provider + model
-    provider: claude                    # (string, REQUIRED*) one of: claude, cursor, codex, opencode, gemini, grok, pi, system
+    provider: claude                    # (string, REQUIRED*) claude, cursor, codex, opencode, gemini, grok, pi, system, jev
+    # Jev requires structured_output and retry: 0 (default); see Jev Evaluation below.
     model: claude-sonnet-4-6            # (string, REQUIRED for LLM providers, FORBIDDEN for system)
     # Approach B: profile reference (mutually exclusive with provider/model)
     # profile: smarty
@@ -399,6 +401,33 @@ states:
                                         # Note: fail has no next, end, or max_iterations —
                                         # it terminates the flow immediately on entry
 ```
+
+### Jev Evaluation
+
+Use `provider: jev` on a top-level task to classify or score a prompt against a JSON Schema. Unlike the LLM providers, Jev uses the bundled Typesafe SDK, not a CLI. Set `TYPESAFE_API_KEY` in the execution environment; workflows without evaluation do not need it.
+
+```yaml
+assess:
+  type: task
+  provider: jev
+  model: jev-1.13.0
+  prompt_template: "Review: {review}\nRequirements: {requirements}"
+  structured_output:
+    schema: review-decision.schema.json
+    result_path: $.assessment
+    allow_extra_fields: false
+  next: route
+```
+
+The schema defines independent Choice (named alternatives), Noul (Yes probability), or Score (ordered levels) questions. It must use the supported evaluation schema subset, not arbitrary JSON Schema. Route on the saved fields with a normal `choice` state. Evaluation returns answers; it does not grant permissions or perform the proposed action.
+
+The [Jev review](src/fdsx/examples/workflows/evaluation-task/review-jev.yaml) and [Claude review](src/fdsx/examples/workflows/evaluation-task/review-llm.yaml) examples share their prompt and schema. Switching `provider` and `model` preserves the output contract and downstream routing, but does not guarantee identical answers. The [minimal example](src/fdsx/examples/workflows/evaluation-task/minimal-jev.yaml) classifies a fixed sentence; [Space Hotel](src/fdsx/examples/workflows/evaluation-task/space-hotel.yaml) combines terminal input, Jev classification, and conditional routing.
+
+The existing `type: evaluate`, `evaluator: jev` format remains supported for explicitly named `literal`/`ref` materials and inline questions. It saves a different result shape: for example, `$.assessment.answers.action.choice` rather than the task schema's `$.assessment.action`.
+
+Both formats are top-level only. Jev tasks require `structured_output` and an explicit model; task retries default to zero. Session forks, provider options, task timeout overrides, output-file writes, and structured-output merges are unsupported. Only the SDK retries communication; there is no LLM fallback. Start checks require a key before hooks or preceding tasks. Resume can reuse saved answers without a key when no evaluation is reachable; returning to an evaluation makes a new request.
+
+See [Jev evaluation steps](docs/evaluation.md) for schema definitions, restrictions, transport limits, safe diagnostics, and resume behavior. Examples are tested with mocked responses, not live-service accuracy checks.
 
 ### Native Session Forks
 

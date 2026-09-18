@@ -1,0 +1,43 @@
+name: evaluate-review
+description: Evaluate explicit review material and route using saved answers
+start_at: assess
+states:
+  assess:
+    type: evaluate
+    evaluator: jev
+    input:
+      requirements:
+        literal: Do not put secret material in logs.
+      review:
+        ref: $.review
+    questions:
+      action:
+        type: choice
+        instructions: Choose the next action.
+        criteria:
+          fix: Problems need correction.
+          investigate: Information is missing.
+          proceed: No blocking problem was found.
+      ambiguity:
+        type: noul
+        instructions: Are the requirements ambiguous?
+      quality:
+        type: score
+        instructions: Assess compliance with the requirements.
+        criteria: [Not met, Partially met, Fully met]
+    result_path: $.assessment
+    next: route
+  route:
+    type: choice
+    choices:
+      - variable: $.assessment.answers.action.choice
+        operator: equals
+        value: proceed
+        next: done
+    default: needs_work
+  done:
+    type: pass
+    end: true
+  needs_work:
+    type: pass
+    end: true

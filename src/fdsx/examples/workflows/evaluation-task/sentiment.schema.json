@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentiment"],
+  "properties": {
+    "sentiment": {
+      "type": "string",
+      "description": "文章が表す感情に最も近い候補を選んでください。",
+      "oneOf": [
+        {"const": "positive", "description": "満足や好意など、肯定的な感情。"},
+        {"const": "negative", "description": "不満や嫌悪など、否定的な感情。"}
+      ]
+    }
+  }
+}

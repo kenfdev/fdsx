@@ -22,7 +22,10 @@ repos:
     rev: '1.7.5'
     hooks:
       - id: bandit
+        additional_dependencies: [pbr]
+        # Scan production code once; do not append staged test filenames.
         args: ['-r', 'src/']
+        pass_filenames: false
 
   - repo: local
     hooks:

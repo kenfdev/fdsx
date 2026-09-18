@@ -13,7 +13,7 @@ Design notes:
   capture (branch executor).
 """
 
-import subprocess
+import subprocess  # nosec B404 - callback types and timeout exception handling.
 import time
 from collections.abc import Callable
 from dataclasses import dataclass

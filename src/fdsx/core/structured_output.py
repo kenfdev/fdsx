@@ -22,6 +22,9 @@ def prepare_provider_schema(schema: Any, *, allow_extra_fields: bool) -> Any:
     if not isinstance(schema, dict):
         return schema
 
+    from fdsx.core.evaluation_schema import prepare_evaluation_provider_schema
+
+    schema = prepare_evaluation_provider_schema(schema)
     prepared: dict[str, Any] = {}
     for key, value in schema.items():
         if (
@@ -89,7 +92,7 @@ def parse_structured_output(
             f"Invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
         ) from exc
 
-    if not isinstance(value, (dict, list)):
+    if not isinstance(value, dict | list):
         raise StructuredOutputValidationError(
             "Structured output must be a JSON object or list"
         )

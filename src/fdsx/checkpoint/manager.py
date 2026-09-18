@@ -204,8 +204,8 @@ class CheckpointManager:
                 cursor.execute("SELECT DISTINCT thread_id FROM checkpoints")
                 checkpoint_thread_ids = [row[0] for row in cursor.fetchall()]
                 conn.close()
-            except Exception:
-                pass
+            except sqlite3.Error:
+                logger.warning("checkpoint_thread_listing_failed")
 
         # Collect thread IDs from run log directories
         runs_dir = self.base_dir / RUNS_DIR_NAME
@@ -235,6 +235,7 @@ class CheckpointManager:
             # Load project config once so profile-based flows can be reloaded
             from fdsx.core.compiler import compile_flow
             from fdsx.core.config import load_config as _load_config
+            from fdsx.core.engine.validate import FlowValidationError
             from fdsx.core.loader import load_flow
 
             _config_profiles: dict[str, Any] | None = None
@@ -245,8 +246,8 @@ class CheckpointManager:
                         name: prof.model_dump()
                         for name, prof in _fdsx_config.profiles.items()
                     }
-            except Exception:
-                pass  # malformed config: profile resolution unavailable, continue without profiles
+            except (ValueError, OSError):
+                logger.warning("checkpoint_profiles_unavailable")
 
             for thread_id in all_thread_ids:
                 is_locked, _pid = self.is_locked(thread_id)
@@ -322,10 +323,22 @@ class CheckpointManager:
                                     ts = str(state_snapshot.created_at)
                                     if "T" in ts:
                                         started_at = ts[:16].replace("T", " ")
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+                        except (
+                            FlowValidationError,
+                            ValueError,
+                            TypeError,
+                            KeyError,
+                            OSError,
+                            sqlite3.Error,
+                        ):
+                            logger.warning(
+                                "checkpoint_snapshot_unavailable",
+                                extra={"thread_id": thread_id},
+                            )
+                except (ValueError, TypeError, KeyError, OSError, sqlite3.Error):
+                    logger.warning(
+                        "checkpoint_read_failed", extra={"thread_id": thread_id}
+                    )
 
                 # Fallback: read started_at, current_state, and status from run log
                 # when the snapshot did not provide them.

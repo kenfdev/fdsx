@@ -12,7 +12,7 @@ Registers SIGINT and SIGTERM handlers during flow execution that:
 import contextlib
 import os
 import signal
-import subprocess
+import subprocess  # nosec B404 - manages existing provider processes and timeouts.
 import sys
 import threading
 import time

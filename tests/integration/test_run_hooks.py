@@ -23,6 +23,7 @@ from fdsx.core.engine import run_flow
 from fdsx.core.hooks import collect_run_hooks, execute_run_hooks
 from fdsx.core.loader import load_flow
 from fdsx.models.flow import HookEntry
+from fdsx.providers.base import ProviderResult
 
 runner = CliRunner()
 
@@ -83,7 +84,7 @@ class TestRunHooksWiring:
     def test_single_flow_fires_start_and_end_on_success(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """on_run_start fires before run_flow; on_run_end fires with 'completed' on success."""
+        """on_run_start precedes execution; on_run_end reports completion."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".fdsx").mkdir()
         flow_path = tmp_path / "flow.yaml"
@@ -92,8 +93,8 @@ class TestRunHooksWiring:
         with (
             patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
             patch(
-                "fdsx.cli.main.engine.run_flow",
-                return_value=MagicMock(status="completed"),
+                "fdsx.providers.system._run_subprocess",
+                return_value=ProviderResult(0, "done", ""),
             ),
         ):
             runner.invoke(app, ["run", str(flow_path)])
@@ -110,10 +111,10 @@ class TestRunHooksWiring:
         assert start_call.kwargs["status"] == "starting"
         assert end_call.kwargs["status"] == "completed"
 
-    def test_single_flow_fires_start_before_run_flow(
+    def test_single_flow_fires_start_before_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """on_run_start is the first execute_run_hooks call (before engine.run_flow)."""
+        """on_run_start precedes the provider after engine preflight."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".fdsx").mkdir()
         flow_path = tmp_path / "flow.yaml"
@@ -124,17 +125,18 @@ class TestRunHooksWiring:
         def record_hook(*args, **kwargs) -> None:
             call_order.append(f"hook:{kwargs.get('event')}")
 
-        def record_run_flow(*args, **kwargs) -> None:
-            call_order.append("run_flow")
+        def record_provider(*args, **kwargs):
+            call_order.append("provider")
+            return ProviderResult(0, "done", "")
 
         with (
             patch("fdsx.cli.main.execute_run_hooks", side_effect=record_hook),
-            patch("fdsx.cli.main.engine.run_flow", side_effect=record_run_flow),
+            patch("fdsx.providers.system._run_subprocess", side_effect=record_provider),
         ):
             runner.invoke(app, ["run", str(flow_path)])
 
         assert call_order[0] == "hook:on_run_start"
-        assert "run_flow" in call_order
+        assert call_order.index("provider") > call_order.index("hook:on_run_start")
         assert call_order[-1] == "hook:on_run_end"
 
     def test_tasks_dir_fires_on_run_end_with_computed_status(
@@ -226,14 +228,12 @@ class TestResumeHooksWiring:
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".fdsx").mkdir()
 
-        with (
-            patch("fdsx.cli.main.execute_run_hooks") as mock_exec,
-            patch(
-                "fdsx.cli.main.engine.resume_flow",
-                return_value=MagicMock(status="completed"),
-            ),
-        ):
-            runner.invoke(app, ["resume", "--thread-id", "test-thread"])
+        flow_path = tmp_path / "flow.yaml"
+        flow_path.write_text(_SIMPLE_FLOW_YAML)
+        run_flow(flow_path, thread_id="test-thread", base_dir=tmp_path / ".fdsx")
+        with patch("fdsx.cli.main.execute_run_hooks") as mock_exec:
+            result = runner.invoke(app, ["resume", "--thread-id", "test-thread"])
+        assert result.exit_code == 0, result.output
 
         start_calls = [
             c

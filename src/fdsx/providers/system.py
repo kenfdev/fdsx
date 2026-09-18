@@ -1,4 +1,4 @@
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 from collections.abc import Callable
 from typing import Any
 
@@ -44,7 +44,8 @@ class SystemProvider(ProviderBase):
                 stderr="No command provided",
             )
 
-        return _run_subprocess(
+        # System tasks explicitly execute trusted workflow shell commands by design.
+        return _run_subprocess(  # nosec B604
             args=[cmd],
             timeout=timeout,
             output_callback=output_callback,

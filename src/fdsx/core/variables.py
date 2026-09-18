@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fdsx.core.paths import parse_jsonpath
-from fdsx.models.flow import Branch, Flow, ParallelState, State
+from fdsx.models.flow import Branch, EvaluateState, Flow, ParallelState, State
 
 # Sub-directory inside run_dir where result files are written
 RESULT_FILE_DATA_DIR = "data"
@@ -373,7 +373,9 @@ def analyze_variable_references(
             TaskState,
         )
 
-        if isinstance(state, TaskState):
+        if isinstance(state, EvaluateState):
+            result_paths.add(state.result_path[2:])
+        elif isinstance(state, TaskState):
             if state.structured_output:
                 path = state.structured_output.result_path
                 if path.startswith("$."):

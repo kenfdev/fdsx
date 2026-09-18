@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "評価結果と明示的に要求する詳細情報",
+  "$comment": "Explicit evaluation annotations; see docs/evaluation.md for supported constraints.",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "次の対応を選ぶ。判断に必要な情報が不足している場合は調査を優先する。",
+      "oneOf": [
+        {"const": "fix", "description": "要件に反する問題があり、修正内容を判断できる。"},
+        {"const": "investigate", "description": "次の対応を決めるための情報が不足している。"},
+        {"const": "proceed", "description": "続行を妨げる問題が示されておらず、判断に必要な情報もある。"}
+      ]
+    },
+    "ambiguity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "要件に判断を妨げる曖昧さがあるか。Yesの確率を0から1で返す。",
+      "x-fdsx-evaluation": {"kind": "noul"}
+    },
+    "quality": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "レビューを根拠に要件への適合度を評価する。0は未達、1は一部達成、2は全て達成。小数を許す。",
+      "x-fdsx-evaluation": {
+        "kind": "score",
+        "criteria": ["要件を満たしていない", "一部を満たしている", "全てを満たしている"]
+      }
+    },
+    "action_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "actionへの確かさの指標。Jevではサービスが返した値。通常のLLMでは自己申告であり、両者を同じ正解率として扱わない。",
+      "x-fdsx-evaluation": {
+        "kind": "metadata",
+        "question": "action",
+        "field": "confidence"
+      }
+    },
+    "action_probabilities": {
+      "type": "object",
+      "description": "actionの候補ごとの確率分布。合計は1。通常のLLMによる値はJevと同じ算出方法とは限らない。",
+      "properties": {
+        "fix": {"type": "number", "minimum": 0, "maximum": 1},
+        "investigate": {"type": "number", "minimum": 0, "maximum": 1},
+        "proceed": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "required": ["fix", "investigate", "proceed"],
+      "additionalProperties": false,
+      "x-fdsx-evaluation": {
+        "kind": "metadata",
+        "question": "action",
+        "field": "probabilities"
+      }
+    }
+  },
+  "required": ["action", "ambiguity", "quality", "action_confidence", "action_probabilities"],
+  "additionalProperties": false
+}

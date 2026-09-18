@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["department", "confidence"],
+  "properties": {
+    "department": {
+      "type": "string",
+      "description": "宿泊客の発言から、最初に対応すべき担当を選ぶ。生命や身体に現在の危険がある場合は、他の要望よりemergencyを優先する。",
+      "oneOf": [
+        {
+          "const": "emergency",
+          "description": "酸素不足、火災、負傷など、生命や身体の安全を直ちに確保する必要がある。"
+        },
+        {
+          "const": "maintenance",
+          "description": "生命に危険のない設備の故障や使いづらさ。点検、修理、代替の部屋などが必要。"
+        },
+        {
+          "const": "billing",
+          "description": "生命に危険のない請求ミス、料金確認、返金の相談。会計上の確認が必要。"
+        }
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "x-fdsx-evaluation": {
+        "kind": "metadata",
+        "question": "department",
+        "field": "confidence"
+      }
+    }
+  }
+}

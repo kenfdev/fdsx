@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "レビュー後の対応",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "次の対応を選ぶ。判断に必要な情報が不足している場合は調査を優先する。",
+      "oneOf": [
+        {"const": "fix", "description": "要件に反する問題があり、修正内容を判断できる。"},
+        {"const": "investigate", "description": "次の対応を決めるための情報が不足している。"},
+        {"const": "proceed", "description": "続行を妨げる問題が示されておらず、判断に必要な情報もある。"}
+      ]
+    }
+  },
+  "required": ["action"],
+  "additionalProperties": false
+}

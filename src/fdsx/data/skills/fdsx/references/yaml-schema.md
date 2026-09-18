@@ -6,6 +6,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 
 - [Flow (top-level)](#flow-top-level)
 - [TaskState](#taskstate)
+- [EvaluateState](#evaluatestate)
 - [Session forks](#session-forks)
 - [ChoiceState](#choicestate)
 - [ParallelState](#parallelstate)
@@ -48,7 +49,7 @@ extraction_fallback?: ExtractionFallback | false   # optional — false disables
 retry_escalation?: EscalationConfig | false        # optional — false disables inherited global default; omit to inherit from config
 ```
 
-**State** is a discriminated union on the `type` field: `TaskState | ChoiceState | ParallelState | PassState | WaitState | MapState | FailState`.
+**State** is a discriminated union on the `type` field: `TaskState | EvaluateState | ChoiceState | ParallelState | PassState | WaitState | MapState | FailState`.
 
 **Profiles at workflow level** are raw YAML dicts (`{provider, model, ...extras}`), not validated `ProfileConfig` objects. Profile resolution happens pre-validation: `profile` references in tasks/branches are expanded into `provider`/`model`/`provider_options` fields before Pydantic validation runs. Workflow-level profiles override config-level profiles (full replacement per name, not deep merge).
 
@@ -76,7 +77,7 @@ Reaching `max_loop` is not successful completion. Execution stops with `FlowResu
 
 ```yaml
 type: "task"                    # literal discriminator
-provider: string                # required — claude|cursor|codex|opencode|gemini|grok|pi|system
+provider: string                # required — claude|cursor|codex|opencode|gemini|grok|pi|system|jev
 fork_from?: string              # optional — preceding top-level task; see Session forks
 model?: string                  # required for LLM providers, forbidden for system
 prompt_template?: string        # XOR with prompt_file; required for LLM providers
@@ -105,6 +106,39 @@ end?: bool                      # XOR with next — terminate flow
 - `result_file` must match `$.varname` (no dots or brackets after `$.`)
 - System provider: requires `command`, forbids `prompt_template`/`prompt_file`/`model`
 - LLM providers: require `model` + (`prompt_template` or `prompt_file`), forbid `command`
+
+---
+
+## EvaluateState
+
+```yaml
+type: evaluate
+evaluator: jev
+input: {name: {ref: "$.review"}} # required; each material has literal XOR ref
+questions:                      # required; named independent questions
+  action:
+    type: choice                # choice | noul | score
+    instructions: Choose the next action.
+    criteria:
+      fix: Blocking problems remain.
+      proceed: No blocking problems remain.
+result_path: $.assessment       # required; one non-internal top-level key
+model: jev-1.13.0               # optional; default shown
+hooks: {}                       # optional; StateHookConfig only
+end: true                       # exactly one of next or end: true
+```
+
+Top-level only. This is not a provider task and accepts no task options.
+Read [Jev evaluation](evaluation.md) before defining materials/questions or
+consuming answers; it specifies material validation, answer paths, transport,
+key preflight, and resume rules.
+
+For the alternative `TaskState` with `provider: jev`, read the same reference's
+[schema-based task](evaluation.md#schema-based-task) section. It requires an
+explicit model and a supported `structured_output` schema, uses `retry: 0`,
+and rejects parallel/map placement, forks, task timeout overrides, provider
+options, output-file writes, and structured-output merges. LLM retry and
+escalation defaults do not apply.
 
 ---
 

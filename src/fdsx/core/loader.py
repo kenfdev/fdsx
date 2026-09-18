@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from jsonschema import SchemaError
 from jsonschema.validators import validator_for
+from pydantic import ValidationError
 
 from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
@@ -87,8 +88,14 @@ def _parse_and_validate_flow(
 
     try:
         flow = Flow(**data)
-    except Exception as e:
-        return None, [f"Validation error: {e}"]
+    except ValidationError as e:
+        return None, [
+            "Validation error at "
+            + ".".join(str(part) for part in error["loc"])
+            + ": "
+            + error["msg"]
+            for error in e.errors(include_input=False, include_context=False)
+        ]
 
     flow, resolve_errors = _resolve_prompt_files(flow, yaml_path)
     if resolve_errors:
@@ -98,6 +105,54 @@ def _parse_and_validate_flow(
     if schema_errors:
         return None, schema_errors
 
+    from fdsx.core.evaluation_schema import (
+        EvaluationSchemaError,
+        compile_evaluation_output,
+    )
+
+    for name, state in flow.states.items():
+        if isinstance(state, TaskState) and state.provider == "jev":
+            place = f"states.{name}"
+            contract = state.structured_output
+            if contract is None:
+                errors.append(f"{place}: Jev requires structured_output")
+                continue
+            if flow.providers and flow.providers.get("jev"):
+                errors.append(
+                    f"{place}: Jev does not support workflow provider options"
+                )
+            if not state.model or not state.model.strip():
+                errors.append(f"{place}: Jev requires a nonblank model")
+            if contract.merge is not None:
+                errors.append(f"{place}: Jev does not support structured_output.merge")
+            for option in (
+                "fork_from",
+                "timeout_seconds",
+                "provider_options",
+                "result_file",
+            ):
+                if getattr(state, option) is not None:
+                    errors.append(f"{place}: Jev does not support {option}")
+            if "retry" in state.model_fields_set and state.retry != 0:
+                errors.append(f"{place}: Jev requires retry: 0 when explicitly set")
+            try:
+                compile_evaluation_output(contract.schema_document, location=place)
+            except EvaluationSchemaError as exc:
+                errors.append(str(exc))
+        elif isinstance(state, ParallelState):
+            for index, branch in enumerate(state.branches):
+                if branch.provider == "jev":
+                    errors.append(
+                        f"states.{name}.branches.{index}: Jev is top-level only"
+                    )
+        elif isinstance(state, MapState):
+            for task in state.iterator.states:
+                if task.provider == "jev":
+                    errors.append(
+                        f"states.{name}.iterator.{task.name}: Jev is top-level only"
+                    )
+    if errors:
+        return None, errors
     return flow, errors
 
 
@@ -150,6 +205,16 @@ def _resolve_structured_output_schemas(flow: Flow, yaml_path: Path) -> list[str]
             validator_class.check_schema(document)
         except (OSError, json.JSONDecodeError, SchemaError, TypeError) as exc:
             errors.append(f"{context}: invalid schema '{contract.schema_path}': {exc}")
+            continue
+        from fdsx.core.evaluation_schema import (
+            EvaluationSchemaError,
+            prepare_evaluation_provider_schema,
+        )
+
+        try:
+            prepare_evaluation_provider_schema(document)
+        except EvaluationSchemaError as exc:
+            errors.append(f"{context}: {exc}")
             continue
         contract.schema_document = document
     return errors
@@ -273,8 +338,14 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
 
     try:
         return Flow(**flow_dict), []
-    except Exception as e:
-        return flow, [f"Failed to re-validate flow after prompt_file resolution: {e}"]
+    except ValidationError as e:
+        return flow, [
+            "Validation error at "
+            + ".".join(str(part) for part in error["loc"])
+            + ": "
+            + error["msg"]
+            for error in e.errors(include_input=False, include_context=False)
+        ]
 
 
 def validate_flow(path: Path) -> tuple[bool, list[str]]:
