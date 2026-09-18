@@ -1,0 +1,14 @@
+name: minimal-jev
+description: Classify one fixed Japanese sentence with the real Jev service.
+start_at: classify
+states:
+  classify:
+    type: task
+    provider: jev
+    model: jev-1.13.0
+    prompt_template: "このサービスにはとても満足しています。"
+    structured_output:
+      schema: sentiment.schema.json
+      result_path: $.assessment
+      allow_extra_fields: false
+    end: true
