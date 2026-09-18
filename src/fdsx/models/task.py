@@ -89,7 +89,7 @@ class TaskFile(BaseModel):
 
 _ALLOWED_SYSTEM_SYMLINK_ANCESTORS = {
     Path("/var"),
-    Path("/tmp"),
+    Path("/tmp"),  # nosec B108 - system symlink allowlist, not a temporary file write.
 }
 
 

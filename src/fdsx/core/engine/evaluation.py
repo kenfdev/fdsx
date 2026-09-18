@@ -9,7 +9,7 @@ import structlog
 from fdsx.core.config import load_config
 from fdsx.core.graph_utils import get_next_states
 from fdsx.core.loader import load_flow
-from fdsx.models.flow import EvaluateState, Flow, ParallelState, WaitState
+from fdsx.models.flow import EvaluateState, Flow, ParallelState, TaskState, WaitState
 
 from .validate import FlowValidationError
 
@@ -40,8 +40,8 @@ def validate_evaluation_key(flow: Flow, starts: Iterable[str] | None = None) -> 
             continue
         if (
             isinstance(state, EvaluateState)
-            and not os.environ.get("TYPESAFE_API_KEY", "").strip()
-        ):
+            or (isinstance(state, TaskState) and state.provider == "jev")
+        ) and not os.environ.get("TYPESAFE_API_KEY", "").strip():
             log.error("evaluation_configuration_missing", state=name)
             raise FlowValidationError(f"State '{name}': TYPESAFE_API_KEY is required")
         pending.extend(get_next_states(state) - visited)

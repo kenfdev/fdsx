@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404 - lifecycle hooks intentionally execute configured commands.
 from pathlib import Path
 from typing import Any, Literal
 
@@ -101,7 +101,8 @@ def execute_hooks(
 
     for hook in hooks:
         full_command = hook.command + positional_args
-        result = subprocess.run(full_command, shell=True, env=env)
+        # Hook commands are trusted executable configuration; added arguments are quoted.
+        result = subprocess.run(full_command, shell=True, env=env)  # nosec B602
 
         if result.returncode != 0:
             if hook.on_failure == "abort":
@@ -238,7 +239,8 @@ def execute_workflow_hooks(
 
     for hook in hooks:
         try:
-            result = subprocess.run(
+            # Only trusted, user-configured hook text is interpreted by the shell.
+            result = subprocess.run(  # nosec B602
                 hook.command, shell=True, env=env, timeout=timeout_seconds
             )
             if result.returncode != 0:
@@ -313,7 +315,8 @@ def execute_run_hooks(
 
     for hook in hooks:
         try:
-            result = subprocess.run(
+            # Only trusted, user-configured hook text is interpreted by the shell.
+            result = subprocess.run(  # nosec B602
                 hook.command, shell=True, env=env, timeout=timeout_seconds
             )
             if result.returncode != 0:

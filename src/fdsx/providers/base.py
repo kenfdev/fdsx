@@ -3,14 +3,17 @@ import json
 import logging
 import os
 import signal as signal_module
-import subprocess
+import subprocess  # nosec B404 - provider subprocess execution is this module's purpose.
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
+
+if TYPE_CHECKING:
+    from fdsx.core.evaluation import EvaluationResult
 
 logger = logging.getLogger(__name__)
 structured_logger = structlog.get_logger(__name__)
@@ -125,6 +128,7 @@ class ProviderResult:
     stderr: str
     final_message: str | None = None
     session_reference: dict[str, str] | None = None
+    evaluation: "EvaluationResult | None" = None
 
 
 class ProviderBase(Protocol):
@@ -272,7 +276,8 @@ def _run_subprocess(
     try:
         proc_env = {**os.environ, **(env or {})}
         proc_env.pop("FDSX_HOOKS", None)
-        with subprocess.Popen(
+        # Provider argv is passed without shell expansion; system tasks explicitly opt into sh.
+        with subprocess.Popen(  # nosec B603
             cmd,
             stdin=subprocess.PIPE if stdin_data is not None else None,
             stdout=subprocess.PIPE,
@@ -331,7 +336,8 @@ def _run_subprocess(
 
                 def _inactivity_watchdog() -> None:
                     nonlocal killed_by_inactivity
-                    assert inactivity_timeout is not None  # guarded by caller
+                    if inactivity_timeout is None:
+                        return  # No watchdog is needed when the timeout is disabled.
                     while True:
                         time.sleep(1)
                         if _suppressed.is_set():
@@ -513,6 +519,13 @@ def get_provider(name: str, options: dict[str, Any] | None = None) -> ProviderBa
     Raises:
         ValueError: If the provider name is unknown.
     """
+    if name == "jev":
+        from fdsx.providers.jev import JevProvider
+
+        if options:
+            structured_logger.error("evaluation_options_invalid")
+            raise ProviderError("Jev does not support provider options")
+        return JevProvider()
     if name == "system":
         from fdsx.providers.system import SystemProvider
 

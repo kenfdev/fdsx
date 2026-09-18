@@ -1,0 +1,45 @@
+# Example: real execution calls the selected service.
+# review と requirements は実行入力または先行タスクの結果として用意する。
+name: review-decision
+description: Judge explicit requirements and review using a shared output contract.
+start_at: assess
+states:
+  assess:
+    type: task
+    provider: jev
+    model: jev-1.13.0
+    prompt_file: review-input.txt
+    structured_output:
+      schema: review-decision.schema.json
+      result_path: $.assessment
+      allow_extra_fields: false
+    next: route
+  route:
+    type: choice
+    choices:
+      - variable: $.assessment.action
+        operator: equals
+        value: fix
+        next: fix
+      - variable: $.assessment.action
+        operator: equals
+        value: investigate
+        next: investigate
+      - variable: $.assessment.action
+        operator: equals
+        value: proceed
+        next: proceed
+    default: invalid_decision
+  fix:
+    type: pass
+    end: true
+  investigate:
+    type: pass
+    end: true
+  proceed:
+    type: pass
+    end: true
+  invalid_decision:
+    type: fail
+    error: InvalidDecision
+    cause: 判定値が定義した候補に含まれていません。

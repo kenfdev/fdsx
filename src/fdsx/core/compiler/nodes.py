@@ -1,7 +1,7 @@
 """Node factory functions for the compiler package."""
 
 import json
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -76,6 +76,10 @@ def _create_task_node(
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a LangGraph node function for a Task state."""
+    if state.provider == "jev":
+        from fdsx.core.compiler.evaluation_task import create_evaluation_task_node
+
+        return create_evaluation_task_node(state_name, state, recorder)
     merged_options = _merge_provider_options(
         config, flow, state.provider, state.provider_options, state_name=state_name
     )

@@ -1,5 +1,5 @@
 import json
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 from collections.abc import Callable
 from typing import Any
 

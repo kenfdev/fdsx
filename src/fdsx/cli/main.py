@@ -334,7 +334,8 @@ def run(
             execute_run_hooks(_end_hooks, status=run_status, event="on_run_end")
             raise typer.Exit(code=0 if run_status == "completed" else 1)
         else:
-            assert workflow is not None
+            if workflow is None:
+                raise FlowValidationError("A workflow is required for a direct run")
             if current_thread_id is None:
                 current_thread_id = generate_thread_id()
             result = engine.run_flow(

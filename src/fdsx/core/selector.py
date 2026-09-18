@@ -187,6 +187,7 @@ def _build_workflow_selection_prompt(
         else ""
     )
 
+    # Natural-language prompt, not an SQL statement or database query.
     return f"""You are a workflow selector. Given a task description, select the most appropriate workflow from the available options.
 
 TASK:
@@ -201,7 +202,7 @@ INSTRUCTIONS:
 3. Return ONLY the exact workflow name as shown in the list above (e.g., "Code Review" or "Code Review (ci/workflow.yaml)" if a path is shown)
 4. Do not include any explanations, markdown, or additional text — just the workflow name
 {extra_section}OUTPUT FORMAT:
-Return the exact workflow name string as displayed above, including any parenthetical path if present."""
+Return the exact workflow name string as displayed above, including any parenthetical path if present."""  # nosec B608
 
 
 def _parse_workflow_selection(response: str) -> str:

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any

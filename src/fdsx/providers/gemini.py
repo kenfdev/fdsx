@@ -1,6 +1,6 @@
 import json
 import logging
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 import threading
 from collections.abc import Callable
 from typing import Any, Literal

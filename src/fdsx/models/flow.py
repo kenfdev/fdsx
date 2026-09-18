@@ -405,6 +405,7 @@ def _validate_provider_fields(
         "pi",
         "grok",
         "system",
+        "jev",
     }
     if provider not in valid_providers:
         raise ValueError(
@@ -455,7 +456,8 @@ class ProfileConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_provider(self) -> "ProfileConfig":
-        validate_llm_provider(self.provider, "Profile")
+        if self.provider != "jev":
+            validate_llm_provider(self.provider, "Profile")
         _validate_provider_instruction_options(self.provider, self.model_extra)
         return self
 
@@ -646,6 +648,14 @@ class TaskState(BaseModel):
         default=None, description="Next state (exclusive with end)"
     )
     end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_evaluation_retry(cls, values: Any) -> Any:
+        if isinstance(values, dict) and values.get("provider") == "jev":
+            values = dict(values)
+            values.setdefault("retry", 0)
+        return values
 
     @field_validator("result_file")
     @classmethod
@@ -1076,7 +1086,7 @@ class Flow(BaseModel):
                 iterator = state.get("iterator", {})
                 if isinstance(iterator, dict):
                     nested = iterator.get("states", [])
-                    if not isinstance(nested, (dict, list)):
+                    if not isinstance(nested, dict | list):
                         continue
                     entries = (
                         nested.items()

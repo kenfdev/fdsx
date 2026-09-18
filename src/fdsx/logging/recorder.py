@@ -59,6 +59,49 @@ class RunRecorder:
         }
         self.states.append(self._current_state)
 
+    def record_evaluation_diagnostics(self, state_name: str, result: Any) -> None:
+        """Record validated metrics without materials, rubric text or raw answers."""
+
+        def label(value: str) -> str:
+            return "".join(char if char.isprintable() else " " for char in value)[:128]
+
+        state = self._find_state_by_name(state_name)
+        if state is None:
+            return
+        state["evaluation"] = {
+            "provider": "jev",
+            "source": "service",
+            "requested_model": label(result.requested_model),
+            "reported_model": label(result.reported_model),
+            "questions": [
+                {
+                    "name": label(name),
+                    "type": answer["type"],
+                    **(
+                        {"confidence": answer["confidence"]}
+                        if "confidence" in answer
+                        else {}
+                    ),
+                    **(
+                        {
+                            "probabilities": [
+                                {
+                                    "candidate": label(str(candidate)),
+                                    "probability": probability,
+                                }
+                                for candidate, probability in answer[
+                                    "probabilities"
+                                ].items()
+                            ]
+                        }
+                        if "probabilities" in answer
+                        else {}
+                    ),
+                }
+                for name, answer in result.answers.items()
+            ],
+        }
+
     def record_state_escalation(
         self, state_name: str, target_provider: str, target_model: str
     ) -> None:

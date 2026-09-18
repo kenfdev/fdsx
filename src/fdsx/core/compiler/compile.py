@@ -1,7 +1,7 @@
 """compile_flow implementation for the compiler package."""
 
 import logging
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict, cast
@@ -396,6 +396,7 @@ def compile_flow(
                     on_state_end,
                     recorder=recorder,
                     fdsx_base_dir=fdsx_base_dir,
+                    summary_only=state.provider == "jev",
                 ),
             )  # type: ignore[call-overload]
         elif isinstance(state, ChoiceState):

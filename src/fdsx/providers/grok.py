@@ -1,6 +1,6 @@
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 - process callback type annotations only.
 import tempfile
 import threading
 from collections.abc import Callable

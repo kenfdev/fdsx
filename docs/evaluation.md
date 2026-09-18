@@ -2,8 +2,8 @@
 
 Use a top-level `type: evaluate`, `evaluator: jev` state to assess explicit
 materials. It returns answers; use an ordinary `choice` state for routing.
-It does not perform work, approve actions, or grant permissions. Jev is not a
-task provider and does not change existing extraction or extraction fallback.
+It does not perform work, approve actions, or grant permissions. The existing evaluate format remains supported. Evaluation does not change
+existing extraction or extraction fallback.
 System output is still excluded from automatic external extraction assistance;
 an author may explicitly name it as an evaluation material.
 
@@ -12,7 +12,109 @@ No extra installation option or Jev CLI is needed. Set `TYPESAFE_API_KEY` in
 the execution environment when using evaluation. Installation or execution of
 a workflow without evaluation does not contact Jev or require its key.
 
-## Example
+## Shared task interface
+
+A top-level `type: task` can select `provider: jev`. Change only `provider`
+and `model` to use an ordinary LLM with the same prompt, output contract,
+result path and following states. The [Jev example](../src/fdsx/examples/workflows/evaluation-task/review-jev.yaml)
+and [Claude example](../src/fdsx/examples/workflows/evaluation-task/review-llm.yaml)
+share their schema and prompt file. They require `review` and `requirements`
+inputs. These examples are tested with mocked transport, not live providers.
+
+```yaml
+assess:
+  type: task
+  provider: jev
+  model: jev-1.13.0
+  prompt_file: review-input.txt
+  structured_output:
+    schema: review-decision.schema.json
+    result_path: $.assessment
+    allow_extra_fields: false
+  next: route
+```
+
+This path evaluates every time the task executes; it is not extraction recovery.
+The input is the once-resolved prompt, sent as one explicitly named material.
+No state, history or file contents are appended automatically. Missing or null
+references are rejected before HTTP. A wholly empty or whitespace-only resolved
+prompt is rejected; an empty individual substitution in a nonempty prompt is
+not independently rejected. Literal braces use the existing template-reference
+syntax. Normal LLM handling of unresolved references remains unchanged.
+
+### Supported output definitions
+
+The schema must be a closed object (`additionalProperties: false`) with nonempty,
+named properties, all required. Question names use `[A-Za-z_][A-Za-z0-9_]*`.
+Root descriptive keywords are `$schema`, `$comment`, `title`, and `description`.
+Unsupported keywords or constraints are rejected rather than discarded.
+
+- Choice: a string property with a nonblank `description` and `oneOf` alternatives,
+  each containing a unique string `const` and nonblank `description` (at least two).
+- Noul: a number property with `minimum: 0`, `maximum: 1`, `description`, and
+  `x-fdsx-evaluation: {kind: noul}`. It returns the Yes probability, not a boolean.
+- Score: a number property with `minimum: 0`, `maximum: N-1`, `description`, and
+  `x-fdsx-evaluation: {kind: score, criteria: [level0, level1, ...]}`. At least two
+  nonblank ordered levels are required. Fractional expected scores are preserved.
+- Metadata: `x-fdsx-evaluation: {kind: metadata, question: action, field: confidence}`
+  requests a Choice/Score confidence number, with bounds 0 and 1. `field: probabilities`
+  requests a closed required object of candidate probabilities, each a number with
+  bounds 0 and 1. Score probability keys are decimal strings starting at `0`.
+  Noul metadata, model metadata and free-form rationale generation are unsupported.
+
+The [mixed schema](../src/fdsx/examples/workflows/evaluation-task/assessment.schema.json)
+includes all three question types and explicitly requested metadata. All questions
+are independent and all SDK answers are validated before any projection or save.
+The original schema validates the projected JSON through the shared structured-output
+parser. Only requested fields are saved; the default extra-field policy still applies
+to normal LLMs, so use `allow_extra_fields: false` for strict output.
+
+For ordinary LLMs, evaluation annotations are converted to descriptions conveying
+Yes probability, ordered scoring levels and metadata provenance, then removed from
+the provider-facing schema. The original schema remains the save-time contract.
+Schemas without evaluation annotations retain their existing behavior. Responses
+from Jev and an LLM need not choose the same valid answer.
+
+### Task options, placement and preflight
+
+Jev tasks currently support top-level placement only. Parallel branches and map
+iterators are rejected before execution, including partial-success configurations.
+Profiles may select Jev. An explicit model is required. Task `retry` defaults to
+zero for Jev; an explicit nonzero value is rejected. `timeout_seconds`, `fork_from`,
+`provider_options`, `result_file`, structured-output merge and workflow `providers.jev`
+options are unsupported and rejected. The task never uses inherited LLM escalation,
+LLM options or extraction fallback. SDK retry and timeout limits below apply;
+there is no task-wide deadline guarantee. `max_iterations` still applies.
+
+Schema/options checks run during loading. Key checks run before start hooks and
+preceding tasks, including CLI and multi-task preflight. A new run checks all
+states, even potentially unexecuted branches. Resume checks reachability from the
+saved position or `--from`, including choice alternatives, defaults and loops.
+Reading a saved assessment without reaching another Jev task requires no key or
+HTTP. Reaching the task again reevaluates it. Existing recovery eligibility rules
+still apply: `--from` does not reopen a successfully completed run. Exactly-once
+HTTP is not guaranteed across pre-save interruption or failing end hooks.
+
+### Task records and information boundaries
+
+A task-specific adapter bypasses ordinary LLM streaming, retry and escalation.
+The Jev provider and legacy evaluate both call the same SDK/answer validator.
+SDK failures propagate as safe evaluation failures, without fake successful values.
+No raw input, SDK response or exception is sent to task stream logs. State hooks
+receive only `{state, status}` summaries, as for legacy evaluate. Existing workflow
+input/checkpoint storage is unchanged; this is not a promise to erase author inputs.
+
+Run state records carry a separate `evaluation` diagnostic object: actual provider,
+service provenance, requested/reported model, question name/type, validated confidence
+and distributions. Labels are printable and bounded to 128 characters; distributions
+use a list so shortened labels cannot overwrite each other. Rubric text, SDK payloads
+and invented request counts are excluded. LLM self-reported metrics are described as
+such in schema guidance, not presented as service-calibrated accuracy.
+
+Mocked tests establish format and execution contracts, not real-service accuracy,
+data retention or compatibility with an installed LLM CLI version.
+
+## Legacy evaluate example
 
 The [complete example](../src/fdsx/examples/workflows/evaluate-review.yaml)
 takes `review` as an execution input:
