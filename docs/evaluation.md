@@ -114,6 +114,34 @@ such in schema guidance, not presented as service-calibrated accuracy.
 Mocked tests establish format and execution contracts, not real-service accuracy,
 data retention or compatibility with an installed LLM CLI version.
 
+### Failure diagnostics
+
+Both Jev tasks and legacy evaluate states retain safe diagnostics in the error
+message, CLI output, saved state error and structured `evaluation_failed` log:
+
+- `category`: `http`, `connection`, `timeout`, `response_validation`, `encoding`
+  or `sdk`. A malformed successful HTTP response is `response_validation`, not
+  an HTTP rejection.
+- `exception_type`: a known SDK/Python exception class, never an arbitrary
+  subclass name or exception message.
+- `http_status`: when available, an integer HTTP status (100–599).
+- `request_id_sha256`: an optional SHA-256 fingerprint of the SDK's request ID.
+  Only 1–128 ASCII letters, digits, dots, underscores and hyphens qualify.
+  Invalid/missing IDs are omitted. The original ID is never copied: even a
+  well-formed header could contain private material. The fingerprint supports
+  correlation with an independently known ID, not recovery of the original ID.
+
+For example, a rejected request can report `Jev request failed (category=http,
+exception_type=TypeSafeUnprocessableEntityError, http_status=422)`.
+Bodies, headers, URLs, validation field paths, exception text and exception chains
+are not included. SDK wire logging stays suppressed. Retry counts, delays, success
+results and routing are unchanged; a diagnostic is not a fallback result.
+
+These guarantees concern evaluation diagnostics. Existing author input/state
+persistence (including `run.json` final variables and checkpoints) is unchanged.
+Old runs that saved only `Jev request failed` cannot recover a status or cause
+from these new diagnostics.
+
 ## Legacy evaluate example
 
 The [complete example](../src/fdsx/examples/workflows/evaluate-review.yaml)

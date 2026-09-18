@@ -1,8 +1,10 @@
 """Shared Jev boundary. No graph transitions, checkpoints, or provider fallback."""
 
+import hashlib
 import json
 import logging
 import math
+import re
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, cast
@@ -66,6 +68,72 @@ class EvaluationResult:
 def _invalid(location: str, reason: str) -> EvaluationError:
     log.error("evaluation_failed", location=location, reason=reason)
     return EvaluationError(f"Evaluation {location}: {reason}")
+
+
+def _request_failed(location: str, error: Exception) -> EvaluationError:
+    """Allowlisted diagnostics only; never format an SDK exception or its body."""
+    from typesafe_sdk import (
+        TypeSafeAPIConnectionError,
+        TypeSafeAPIError,
+        TypeSafeAPIResponseValidationError,
+        TypeSafeAPITimeoutError,
+        TypeSafeAuthenticationError,
+        TypeSafeBadRequestError,
+        TypeSafeError,
+        TypeSafeInternalServerError,
+        TypeSafeNotFoundError,
+        TypeSafePermissionDeniedError,
+        TypeSafeRateLimitError,
+        TypeSafeUnprocessableEntityError,
+    )
+
+    # Subclasses must precede their parents, especially validation (an API error)
+    # and timeout (a connection error). Labels come from trusted classes, never
+    # from an arbitrary exception's class name, str, repr, cause or traceback.
+    known = (
+        (TypeSafeAPIResponseValidationError, "response_validation"),
+        (TypeSafeAPITimeoutError, "timeout"),
+        (TypeSafeAPIConnectionError, "connection"),
+        (TypeSafeBadRequestError, "http"),
+        (TypeSafeAuthenticationError, "http"),
+        (TypeSafePermissionDeniedError, "http"),
+        (TypeSafeNotFoundError, "http"),
+        (TypeSafeUnprocessableEntityError, "http"),
+        (TypeSafeRateLimitError, "http"),
+        (TypeSafeInternalServerError, "http"),
+        (TypeSafeAPIError, "http"),
+        (UnicodeEncodeError, "encoding"),
+        (UnicodeDecodeError, "encoding"),
+        (UnicodeTranslateError, "encoding"),
+        (UnicodeError, "encoding"),
+        (TypeSafeError, "sdk"),
+    )
+    category, exception_type = next(
+        (category, cls.__name__) for cls, category in known if isinstance(error, cls)
+    )
+    details: dict[str, str | int] = {
+        "category": category,
+        "exception_type": exception_type,
+    }
+    if isinstance(error, TypeSafeAPIError):
+        if type(error.status) is int and 100 <= error.status <= 599:
+            details["http_status"] = error.status
+        request_id = error.request_id
+        if (
+            type(request_id) is str
+            and 1 <= len(request_id) <= 128
+            and re.fullmatch(r"[A-Za-z0-9._-]+", request_id)
+        ):
+            # A syntactically valid header can still echo a credential/material.
+            # Retain only a stable fingerprint, not the externally supplied ID.
+            details["request_id_sha256"] = hashlib.sha256(
+                request_id.encode("ascii")
+            ).hexdigest()
+    log.error(
+        "evaluation_failed", location=location, reason="Jev request failed", **details
+    )
+    diagnostic = ", ".join(f"{key}={value}" for key, value in details.items())
+    return EvaluationError(f"Evaluation {location}: Jev request failed ({diagnostic})")
 
 
 def _json_value(value: Any, location: str, ancestors: set[int]) -> None:
@@ -183,8 +251,8 @@ def evaluate(
                     },
                     model=model,
                 )
-        except (TypeSafeError, UnicodeError):
-            raise _invalid(location, "Jev request failed") from None
+        except (TypeSafeError, UnicodeError) as error:
+            raise _request_failed(location, error) from None
         try:
             raw_response = response.raw_http_response
         except TypeSafeError:
