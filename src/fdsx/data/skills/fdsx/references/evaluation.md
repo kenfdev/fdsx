@@ -120,7 +120,7 @@ The saved envelope contains only `model: {requested, reported}` and `answers` ke
 
 ## Validation, failures, and transport
 
-All answers must pass validation before any save. Names/types/candidates/legends must match. Probabilities and confidence are finite numbers in [0, 1], not booleans. Distributions sum to one within `1e-6`. Choice selects a maximum-probability candidate (ties preserve the service selection); Score matches the weighted mean within `1e-6 × max(1, levels−1)`. Invalid responses fail without partial storage or retry. Low confidence alone is not failure and is not an accuracy guarantee.
+All answers must pass validation before any save. Names/types/candidates/legends must match. Probabilities and confidence are finite numbers in [0, 1], not booleans. Probability sums are not checked; values are preserved without normalization. Choice selects a maximum-probability candidate (ties preserve the service selection); Score matches the weighted mean within `1e-6 × max(1, levels−1)`. Invalid responses fail without partial storage or retry. Low confidence alone is not failure and is not an accuracy guarantee.
 
 Only the SDK retries communication: at most three attempts for connection/timeouts, HTTP 408/429, and 5xx. Backoff is normally 1 then 2 seconds; `Retry-After` takes precedence. The retry window is 60 seconds, with separate 30-second connect/read/write/pool timeouts. These are not a whole-operation deadline. Authentication/configuration failures and invalid answers are not retried. There is no second fdsx retry loop or other-AI fallback.
 

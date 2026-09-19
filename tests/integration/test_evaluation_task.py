@@ -158,7 +158,23 @@ def test_missing_input_never_reaches_http(tmp_path, wire):
 
 
 @pytest.mark.parametrize(
-    "damage", ["missing", "extra", "unknown", "distribution", "score"]
+    "probabilities", [{"fix": 0.3333, "proceed": 0.3334}, {"fix": 0.7, "proceed": 0.8}]
+)
+def test_non_unit_probability_sums_allow_routing(tmp_path, wire, probabilities):
+    wire[1]["answers"]["action"]["probabilities"] = probabilities
+    # Score validation remains unchanged, but its probability sum is unchecked too.
+    wire[1]["answers"]["quality"]["probabilities"]["0"] = 0.3
+    result = run_flow(
+        write_flow(tmp_path), {"review": "text"}, base_dir=tmp_path / ".fdsx"
+    )
+    assert result.status == "completed"
+    assert result.results["assessment"]["action"] == "proceed"
+    assert result.results["observed"].strip() == "1.6"
+    assert len(wire[0]) == 1
+
+
+@pytest.mark.parametrize(
+    "damage", ["missing", "extra", "unknown", "not_maximum", "score"]
 )
 def test_invalid_answer_stops_without_downstream_execution(tmp_path, wire, damage):
     answers = wire[1]["answers"]
@@ -168,7 +184,7 @@ def test_invalid_answer_stops_without_downstream_execution(tmp_path, wire, damag
         answers["extra"] = deepcopy(answers["risk"])
     elif damage == "unknown":
         answers["action"]["choice"] = "unknown"
-    elif damage == "distribution":
+    elif damage == "not_maximum":
         answers["action"]["probabilities"]["fix"] = 0.9
     else:
         answers["quality"]["score"] = 0.0

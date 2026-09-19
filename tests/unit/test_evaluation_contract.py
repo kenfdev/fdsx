@@ -67,8 +67,8 @@ def test_typed_sdk_noul_rejects_invalid_numbers(number):
             evaluate({"doc": "text"}, {"q": question}, location="assess")
 
 
-@pytest.mark.parametrize("delta,valid", [(0.0000005, True), (0.000002, False)])
-def test_distribution_tolerance_preserves_unadjusted_values(delta, valid):
+@pytest.mark.parametrize("delta", [0.0000005, 0.000002, -0.1, 0.3])
+def test_distribution_preserves_values_without_requiring_sum_of_one(delta):
     question = EvaluationQuestion(
         type="choice", instructions="Question", criteria={"a": "A", "b": "B"}
     )
@@ -82,12 +82,8 @@ def test_distribution_tolerance_preserves_unadjusted_values(delta, valid):
     )
     with patch("typesafe_sdk.TypeSafeClient") as client:
         client.return_value.__enter__.return_value.system_one.return_value = response
-        if valid:
-            result = evaluate({"doc": "text"}, {"q": question}, location="assess")
-            assert result.to_dict()["answers"]["q"]["probabilities"] == probabilities
-        else:
-            with pytest.raises(EvaluationError, match="sum to one"):
-                evaluate({"doc": "text"}, {"q": question}, location="assess")
+        result = evaluate({"doc": "text"}, {"q": question}, location="assess")
+        assert result.to_dict()["answers"]["q"]["probabilities"] == probabilities
 
 
 @pytest.mark.parametrize("delta,valid", [(0.0000015, True), (0.000003, False)])

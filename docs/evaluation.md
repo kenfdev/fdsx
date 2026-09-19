@@ -251,7 +251,7 @@ or use numeric comparisons on `$.assessment.answers.ambiguity.noul` and
 All answers must be valid before any are saved. Missing/extra names, mismatched
 types, unknown candidates, or mismatched Score legends fail the state. Probabilities
 and confidence must be finite numbers in [0, 1]; bool is not a number here.
-Distributions must sum to one within `1e-6`, without normalization.
+Probability sums are not checked; values are preserved without normalization.
 Choice must select a maximum-probability candidate; ties preserve the service's
 selection. Score must be in [0, levels−1] and match its distribution's weighted
 mean within `1e-6 × max(1, levels−1)`.
