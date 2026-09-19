@@ -56,6 +56,7 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 | Type | Purpose | Key Fields |
 |------|---------|------------|
 | `task` | Execute a provider (LLM, shell command, or Jev evaluation) | `provider`, `model`, `prompt_template`, `result_path` or `structured_output` |
+| `classifier` | Single Jev choice with threshold-based LLM fallback | `input`, `question`, `acceptance`, `fallback`, `result_path` |
 | `evaluate` | Evaluate explicit materials with Jev (top-level only) | `evaluator`, `input`, `questions`, `result_path` |
 | `choice` | Branch based on variable values | `choices` (list of rules), `default` |
 | `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `min_success` or `gate` |
@@ -83,6 +84,10 @@ States that support routing use either `next` (go to state) or `end: true` (term
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
 
 The `system` provider forbids `prompt_template`, `prompt_file`, and `model`. LLM providers forbid `command`.
+
+## Classifier
+
+Before defining a single-choice Jev classifier, configuring threshold fallback, placing a classifier in parallel, or resuming a failed classifier, read [Classifier](references/classifier.md). It specifies acceptance conditions, the common result, provider/profile configuration, failures and private recording.
 
 ## Jev Evaluation
 

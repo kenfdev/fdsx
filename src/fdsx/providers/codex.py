@@ -23,9 +23,10 @@ from fdsx.providers.base import (
     add_schema_update_guidance,
     serialize_output_schema,
 )
+from fdsx.providers.privacy import PrivateAwareLogger, PrivateStreamGuard
 
-logger = logging.getLogger(__name__)
-structured_logger = structlog.get_logger(__name__)
+logger = PrivateAwareLogger(logging.getLogger(__name__))
+structured_logger = PrivateAwareLogger(structlog.get_logger(__name__))
 
 # ---------------------------------------------------------------------------
 # JSONL streaming format constants
@@ -267,10 +268,10 @@ class CodexProvider(ProviderBase):
                 item_type = item.get("type")
                 if item_type == _ITEM_TYPE_AGENT_MESSAGE:
                     text = item.get("text", "")
+                    if final_message_callback is not None:
+                        final_message_callback(text)
                     if text:
                         agent_message_parts.append(text)
-                        if final_message_callback is not None:
-                            final_message_callback(text)
                         output_callback(text)
                 elif item_type == _ITEM_TYPE_REASONING:
                     text = item.get("text", "")
@@ -416,6 +417,7 @@ class CodexProvider(ProviderBase):
                     args.extend(_STREAM_FORMAT_FLAGS)
                 final_message: list[str | None] = [None]
                 errors: list[str] = []
+                guard = PrivateStreamGuard()
 
                 def capture_error(message: str) -> None:
                     if message not in errors:
@@ -424,6 +426,10 @@ class CodexProvider(ProviderBase):
                             stderr_callback(message)
 
                 def capture_final_message(message: str) -> None:
+                    # None denotes an absent final event, never a received null.
+                    # Validate before retaining it or falling back to prior stdout.
+                    if guard.enabled and not isinstance(message, str):
+                        raise ValueError("private agent message must be text")
                     final_message[0] = message
 
                 stream_callback, get_result = self._make_stream_callback(
@@ -431,6 +437,7 @@ class CodexProvider(ProviderBase):
                     final_message_callback=capture_final_message,
                     error_callback=capture_error,
                 )
+                stream_callback = guard.wrap(stream_callback)
                 result = _run_subprocess(
                     args=args,
                     timeout=effective_timeout,
@@ -442,6 +449,7 @@ class CodexProvider(ProviderBase):
                     inactivity_timeout=effective_inactivity,
                     on_process_start=on_process_start,
                 )
+                guard.check()
                 if session is not None:
                     return session.finish(result, get_result(), final_message[0])
                 if result.exit_code != 0 and errors:

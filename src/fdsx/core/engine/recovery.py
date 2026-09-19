@@ -13,6 +13,8 @@ from fdsx.core.variables import (
 )
 from fdsx.models.flow import (
     ChoiceState,
+    ClassifierBranch,
+    ClassifierState,
     FailState,
     Flow,
     MapState,
@@ -223,6 +225,12 @@ def _required_state_inputs(
     state: Any,
     config: "FdsxConfig | None",
 ) -> set[str]:
+    if isinstance(state, ClassifierState):
+        return {
+            material.ref[2:]
+            for material in state.input.values()
+            if material.ref is not None
+        }
     if isinstance(state, TaskState):
         options = _effective_provider_options(
             flow,
@@ -238,6 +246,13 @@ def _required_state_inputs(
     if isinstance(state, ParallelState):
         references: set[str] = set()
         for branch in state.branches:
+            if isinstance(branch, ClassifierBranch):
+                references.update(
+                    material.ref[2:]
+                    for material in branch.input.values()
+                    if material.ref is not None
+                )
+                continue
             options = _effective_provider_options(
                 flow,
                 state_name,

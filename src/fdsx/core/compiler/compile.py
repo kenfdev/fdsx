@@ -18,6 +18,7 @@ from fdsx.core.hooks import (
 )
 from fdsx.models.flow import (
     ChoiceState,
+    ClassifierState,
     EvaluateState,
     FailState,
     Flow,
@@ -359,7 +360,25 @@ def compile_flow(
         return on_s, on_c
 
     for state_name, state in flow.states.items():
-        if isinstance(state, EvaluateState):
+        if isinstance(state, ClassifierState):
+            from fdsx.core.compiler.classifier import create_classifier_node
+
+            on_state_start, on_state_end = _collect_state_hooks(state)
+            graph.add_node(
+                state_name,
+                _wrap_with_hooks(
+                    create_classifier_node(
+                        state_name, state, recorder, quiet, on_process_start
+                    ),
+                    state_name,
+                    on_state_start,
+                    on_state_end,
+                    recorder=recorder,
+                    fdsx_base_dir=fdsx_base_dir,
+                    summary_only=True,
+                ),
+            )  # type: ignore[call-overload]
+        elif isinstance(state, EvaluateState):
             from fdsx.core.compiler.evaluation import create_evaluate_node
 
             on_state_start, on_state_end = _collect_state_hooks(state)

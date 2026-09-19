@@ -9,7 +9,16 @@ from pydantic import ValidationError
 
 from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
-from fdsx.models.flow import Flow, MapState, ParallelState, TaskState
+from fdsx.models.classifier import ClassifierDefinition
+from fdsx.models.flow import (
+    Branch,
+    ClassifierBranch,
+    ClassifierState,
+    Flow,
+    MapState,
+    ParallelState,
+    TaskState,
+)
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
@@ -109,6 +118,25 @@ def _parse_and_validate_flow(
         EvaluationSchemaError,
         compile_evaluation_output,
     )
+    from fdsx.providers.base import get_provider
+
+    classifiers: list[ClassifierDefinition] = [
+        state for state in flow.states.values() if isinstance(state, ClassifierState)
+    ]
+    classifiers.extend(
+        branch
+        for state in flow.states.values()
+        if isinstance(state, ParallelState)
+        for branch in state.branches
+        if isinstance(branch, ClassifierBranch)
+    )
+    for classifier in classifiers:
+        fallback = classifier.fallback
+        if fallback is not None:
+            try:
+                get_provider(fallback.provider, fallback.provider_options)
+            except ValueError:
+                errors.append("classifier fallback provider options are invalid")
 
     for name, state in flow.states.items():
         if isinstance(state, TaskState) and state.provider == "jev":
@@ -141,7 +169,7 @@ def _parse_and_validate_flow(
                 errors.append(str(exc))
         elif isinstance(state, ParallelState):
             for index, branch in enumerate(state.branches):
-                if branch.provider == "jev":
+                if isinstance(branch, Branch) and branch.provider == "jev":
                     errors.append(
                         f"states.{name}.branches.{index}: Jev is top-level only"
                     )
@@ -166,7 +194,7 @@ def _resolve_structured_output_schemas(flow: Flow, yaml_path: Path) -> list[str]
             contracts.append((f"State '{state_name}'", state.structured_output))
         elif isinstance(state, ParallelState):
             for index, branch in enumerate(state.branches):
-                if branch.structured_output is not None:
+                if isinstance(branch, Branch) and branch.structured_output is not None:
                     contracts.append(
                         (
                             f"Parallel state '{state_name}' branch {index}",

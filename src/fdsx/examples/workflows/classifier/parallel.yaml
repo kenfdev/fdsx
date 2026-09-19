@@ -1,0 +1,28 @@
+name: independent-reviews
+description: Classify independent review questions in parallel
+start_at: reviews
+states:
+  reviews:
+    type: parallel
+    branches:
+      - type: classifier
+        name: security
+        input:
+          review: {literal: No security issues were found.}
+        question:
+          type: choice
+          instructions: Does this review require security work?
+          criteria:
+            ready: No required security work remains.
+            fix: Security work remains.
+        result_path: $.decision
+      - name: local_check
+        provider: system
+        command: echo checked
+    result_path: $.reviews
+    gate:
+      required: [security]
+      field: $.decision.answer
+      expected: ready
+      result_path: $.ready
+    end: true

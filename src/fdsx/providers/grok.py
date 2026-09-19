@@ -25,8 +25,9 @@ from fdsx.providers.base import (
     add_schema_update_guidance,
     serialize_output_schema,
 )
+from fdsx.providers.privacy import PrivateAwareLogger
 
-logger = structlog.get_logger(__name__)
+logger = PrivateAwareLogger(structlog.get_logger(__name__))
 
 NonEmptyString = Annotated[str, Field(min_length=1)]
 

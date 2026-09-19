@@ -44,6 +44,7 @@ class RunRecorder:
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.status = "running"
         self.states: list[dict[str, Any]] = []
+        self.classifier_events: list[dict[str, Any]] = []
         self.recoveries: list[dict[str, str]] = []
         self.completed_at: str | None = None
         self.final_variables: dict[str, Any] | None = None
@@ -58,6 +59,20 @@ class RunRecorder:
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
         self.states.append(self._current_state)
+
+    def record_classifier_event(
+        self, state_name: str, attempt: str, event: str, data: dict[str, Any]
+    ) -> None:
+        with self._lock:
+            self.classifier_events.append(
+                {
+                    "name": state_name,
+                    "type": "classifier_event",
+                    "attempt": attempt,
+                    "event": event,
+                    "diagnostic": data,
+                }
+            )
 
     def record_evaluation_diagnostics(self, state_name: str, result: Any) -> None:
         """Record validated metrics without materials, rubric text or raw answers."""
@@ -418,6 +433,9 @@ class RunRecorder:
             with file_path.open(encoding="utf-8") as f:
                 existing_log: dict[str, Any] = json.load(f)
 
+            self.classifier_events = (
+                existing_log.get("classifier_events", []) + self.classifier_events
+            )
             existing_states = existing_log.get("states", [])
             existing_states.extend(self.states)
 
@@ -451,6 +469,8 @@ class RunRecorder:
             "states": self.states,
         }
 
+        if self.classifier_events:
+            result["classifier_events"] = self.classifier_events
         if self.completed_at is not None:
             result["completed_at"] = self.completed_at
 

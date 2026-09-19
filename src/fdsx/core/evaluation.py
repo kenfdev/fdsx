@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import re
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, cast
@@ -236,6 +237,7 @@ def evaluate(
     *,
     model: str = "jev-1.13.0",
     location: str,
+    capture_metrics: Callable[[dict[str, Any]], None] | None = None,
 ) -> EvaluationResult:
     """Evaluate all questions atomically; SDK types never leave this boundary."""
     from typesafe_sdk import (
@@ -276,6 +278,17 @@ def evaluate(
                     model=model,
                 )
         except (TypeSafeError, UnicodeError) as error:
+            if capture_metrics is not None:
+                from typesafe_sdk import TypeSafeAPIError
+
+                from fdsx.core.evaluation_metrics import numeric_metrics
+
+                capture_metrics(
+                    numeric_metrics(
+                        error.body if isinstance(error, TypeSafeAPIError) else None,
+                        questions,
+                    )
+                )
             raise _request_failed(
                 location,
                 error,
@@ -294,9 +307,32 @@ def evaluate(
             raw_response = (
                 None  # Supports SDK typed responses supplied by callers/tests.
             )
+        if raw_response is None and capture_metrics is not None:
+            from fdsx.core.evaluation_metrics import numeric_metrics
+
+            capture_metrics(
+                numeric_metrics(
+                    {
+                        "answers": {
+                            name: {
+                                "probabilities": answer.probabilities,
+                                "confidence": answer.confidence,
+                            }
+                            for name, answer in response.answers.items()
+                            if isinstance(answer, ChoiceAnswer)
+                        }
+                    },
+                    questions,
+                )
+            )
         if raw_response is not None:
             try:
-                raw_answers = raw_response.json()["answers"]
+                raw = raw_response.json()
+                if capture_metrics is not None:
+                    from fdsx.core.evaluation_metrics import numeric_metrics
+
+                    capture_metrics(numeric_metrics(raw, questions))
+                raw_answers = raw["answers"]
             except (ValueError, KeyError, TypeError):
                 raise _invalid(location, "invalid answer envelope") from None
             if not isinstance(raw_answers, dict) or set(raw_answers) != set(questions):

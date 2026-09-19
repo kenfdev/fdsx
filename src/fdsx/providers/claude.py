@@ -21,8 +21,9 @@ from fdsx.providers.base import (
     add_schema_update_guidance,
     serialize_output_schema,
 )
+from fdsx.providers.privacy import PrivateAwareLogger, PrivateStreamGuard
 
-logger = logging.getLogger(__name__)
+logger = PrivateAwareLogger(logging.getLogger(__name__))
 
 # ---------------------------------------------------------------------------
 # Stream-JSON format constants
@@ -464,6 +465,8 @@ class ClaudeProvider(ProviderBase):
                     # errors on the caller thread after the process completes.
                     malformed_session_stream = True
 
+            guard = PrivateStreamGuard()
+            stream_callback = guard.wrap(stream_callback)
             result = _run_subprocess(
                 args=args,
                 timeout=effective_timeout,
@@ -477,6 +480,7 @@ class ClaudeProvider(ProviderBase):
                 on_process_start=on_process_start,
                 on_inactivity_hooks=on_inactivity_hooks,
             )
+            guard.check()
             if session_request is not None:
                 if malformed_session_stream:
                     raise session_error("stream metadata is malformed")

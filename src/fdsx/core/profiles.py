@@ -72,6 +72,8 @@ def _resolve_profile_on_dict(
         return errors
 
     profile_name = item["profile"]
+    if not isinstance(profile_name, str) or not profile_name.strip():
+        return [f"{label}: profile must be a nonblank string"]
     if profile_name not in merged_profiles:
         errors.append(
             f"{label}: profile '{profile_name}' not found in profiles. "
@@ -203,7 +205,15 @@ def resolve_profiles_in_flow(
         if not isinstance(state_data, dict):
             continue
 
-        if state_data.get("type") == "task":
+        if state_data.get("type") == "classifier":
+            fallback = state_data.get("fallback")
+            if isinstance(fallback, dict):
+                errors.extend(
+                    _resolve_profile_on_dict(
+                        fallback, f"State '{state_name}' fallback", merged_profiles
+                    )
+                )
+        elif state_data.get("type") == "task":
             state_errors = _resolve_profile_on_dict(
                 state_data,
                 f"State '{state_name}'",
@@ -219,6 +229,17 @@ def resolve_profiles_in_flow(
         elif state_data.get("type") == "parallel":
             for branch_idx, branch in enumerate(state_data.get("branches", [])):
                 if not isinstance(branch, dict):
+                    continue
+                if branch.get("type") == "classifier":
+                    fallback = branch.get("fallback")
+                    if isinstance(fallback, dict):
+                        errors.extend(
+                            _resolve_profile_on_dict(
+                                fallback,
+                                f"State '{state_name}' branch {branch_idx} fallback",
+                                merged_profiles,
+                            )
+                        )
                     continue
                 branch_errors = _resolve_profile_on_dict(
                     branch,

@@ -133,3 +133,5 @@ Fresh runs locally check for a nonblank key for all evaluation states, even ones
 Resume checks every reachable alternative/default/loop from the saved position or `--from` target. Saved answers can be reused without a key or HTTP only if no evaluation is reachable. Returning to an evaluation makes a new request; a failed evaluation resends all questions. `--from` still cannot reopen a successfully completed run. Pre-save interruption or failing end hooks can repeat a completed request, so exactly-once HTTP is not guaranteed.
 
 Validate files locally before execution. Live evaluation transmits declared materials to an external service; mocked tests establish format and execution contracts, not accuracy, retention, or live compatibility.
+
+For a single choice with probability/confidence acceptance conditions and LLM fallback, see [Classifier](classifier.md). Existing task/evaluate contracts below are unchanged.
