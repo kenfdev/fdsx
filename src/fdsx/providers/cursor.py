@@ -17,8 +17,9 @@ from fdsx.providers.base import (
     _run_subprocess,
     append_structured_output_guidance,
 )
+from fdsx.providers.privacy import PrivateAwareLogger
 
-logger = logging.getLogger(__name__)
+logger = PrivateAwareLogger(logging.getLogger(__name__))
 
 
 class CursorProviderError(RuntimeError):

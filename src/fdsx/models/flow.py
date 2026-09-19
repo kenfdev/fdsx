@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from fdsx.core.paths import parse_jsonpath
+from fdsx.models.classifier import ClassifierDefinition
 from fdsx.models.evaluation import EvaluationDefinition
 from fdsx.models.validators import validate_llm_provider
 
@@ -723,6 +724,43 @@ class EvaluateState(EvaluationDefinition):
     hooks: StateHookConfig | None = None
 
 
+class ClassifierState(ClassifierDefinition):
+    @field_validator("end", mode="before")
+    @classmethod
+    def true_only(cls, value: Any) -> Any:
+        return EvaluationDefinition.true_only(value)
+
+    hooks: StateHookConfig | None = None
+    next: str | None = None
+    end: Literal[True] | None = None
+
+    @model_validator(mode="after")
+    def transition(self) -> "ClassifierState":
+        if (self.next is None) == (self.end is None):
+            raise ValueError("specify exactly one of next or end")
+        return self
+
+
+class ClassifierBranch(ClassifierDefinition):
+    type: Literal["classifier"] = Field(...)
+    name: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def branch_path(self) -> "ClassifierBranch":
+        if self.result_path[2:] in {
+            "name",
+            "index",
+            "exit_code",
+            "error",
+            "output",
+            "_duration",
+        }:
+            raise ValueError(
+                "classifier branch result_path collides with branch metadata"
+            )
+        return self
+
+
 class ChoiceState(BaseModel):
     """Choice state - branching based on variable values."""
 
@@ -741,7 +779,9 @@ class ParallelState(BaseModel):
     """Parallel state - executes multiple branches concurrently."""
 
     type: Literal["parallel"] = "parallel"
-    branches: list[Branch] = Field(..., description="Parallel branch definitions")
+    branches: list[ClassifierBranch | Branch] = Field(
+        ..., description="Parallel branch definitions"
+    )
     result_path: str = Field(..., description="JSONPath for results array")
     result_file: str | None = Field(
         default=None,
@@ -771,6 +811,18 @@ class ParallelState(BaseModel):
             raise ValueError("next and end are mutually exclusive")
         return self
 
+    @field_validator("branches", mode="before")
+    @classmethod
+    def classifier_branches(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [
+                ClassifierBranch.model_validate(item)
+                if isinstance(item, dict) and item.get("type") == "classifier"
+                else item
+                for item in value
+            ]
+        return value
+
     @model_validator(mode="after")
     def validate_gate_configuration(self) -> "ParallelState":
         names = [branch.name for branch in self.branches if branch.name is not None]
@@ -787,7 +839,10 @@ class ParallelState(BaseModel):
             required_branch = next(
                 branch for branch in self.branches if branch.name == required_name
             )
-            if required_branch.structured_output is None:
+            if (
+                isinstance(required_branch, Branch)
+                and required_branch.structured_output is None
+            ):
                 raise ValueError(
                     f"gate required branch '{required_name}' must configure "
                     "structured_output"
@@ -1029,6 +1084,7 @@ class FailState(BaseModel):
 State = Annotated[
     TaskState
     | EvaluateState
+    | ClassifierState
     | ChoiceState
     | ParallelState
     | PassState

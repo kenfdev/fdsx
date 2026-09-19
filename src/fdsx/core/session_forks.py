@@ -40,7 +40,8 @@ def fork_destinations(
             yield name, name, state
         elif isinstance(state, ParallelState):
             for index, branch in enumerate(state.branches):
-                yield name, f"{name}.{branch.name or index}", branch
+                if isinstance(branch, Branch):
+                    yield name, f"{name}.{branch.name or index}", branch
         elif isinstance(state, MapState):
             for task in state.iterator.states:
                 yield name, f"{name}.{task.name}", task

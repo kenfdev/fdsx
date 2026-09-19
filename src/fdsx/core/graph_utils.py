@@ -1,5 +1,6 @@
 from fdsx.models.flow import (
     ChoiceState,
+    ClassifierState,
     EvaluateState,
     FailState,
     MapState,
@@ -24,7 +25,7 @@ def get_next_states(state: State, include_end_sentinel: bool = False) -> set[str
     """
     result: set[str] = set()
 
-    if isinstance(state, (TaskState, EvaluateState)):
+    if isinstance(state, (TaskState, EvaluateState, ClassifierState)):
         if state.next:
             result.add(state.next)
         if include_end_sentinel and state.end:

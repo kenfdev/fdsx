@@ -20,7 +20,7 @@ from fdsx.core.variables import (
 )
 from fdsx.display import terminal
 from fdsx.display.terminal import _sanitize_output
-from fdsx.models.flow import Flow, ParallelState
+from fdsx.models.flow import ClassifierBranch, Flow, ParallelState
 from fdsx.providers.base import get_provider
 
 from .helpers import (
@@ -85,6 +85,8 @@ def _create_branch_executor(
 
     branch_esc_targets = [
         build_escalation_target(config, flow, branch.provider)
+        if not isinstance(branch, ClassifierBranch)
+        else None
         for branch in state.branches
     ]
 
@@ -94,6 +96,37 @@ def _create_branch_executor(
 
         branch_index: int = state_dict.get("_branch_index", 0)
         branch = state.branches[branch_index]
+        if isinstance(branch, ClassifierBranch):
+            from fdsx.core.classifier import ClassifierError
+            from fdsx.core.compiler.classifier import execute_classifier
+            from fdsx.core.evaluation import EvaluationError
+            from fdsx.logging.classifier import ClassifierRecordingError
+
+            started = time.time()
+            classifier_result: dict[str, Any] = {
+                "index": branch_index,
+                "name": branch.name,
+            }
+            try:
+                value = execute_classifier(
+                    f"{state_name}.branches.{branch_index}",
+                    branch,
+                    state_dict,
+                    recorder,
+                    quiet,
+                    on_process_start,
+                )
+                classifier_result.update(
+                    {"exit_code": 0, "error": None, branch.result_path[2:]: value}
+                )
+            except (
+                ClassifierError,
+                EvaluationError,
+                ClassifierRecordingError,
+            ) as error:
+                classifier_result.update(exit_code=1, error=str(error))
+            classifier_result["_duration"] = time.time() - started
+            return {f"_br_{state_name}": [classifier_result]}
         esc_target = branch_esc_targets[branch_index]
 
         start_time = time.time()
@@ -379,7 +412,13 @@ def _create_collector_node(
                     "name": r.get("name"),
                     "exit_code": r.get("exit_code"),
                     "error": r.get("error"),
-                    "provider": state.branches[r.get("index", 0)].provider
+                    "provider": (
+                        "jev"
+                        if isinstance(
+                            state.branches[r.get("index", 0)], ClassifierBranch
+                        )
+                        else state.branches[r.get("index", 0)].provider
+                    )
                     if r.get("index", 0) < len(state.branches)
                     else "unknown",
                     "status": "success" if r.get("exit_code") == 0 else "error",
@@ -465,7 +504,9 @@ def _create_collector_node(
                 display_results.append(
                     {
                         **r,
-                        "provider": branch.provider,
+                        "provider": "jev"
+                        if isinstance(branch, ClassifierBranch)
+                        else branch.provider,
                         "model": branch.model,
                     }
                 )

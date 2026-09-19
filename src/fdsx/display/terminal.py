@@ -905,3 +905,10 @@ def confirm_input_updates(
         return click.confirm("Apply inputs and resume?", default=False, err=True)
     except (click.Abort, EOFError, KeyboardInterrupt):
         return False
+
+
+def display_classifier_event(state: str, event: str, data: dict[str, Any]) -> None:
+    import json
+
+    line = json.dumps({"state": state, "event": event, **data}, ensure_ascii=False)
+    print(_sanitize_spinner_text(line), file=sys.stderr)

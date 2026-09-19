@@ -9,7 +9,15 @@ import structlog
 from fdsx.core.config import load_config
 from fdsx.core.graph_utils import get_next_states
 from fdsx.core.loader import load_flow
-from fdsx.models.flow import EvaluateState, Flow, ParallelState, TaskState, WaitState
+from fdsx.models.flow import (
+    ClassifierBranch,
+    ClassifierState,
+    EvaluateState,
+    Flow,
+    ParallelState,
+    TaskState,
+    WaitState,
+)
 
 from .validate import FlowValidationError
 
@@ -31,6 +39,14 @@ def validate_evaluation_key(flow: Flow, starts: Iterable[str] | None = None) -> 
             # Resolve these through the corresponding logical state.
             for logical, definition in flow.states.items():
                 if (
+                    isinstance(definition, ParallelState)
+                    and name == f"_collect_{logical}"
+                ):
+                    # Collection reuses completed branch results. Only later
+                    # reachable classifiers (including loop backs) need Jev.
+                    pending.extend(get_next_states(definition) - visited)
+                    continue
+                if (
                     isinstance(definition, WaitState) and name == f"_{logical}_int"
                 ) or (
                     isinstance(definition, ParallelState)
@@ -39,7 +55,13 @@ def validate_evaluation_key(flow: Flow, starts: Iterable[str] | None = None) -> 
                     pending.append(logical)
             continue
         if (
-            isinstance(state, EvaluateState)
+            isinstance(state, (EvaluateState, ClassifierState))
+            or (
+                isinstance(state, ParallelState)
+                and any(
+                    isinstance(branch, ClassifierBranch) for branch in state.branches
+                )
+            )
             or (isinstance(state, TaskState) and state.provider == "jev")
         ) and not os.environ.get("TYPESAFE_API_KEY", "").strip():
             log.error("evaluation_configuration_missing", state=name)

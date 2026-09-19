@@ -7,6 +7,7 @@ Complete field-by-field reference for fdsx workflow YAML files, derived from the
 - [Flow (top-level)](#flow-top-level)
 - [TaskState](#taskstate)
 - [EvaluateState](#evaluatestate)
+- [ClassifierState and classifier branches](classifier.md)
 - [Session forks](#session-forks)
 - [ChoiceState](#choicestate)
 - [ParallelState](#parallelstate)

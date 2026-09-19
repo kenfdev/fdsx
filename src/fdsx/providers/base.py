@@ -7,16 +7,19 @@ import subprocess  # nosec B404 - provider subprocess execution is this module's
 import threading
 import time
 from collections.abc import Callable
+from contextvars import copy_context
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
 
+from fdsx.providers.privacy import PrivateAwareLogger
+
 if TYPE_CHECKING:
     from fdsx.core.evaluation import EvaluationResult
 
-logger = logging.getLogger(__name__)
-structured_logger = structlog.get_logger(__name__)
+logger = PrivateAwareLogger(logging.getLogger(__name__))
+structured_logger = PrivateAwareLogger(structlog.get_logger(__name__))
 
 # Commands at or above this byte length are piped via stdin to avoid ARG_MAX limits.
 ARG_MAX_STDIN_THRESHOLD = 131072  # 128 KB
@@ -426,9 +429,13 @@ def _run_subprocess(
                         except BrokenPipeError:
                             pass
 
-                stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+                stdout_thread = threading.Thread(
+                    target=copy_context().run, args=(_read_stdout,), daemon=True
+                )
                 stdout_thread.start()
-                stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+                stderr_thread = threading.Thread(
+                    target=copy_context().run, args=(_read_stderr,), daemon=True
+                )
                 stderr_thread.start()
 
                 if completion_event is not None:

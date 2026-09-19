@@ -1,0 +1,49 @@
+name: classify-review
+description: Choose the next action from a review
+start_at: classify
+profiles:
+  judge:
+    provider: claude
+    model: claude-sonnet-4-6
+states:
+  classify:
+    type: classifier
+    evaluator: jev
+    input:
+      review:
+        literal: Tests pass; review found a missing edge case.
+    question:
+      type: choice
+      instructions: Which action should follow this review?
+      criteria:
+        commit: All required work and checks are complete.
+        fix: Required work or checks remain.
+    acceptance:
+      probability: 0.6
+      probability_by_choice:
+        commit: 0.8
+      confidence: 0.7
+      mode: all
+    fallback:
+      profile: judge
+      include_jev_result: false
+    result_path: $.decision
+    next: route
+  route:
+    type: choice
+    choices:
+      - variable: $.decision.answer
+        operator: equals
+        value: commit
+        next: ready
+    default: repair
+  ready:
+    type: pass
+    parameters:
+      $.next_action: commit
+    end: true
+  repair:
+    type: pass
+    parameters:
+      $.next_action: fix
+    end: true

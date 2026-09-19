@@ -402,6 +402,10 @@ states:
                                         # it terminates the flow immediately on entry
 ```
 
+### Classifier
+
+Use [`type: classifier`](docs/classifier.md) for a single Jev choice with probability/confidence acceptance conditions and a configured LLM fallback. It supports top-level and parallel execution and writes a common answer for subsequent choice routing.
+
 ### Jev Evaluation
 
 Use `provider: jev` on a top-level task to classify or score a prompt against a JSON Schema. Unlike the LLM providers, Jev uses the bundled Typesafe SDK, not a CLI. Set `TYPESAFE_API_KEY` in the execution environment; workflows without evaluation do not need it.

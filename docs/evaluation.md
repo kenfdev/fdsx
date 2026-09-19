@@ -309,3 +309,5 @@ There is no guarantee of exactly-once communication: interruption before
 checkpointing or an end-hook failure can cause a completed request to be
 repeated. Offline fake-response tests verify these behaviors, not real-service
 accuracy.
+
+For a single choice with probability/confidence acceptance conditions and LLM fallback, see [Classifier](classifier.md). Existing task/evaluate contracts below are unchanged.

@@ -5,7 +5,15 @@ from pathlib import Path
 from typing import Any
 
 from fdsx.core.paths import parse_jsonpath
-from fdsx.models.flow import Branch, EvaluateState, Flow, ParallelState, State
+from fdsx.models.flow import (
+    Branch,
+    ClassifierBranch,
+    ClassifierState,
+    EvaluateState,
+    Flow,
+    ParallelState,
+    State,
+)
 
 # Sub-directory inside run_dir where result files are written
 RESULT_FILE_DATA_DIR = "data"
@@ -321,10 +329,16 @@ def analyze_variable_references(
 
     errors: list[str] = []
 
-    def get_prompt_variables(state: State | Branch) -> set[str]:
+    def get_prompt_variables(state: State | Branch | ClassifierBranch) -> set[str]:
         variables: set[str] = set()
         from fdsx.models.flow import Branch, FailState, MapState, PassState, TaskState
 
+        if isinstance(state, (ClassifierState, ClassifierBranch)):
+            return {
+                material.ref[2:]
+                for material in state.input.values()
+                if material.ref is not None
+            }
         if isinstance(state, (TaskState, Branch)):
             prompt = state.prompt_template or ""
             command = state.command or ""
@@ -373,7 +387,7 @@ def analyze_variable_references(
             TaskState,
         )
 
-        if isinstance(state, EvaluateState):
+        if isinstance(state, (EvaluateState, ClassifierState)):
             result_paths.add(state.result_path[2:])
         elif isinstance(state, TaskState):
             if state.structured_output:
