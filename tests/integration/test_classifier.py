@@ -526,8 +526,11 @@ def test_all_llm_adapters_receive_schema_and_execute_once(
         return ProviderResult(0, body, "")
 
     monkeypatch.setattr(f"fdsx.providers.{provider}._run_subprocess", execute)
-    if provider == "pi":
-        monkeypatch.setattr("fdsx.providers.pi.shutil.which", lambda _: "/fake/pi")
+    if provider in {"cursor", "pi"}:
+        # These adapters check binary availability before the mocked subprocess.
+        monkeypatch.setattr(
+            f"fdsx.providers.{provider}.shutil.which", lambda name: f"/fake/{name}"
+        )
     result = run(
         tmp_path,
         definition(
