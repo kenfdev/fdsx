@@ -227,8 +227,6 @@ def _distribution(value: Any, keys: set[Any], location: str) -> dict[Any, float]
     result = {
         key: _number(probability, 1, location) for key, probability in value.items()
     }
-    if abs(sum(result.values()) - 1) > 1e-6:
-        raise _invalid(location, "probabilities must sum to one")
     return result
 
 

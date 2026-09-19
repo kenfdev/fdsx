@@ -253,7 +253,7 @@ def test_nested_evaluation_is_rejected_with_location(tmp_path, wire, kind):
         lambda a: a["action"].update(
             choice="fix", probabilities={"fix": 0.1, "go": 0.9}
         ),
-        lambda a: a["action"].update(probabilities={"fix": 0.1, "go": 0.8}),
+        lambda a: a["action"].update(probabilities={"fix": 0.1, "go": 1.1}),
         lambda a: a["action"].update(probabilities={"unknown": 0.5, "go": 0.5}),
         lambda a: a["action"].update(confidence=True),
         lambda a: a["action"].update(confidence=1.1),
