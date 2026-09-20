@@ -34,7 +34,15 @@ def create_evaluate_node(
                 else:
                     materials[key] = material.literal
             result = evaluate(
-                materials, definition.questions, model=definition.model, location=name
+                materials,
+                definition.questions,
+                model=definition.model,
+                location=name,
+                reject_empty=frozenset(
+                    key
+                    for key, material in definition.input.items()
+                    if not material.allow_empty
+                ),
             )
         except EvaluationError as error:
             log.error(

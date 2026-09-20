@@ -41,6 +41,7 @@ class JevProvider:
             output.questions,
             model=model or "jev-1.13.0",
             location=self.location,
+            reject_empty=frozenset({"prompt"}),
         )
         # No streaming callbacks: neither inputs nor SDK responses belong in logs.
         return ProviderResult(

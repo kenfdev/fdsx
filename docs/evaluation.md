@@ -211,12 +211,28 @@ nonnegative array indices, and quoted object keys supported by the existing
 resolver. Empty paths, the whole root, wildcards, filters, and ambiguous syntax
 are rejected. Missing references fail before transmission.
 
-Every material is required. Null, empty or whitespace-only strings, empty
-lists, and empty objects fail. Zero and false are valid. Only each material's
-immediate value is checked for emptiness; null or empty children within a
-nonempty list/object are allowed. All nested values must be JSON-compatible,
-with finite numbers and string object keys. Errors identify the declared
-material location without printing its contents.
+Every material must exist and cannot be null. Empty strings (including
+whitespace-only strings), lists, and objects are accepted by default: for example,
+`findings: {ref: $.review.findings}` can supply zero findings without extra options.
+Set `allow_empty: false` on an individual material to require nonempty content,
+for example `requirements: {ref: $.requirements, allow_empty: false}`.
+The option is a strict boolean, defaults to true, and works with either `ref`
+or `literal` in both `evaluate` and `classifier`. Missing references and immediate
+null fail with either setting. Other materials retain their own policy.
+
+This changes the former default rejection of empty values. Workflows relying on
+that rejection must explicitly set `allow_empty: false`, including when resuming
+saved runs with the updated workflow. Jev task prompts and question instructions
+still require nonblank text; this option applies to named materials.
+
+Values are sent unchanged: an empty list stays a list, and no placeholder,
+wrapper or string conversion is added. The policy is not sent to Jev or the
+classifier's LLM fallback. Zero and false are valid with either policy. Only each
+material's immediate value is checked for emptiness; null or empty children
+within a nonempty list/object are allowed. All nested values must remain
+JSON-compatible, with finite numbers and string object keys. Errors identify the
+declared material location without printing its contents. Workflow serialization
+and resume preserve the per-material option.
 
 The resolved named object is encoded once as a JSON string for the SDK.
 Literal braces and `ref` keys inside literal content are not expanded.

@@ -150,9 +150,11 @@ def test_mixed_evaluation_sends_only_explicit_materials_and_routes(
 
 
 @pytest.mark.parametrize("value", [None, "", "  ", [], {}, float("inf"), {1: "bad"}])
-def test_invalid_material_stops_before_http(tmp_path, wire, value):
+def test_strict_material_stops_before_http(tmp_path, wire, value):
     data = definition()
-    data["states"]["assess"]["input"] = {"document": {"literal": value}}
+    data["states"]["assess"]["input"] = {
+        "document": {"literal": value, "allow_empty": False}
+    }
     with pytest.raises(FlowExecutionError, match=r"assess.input.document"):
         run_flow(write_flow(tmp_path, data), base_dir=tmp_path / ".fdsx")
     assert wire[0] == []

@@ -62,6 +62,11 @@ def classify(
             model=definition.model,
             location=location,
             capture_metrics=capture,
+            reject_empty=frozenset(
+                name
+                for name, material in definition.input.items()
+                if not material.allow_empty
+            ),
         )
     except EvaluationError:
         emit("invalid_jev", numeric)

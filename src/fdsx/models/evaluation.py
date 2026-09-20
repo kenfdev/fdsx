@@ -28,10 +28,16 @@ class Material(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     literal: Any = None
     ref: str | None = None
+    allow_empty: bool = True
 
     @model_serializer
     def serialize(self) -> dict[str, Any]:
-        return {"ref": self.ref} if self.ref is not None else {"literal": self.literal}
+        value: dict[str, Any] = (
+            {"ref": self.ref} if self.ref is not None else {"literal": self.literal}
+        )
+        if not self.allow_empty:
+            value["allow_empty"] = False
+        return value
 
     @model_validator(mode="before")
     @classmethod
