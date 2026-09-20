@@ -1024,6 +1024,41 @@ Flows automatically persist state after each step. If interrupted (Ctrl+C, crash
 fdsx resume --thread-id <thread_id>
 ```
 
+Maps resume at item boundaries. Both iterator forms reuse saved items by their
+zero-based input index, even when saved indices are not contiguous. Unfinished
+items restart at their first step; final results remain in input order. A new
+visit to the map starts fresh. Execution remains sequential.
+
+Map progress uses a versioned format with the map visit and each collected
+item's result and status. Older contiguous progress is read without modifying
+the file and migrates on the next successful save. An old `null` whose status
+cannot be determined remains collected with status `unknown`; it is neither
+retried nor counted as a known success or failure. Newly saved failures retain
+their status across resume. With `fail_fast: false`, legacy iterators still fail
+the map after collecting all items; local workflows can succeed with failure
+envelopes. With `fail_fast: true`, failed items are recorded for diagnostics but
+are retried on ordinary resume.
+
+Progress messages on stderr use one-based item numbers. Results (`index`) and
+run records (`item_index`) use zero-based numbers. Item logs live under
+`logs/<map>/<visit>/<execution-id>/<item-index>/`; every map invocation, including
+resume, gets a new execution ID so earlier logs remain intact. Local state names
+and managed result-file locations retain their existing scope.
+
+Map entries in `run.json` distinguish `completed_count` (durably collected
+items), `reused_count`, and `executed_count` (items started this invocation).
+`success_count`, `failure_count`, and `unknown_count` describe the collected
+results. `attempt_count` and per-item `task_attempts` count task-provider attempts,
+including retries, during this invocation; local routing/pass states do not
+increment them. Reused items add no new execution or attempt records. Saving an
+item unsuccessfully fails the map and leaves that item eligible for execution
+on resume.
+
+Ordinary resume assumes unchanged inputs. To change inputs, use explicit recovery
+with `--from <map>` and `--input`; this invalidates map progress and reruns the
+map. An external side effect completed before progress was saved can happen
+again after a stop: item checkpointing does not guarantee exactly-once effects.
+
 For a terminal non-success outcome such as `fail`, `abort_*`, `max_loop`, or
 `max_iterations`, fix the workflow or its inputs and explicitly select a
 previously executed state:

@@ -28,6 +28,7 @@ from fdsx.core.structured_output import (
     parse_structured_output,
     prepare_provider_schema,
 )
+from fdsx.logging.attempts import record_attempt
 from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
@@ -179,6 +180,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
 
             last_used_provider_name = active_provider_name
 
+            record_attempt()
             try:
                 if active_provider_name == "system":
                     result = active_provider.execute(

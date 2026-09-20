@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from structlog.contextvars import get_contextvars
+
 OUTPUT_PREVIEW_MAX_LENGTH = 500
 
 THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -50,7 +52,7 @@ class RunRecorder:
         self.completed_at: str | None = None
         self.final_variables: dict[str, Any] | None = None
         self._current_state: dict[str, Any] | None = None
-        self._lock: threading.Lock = threading.Lock()
+        self._lock = threading.Lock()
 
     def record_local_workflow(self, scope: str, recorder: "RunRecorder") -> None:
         """Keep local diagnostics separate from top-level terminal-state detection."""
@@ -58,6 +60,12 @@ class RunRecorder:
             self.local_workflows.append(
                 {
                     "scope": scope,
+                    **{
+                        key: value
+                        for key, value in get_contextvars().items()
+                        if key
+                        in {"map_name", "state_iteration", "item_index", "execution_id"}
+                    },
                     "states": recorder.states,
                     "classifier_events": recorder.classifier_events,
                 }
@@ -266,6 +274,47 @@ class RunRecorder:
                 self.states.append(state)
             state.setdefault("fallback_invocations", []).append(record)
 
+    def record_map_attempt(self, state_name: str, index: int) -> None:
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is not None:
+                attempts = state.setdefault("task_attempts", {})
+                key = str(index)
+                attempts[key] = attempts.get(key, 0) + 1
+                state["attempt_count"] = state.get("attempt_count", 0) + 1
+
+    def record_map_item_start(self, state_name: str, index: int) -> None:
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is not None:
+                state["executed_count"] = state.get("executed_count", 0) + 1
+                state.setdefault("started_items", []).append(index)
+
+    def record_map_progress(
+        self,
+        state_name: str,
+        visit: int,
+        execution_id: str,
+        items: dict[int, dict[str, Any]],
+        *,
+        reused: int | None = None,
+    ) -> None:
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is None:
+                return
+            state.update(
+                state_iteration=visit,
+                execution_id=execution_id,
+                completed_count=len(items),
+            )
+            if reused is not None:
+                state.update(reused_count=reused, executed_count=0, attempt_count=0)
+            for status in ("success", "failure", "unknown"):
+                state[f"{status}_count"] = sum(
+                    item["status"] == status for item in items.values()
+                )
+
     def record_map_start(self, state_name: str, item_count: int) -> None:
         """Record map state start with item count metadata.
 
@@ -273,14 +322,15 @@ class RunRecorder:
             state_name: Name of the map state
             item_count: Number of items to iterate over
         """
-        self._current_state = {
-            "name": state_name,
-            "type": "map",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "item_count": item_count,
-            "iterations": [],
-        }
-        self.states.append(self._current_state)
+        with self._lock:
+            self._current_state = {
+                "name": state_name,
+                "type": "map",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "item_count": item_count,
+                "iterations": [],
+            }
+            self.states.append(self._current_state)
 
     def record_map_iteration_complete(
         self,
@@ -297,22 +347,24 @@ class RunRecorder:
             status: Status of the iteration ("success" or "error")
             output: Output from the iteration
         """
-        state = self._find_state_by_name(state_name)
-        if state is None:
-            return
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is None:
+                return
 
-        if "iterations" not in state:
-            state["iterations"] = []
+            if "iterations" not in state:
+                state["iterations"] = []
 
-        output_preview = output[:OUTPUT_PREVIEW_MAX_LENGTH] if output else ""
+            output_preview = output[:OUTPUT_PREVIEW_MAX_LENGTH] if output else ""
 
-        state["iterations"].append(
-            {
-                "index": index,
-                "status": status,
-                "output_preview": output_preview,
-            }
-        )
+            state["iterations"].append(
+                {
+                    "index": index,
+                    "item_index": index,
+                    "status": status,
+                    "output_preview": output_preview,
+                }
+            )
 
     def record_map_complete(
         self,
@@ -326,35 +378,36 @@ class RunRecorder:
         Args:
             state_name: Name of the map state
             status: Overall status ("success" or "error")
-            results_count: Number of successful results
+            results_count: Number of collected results (including failures/unknowns)
             failed_count: Number of failed iterations
         """
-        state = self._find_state_by_name(state_name)
-        if state is None:
-            state = {
-                "name": state_name,
-                "type": "map",
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self.states.append(state)
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is None:
+                state = {
+                    "name": state_name,
+                    "type": "map",
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                }
+                self.states.append(state)
 
-        completed_at = datetime.now(timezone.utc).isoformat()
-        started_at = state.get("started_at", completed_at)
+            completed_at = datetime.now(timezone.utc).isoformat()
+            started_at = state.get("started_at", completed_at)
 
-        try:
-            start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-            end_dt = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
-            duration_seconds = int((end_dt - start_dt).total_seconds())
-        except (ValueError, TypeError):
-            duration_seconds = 0
+            try:
+                start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                duration_seconds = int((end_dt - start_dt).total_seconds())
+            except (ValueError, TypeError):
+                duration_seconds = 0
 
-        state["completed_at"] = completed_at
-        state["duration_seconds"] = duration_seconds
-        state["status"] = status
-        state["results_count"] = results_count
-        state["failed_count"] = failed_count
+            state["completed_at"] = completed_at
+            state["duration_seconds"] = duration_seconds
+            state["status"] = status
+            state["results_count"] = results_count
+            state["failed_count"] = failed_count
 
-        self._current_state = None
+            self._current_state = None
 
     def finalize(
         self, final_variables: dict[str, Any], status: str = "completed"

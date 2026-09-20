@@ -286,6 +286,7 @@ def compile_flow(
     log_dir: Path | None = None,
     quiet: bool = False,
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
+    resume_map_states: set[str] | None = None,
 ) -> CompiledGraph:
     """Compile a Flow into a LangGraph StateGraph.
 
@@ -544,6 +545,7 @@ def compile_flow(
                 log_dir,
                 quiet,
                 on_process_start=on_process_start,
+                resume_map_states=resume_map_states,
             )
             graph.add_node(
                 state_name,

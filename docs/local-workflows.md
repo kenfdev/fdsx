@@ -63,6 +63,22 @@ a pending branch can replay its complete local graph. No local step checkpoints
 or new completed parallel branch reuse guarantee. Explicit recovery retains the
 existing map progress invalidation policy.
 
+Map progress is indexed by input position and map visit, so ordinary resume can
+reuse noncontiguous saved items. Legacy contiguous progress migrates only when
+another item is saved. Saved failure envelopes are collected results under
+`fail_fast: false`; `fail_fast: true` failures are retried. A legacy value whose
+success cannot be established remains `unknown`, without re-executing it.
+Normal resume assumes the same inputs; change inputs through `--from` recovery
+to rerun the map. Effects performed before an item's successful save may repeat.
+
+Logs are separated by map, visit, execution ID and zero-based item index while
+retaining the local state name. A resumed invocation has a new execution ID;
+earlier logs remain available. Local workflow records also carry `map_name`,
+`state_iteration`, `execution_id` and `item_index`. Stderr progress uses one-based
+numbers. Map run records separate saved, reused and newly started counts, known
+success/failure and unknown status, and task-provider attempt counts (including
+retries). See the README checkpoint section for the field names.
+
 ### YAML examples
 
 Legacy examples (state fragments):

@@ -246,6 +246,7 @@ def resume_flow(
 
         handler = SignalHandler(checkpoint_manager, thread_id)
 
+        resume_map_states: set[str] = set()
         compiled = compile_flow(
             flow,
             input_keys=input_keys or None,
@@ -253,6 +254,7 @@ def resume_flow(
             recorder=recorder,
             config=config,
             log_dir=resume_log_dir,
+            resume_map_states=resume_map_states,
             on_process_start=handler.register_process,
         )
         terminal_context = TerminalContext(
@@ -391,6 +393,9 @@ def resume_flow(
                 {"_meta": {**existing_meta, "run_dir": str(resume_run_dir)}},
             )
             state_info = compiled.graph.get_state(resume_config)
+
+        if from_state is None:
+            resume_map_states.update(state_info.next)
 
         stream_config = resume_config
         resume_config = latest_resume_config
