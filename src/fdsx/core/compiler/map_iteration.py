@@ -29,6 +29,7 @@ from fdsx.display.terminal import (
 )
 from fdsx.models.flow import (
     Flow,
+    LocalWorkflow,
     MapState,
 )
 from fdsx.providers.base import get_provider
@@ -182,7 +183,8 @@ def _create_map_node(
         # after replanning), while resumes of the same visit keep completed items.
         progress_iteration = (
             iteration
-            if any(task.fork_from is not None for task in state.iterator.states)
+            if isinstance(state.iterator, LocalWorkflow)
+            or any(task.fork_from is not None for task in state.iterator.states)
             else None
         )
         if (
@@ -198,6 +200,9 @@ def _create_map_node(
             start_idx = 0
             results = []
 
+        if isinstance(state.iterator, LocalWorkflow):
+            n_failed = sum(result.get("exit_code") != 0 for result in results)
+
         for idx, item in enumerate(items):
             if idx < start_idx:
                 continue
@@ -205,6 +210,44 @@ def _create_map_node(
             iter_start_time = time.time()
             iter_context = {**state_dict, "item": item}
             iter_steps: dict[str, Any] = {}
+
+            if isinstance(state.iterator, LocalWorkflow):
+                from fdsx.core.engine.local import execute_local
+
+                outcome = execute_local(
+                    state.iterator,
+                    f"{state_name}.items.{idx}",
+                    iter_context,
+                    flow,
+                    recorder,
+                    config,
+                    log_dir,
+                    quiet,
+                    on_process_start,
+                )
+                outcome["index"] = idx
+                if outcome["exit_code"] != 0:
+                    n_failed += 1
+                    if state.fail_fast:
+                        raise RuntimeError(
+                            f"Map state '{state_name}': item {idx} failed: {outcome['error']}"
+                        )
+                results.append(outcome)
+                _write_map_progress(
+                    run_dir,
+                    state_name,
+                    idx + 1,
+                    results,
+                    state_iteration=progress_iteration,
+                )
+                if recorder is not None:
+                    recorder.record_map_iteration_complete(
+                        state_name,
+                        idx,
+                        "success" if outcome["exit_code"] == 0 else "error",
+                        outcome["error"] or "",
+                    )
+                continue
 
             for iter_state in state.iterator.states:
                 merged_options = _merge_provider_options(
@@ -512,12 +555,14 @@ def _create_map_node(
         if recorder is not None:
             recorder.record_map_complete(
                 state_name,
-                "success" if n_failed == 0 else "error",
+                "success"
+                if n_failed == 0 or isinstance(state.iterator, LocalWorkflow)
+                else "error",
                 len(results),
                 n_failed,
             )
 
-        if n_failed > 0:
+        if n_failed > 0 and not isinstance(state.iterator, LocalWorkflow):
             raise RuntimeError(
                 f"Map state '{state_name}': {n_failed} of {len(items)} iterations failed"
             )

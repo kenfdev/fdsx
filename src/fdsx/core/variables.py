@@ -326,6 +326,7 @@ def analyze_variable_references(
     preceding state on at least one reachable path.
     """
     from fdsx.core.graph_utils import get_next_states
+    from fdsx.models.flow import LocalWorkflow, WorkflowBranch
 
     errors: list[str] = []
 
@@ -351,6 +352,8 @@ def analyze_variable_references(
                         parts.append(val)
             prompt = " ".join(parts)
         elif isinstance(state, MapState):
+            if isinstance(state.iterator, LocalWorkflow):
+                return set()
             for iter_state in state.iterator.states:
                 iter_prompt = iter_state.prompt_template or ""
                 iter_command = iter_state.command or ""
@@ -510,14 +513,44 @@ def analyze_variable_references(
 
         if isinstance(state, ParallelState):
             for branch in state.branches:
-                prompt_vars.update(get_prompt_variables(branch))
+                if isinstance(branch, WorkflowBranch):
+                    local_flow = flow.model_copy(
+                        update={
+                            "states": branch.workflow.states,
+                            "start_at": branch.workflow.start_at,
+                        }
+                    )
+                    errors.extend(
+                        analyze_variable_references(
+                            local_flow, input_keys=available_vars.get(state_name, set())
+                        )
+                    )
+                else:
+                    prompt_vars.update(get_prompt_variables(branch))
 
         from fdsx.models.flow import MapState
 
         if isinstance(state, MapState):
+            if isinstance(state.iterator, LocalWorkflow):
+                local_flow = flow.model_copy(
+                    update={
+                        "states": state.iterator.states,
+                        "start_at": state.iterator.start_at,
+                    }
+                )
+                errors.extend(
+                    analyze_variable_references(
+                        local_flow,
+                        input_keys=available_vars.get(state_name, set()) | {"item"},
+                    )
+                )
             iter_prompt_vars: set[str] = set()
             iterator_outputs = {"item"}
-            for iter_state in state.iterator.states:
+            for iter_state in (
+                state.iterator.states
+                if not isinstance(state.iterator, LocalWorkflow)
+                else []
+            ):
                 iter_prompt = iter_state.prompt_template or ""
                 iter_command = iter_state.command or ""
                 references = extract_template_references(iter_prompt, iter_command)

@@ -215,7 +215,7 @@ def test_profiles_resolve_to_jev(tmp_path, wire):
 
 
 @pytest.mark.parametrize("nested", ["parallel", "map"])
-def test_nested_jev_is_rejected_before_start(tmp_path, wire, nested):
+def test_legacy_nested_jev_requires_local_workflow_form(tmp_path, wire, nested):
     def modify(data):
         task = data["states"].pop("assess")
         task.pop("next")
@@ -237,7 +237,7 @@ def test_nested_jev_is_rejected_before_start(tmp_path, wire, nested):
                 "end": True,
             }
 
-    with pytest.raises(FlowValidationError, match="top-level only"):
+    with pytest.raises(FlowValidationError, match="local workflow form"):
         run_flow(
             write_flow(tmp_path, modify=modify),
             {"review": "text", "items": "[]"},

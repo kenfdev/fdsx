@@ -775,11 +775,19 @@ class ChoiceState(BaseModel):
     )
 
 
+class WorkflowBranch(BaseModel):
+    """A named, isolated workflow inside a parallel state."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(default=None, min_length=1)
+    workflow: "LocalWorkflow"
+
+
 class ParallelState(BaseModel):
     """Parallel state - executes multiple branches concurrently."""
 
     type: Literal["parallel"] = "parallel"
-    branches: list[ClassifierBranch | Branch] = Field(
+    branches: list[WorkflowBranch | ClassifierBranch | Branch] = Field(
         ..., description="Parallel branch definitions"
     )
     result_path: str = Field(..., description="JSONPath for results array")
@@ -816,7 +824,9 @@ class ParallelState(BaseModel):
     def classifier_branches(cls, value: Any) -> Any:
         if isinstance(value, list):
             return [
-                ClassifierBranch.model_validate(item)
+                WorkflowBranch.model_validate(item)
+                if isinstance(item, dict) and "workflow" in item
+                else ClassifierBranch.model_validate(item)
                 if isinstance(item, dict) and item.get("type") == "classifier"
                 else item
                 for item in value
@@ -1029,12 +1039,81 @@ class IteratorDef(BaseModel):
         return self
 
 
+def _validate_merge_contracts(contracts: list[StructuredOutput]) -> None:
+    channels: dict[str, StructuredOutputMerge] = {}
+    for contract in contracts:
+        if contract.merge is None:
+            continue
+        path = (
+            contract.result_path[2:]
+            if contract.result_path.startswith("$.")
+            else contract.result_path
+        )
+        previous = channels.get(path)
+        if previous is not None and previous != contract.merge:
+            raise ValueError(
+                f"structured output producers for '{path}' must use identical "
+                "merge configuration"
+            )
+        channels[path] = contract.merge
+
+
+class LocalWorkflow(BaseModel):
+    """Bounded local control flow; its selected output crosses the container boundary."""
+
+    model_config = ConfigDict(extra="forbid")
+    start_at: str
+    states: dict[str, "LocalState"] = Field(min_length=1)
+    output_path: str
+    max_loop: int | None = Field(default=None, ge=1)
+
+    @field_validator("output_path")
+    @classmethod
+    def concrete_output(cls, value: str) -> str:
+        from fdsx.models.evaluation import REF
+
+        if not REF.fullmatch(value) or value.startswith("$._"):
+            raise ValueError("output_path must be a concrete user JSONPath")
+        return value
+
+    @model_validator(mode="after")
+    def local_transitions(self) -> "LocalWorkflow":
+        import re
+
+        from fdsx.core.graph_utils import get_next_states, has_terminal_path
+
+        if self.start_at not in self.states:
+            raise ValueError("local start_at does not exist in states")
+        for name, state in self.states.items():
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
+                raise ValueError("local state names must be identifiers")
+            if getattr(state, "fork_from", None) is not None:
+                raise ValueError("local workflows do not support fork_from")
+            if isinstance(state, (TaskState, PassState)) and (
+                state.next is not None
+            ) == (state.end is True):
+                raise ValueError("local states require exactly one next or end: true")
+            for target in get_next_states(state):
+                if target not in self.states:
+                    raise ValueError(f"local next reference '{target}' does not exist")
+        if not has_terminal_path(self.states, self.start_at):
+            raise ValueError("local workflow must have a path to termination")
+        _validate_merge_contracts(
+            [
+                state.structured_output
+                for state in self.states.values()
+                if isinstance(state, TaskState) and state.structured_output is not None
+            ]
+        )
+        return self
+
+
 class MapState(BaseModel):
     """Map state - iterates over an array and executes a sub-workflow for each item."""
 
     type: Literal["map"] = "map"
     items_path: str = Field(..., description="JSONPath to input array")
-    iterator: IteratorDef = Field(
+    iterator: LocalWorkflow | IteratorDef = Field(
         ..., description="Sub-workflow to execute for each item"
     )
     result_path: str = Field(..., description="JSONPath for results array")
@@ -1049,6 +1128,16 @@ class MapState(BaseModel):
         default=None, description="Next state (exclusive with end)"
     )
     end: bool | None = Field(default=None, description="End flow (exclusive with next)")
+
+    @field_validator("iterator", mode="before")
+    @classmethod
+    def local_iterator(cls, value: Any) -> Any:
+        if isinstance(value, dict) and (
+            bool({"start_at", "output_path", "max_loop"} & value.keys())
+            or isinstance(value.get("states"), dict)
+        ):
+            return LocalWorkflow.model_validate(value)
+        return value
 
     @model_validator(mode="after")
     def validate_next_end_exclusive(self) -> "MapState":
@@ -1080,6 +1169,16 @@ class FailState(BaseModel):
             )
         return values
 
+
+LocalState = Annotated[
+    TaskState | EvaluateState | ClassifierState | ChoiceState | PassState | FailState,
+    Field(discriminator="type"),
+]
+
+LocalWorkflow.model_rebuild()
+WorkflowBranch.model_rebuild()
+ParallelState.model_rebuild()
+MapState.model_rebuild()
 
 State = Annotated[
     TaskState
@@ -1136,11 +1235,11 @@ class Flow(BaseModel):
                 for index, branch in enumerate(state["branches"]):
                     if isinstance(branch, dict) and branch.get("type") == "evaluate":
                         raise ValueError(
-                            f"states.{name}.branches.{index}: evaluate is top-level only"
+                            f"states.{name}.branches.{index}: nested evaluate requires the local workflow form"
                         )
             if state.get("type") == "map":
                 iterator = state.get("iterator", {})
-                if isinstance(iterator, dict):
+                if isinstance(iterator, dict) and "start_at" not in iterator:
                     nested = iterator.get("states", [])
                     if not isinstance(nested, dict | list):
                         continue
@@ -1152,7 +1251,7 @@ class Flow(BaseModel):
                     for index, task in entries:
                         if isinstance(task, dict) and task.get("type") == "evaluate":
                             raise ValueError(
-                                f"states.{name}.iterator.states.{index}: evaluate is top-level only"
+                                f"states.{name}.iterator.states.{index}: nested evaluate requires the local workflow form"
                             )
         return values
 
@@ -1237,53 +1336,21 @@ class Flow(BaseModel):
 
     @model_validator(mode="after")
     def validate_structured_output_merge_channels(self) -> "Flow":
-        channels: dict[str, StructuredOutputMerge] = {}
-        contracts: list[StructuredOutput] = []
-        for state in self.states.values():
-            if isinstance(state, TaskState) and state.structured_output is not None:
-                contracts.append(state.structured_output)
-        for contract in contracts:
-            if contract.merge is None:
-                continue
-            path = (
-                contract.result_path[2:]
-                if contract.result_path.startswith("$.")
-                else contract.result_path
-            )
-            previous = channels.get(path)
-            if previous is not None and previous != contract.merge:
-                raise ValueError(
-                    f"structured output producers for '{path}' must use identical "
-                    "merge configuration"
-                )
-            channels[path] = contract.merge
+        _validate_merge_contracts(
+            [
+                state.structured_output
+                for state in self.states.values()
+                if isinstance(state, TaskState) and state.structured_output is not None
+            ]
+        )
         return self
 
     @model_validator(mode="after")
     def validate_termination(self) -> "Flow":
-        from fdsx.core.graph_utils import get_next_states
+        from fdsx.core.graph_utils import has_terminal_path
 
-        def reaches_termination(start: str, visited: set[str]) -> bool:
-            stack = [start]
-            while stack:
-                current = stack.pop()
-                if current in visited:
-                    continue
-                if current == "$END":
-                    return True
-                visited.add(current)
-                state = self.states.get(current)
-                if state is None:
-                    continue
-                if isinstance(state, FailState):
-                    return True
-                next_states = get_next_states(state, include_end_sentinel=True)
-                stack.extend(next_states - visited)
-            return False
-
-        if not reaches_termination(self.start_at, set()):
+        if not has_terminal_path(self.states, self.start_at):
             raise ValueError(
                 "flow must have at least one path to termination (end: true)"
             )
-
         return self

@@ -285,7 +285,8 @@ def _create_task_node(
                 variables_set = [state.result_path]
 
         if state.result_file:
-            run_dir = state_dict.get("_meta", {}).get("run_dir", "")
+            meta = state_dict.get("_meta", {})
+            run_dir = meta.get("result_file_dir", meta.get("run_dir", ""))
             if run_dir:
                 varname = state.result_file[2:]  # strip "$."
                 file_path = write_result_to_file(

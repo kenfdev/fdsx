@@ -15,13 +15,16 @@ from fdsx.models.flow import (
     ChoiceState,
     ClassifierBranch,
     ClassifierState,
+    EvaluateState,
     FailState,
     Flow,
+    LocalWorkflow,
     MapState,
     ParallelState,
     PassState,
     TaskState,
     WaitState,
+    WorkflowBranch,
 )
 
 if TYPE_CHECKING:
@@ -225,7 +228,7 @@ def _required_state_inputs(
     state: Any,
     config: "FdsxConfig | None",
 ) -> set[str]:
-    if isinstance(state, ClassifierState):
+    if isinstance(state, (ClassifierState, EvaluateState)):
         return {
             material.ref[2:]
             for material in state.input.values()
@@ -246,6 +249,9 @@ def _required_state_inputs(
     if isinstance(state, ParallelState):
         references: set[str] = set()
         for branch in state.branches:
+            if isinstance(branch, WorkflowBranch):
+                references.update(_local_required_inputs(flow, branch.workflow, config))
+                continue
             if isinstance(branch, ClassifierBranch):
                 references.update(
                     material.ref[2:]
@@ -283,6 +289,12 @@ def _required_state_inputs(
         return references
     if isinstance(state, MapState):
         references = {_clean_path(state.items_path)}
+        if isinstance(state.iterator, LocalWorkflow):
+            return references | {
+                path
+                for path in _local_required_inputs(flow, state.iterator, config)
+                if path != "item" and not path.startswith(("item.", "item["))
+            }
         iterator_outputs: set[str] = set()
         for iterator_state in state.iterator.states:
             options = _effective_provider_options(
@@ -315,3 +327,21 @@ def _required_state_inputs(
             )
         return references
     return set()
+
+
+def _local_required_inputs(
+    flow: Flow, workflow: LocalWorkflow, config: "FdsxConfig | None"
+) -> set[str]:
+    from fdsx.core.compiler.helpers import _extract_result_paths
+
+    local_flow = flow.model_copy(
+        update={"states": workflow.states, "start_at": workflow.start_at}
+    )
+    outputs = set(_extract_result_paths(local_flow))
+    references = set().union(
+        *(
+            _required_state_inputs(local_flow, name, state, config)
+            for name, state in workflow.states.items()
+        )
+    )
+    return {path for path in references if not _path_is_provided(path, outputs)}

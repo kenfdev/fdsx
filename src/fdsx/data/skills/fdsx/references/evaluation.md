@@ -5,7 +5,7 @@
 - `type: task`, `provider: jev`: evaluate the resolved prompt against a supported JSON Schema. Change provider/model to use an ordinary LLM with the same prompt, schema, saved fields, and routing.
 - `type: evaluate`, `evaluator: jev`: evaluate explicit named materials against inline questions. Save the full validated answer envelope.
 
-Both are top-level only, including when Jev is selected through a profile. Use a following `choice` state to route; evaluation itself neither performs actions nor grants permissions. Questions in one request are independent.
+Both work at top level and inside [local workflows](local-workflows.md), including when Jev is selected through a profile. Legacy task lists and single-task branches still reject Jev. Use a following `choice` state to route; evaluation itself neither performs actions nor grants permissions. Questions in one request are independent.
 
 The bundled `typesafe-sdk` calls `https://api.typesafe.ai`; no Jev CLI or extra install is needed. Supply `TYPESAFE_API_KEY` through the environment without printing it or putting it in workflow files. Workflows without evaluation need no key and make no Jev requests.
 
@@ -72,7 +72,7 @@ Only requested fields are projected and saved, after all SDK answers pass valida
 
 An explicit nonblank model and `structured_output` are required. Profiles may supply provider/model. Omit `retry` or set it to `0`; nonzero task retries are rejected. `max_iterations` applies normally.
 
-Unsupported: parallel/map placement, `fork_from`, `timeout_seconds`, `provider_options`, `result_file`, structured-output `merge`, and workflow `providers.jev` options. The usual structured-output exclusion of legacy `result_path`/`extract` applies. Jev bypasses inherited LLM options, retry escalation, and extraction fallback.
+Unsupported: legacy list-iterator/single-task-branch placement, `fork_from`, `timeout_seconds`, `provider_options`, `result_file`, structured-output `merge`, and workflow `providers.jev` options. The usual structured-output exclusion of legacy `result_path`/`extract` applies. Jev bypasses inherited LLM options, retry escalation, and extraction fallback.
 
 ## Explicit evaluation state
 

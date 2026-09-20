@@ -20,7 +20,13 @@ from fdsx.core.variables import (
 )
 from fdsx.display import terminal
 from fdsx.display.terminal import _sanitize_output
-from fdsx.models.flow import ClassifierBranch, Flow, ParallelState
+from fdsx.models.flow import (
+    Branch,
+    ClassifierBranch,
+    Flow,
+    ParallelState,
+    WorkflowBranch,
+)
 from fdsx.providers.base import get_provider
 
 from .helpers import (
@@ -85,7 +91,7 @@ def _create_branch_executor(
 
     branch_esc_targets = [
         build_escalation_target(config, flow, branch.provider)
-        if not isinstance(branch, ClassifierBranch)
+        if isinstance(branch, Branch)
         else None
         for branch in state.branches
     ]
@@ -96,6 +102,25 @@ def _create_branch_executor(
 
         branch_index: int = state_dict.get("_branch_index", 0)
         branch = state.branches[branch_index]
+        if isinstance(branch, WorkflowBranch):
+            from fdsx.core.engine.local import execute_local
+
+            started = time.time()
+            outcome = execute_local(
+                branch.workflow,
+                f"{state_name}.branches.{branch_index}",
+                state_dict,
+                flow,
+                recorder,
+                config,
+                log_dir,
+                quiet,
+                on_process_start,
+            )
+            outcome.update(
+                index=branch_index, name=branch.name, _duration=time.time() - started
+            )
+            return {f"_br_{state_name}": [outcome]}
         if isinstance(branch, ClassifierBranch):
             from fdsx.core.classifier import ClassifierError
             from fdsx.core.compiler.classifier import execute_classifier
@@ -417,7 +442,9 @@ def _create_collector_node(
                         if isinstance(
                             state.branches[r.get("index", 0)], ClassifierBranch
                         )
-                        else state.branches[r.get("index", 0)].provider
+                        else getattr(
+                            state.branches[r.get("index", 0)], "provider", "workflow"
+                        )
                     )
                     if r.get("index", 0) < len(state.branches)
                     else "unknown",
@@ -504,10 +531,13 @@ def _create_collector_node(
                 display_results.append(
                     {
                         **r,
+                        "output": ""
+                        if isinstance(branch, WorkflowBranch)
+                        else r.get("output", ""),
                         "provider": "jev"
                         if isinstance(branch, ClassifierBranch)
-                        else branch.provider,
-                        "model": branch.model,
+                        else getattr(branch, "provider", "workflow"),
+                        "model": getattr(branch, "model", None),
                     }
                 )
             else:

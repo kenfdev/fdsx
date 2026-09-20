@@ -7,6 +7,7 @@ from jsonschema import SchemaError
 from jsonschema.validators import validator_for
 from pydantic import ValidationError
 
+from fdsx.core.definitions import raw_definitions, walk_states
 from fdsx.core.profiles import resolve_profiles_in_flow
 from fdsx.core.variables import analyze_variable_references
 from fdsx.models.classifier import ClassifierDefinition
@@ -15,6 +16,7 @@ from fdsx.models.flow import (
     ClassifierBranch,
     ClassifierState,
     Flow,
+    IteratorDef,
     MapState,
     ParallelState,
     TaskState,
@@ -121,7 +123,7 @@ def _parse_and_validate_flow(
     from fdsx.providers.base import get_provider
 
     classifiers: list[ClassifierDefinition] = [
-        state for state in flow.states.values() if isinstance(state, ClassifierState)
+        state for _, state in walk_states(flow) if isinstance(state, ClassifierState)
     ]
     classifiers.extend(
         branch
@@ -138,7 +140,7 @@ def _parse_and_validate_flow(
             except ValueError:
                 errors.append("classifier fallback provider options are invalid")
 
-    for name, state in flow.states.items():
+    for name, state in walk_states(flow):
         if isinstance(state, TaskState) and state.provider == "jev":
             place = f"states.{name}"
             contract = state.structured_output
@@ -171,13 +173,13 @@ def _parse_and_validate_flow(
             for index, branch in enumerate(state.branches):
                 if isinstance(branch, Branch) and branch.provider == "jev":
                     errors.append(
-                        f"states.{name}.branches.{index}: Jev is top-level only"
+                        f"states.{name}.branches.{index}: nested Jev requires the local workflow form"
                     )
-        elif isinstance(state, MapState):
+        elif isinstance(state, MapState) and isinstance(state.iterator, IteratorDef):
             for task in state.iterator.states:
                 if task.provider == "jev":
                     errors.append(
-                        f"states.{name}.iterator.{task.name}: Jev is top-level only"
+                        f"states.{name}.iterator.{task.name}: nested Jev requires the local workflow form"
                     )
     if errors:
         return None, errors
@@ -189,7 +191,7 @@ def _resolve_structured_output_schemas(flow: Flow, yaml_path: Path) -> list[str]
     errors: list[str] = []
     yaml_dir = yaml_path.parent.resolve()
     contracts: list[tuple[str, Any]] = []
-    for state_name, state in flow.states.items():
+    for state_name, state in walk_states(flow):
         if isinstance(state, TaskState) and state.structured_output is not None:
             contracts.append((f"State '{state_name}'", state.structured_output))
         elif isinstance(state, ParallelState):
@@ -202,7 +204,7 @@ def _resolve_structured_output_schemas(flow: Flow, yaml_path: Path) -> list[str]
                         )
                     )
 
-        elif isinstance(state, MapState):
+        elif isinstance(state, MapState) and isinstance(state.iterator, IteratorDef):
             for task in state.iterator.states:
                 if task.structured_output is not None:
                     contracts.append(
@@ -280,86 +282,26 @@ def _resolve_prompt_files(flow: Flow, yaml_path: Path) -> tuple[Flow, list[str]]
     flow_dict = copy.deepcopy(flow.model_dump())
     errors: list[str] = []
 
-    for state_name, state_data in flow_dict.get("states", {}).items():
-        if state_data.get("type") == "task":
-            if state_data.get("prompt_file"):
-                prompt_path = (yaml_dir / state_data["prompt_file"]).resolve()
-                path_error = _validate_prompt_file_path(
-                    state_data["prompt_file"],
-                    prompt_path,
-                    yaml_dir,
-                    f"State '{state_name}'",
-                )
-                if path_error:
-                    errors.append(path_error)
-                    continue
-                if not prompt_path.exists():
-                    errors.append(
-                        f"State '{state_name}': prompt_file not found: {state_data['prompt_file']}"
-                    )
-                    continue
-                try:
-                    with prompt_path.open() as f:
-                        state_data["prompt_template"] = f.read()
-                    del state_data["prompt_file"]
-                except Exception as e:
-                    errors.append(
-                        f"State '{state_name}': failed to read prompt_file: {e}"
-                    )
-        elif state_data.get("type") == "parallel":
-            for branch_idx, branch in enumerate(state_data.get("branches", [])):
-                if branch.get("prompt_file"):
-                    prompt_path = (yaml_dir / branch["prompt_file"]).resolve()
-                    path_error = _validate_prompt_file_path(
-                        branch["prompt_file"],
-                        prompt_path,
-                        yaml_dir,
-                        f"Parallel branch {branch_idx}",
-                    )
-                    if path_error:
-                        errors.append(path_error)
-                        continue
-                    if not prompt_path.exists():
-                        errors.append(
-                            f"Parallel branch {branch_idx}: prompt_file not found: {branch['prompt_file']}"
-                        )
-                        continue
-                    try:
-                        with prompt_path.open() as f:
-                            branch["prompt_template"] = f.read()
-                        del branch["prompt_file"]
-                    except Exception as e:
-                        errors.append(
-                            f"Parallel branch {branch_idx}: failed to read prompt_file: {e}"
-                        )
-        elif state_data.get("type") == "map":
-            for iter_state in state_data.get("iterator", {}).get("states", []):
-                if iter_state.get("prompt_file"):
-                    prompt_path = (yaml_dir / iter_state["prompt_file"]).resolve()
-                    path_error = _validate_prompt_file_path(
-                        iter_state["prompt_file"],
-                        prompt_path,
-                        yaml_dir,
-                        f"Map '{state_name}' iterator state '{iter_state['name']}'",
-                    )
-                    if path_error:
-                        errors.append(path_error)
-                        continue
-                    if not prompt_path.exists():
-                        errors.append(
-                            f"Map '{state_name}' iterator state '{iter_state['name']}': "
-                            f"prompt_file not found: {iter_state['prompt_file']}"
-                        )
-                        continue
-                    try:
-                        with prompt_path.open() as f:
-                            iter_state["prompt_template"] = f.read()
-                        del iter_state["prompt_file"]
-                    except Exception as e:
-                        errors.append(
-                            f"Map '{state_name}' iterator state '{iter_state['name']}': "
-                            f"failed to read prompt_file: {e}"
-                        )
+    for state_name, state_data in raw_definitions(flow_dict):
+        raw_path = state_data.get("prompt_file")
+        if not raw_path:
+            continue
+        prompt_path = (yaml_dir / raw_path).resolve()
+        context = state_name
+        path_error = _validate_prompt_file_path(
+            raw_path, prompt_path, yaml_dir, context
+        )
+        if path_error:
+            errors.append(path_error)
+            continue
+        if not prompt_path.is_file():
+            errors.append(f"{context}: prompt_file not found: {raw_path}")
+            continue
+        try:
+            state_data["prompt_template"] = prompt_path.read_text()
+            del state_data["prompt_file"]
+        except (OSError, UnicodeError) as error:
+            errors.append(f"{context}: failed to read prompt_file: {error}")
 
     if errors:
         return flow, errors

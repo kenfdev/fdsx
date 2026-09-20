@@ -45,11 +45,23 @@ class RunRecorder:
         self.status = "running"
         self.states: list[dict[str, Any]] = []
         self.classifier_events: list[dict[str, Any]] = []
+        self.local_workflows: list[dict[str, Any]] = []
         self.recoveries: list[dict[str, str]] = []
         self.completed_at: str | None = None
         self.final_variables: dict[str, Any] | None = None
         self._current_state: dict[str, Any] | None = None
         self._lock: threading.Lock = threading.Lock()
+
+    def record_local_workflow(self, scope: str, recorder: "RunRecorder") -> None:
+        """Keep local diagnostics separate from top-level terminal-state detection."""
+        with self._lock:
+            self.local_workflows.append(
+                {
+                    "scope": scope,
+                    "states": recorder.states,
+                    "classifier_events": recorder.classifier_events,
+                }
+            )
 
     def record_state_start(self, state_name: str, state_type: str) -> None:
         """Append new state entry with name, type, started_at."""
@@ -433,6 +445,9 @@ class RunRecorder:
             with file_path.open(encoding="utf-8") as f:
                 existing_log: dict[str, Any] = json.load(f)
 
+            self.local_workflows = (
+                existing_log.get("local_workflows", []) + self.local_workflows
+            )
             self.classifier_events = (
                 existing_log.get("classifier_events", []) + self.classifier_events
             )
@@ -469,6 +484,8 @@ class RunRecorder:
             "states": self.states,
         }
 
+        if self.local_workflows:
+            result["local_workflows"] = self.local_workflows
         if self.classifier_events:
             result["classifier_events"] = self.classifier_events
         if self.completed_at is not None:

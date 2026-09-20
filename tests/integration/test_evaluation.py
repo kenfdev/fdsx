@@ -223,7 +223,9 @@ def test_definition_errors_are_safe_and_preexecution(tmp_path, wire, change):
 
 
 @pytest.mark.parametrize("kind", ["parallel", "map"])
-def test_nested_evaluation_is_rejected_with_location(tmp_path, wire, kind):
+def test_legacy_nested_evaluation_requires_local_form_with_location(
+    tmp_path, wire, kind
+):
     data = definition()
     assessment = data["states"]["assess"]
     data["states"]["assess"] = (
@@ -236,7 +238,7 @@ def test_nested_evaluation_is_rejected_with_location(tmp_path, wire, kind):
             "end": True,
         }
     )
-    with pytest.raises(FlowValidationError, match=r"assess.*top-level"):
+    with pytest.raises(FlowValidationError, match=r"assess.*local workflow form"):
         run_flow(write_flow(tmp_path, data), base_dir=tmp_path / ".fdsx")
     assert not wire[0]
 
