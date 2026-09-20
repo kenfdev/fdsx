@@ -14,9 +14,12 @@ from fdsx.models.flow import (
     ClassifierState,
     EvaluateState,
     Flow,
+    LocalWorkflow,
+    MapState,
     ParallelState,
     TaskState,
     WaitState,
+    WorkflowBranch,
 )
 
 from .validate import FlowValidationError
@@ -25,6 +28,13 @@ log = structlog.get_logger(__name__)
 
 
 def validate_evaluation_key(flow: Flow, starts: Iterable[str] | None = None) -> None:
+    def local_needs_key(workflow: LocalWorkflow) -> bool:
+        return any(
+            isinstance(child, (EvaluateState, ClassifierState))
+            or (isinstance(child, TaskState) and child.provider == "jev")
+            for child in workflow.states.values()
+        )
+
     # Fresh execution checks the entire definition, including unreachable states.
     pending = list(flow.states if starts is None else starts)
     visited: set[str] = set()
@@ -59,10 +69,20 @@ def validate_evaluation_key(flow: Flow, starts: Iterable[str] | None = None) -> 
             or (
                 isinstance(state, ParallelState)
                 and any(
-                    isinstance(branch, ClassifierBranch) for branch in state.branches
+                    isinstance(branch, ClassifierBranch)
+                    or (
+                        isinstance(branch, WorkflowBranch)
+                        and local_needs_key(branch.workflow)
+                    )
+                    for branch in state.branches
                 )
             )
             or (isinstance(state, TaskState) and state.provider == "jev")
+            or (
+                isinstance(state, MapState)
+                and isinstance(state.iterator, LocalWorkflow)
+                and local_needs_key(state.iterator)
+            )
         ) and not os.environ.get("TYPESAFE_API_KEY", "").strip():
             log.error("evaluation_configuration_missing", state=name)
             raise FlowValidationError(f"State '{name}': TYPESAFE_API_KEY is required")

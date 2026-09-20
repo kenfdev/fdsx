@@ -8,6 +8,7 @@ from fdsx.models.flow import (
     Branch,
     EscalationConfig,
     Flow,
+    IteratorDef,
     IteratorTaskState,
     MapState,
     ParallelState,
@@ -42,7 +43,7 @@ def fork_destinations(
             for index, branch in enumerate(state.branches):
                 if isinstance(branch, Branch):
                     yield name, f"{name}.{branch.name or index}", branch
-        elif isinstance(state, MapState):
+        elif isinstance(state, MapState) and isinstance(state.iterator, IteratorDef):
             for task in state.iterator.states:
                 yield name, f"{name}.{task.name}", task
 

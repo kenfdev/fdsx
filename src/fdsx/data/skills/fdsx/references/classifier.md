@@ -187,8 +187,10 @@ classification under the branch's result path. Branch paths cannot overwrite
 declarations are unchanged. `min_success` and required/advisory gate behavior are
 unchanged; a classifier is a valid structured gate source without a user schema
 file. A failed classifier contributes a failed branch, never a successful answer.
-Map iterators remain task-only. Existing Jev task/evaluate placement restrictions
-remain unchanged.
+Classifier, evaluate and Jev tasks also work in local workflows inside map
+iterators and parallel branches. See [local workflows](local-workflows.md) for
+branching, limits, result envelopes and resume behavior. Legacy iterator lists
+remain task-only.
 
 An interrupted or failed classifier that is executed again starts at Jev. No
 Jev-complete/LLM-pending checkpoint is added, so reassessment can incur extra cost.

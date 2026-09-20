@@ -137,7 +137,7 @@ key preflight, and resume rules.
 For the alternative `TaskState` with `provider: jev`, read the same reference's
 [schema-based task](evaluation.md#schema-based-task) section. It requires an
 explicit model and a supported `structured_output` schema, uses `retry: 0`,
-and rejects parallel/map placement, forks, task timeout overrides, provider
+and rejects legacy list-iterator/single-task-branch placement, forks, task timeout overrides, provider
 options, output-file writes, and structured-output merges. LLM retry and
 escalation defaults do not apply.
 
@@ -227,7 +227,7 @@ end?: bool                      # XOR with next
 **Validation:**
 - Branch `name` values must be unique within the parallel state
 - `gate` and `min_success` are mutually exclusive
-- Every `gate.required` entry must name an existing branch that configures `structured_output`
+- Every `gate.required` entry must name an existing branch. Ordinary task branches require `structured_output`; classifier branches expose their classification result, and local workflow branches expose their selected value under `output`.
 - `gate.result_path` must be a single top-level state key
 
 With a gate, failures from branches not listed in `required` are retained as advisory error results and do not fail the parallel state. Required branch execution/validation failures and missing gate fields fail the parallel state.
@@ -281,7 +281,7 @@ notify:
 ```yaml
 type: "map"                     # literal discriminator
 items_path: string              # required — JSONPath to input array
-iterator: IteratorDef           # required — sub-workflow to execute for each item
+iterator: IteratorDef | LocalWorkflow # required — sub-workflow to execute for each item
 result_path: string             # required — JSONPath for results array
 fail_fast?: bool                # default: true — stop on first failure
 max_iterations?: int            # optional — >=1, max times this state can be entered
@@ -295,7 +295,7 @@ end?: bool                      # XOR with next — terminate flow
 **Validation:**
 - `next` and `end` are mutually exclusive
 - `items_path` must reference a variable set by a preceding state
-- Iterator states must all have `type: "task"` (no nested choice/parallel/pass/wait/map)
+- Legacy list iterator states must all have `type: "task"`. For local branching and evaluation use [LocalWorkflow](local-workflows.md).
 - Iterator state names must be unique within the iterator
 
 ---
@@ -318,6 +318,13 @@ hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/o
 - A `fail` state constitutes a valid termination path for flow termination validation (alongside `end: true`)
 
 ---
+
+## LocalWorkflow
+
+Map `iterator` also accepts `{start_at, states: {name: State}, output_path, max_loop?}`.
+Parallel `branches` also accepts `{name?, workflow: LocalWorkflow}`. See
+[local workflows](local-workflows.md) for supported states, isolation, limits,
+aggregation policies and checkpoint replay.
 
 ## IteratorDef
 

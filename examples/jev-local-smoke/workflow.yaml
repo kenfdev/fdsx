@@ -1,0 +1,109 @@
+name: jev-local-smoke
+description: Live Jev evaluation and repair inside map and parallel, without AI CLI tools.
+start_at: seed
+max_loop: 3
+states:
+  seed:
+    type: pass
+    parameters:
+      $.items: [first, second]
+    next: map_reviews
+
+  map_reviews:
+    type: map
+    items_path: $.items
+    fail_fast: false
+    result_path: $.map_results
+    iterator: &review
+      start_at: draft
+      output_path: $.report
+      max_loop: 3
+      states:
+        draft:
+          type: pass
+          parameters:
+            $.text: "2 + 2 = 5"
+            $.repaired: false
+          next: assess
+        assess:
+          type: evaluate
+          evaluator: jev
+          model: jev-1.13.0
+          input:
+            equation:
+              ref: $.text
+          questions:
+            action:
+              type: choice
+              instructions: Is this arithmetic equation correct? Choose approved if correct, otherwise fix.
+              criteria:
+                approved: The equation is mathematically correct.
+                fix: The equation is mathematically incorrect.
+          result_path: $.assessment
+          next: route
+        route:
+          type: choice
+          choices:
+            - variable: $.assessment.answers.action.choice
+              operator: equals
+              value: approved
+              next: check_repaired
+          default: repair
+        repair:
+          type: pass
+          parameters:
+            $.text: "2 + 2 = 4"
+            $.repaired: true
+          next: assess
+        check_repaired:
+          type: choice
+          choices:
+            - variable: $.repaired
+              operator: equals
+              value: true
+              next: done
+          default: unexpected_approval
+        unexpected_approval:
+          type: fail
+          error: IncorrectEquationApproved
+          cause: Jev approved the initial incorrect equation; the repair path was not exercised.
+        done:
+          type: pass
+          parameters:
+            $.report.equation: "{text}"
+            $.report.action: "{assessment.answers.action.choice}"
+          end: true
+    next: check_map
+
+  check_map:
+    type: pass
+    aggregate:
+      source: $.map_results
+      field: exit_code
+      strategy: all
+      match: "0"
+      no_match: "1"
+      result_path: $.map_failed
+    next: route_map
+  route_map:
+    type: choice
+    choices:
+      - variable: $.map_failed
+        operator: equals
+        value: "0"
+        next: parallel_reviews
+    default: map_failure
+  map_failure:
+    type: fail
+    error: MapExperimentFailed
+    cause: At least one map item did not complete the evaluation and repair loop.
+
+  parallel_reviews:
+    type: parallel
+    branches:
+      - name: first
+        workflow: *review
+      - name: second
+        workflow: *review
+    result_path: $.parallel_results
+    end: true

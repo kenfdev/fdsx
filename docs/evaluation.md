@@ -77,8 +77,9 @@ from Jev and an LLM need not choose the same valid answer.
 
 ### Task options, placement and preflight
 
-Jev tasks currently support top-level placement only. Parallel branches and map
-iterators are rejected before execution, including partial-success configurations.
+Jev tasks support top-level states and [local workflows](local-workflows.md) in
+map iterators and parallel branches. Legacy task-list iterators and single-task
+branches still reject Jev; use the local workflow form.
 Profiles may select Jev. An explicit model is required. Task `retry` defaults to
 zero for Jev; an explicit nonzero value is rejected. `timeout_seconds`, `fork_from`,
 `provider_options`, `result_file`, structured-output merge and workflow `providers.jev`
@@ -196,7 +197,7 @@ assess:
 ```
 
 Every evaluation requires exactly one of `next` or `end: true`.
-Parallel branches and map iterators cannot contain evaluations. The required
+Evaluations also work inside [local workflows](local-workflows.md). The required
 `result_path` must be one top-level key, such as `$.assessment`;
 nested paths and internal keys are rejected. In particular, keys beginning with `_meta`, `__`, `_br_`, or `_state_`, and the keys
 `_session_references`, `remaining_steps`, `run_path`, and `state` cannot be destinations.

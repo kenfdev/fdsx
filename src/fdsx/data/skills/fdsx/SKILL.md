@@ -57,7 +57,7 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 |------|---------|------------|
 | `task` | Execute a provider (LLM, shell command, or Jev evaluation) | `provider`, `model`, `prompt_template`, `result_path` or `structured_output` |
 | `classifier` | Single Jev choice with threshold-based LLM fallback | `input`, `question`, `acceptance`, `fallback`, `result_path` |
-| `evaluate` | Evaluate explicit materials with Jev (top-level only) | `evaluator`, `input`, `questions`, `result_path` |
+| `evaluate` | Evaluate explicit materials with Jev (top-level or local workflow) | `evaluator`, `input`, `questions`, `result_path` |
 | `choice` | Branch based on variable values | `choices` (list of rules), `default` |
 | `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `min_success` or `gate` |
 | `pass` | Data transformation / aggregation | `parameters`, `aggregate` |
@@ -79,7 +79,7 @@ States that support routing use either `next` (go to state) or `end: true` (term
 | `grok` | `grok --single <prompt> --model <model> --output-format streaming-json` | `model`, `prompt_template` or `prompt_file` | `permission_mode`, `sandbox`, `allow`, `deny`, `tools`, `disallowed_tools`, `reasoning_effort`, `max_turns`, `on_max_turns`, `no_subagents`, `no_plan`, `cross_session_memory`, `disable_web_search`, `verbatim`, `cwd`, `agent`, `agents`, `rules`, `system_prompt_override` |
 | `pi` | `pi -p --model <model> <prompt>` | `model`, `prompt_template` or `prompt_file` | `allowed_tools`, `disallowed_tools`, `disable_tools` |
 | `system` | `sh -c <command>` | `command` | (none) |
-| `jev` | Typesafe SDK (no CLI) | `model`, prompt, `structured_output`, `TYPESAFE_API_KEY` | (none; top-level tasks only) |
+| `jev` | Typesafe SDK (no CLI) | `model`, prompt, `structured_output`, `TYPESAFE_API_KEY` | (none; top-level or local workflow tasks) |
 
 All LLM providers have `inactivity_timeout` (default: 300s) and a hard execution timeout (default: 1800s).
 
@@ -91,7 +91,7 @@ Before defining a single-choice Jev classifier, configuring threshold fallback, 
 
 ## Jev Evaluation
 
-Use a top-level `task` with `provider: jev` when a prompt and shared JSON Schema
+Use a `task` with `provider: jev` when a prompt and shared JSON Schema
 should work with either Jev or an ordinary LLM. Use `type: evaluate`,
 `evaluator: jev` for explicit named materials and inline questions. Both return
 answers for subsequent `choice` routing, not action approval or permissions.
@@ -101,6 +101,12 @@ resuming across an evaluation, read [Jev evaluation](references/evaluation.md).
 It defines the supported schema subset, distinct result shapes, placement and
 retry restrictions, key preflight, and information boundaries. Jev uses the
 bundled SDK rather than LLM CLI options or timeouts.
+
+## Local control flow
+
+For evaluation, branching or repair loops within map items or parallel branches,
+read [local workflows](references/local-workflows.md). Use named local states,
+start_at and output_path; keep legacy list iterators and single branches unchanged.
 
 ## Native Session Forks
 
@@ -236,7 +242,7 @@ review:
   next: route
 ```
 
-Required branches must be named and configure `structured_output`. A successful required branch with a different value sets the gate to `false`. A required execution/validation failure or missing gate field fails the parallel state. Unlisted branches are advisory: their failures are retained in the results but do not block the gate. Branch results include `name`. `gate` and `min_success` are mutually exclusive.
+Required branches must be named. Ordinary task branches configure `structured_output`; classifier branches expose their classification result, and [local workflow branches](references/local-workflows.md) export their selected value under `output`. A successful required branch with a different value sets the gate to `false`. A required execution/validation failure or missing gate field fails the parallel state. Unlisted branches are advisory: their failures are retained in the results but do not block the gate. Branch results include `name`. `gate` and `min_success` are mutually exclusive.
 
 ### Global Extraction Fallback
 
@@ -610,9 +616,9 @@ states:
 - `structured_output.schema` must be a readable, valid JSON Schema file relative to the workflow
 - `structured_output` forbids legacy raw/extract output configuration on the same task or branch
 - Merge-enabled structured output requires a top-level result path and identical merge configuration for task producers sharing that state channel
-- Parallel branch names must be unique; gate references must name existing structured-output branches
+- Parallel branch names must be unique; gate references must name existing structured-output, classifier, or local workflow branches (see [local workflows](references/local-workflows.md) for exported gate fields)
 - `gate` and `min_success` are mutually exclusive, and `gate.result_path` must be top-level
-- Map iterator states must all have `type: task` and unique `name` fields
+- Legacy list iterator states must all have `type: task` and unique `name` fields
 - `extraction_fallback` at flow level must have exactly one of `provider + model` or `profile` set (XOR); `provider` requires `model` and vice versa; `system` is forbidden as provider. Set to `false` to disable config-level inheritance.
 - `on_workflow_start` and `on_workflow_end` are forbidden inside per-state `hooks` blocks for `task`, `choice`, `parallel`, `wait`, `map`, and `fail` states; `pass` state `hooks` accepts all six keys (workflow-scope and wait-scope keys are silently ignored at runtime)
 - `on_wait_start` and `on_wait_end` are only valid on `wait` state `hooks` blocks and at flow/config level; using them on `task`, `choice`, `parallel`, `map`, or `fail` state `hooks` blocks raises a validation error (`pass` state accepts them via `HookConfig` but silently ignores them at runtime)

@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from fdsx.models.flow import (
     ChoiceState,
     ClassifierState,
@@ -46,3 +48,23 @@ def get_next_states(state: State, include_end_sentinel: bool = False) -> set[str
         pass  # FailState has no successors — always returns empty set
 
     return result
+
+
+def has_terminal_path(states: Mapping[str, State], start: str) -> bool:
+    """Whether the entry can reach a declared termination, despite possible cycles."""
+    pending = [start]
+    visited: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current == END_SENTINEL:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        state = states.get(current)
+        if state is None:
+            continue
+        if isinstance(state, FailState):
+            return True
+        pending.extend(get_next_states(state, include_end_sentinel=True) - visited)
+    return False
