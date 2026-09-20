@@ -82,45 +82,8 @@ def _make_ndjson_callback(
 class TestHangingProvider:
     """Simulated hanging provider completes within ~15s via termination cascade."""
 
-    def test_hanging_provider_completes_within_cascade_timeout(self):
-        """Subprocess emits NDJSON result event then hangs; completes within ~15s.
-
-        The output_callback sets the completion_event when the result event
-        is parsed.  _run_subprocess then initiates the termination cascade:
-        wait 5s for voluntary exit → SIGTERM → wait 5s → SIGKILL.
-        Total worst-case: ~10s cascade + small overhead < 15s.
-        """
-        completion_event = threading.Event()
-        output_callback, _, result_values = _make_ndjson_callback(completion_event)
-
-        # Script: emit content delta, then result event, then hang.
-        result_line = _make_result_ndjson("integration test result")
-        delta_line = _make_content_block_delta_ndjson("some text")
-        script = (
-            "import sys, time\n"
-            f"print({delta_line!r}, flush=True)\n"
-            f"print({result_line!r}, flush=True)\n"
-            "time.sleep(999)\n"
-        )
-
-        start = time.time()
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", script],
-            output_callback=output_callback,
-            completion_event=completion_event,
-        )
-        elapsed = time.time() - start
-
-        assert result.exit_code != 124, "Should not be a timeout result"
-        assert result_values == ["integration test result"], (
-            f"Expected result event value to be captured; got {result_values!r}"
-        )
-        assert elapsed < 15, (
-            f"Hanging provider took {elapsed:.1f}s — exceeds 15s cascade budget"
-        )
-
-    def test_hanging_provider_result_data_preserved(self):
-        """All NDJSON lines emitted before the hang are delivered to the callback."""
+    def test_hanging_provider_terminates_with_output_preserved(self):
+        """Termination stays bounded and preserves both stdout and callbacks."""
         completion_event = threading.Event()
         output_callback, all_lines, result_values = _make_ndjson_callback(
             completion_event
@@ -137,12 +100,17 @@ class TestHangingProvider:
             "time.sleep(999)\n"
         )
 
-        _run_subprocess(
+        start = time.monotonic()
+        result = _run_subprocess(
             args=[_PYTHON, "-c", script],
             output_callback=output_callback,
             completion_event=completion_event,
         )
+        elapsed = time.monotonic() - start
 
+        assert result.exit_code != 124
+        assert elapsed < 15, f"Termination took {elapsed:.1f}s"
+        assert result.stdout.splitlines() == [delta1, delta2, result_line]
         assert result_values == ["final answer"], (
             f"result_values mismatch: {result_values!r}"
         )

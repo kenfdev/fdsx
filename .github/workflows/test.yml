@@ -18,12 +18,14 @@ jobs:
           python-version: "3.12"
       - name: install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
       - name: install dev deps
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --locked --extra dev
       - name: ruff check
-        run: ruff check .
+        run: uv run --no-sync ruff check .
       - name: ruff format check
-        run: ruff format --check .
+        run: uv run --no-sync ruff format --check .
 
   test:
     name: test
@@ -43,17 +45,30 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: upgrade packaging tools
-        run: python -m pip install --upgrade 'pip>=26.1' 'setuptools>=83'
+      - name: install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
       - name: install dev deps
-        run: pip install -e ".[dev]"
-      - name: ruff check
-        run: ruff check .
-      - name: ruff format check
-        run: ruff format --check .
+        run: uv sync --locked --extra dev
+      - name: upgrade packaging tools
+        run: uv pip install --upgrade 'pip>=26.1' 'setuptools>=83'
       - name: mypy
-        run: mypy src/fdsx
+        run: uv run --no-sync mypy src/fdsx
       - name: pytest with coverage
-        run: pytest --cov=fdsx --cov-report=xml --cov-fail-under=80
+        # Auto workers use half the available CPUs via tests/conftest.py.
+        run: >-
+          uv run --no-sync pytest tests/ -n auto --dist worksteal
+          --cov=fdsx --cov-report=xml --cov-fail-under=80
+          --junitxml=test-results.xml --durations=20
+      - name: upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-python-${{ matrix.python-version }}
+          path: |
+            test-results.xml
+            coverage.xml
+          retention-days: 14
       - name: pip-audit
-        run: pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3219  # pygments ReDoS + pip CVE, no fix released yet
+        run: uv run --no-sync pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3219  # pygments ReDoS + pip CVE, no fix released yet

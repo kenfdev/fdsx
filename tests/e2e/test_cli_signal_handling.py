@@ -30,8 +30,8 @@ _SLEEP_DURATION = 47
 # Thread ID used for runs so the lock file path is deterministic.
 _THREAD_ID = "signal-test-thread"
 
-# Seconds to wait for the child sleep process to start before sending a signal.
-_STARTUP_WAIT = 1.5
+# Startup deadline, not a fixed delay; wait for the real child to report readiness.
+_STARTUP_WAIT = 15
 
 # Seconds to wait for fdsx to exit after receiving a signal.
 _EXIT_WAIT = 15
@@ -45,7 +45,7 @@ states:
   long_sleep:
     type: task
     provider: system
-    command: "sleep {_SLEEP_DURATION}"
+    command: "touch child-ready; exec sleep {_SLEEP_DURATION}"
     result_path: $.result
     end: true
 """
@@ -132,7 +132,13 @@ def _run_fdsx_and_signal(
         text=text,
     )
 
-    time.sleep(_STARTUP_WAIT)
+    deadline = time.monotonic() + _STARTUP_WAIT
+    while not (tmp_path / "child-ready").exists():
+        if proc.poll() is not None or time.monotonic() >= deadline:
+            proc.kill()
+            proc.communicate(timeout=_EXIT_WAIT)
+            pytest.fail("fdsx did not start the signal-test child")
+        time.sleep(0.01)
 
     # Snapshot descendant PIDs before sending the signal so we can check
     # specifically *these* processes after fdsx exits, rather than using a
@@ -145,6 +151,7 @@ def _run_fdsx_and_signal(
         proc.wait(timeout=_EXIT_WAIT)
     except subprocess.TimeoutExpired:
         proc.kill()
+        proc.communicate(timeout=_EXIT_WAIT)
         pytest.fail(f"fdsx did not exit within {_EXIT_WAIT}s after signal {sig}")
 
     return proc
@@ -153,61 +160,30 @@ def _run_fdsx_and_signal(
 # ── Tests ──────────────────────────────────────────────────────────────────────
 
 
-class TestSigintCleanup:
-    """SIGINT during active subprocess execution."""
+@pytest.mark.parametrize(
+    "sig, exit_code", [(signal.SIGINT, 130), (signal.SIGTERM, 143)]
+)
+def test_signal_exits_and_cleans_up(tmp_path: Path, sig: int, exit_code: int) -> None:
+    """One run per signal checks exit status, message, locks, and child cleanup."""
+    proc = _run_fdsx_and_signal(tmp_path, sig, text=True)
+    try:
+        _, stderr = proc.communicate(timeout=_EXIT_WAIT)
+        assert proc.returncode == exit_code
+        assert not _lock_path(tmp_path, _THREAD_ID).exists()
+        if sig == signal.SIGINT:
+            assert "Workflow interrupted" in stderr
 
-    def test_sigint_exits_with_code_130(self, tmp_path: Path) -> None:
-        """fdsx exits with code 130 (128+SIGINT) when SIGINT is sent."""
-        proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        assert proc.returncode == 130, f"Expected exit code 130, got {proc.returncode}"
-
-    def test_sigint_no_orphan_processes(self, tmp_path: Path) -> None:
-        """No orphan sleep processes remain after SIGINT."""
-        proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        # Poll for up to 10 seconds for descendant processes to be reaped,
-        # rather than a fixed sleep that can be too short in CI.
         descendant_pids = getattr(proc, "_descendant_pids", [])
+        assert descendant_pids, "Signal must interrupt an active child process"
         deadline = time.monotonic() + 10.0
-        orphans: list[int] = []
-        while time.monotonic() < deadline:
+        while True:
             orphans = [pid for pid in descendant_pids if _is_pid_alive(pid)]
-            if not orphans:
+            if not orphans or time.monotonic() >= deadline:
                 break
-            time.sleep(0.5)
-        assert not orphans, (
-            f"Orphan processes still running after SIGINT: PIDs {orphans}"
-        )
-
-    def test_sigint_cleans_up_lock_file(self, tmp_path: Path) -> None:
-        """Lock file is removed after SIGINT."""
-        _run_fdsx_and_signal(tmp_path, signal.SIGINT)
-        lock_file = _lock_path(tmp_path, _THREAD_ID)
-        assert not lock_file.exists(), (
-            f"Lock file still exists after SIGINT: {lock_file}"
-        )
-
-    def test_sigint_prints_workflow_interrupted_message(self, tmp_path: Path) -> None:
-        """'Workflow interrupted' message is printed to stderr on SIGINT."""
-        proc = _run_fdsx_and_signal(tmp_path, signal.SIGINT, text=True)
-        assert proc.stderr is not None
-        stderr_output = proc.stderr.read()
-        assert "Workflow interrupted" in stderr_output, (
-            f"Expected 'Workflow interrupted' in stderr. Got:\n{stderr_output}"
-        )
-
-
-class TestSigtermCleanup:
-    """SIGTERM during active subprocess execution."""
-
-    def test_sigterm_exits_with_code_143(self, tmp_path: Path) -> None:
-        """fdsx exits with code 143 (128+SIGTERM) when SIGTERM is sent."""
-        proc = _run_fdsx_and_signal(tmp_path, signal.SIGTERM)
-        assert proc.returncode == 143, f"Expected exit code 143, got {proc.returncode}"
-
-    def test_sigterm_cleans_up_lock_file(self, tmp_path: Path) -> None:
-        """Lock file is removed after SIGTERM."""
-        _run_fdsx_and_signal(tmp_path, signal.SIGTERM)
-        lock_file = _lock_path(tmp_path, _THREAD_ID)
-        assert not lock_file.exists(), (
-            f"Lock file still exists after SIGTERM: {lock_file}"
-        )
+            time.sleep(0.05)
+        assert not orphans, f"Orphan processes after signal {sig}: {orphans}"
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.stderr is not None:
+            proc.stderr.close()

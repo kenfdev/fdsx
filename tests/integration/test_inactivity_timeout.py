@@ -68,6 +68,8 @@ class TestProcessKilledAfterInactivityPeriod:
         assert "inactivity timeout" in result.stderr.lower(), (
             f"Expected 'inactivity timeout' in stderr, got: {result.stderr!r}"
         )
+        assert str(_INACTIVITY_THRESHOLD) in result.stderr
+        assert result.stdout == "", "Timeout results discard partial output"
         assert elapsed < _TEST_TIMEOUT, (
             f"Test took {elapsed:.1f}s — exceeds {_TEST_TIMEOUT}s limit"
         )

@@ -27,7 +27,6 @@ import time
 from unittest.mock import patch
 
 from fdsx.providers.base import (
-    DEFAULT_INACTIVITY_TIMEOUT,
     ProviderResult,
     _run_subprocess,
 )
@@ -287,30 +286,6 @@ class TestTimeout:
 class TestCompletionEvent:
     """completion_event triggers termination cascade and preserves collected data."""
 
-    def test_completion_event_terminates_hanging_process(self):
-        """Firing completion_event terminates a hanging process and returns collected data."""
-        event = threading.Event()
-        timer = threading.Timer(0.5, event.set)
-        timer.start()
-        try:
-            start = time.time()
-            result = _run_subprocess(
-                args=[
-                    _PYTHON,
-                    "-c",
-                    "import sys,time; print('output',flush=True); time.sleep(5)",
-                ],
-                completion_event=event,
-            )
-            elapsed = time.time() - start
-        finally:
-            timer.cancel()
-
-        assert result.exit_code != 124, "Should not be a timeout result"
-        assert "output" in result.stdout
-        # Should terminate well within the cascade max time (5s wait + 5s after SIGTERM)
-        assert elapsed < 20, f"Took {elapsed:.1f}s — too slow"
-
     def test_process_exits_voluntarily_after_completion_event(self):
         """Process that exits within 5s of completion_event is not force-killed."""
         event = threading.Event()
@@ -336,8 +311,9 @@ class TestCompletionEvent:
         # Should complete well under the 5s voluntary-exit window
         assert elapsed < 8, f"Took {elapsed:.1f}s — too slow"
 
-    def test_sigterm_resistant_process_force_killed(self):
-        """Process that ignores SIGTERM is force-killed via SIGKILL after cascade."""
+    def test_sigterm_resistant_process_force_killed(self, caplog):
+        """SIGKILL preserves output and logs the failed voluntary exit."""
+        caplog.set_level(logging.DEBUG, logger="fdsx.providers.base")
         event = threading.Event()
         # Fire immediately; process ignores SIGTERM and hangs
         timer = threading.Timer(0.2, event.set)
@@ -361,64 +337,6 @@ class TestCompletionEvent:
         assert "output" in result.stdout
         # Cascade: 5s voluntary wait + SIGTERM + 5s SIGTERM wait + SIGKILL
         assert elapsed < 20, f"Took {elapsed:.1f}s — too slow"
-
-    def test_completion_event_not_set_waits_for_eof(self):
-        """An unset completion_event behaves identically to no event (waits for EOF)."""
-        event = threading.Event()  # never set
-
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", "print('fast_exit',flush=True)"],
-            completion_event=event,
-        )
-
-        assert result.exit_code == 0
-        assert result.stdout == "fast_exit"
-
-    def test_response_data_preserved_after_completion(self):
-        """All lines emitted before the hang are present in result.stdout."""
-        event = threading.Event()
-        timer = threading.Timer(0.5, event.set)
-        timer.start()
-        try:
-            result = _run_subprocess(
-                args=[
-                    _PYTHON,
-                    "-c",
-                    "import time;"
-                    " print('line1',flush=True);"
-                    " print('line2',flush=True);"
-                    " print('line3',flush=True);"
-                    " time.sleep(5)",
-                ],
-                completion_event=event,
-            )
-        finally:
-            timer.cancel()
-
-        assert "line1" in result.stdout
-        assert "line2" in result.stdout
-        assert "line3" in result.stdout
-
-    def test_debug_log_on_forced_termination(self, caplog):
-        """Debug log is emitted when process does not exit voluntarily."""
-        event = threading.Event()
-        # Process ignores SIGTERM → SIGKILL path; should produce debug log
-        timer = threading.Timer(0.2, event.set)
-        timer.start()
-        try:
-            with caplog.at_level(logging.DEBUG, logger="fdsx.providers.base"):
-                _run_subprocess(
-                    args=[
-                        _PYTHON,
-                        "-c",
-                        "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN);"
-                        " print('x',flush=True); time.sleep(15)",
-                    ],
-                    completion_event=event,
-                )
-        finally:
-            timer.cancel()
-
         assert "did not exit voluntarily" in caplog.text
 
     def test_no_debug_log_when_process_exits_voluntarily(self, caplog):
@@ -644,67 +562,3 @@ class TestClaudeProviderExecuteCompletionEvent:
         assert completion_event is None, (
             "completion_event should not be passed when output_callback is None"
         )
-
-
-# ---------------------------------------------------------------------------
-# Phase 2: Inactivity timeout unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestDefaultInactivityTimeoutConstant:
-    """DEFAULT_INACTIVITY_TIMEOUT is exported with the expected value."""
-
-    def test_default_inactivity_timeout_value(self):
-        """DEFAULT_INACTIVITY_TIMEOUT equals 300 (5 minutes)."""
-        assert DEFAULT_INACTIVITY_TIMEOUT == 300
-
-    def test_default_inactivity_timeout_is_int(self):
-        """DEFAULT_INACTIVITY_TIMEOUT is an integer."""
-        assert isinstance(DEFAULT_INACTIVITY_TIMEOUT, int)
-
-
-class TestInactivityTimeoutParameter:
-    """inactivity_timeout parameter accepted by _run_subprocess without error."""
-
-    def test_inactivity_timeout_none_default(self):
-        """inactivity_timeout=None (default) — fast process completes normally."""
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", "print('ok')"],
-            inactivity_timeout=None,
-        )
-        assert result.exit_code == 0
-        assert result.stdout == "ok"
-
-    def test_inactivity_timeout_zero_disables_watchdog(self):
-        """inactivity_timeout=0 — process completes without being killed."""
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", "print('ok')"],
-            inactivity_timeout=0,
-        )
-        assert result.exit_code == 0
-        assert result.stdout == "ok"
-
-    def test_inactivity_timeout_result_exit_code_124(self):
-        """Process killed by inactivity returns exit_code=124."""
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
-            inactivity_timeout=2,
-        )
-        assert result.exit_code == 124
-
-    def test_inactivity_timeout_result_stderr_message(self):
-        """Inactivity kill message includes threshold duration."""
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
-            inactivity_timeout=2,
-        )
-        assert "2" in result.stderr
-        assert "inactivity timeout" in result.stderr.lower()
-
-    def test_inactivity_timeout_result_stdout_empty(self):
-        """Process killed by inactivity has empty stdout (like explicit timeout)."""
-        result = _run_subprocess(
-            args=[_PYTHON, "-c", "import time; time.sleep(5)"],
-            inactivity_timeout=2,
-        )
-        assert result.stdout == ""

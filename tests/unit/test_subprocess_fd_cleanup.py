@@ -13,7 +13,8 @@ from masking the leak, so the only code path that closes the pipe FDs is
 CPython's synchronous refcount cleanup would close the pipes on return and the
 tests would pass against either HEAD, making them worthless as a TDD anchor.
 
-Pattern: 20 iterations, asserting that every retained process has closed pipes.
+Two retained calls per path check both cleanup and repeated use. Retaining each
+Popen object makes a missing close fail on the first call, without a stress loop.
 """
 
 import subprocess
@@ -22,7 +23,7 @@ from collections.abc import Callable
 
 from fdsx.providers.base import _run_subprocess
 
-ITERATIONS = 20
+ITERATIONS = 2
 
 
 def _retain(
