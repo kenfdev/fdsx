@@ -48,6 +48,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5",
+    "pytest-xdist>=3.6",
     "ruff>=0.4",
     "mypy>=1.10",
     "types-jsonschema>=4",
@@ -69,6 +70,7 @@ fdsx = ["py.typed", "providers/*.ts", "examples/workflows/**/*.yaml", "examples/
 local_scheme = "no-local-version"
 
 [tool.pytest.ini_options]
+addopts = "-n auto --dist worksteal"
 pythonpath = ["src"]
 testpaths = ["tests"]
 
@@ -118,6 +120,7 @@ constraint-dependencies = [
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
+    "pytest-xdist>=3.6",
     "ruff>=0.15.6",
     "types-jsonschema>=4",
     "types-pyyaml>=6.0.12.20250915",

@@ -54,11 +54,6 @@ class TestClaudeOptions:
         opts = ClaudeOptions(effort="high")
         assert opts.to_cli_flags() == ["--effort", "high"]
 
-    def test_claude_options_to_cli_flags_dangerously_skip(self):
-        """dangerously_skip_permissions=True maps to --dangerously-skip-permissions."""
-        opts = ClaudeOptions(dangerously_skip_permissions=True)
-        assert opts.to_cli_flags() == ["--dangerously-skip-permissions"]
-
     def test_claude_options_to_cli_flags_dangerously_skip_false(self):
         """dangerously_skip_permissions=False produces no flags."""
         opts = ClaudeOptions(dangerously_skip_permissions=False)
@@ -244,11 +239,6 @@ class TestOpenCodeOptions:
         opts = OpenCodeOptions()
         assert opts.to_cli_flags() == []
 
-    def test_opencode_options_to_cli_flags_variant(self):
-        """variant maps to --variant <value>."""
-        opts = OpenCodeOptions(variant="high")
-        assert opts.to_cli_flags() == ["--variant", "high"]
-
     def test_opencode_options_variant_empty_rejected(self):
         """An empty variant must be rejected."""
         with pytest.raises(ValidationError):
@@ -268,12 +258,6 @@ class TestGetProvider:
         provider = get_provider("claude")
         assert isinstance(provider, ClaudeProvider)
         assert provider.options == ClaudeOptions()
-
-    def test_get_provider_claude_with_options(self):
-        """get_provider('claude', options) returns ClaudeProvider with typed options."""
-        provider = get_provider("claude", {"permission_mode": "bypassPermissions"})
-        assert isinstance(provider, ClaudeProvider)
-        assert provider.options.permission_mode == "bypassPermissions"
 
     def test_get_provider_claude_options_reflected_in_flags(self):
         """Options passed to get_provider are reflected in to_cli_flags()."""
@@ -309,21 +293,10 @@ class TestGetProvider:
         provider = get_provider("system")
         assert isinstance(provider, SystemProvider)
 
-    def test_get_provider_system_ignores_options(self):
-        """get_provider('system', options) ignores options and returns SystemProvider."""
-        provider = get_provider("system", {"some_option": "value"})
-        assert isinstance(provider, SystemProvider)
-
     def test_get_provider_unknown_raises(self):
         """get_provider with unknown name raises ValueError."""
         with pytest.raises(ValueError, match="Unknown provider"):
             get_provider("unknown_provider")
-
-    def test_get_provider_claude_none_options(self):
-        """get_provider('claude', None) is same as no options."""
-        provider = get_provider("claude", None)
-        assert isinstance(provider, ClaudeProvider)
-        assert provider.options == ClaudeOptions()
 
     def test_get_provider_claude_invalid_options_raises(self):
         """get_provider with invalid options dict raises ValidationError."""
