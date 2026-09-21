@@ -1,6 +1,47 @@
-# Resume with revised inputs
+# Resume and recovery
 
-Use this reference when replacing saved execution inputs, choosing approval behavior, or inspecting recovery history. Recovery target rules are in `../SKILL.md` under **Recover after a terminal non-success outcome**.
+Use this reference when resuming maps, replacing saved execution inputs, choosing approval behavior, or inspecting recovery history. Recovery target rules are in `../SKILL.md` under **Recover after a terminal non-success outcome**.
+
+## Map item recovery
+
+Ordinary `fdsx resume --thread-id <id>` reuses durably collected items in the
+current map visit for both iterator forms. Items are keyed by zero-based input
+index, including noncontiguous indices saved by concurrent execution. Each item
+is saved as it finishes, without waiting for earlier indices. Results remain in
+input order. Unfinished or unsaved items restart at their first step, not their
+last internal task; local workflows have no internal step checkpoints.
+
+- With `fail_fast: true`, failed items are recorded for diagnostics but retried on ordinary resume.
+- With `fail_fast: false`, saved failures are collected results and reused rather than retried.
+- A new visit to the map starts fresh. Explicit recovery with `--from` invalidates map progress; use `--from <map>` to rerun that map.
+- Ordinary resume assumes unchanged inputs. To revise them, use explicit `--from <map> --input ...` recovery and the approval rules below.
+- An external side effect completed before progress was saved can repeat. Item persistence does not guarantee exactly-once effects.
+
+Versioned progress stores the map visit, collected results and their statuses.
+Older contiguous progress remains readable without rewriting it; the next
+successful save migrates it. An old `null` with indeterminate status remains
+collected as `unknown`, is not retried, and counts as neither known success nor
+known failure. Newly saved failures retain their status across resume.
+
+### Map diagnostics
+
+Terminal progress uses one-based item numbers. Result `index` and run-record
+`item_index` use zero-based numbers. Item logs are stored under
+`logs/<map>/<visit>/<execution-id>/<item-index>/`; each invocation, including
+resume, gets a fresh execution ID so earlier logs remain intact. Local state
+names and managed result-file locations retain their existing scope.
+
+Map entries in `run.json` distinguish:
+
+- `completed_count`: durably collected items, including reused items.
+- `reused_count` and `executed_count`: saved items reused and items started this invocation.
+- `success_count`, `failure_count`, `unknown_count`: statuses of collected results.
+- `attempt_count` and per-item `task_attempts`: task-provider attempts, including retries, this invocation; local routing/pass states do not count.
+- `execution_errors`: infrastructure diagnostics, separate from reusable completions.
+
+Reused items create no new task execution or attempt records. A save failure
+fails the map and leaves that item eligible for execution on resume. For
+concurrency limits and failure scheduling, see [MapState](yaml-schema.md#mapstate).
 
 ## Prepare the recovery
 

@@ -8,7 +8,7 @@ description: >
   running fdsx CLI commands, debugging workflow validation errors, or asking
   about fdsx YAML schema. Also triggers on: "fdsx", "workflow YAML", "declarative
   agent workflow", "multi-step AI pipeline", "provider options", "checkpoint
-  resume", "map state", "iterator", "extraction fallback", "structured output",
+  resume", "map state", "max_concurrency", "iterator", "extraction fallback", "structured output",
   "JSON Schema output", "parallel gate", "state iteration", "max loop",
   "resume input updates", "input revision history", "fork_from", "session forks",
   "Jev evaluation", "evaluate state", "Noul", "x-fdsx-evaluation".
@@ -62,7 +62,7 @@ Read `references/yaml-schema.md` for the complete field-by-field schema referenc
 | `parallel` | Execute multiple branches concurrently | `branches`, `result_path`, `min_success` or `gate` |
 | `pass` | Data transformation / aggregation | `parameters`, `aggregate` |
 | `wait` | Human input via terminal prompt | `mode: prompt`, `message`, `choices`, `result_path` |
-| `map` | Iterate over an array, execute sub-workflow per item | `items_path`, `iterator`, `result_path`, `fail_fast` |
+| `map` | Execute a sub-workflow per array item with bounded concurrency | `items_path`, `iterator`, `max_concurrency`, `result_path`, `fail_fast` |
 | `fail` | Terminate the flow with a named error | `error`, `cause` |
 
 States that support routing use either `next` (go to state) or `end: true` (terminate flow) — these are mutually exclusive. `choice` uses `choices`/`default` instead. `fail` supports neither `next` nor `end` (it always terminates on entry).
@@ -560,6 +560,7 @@ states:
   process_each:
     type: map
     items_path: $.files
+    max_concurrency: 2          # optional; default 1 runs items sequentially
     iterator:
       states:
         - type: task
@@ -574,6 +575,12 @@ states:
 ```
 
 Inside iterator states, `{item}` refers to the current array element. Use `{item.field}` for nested access.
+
+Before configuring concurrency or failure handling, read
+[MapState](references/yaml-schema.md#mapstate) for limits, ordering and shared-file
+risks in both iterator forms. Before resuming an interrupted or failed map, read
+[Map item recovery](references/resume.md#map-item-recovery) for saved-item reuse,
+retry boundaries and explicit restart behavior.
 
 **Hard stop with named error:**
 Use a `fail` state to terminate with a structured error when a condition is unrecoverable:
