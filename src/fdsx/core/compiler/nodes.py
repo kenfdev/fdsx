@@ -40,6 +40,7 @@ from fdsx.models.flow import (
 )
 from fdsx.providers.base import ProviderSessionError, SessionRequest, get_provider
 
+from .execution import TaskExecutionError
 from .helpers import (
     _check_max_iterations,
     _merge_provider_options,
@@ -233,7 +234,7 @@ def _create_task_node(
             orig = state.provider
             last = exec_result.last_provider_name or orig
             annotation = f" (escalated from {orig})" if last != orig else ""
-            raise RuntimeError(
+            raise TaskExecutionError(
                 f"Provider {last} failed after {max_retries + 1} attempts{annotation} "
                 f"with exit code {result.exit_code}: {_sanitize_output(last_error)}"
             )
@@ -266,7 +267,7 @@ def _create_task_node(
                 terminal.display_state_error(state_name, last_error)
                 if recorder is not None:
                     recorder.record_state_error(state_name, last_error)
-                raise RuntimeError(
+                raise TaskExecutionError(
                     f"Extraction failed after {max_retries + 1} attempts: all strategies returned None"
                 )
             partial = set_jsonpath(state.extract.result_path, partial, extracted)

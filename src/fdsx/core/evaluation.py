@@ -184,15 +184,23 @@ def _json_value(value: Any, location: str, ancestors: set[int]) -> None:
         ancestors.remove(id(value))
 
 
-def encode_materials(materials: dict[str, Any], location: str) -> str:
+def encode_materials(
+    materials: dict[str, Any],
+    location: str,
+    *,
+    reject_empty: frozenset[str] = frozenset(),
+) -> str:
+    """Encode materials, rejecting null and any explicitly disallowed emptiness."""
     if not materials:
         raise _invalid(location, "at least one material is required")
     for name, value in materials.items():
         place = f"{location}.input.{name}"
-        if (
-            value is None
-            or (isinstance(value, str) and not value.strip())
-            or (isinstance(value, (dict, list)) and not value)
+        if value is None or (
+            name in reject_empty
+            and (
+                (isinstance(value, str) and not value.strip())
+                or (isinstance(value, (dict, list)) and not value)
+            )
         ):
             raise _invalid(place, "required material is empty")
         try:
@@ -238,6 +246,7 @@ def evaluate(
     model: str = "jev-1.13.0",
     location: str,
     capture_metrics: Callable[[dict[str, Any]], None] | None = None,
+    reject_empty: frozenset[str] = frozenset(),
 ) -> EvaluationResult:
     """Evaluate all questions atomically; SDK types never leave this boundary."""
     from typesafe_sdk import (
@@ -250,7 +259,7 @@ def evaluate(
         TypeSafeError,
     )
 
-    state = encode_materials(materials, location)
+    state = encode_materials(materials, location, reject_empty=reject_empty)
     sdk_log = logging.getLogger("typesafe_sdk")
     if not any(isinstance(f, _SuppressEvaluationLogs) for f in sdk_log.filters):
         sdk_log.addFilter(_SuppressEvaluationLogs())

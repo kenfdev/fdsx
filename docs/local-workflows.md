@@ -48,7 +48,8 @@ its ordered/name-based identification and uses exit_code/error/output with name.
 Other failure envelopes contain the error category, not evaluation materials;
 explicit fail keeps its declared error name.
 
-Map fail_fast:true retains immediate failure. With false all items finish. A
+Map `fail_fast: true` stops new items on final failure and waits for running items,
+saving their successes. With false all items finish. A
 following pass.aggregate over exit_code, strategy:all, match:"0", no_match:"1",
 then choice/fail demands all success; omitting that policy accepts partial results.
 Parallel collects all branches and retains min_success's default of all branches.
@@ -62,6 +63,22 @@ at its start. Parallel retains its existing branch/collector checkpoint behavior
 a pending branch can replay its complete local graph. No local step checkpoints
 or new completed parallel branch reuse guarantee. Explicit recovery retains the
 existing map progress invalidation policy.
+
+Map progress is indexed by input position and map visit, so ordinary resume can
+reuse noncontiguous saved items. Legacy contiguous progress migrates only when
+another item is saved. Saved failure envelopes are collected results under
+`fail_fast: false`; `fail_fast: true` failures are retried. A legacy value whose
+success cannot be established remains `unknown`, without re-executing it.
+Normal resume assumes the same inputs; change inputs through `--from` recovery
+to rerun the map. Effects performed before an item's successful save may repeat.
+
+Logs are separated by map, visit, execution ID and zero-based item index while
+retaining the local state name. A resumed invocation has a new execution ID;
+earlier logs remain available. Local workflow records also carry `map_name`,
+`state_iteration`, `execution_id` and `item_index`. Stderr progress uses one-based
+numbers. Map run records separate saved, reused and newly started counts, known
+success/failure and unknown status, and task-provider attempt counts (including
+retries). See the README checkpoint section for the field names.
 
 ### YAML examples
 
@@ -164,3 +181,12 @@ work:
   result_path: $.outcomes
   end: true
 ```
+
+Maps accept `max_concurrency` on the map state, alongside `items_path` and
+`iterator`, for both the task-list and local-workflow forms. It defaults to `1`.
+Only positive integers are accepted (not `2.0`, booleans, or numeric strings).
+Each item keeps its slot during retries; results retain input order and the local
+`index`, `exit_code`, `error`, `output` envelope. The limit is map-local, not a
+workflow-wide process limit. Working directories and arbitrary file writes are
+shared; avoid writing the same unmanaged file from concurrent items. See
+[examples and offline verification](concurrent-map.md).

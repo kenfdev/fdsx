@@ -48,7 +48,10 @@ its ordered/name-based identification and uses exit_code/error/output with name.
 Other failure envelopes contain the error category, not evaluation materials;
 explicit fail keeps its declared error name.
 
-Map fail_fast:true retains immediate failure. With false all items finish. A
+Map `max_concurrency` applies to local workflows as well as legacy iterators.
+For limits, scheduling and shared-file safety, see [MapState](yaml-schema.md#mapstate).
+Map `fail_fast: true` stops new starts on final failure, then waits for running
+items and saves their successes. With false all items finish. A
 following pass.aggregate over exit_code, strategy:all, match:"0", no_match:"1",
 then choice/fail demands all success; omitting that policy accepts partial results.
 Parallel collects all branches and retains min_success's default of all branches.
@@ -56,12 +59,12 @@ A lower threshold accepts partial results. Gate can reference a named workflow
 branch through $.output.approved; failed execution/missing field fails, value
 mismatch produces false. Gate and min_success remain mutually exclusive.
 
-Map saves completed item envelopes after success or collected failure, scoped to
-the parent map visit. Resume skips completed items and restarts an interrupted item
-at its start. Parallel retains its existing branch/collector checkpoint behavior;
-a pending branch can replay its complete local graph. No local step checkpoints
-or new completed parallel branch reuse guarantee. Explicit recovery retains the
-existing map progress invalidation policy.
+Map saves item envelopes within the parent map visit, even out of input order.
+For reuse of saved successes/failures, restart boundaries and explicit recovery,
+see [Map item recovery](resume.md#map-item-recovery).
+Parallel retains its existing branch/collector checkpoint behavior; a pending
+branch can replay its complete local graph. There are no local step checkpoints
+or new completed parallel branch reuse guarantees.
 
 ### YAML examples
 

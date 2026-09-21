@@ -103,10 +103,10 @@ class TestMapCheckpoint:
         with progress_file.open() as f:
             progress = json.load(f)
 
-        assert progress["completed_iterations"] == 2
-        assert len(progress["results"]) == 2
-        assert progress["results"][0] == "result-item1"
-        assert progress["results"][1] == "result-item2"
+        assert len(progress["items"]) == 2
+        assert len(progress["items"]) == 2
+        assert progress["items"]["0"]["result"] == "result-item1"
+        assert progress["items"]["1"]["result"] == "result-item2"
 
     def test_map_resume_skips_completed_iterations(self, temp_dir):
         """Resume re-runs only incomplete iterations, not already-completed ones."""
@@ -204,7 +204,7 @@ class TestMapCheckpoint:
         assert progress_file.exists()
         with progress_file.open() as f:
             progress = json.load(f)
-        assert progress["completed_iterations"] == 3, (
+        assert len(progress["items"]) == 3, (
             "After resume, progress should show all 3 iterations completed"
         )
 
@@ -401,7 +401,7 @@ class TestMapCheckpoint:
 
         with progress_file.open() as f:
             progress = json.load(f)
-        assert progress["completed_iterations"] == 2
+        assert len(progress["items"]) == 2
 
         with progress_file.open("w") as f:
             json.dump(

@@ -1,0 +1,27 @@
+name: concurrent-map-smoke
+description: Local-only gated processes; run with the smoke driver.
+start_at: inputs
+extraction_fallback: false
+states:
+  inputs:
+    type: pass
+    parameters:
+      $.items: [A, B, C, D]
+    next: work
+  work:
+    type: map
+    items_path: $.items
+    max_concurrency: 2
+    iterator:
+      start_at: item
+      output_path: $.value
+      states:
+        item:
+          type: task
+          provider: system
+          command: sh {helper} {item}
+          retry: 0
+          result_path: $.value
+          end: true
+    result_path: $.results
+    end: true

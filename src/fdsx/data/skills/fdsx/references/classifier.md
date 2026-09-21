@@ -60,7 +60,13 @@ states:
 ## Declaration and acceptance
 
 `input` uses the same named `{literal: ...}` / `{ref: $.path}` materials as
-`evaluate`. Reference values are resolved when the classifier executes; literal
+`evaluate`. Empty strings, lists and objects are accepted by default, so
+`findings: {ref: $.review.findings}` can represent zero findings. Require nonempty
+content with `allow_empty: false` on that material; missing references and null
+always fail. This replaces the former strict default; add the explicit override
+where an existing workflow depends on it. See [material validation](evaluation.md).
+Jev and LLM fallback receive the same unchanged values, without the policy flag.
+Reference values are resolved when the classifier executes; literal
 braces are not templates. `question` is a single `EvaluationQuestion` with
 `type: choice`, nonblank instructions and at least two candidate criteria.
 Candidate identifiers match `[A-Za-z_][A-Za-z0-9_]{0,127}`. Rule text may use

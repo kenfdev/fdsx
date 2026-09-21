@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from fdsx.core.cancellation import check_cancelled, current_cancellation
 from fdsx.core.extraction import extract_value
 from fdsx.core.structured_output import (
     StructuredOutputValidationError,
@@ -28,6 +29,7 @@ from fdsx.core.structured_output import (
     parse_structured_output,
     prepare_provider_schema,
 )
+from fdsx.logging.attempts import record_attempt
 from fdsx.providers.base import (
     ProviderBase,
     ProviderResult,
@@ -125,6 +127,20 @@ class ExecutionResult:
 _NO_ATTEMPTS_ERROR = "No attempts made"
 
 
+class TaskExecutionError(RuntimeError):
+    """A task exhausted its configured attempts or extraction strategies."""
+
+
+def retry_wait(delay: float) -> None:
+    """Retain the item slot while allowing interruption to wake retry backoff."""
+    cancellation = current_cancellation.get()
+    if cancellation is None:
+        time.sleep(delay)
+    else:
+        cancellation.stopped.wait(delay)
+    check_cancelled()
+
+
 def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     """Run a provider with exponential backoff retries and optional extraction.
 
@@ -161,8 +177,11 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
 
     try:
         for attempt in range(config.max_retries + 1):
+            check_cancelled()
             if attempt > 0:
-                time.sleep(min(2 ** (attempt - 1), 30))
+                delay = min(2 ** (attempt - 1), 30)
+                retry_wait(delay)
+                check_cancelled()
 
             if attempt > 0 and config.escalation is not None:
                 active_provider = config.escalation.provider
@@ -179,6 +198,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
 
             last_used_provider_name = active_provider_name
 
+            record_attempt()
             try:
                 if active_provider_name == "system":
                     result = active_provider.execute(
@@ -243,6 +263,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
                 result = ProviderResult(exit_code=1, stdout="", stderr=last_error)
                 continue
 
+            check_cancelled()
             if result.exit_code == 0:
                 if config.structured_output is not None:
                     schema_document = config.structured_output.schema_document
@@ -312,6 +333,7 @@ def execute_with_retry(config: ExecutionConfig) -> ExecutionResult:
     finally:
         config.stream_logger.close()
 
+    check_cancelled()
     return ExecutionResult(
         result=result,
         extracted=extracted,

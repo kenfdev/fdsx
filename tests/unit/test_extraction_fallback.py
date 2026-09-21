@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from fdsx.core.config import FdsxConfig
 from fdsx.models.flow import Flow
+from fdsx.providers.base import ProviderError
 
 
 def _minimal_flow(**overrides):
@@ -594,7 +595,7 @@ class TestExecuteDefaultFallback:
 
         from fdsx.core.extraction_fallback import execute_default_fallback
 
-        factory = MagicMock(side_effect=RuntimeError("no binary"))
+        factory = MagicMock(side_effect=ProviderError("no binary"))
         resolved = _make_resolved(provider="claude")
         with structlog.testing.capture_logs() as logs:
             result = execute_default_fallback(
@@ -667,7 +668,7 @@ class TestExecuteDefaultFallback:
         from fdsx.core.extraction_fallback import execute_default_fallback
 
         stub_provider = MagicMock()
-        stub_provider.execute.side_effect = RuntimeError("unexpected provider error")
+        stub_provider.execute.side_effect = ProviderError("provider adapter failed")
         factory = MagicMock(return_value=stub_provider)
         resolved = _make_resolved(provider="claude")
         with structlog.testing.capture_logs() as logs:
@@ -821,7 +822,7 @@ class TestExecuteDefaultFallback:
 
         from fdsx.core.extraction_fallback import execute_default_fallback
 
-        factory = MagicMock(side_effect=RuntimeError("no binary"))
+        factory = MagicMock(side_effect=ProviderError("no binary"))
         resolved = _make_resolved(provider="claude")
         callback = MagicMock()
         with structlog.testing.capture_logs():

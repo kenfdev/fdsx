@@ -336,7 +336,7 @@ def test_grok_structured_output_validation_feedback_drives_retry(
 
     with (
         patch("fdsx.providers.grok._run_subprocess", side_effect=fake_run),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 
@@ -395,7 +395,7 @@ retry_escalation:
     with (
         patch("fdsx.providers.grok._run_subprocess", side_effect=fake_grok),
         patch("fdsx.providers.claude._run_subprocess", side_effect=fake_claude),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 
@@ -565,7 +565,7 @@ def test_schema_invalid_output_retries_with_validation_feedback(
 
     with (
         patch("fdsx.providers.claude._run_subprocess", side_effect=fake_run),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 
@@ -599,7 +599,7 @@ def test_malformed_json_exhausts_retries_with_domain_error(tmp_path: Path) -> No
 
     with (
         patch("fdsx.providers.claude._run_subprocess", return_value=fake) as provider,
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
         pytest.raises(RuntimeError, match="Invalid JSON"),
     ):
         run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)

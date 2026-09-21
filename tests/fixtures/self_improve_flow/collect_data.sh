@@ -44,7 +44,7 @@ while IFS= read -r run_dir; do
     fi
 
     # Extract flow_name and status from run.json
-    flow_info=$(python3 -c "
+    flow_info=$(uv run python -c "
 import json, sys
 with open(sys.argv[1]) as f:
     d = json.load(f)

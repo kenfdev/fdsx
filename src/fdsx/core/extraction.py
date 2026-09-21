@@ -1,10 +1,12 @@
 import json
 import re
+import subprocess
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from fdsx.core.cancellation import check_cancelled
 from fdsx.core.extraction_fallback import (
     FallbackEvent,
     ResolvedFallback,
@@ -12,6 +14,7 @@ from fdsx.core.extraction_fallback import (
 )
 from fdsx.core.profiles import merge_profiles
 from fdsx.models.flow import ExtractionFallback, ExtractRule, LLMClassifyFallback
+from fdsx.providers.base import ProviderError
 
 if TYPE_CHECKING:
     pass
@@ -331,7 +334,7 @@ def _execute_llm_fallback(
 
     try:
         provider = provider_factory(fallback.provider)
-    except Exception:
+    except (ProviderError, ValueError):
         log.info(
             "extraction_fallback_invoked",
             source="rule",
@@ -360,6 +363,7 @@ def _execute_llm_fallback(
     try:
         from fdsx.providers.base import ProviderResult
 
+        check_cancelled()
         result: ProviderResult = provider.execute(
             prompt=prompt,
             model=fallback.model,
@@ -464,7 +468,7 @@ def _execute_llm_fallback(
             )
         return llm_output
 
-    except Exception:
+    except (ProviderError, TimeoutError, subprocess.TimeoutExpired):
         log.info(
             "extraction_fallback_invoked",
             source="rule",

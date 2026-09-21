@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fdsx.core.compiler.map_iteration import _read_map_progress, _write_map_progress
+from fdsx.checkpoint.map_progress import MapProgress
 from fdsx.core.hooks import write_hook_data
 from fdsx.providers.base import ProviderResult
 from fdsx.providers.claude import ClaudeProvider
@@ -30,15 +30,14 @@ def test_hook_data_preserves_japanese(tmp_path):
 
 def test_map_progress_preserves_japanese_and_can_be_resumed(tmp_path):
     results = [{"結果": "日本語の出力"}]
-    _write_map_progress(str(tmp_path), "map", 1, results)
+    MapProgress(str(tmp_path), "map", 1, 1).collect(0, results[0], "success")
     files = list((tmp_path / "map").glob("*.json"))
     assert len(files) == 1
     text = files[0].read_text(encoding="utf-8")
     assert "日本語の出力" in text
     assert "\\u" not in text
-    assert _read_map_progress(str(tmp_path), "map") == {
-        "completed_iterations": 1,
-        "results": results,
+    assert MapProgress(str(tmp_path), "map", 1, 1, resume=True).snapshot() == {
+        0: {"result": results[0], "status": "success"}
     }
 
 

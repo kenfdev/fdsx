@@ -225,8 +225,15 @@ def execute_lifecycle(
                 status="aborted",
                 abort_state=termination.state_name,
             )
-    except SystemExit:
+    except (SystemExit, KeyboardInterrupt):
         last_state = _read_latest_state(plan, last_state)
+        try:
+            context.recorder.finalize(
+                _sanitize_state_for_log(last_state), "interrupted"
+            )
+            context.recorder.save(base_dir=context.base_dir)
+        except _LIFECYCLE_ERRORS as error:
+            logger.error("interrupted_record_save_failed", error=str(error))
         emit_completion_event(context, status="interrupted")
         raise
     except _LIFECYCLE_ERRORS as error:

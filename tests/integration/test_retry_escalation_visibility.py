@@ -161,7 +161,7 @@ class TestTopLevelTaskEscalationVisibility:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=SUCCESS_CODEX),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 
@@ -181,7 +181,7 @@ class TestTopLevelTaskEscalationVisibility:
 
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=SUCCESS_CLAUDE),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 
@@ -199,7 +199,7 @@ class TestTopLevelTaskEscalationVisibility:
 
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=SUCCESS_CLAUDE),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 
@@ -218,7 +218,7 @@ class TestTopLevelTaskEscalationVisibility:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=SUCCESS_CODEX),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 
@@ -253,7 +253,7 @@ class TestTopLevelTaskEscalationVisibility:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=SUCCESS_CODEX),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path, quiet=True)
 
@@ -273,7 +273,7 @@ class TestParallelBranchEscalationVisibility:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=SUCCESS_CODEX),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 
@@ -295,7 +295,7 @@ class TestMapIterationEscalationVisibility:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=SUCCESS_CODEX),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 

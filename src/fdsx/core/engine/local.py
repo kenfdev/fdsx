@@ -9,9 +9,15 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from fdsx.core.compiler.execution import TaskExecutionError
+from fdsx.core.compiler.helpers import MaxIterationsReachedError
 from fdsx.core.engine.validate import FailStateTermination
+from fdsx.core.evaluation import EvaluationError
+from fdsx.core.hooks import HookAbortError
+from fdsx.core.structured_output import StructuredOutputValidationError
 from fdsx.core.variables import jsonpath_exists, resolve_jsonpath
 from fdsx.models.flow import Flow, LocalWorkflow
+from fdsx.providers.base import ProviderSessionError
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
@@ -93,9 +99,16 @@ def execute_local(
                 error = "missing_local_output"
     except FailStateTermination as failure:
         error = failure.error
-    except RuntimeError as failure:
-        # Existing execution/evaluation/limit errors are RuntimeError subclasses.
-        # Do not place provider output or evaluation material in the envelope.
+    except TaskExecutionError:
+        # Preserve the existing public envelope for exhausted task failures.
+        error = "RuntimeError"
+    except (
+        MaxIterationsReachedError,
+        EvaluationError,
+        HookAbortError,
+        StructuredOutputValidationError,
+        ProviderSessionError,
+    ) as failure:
         error = type(failure).__name__
     finally:
         if recorder is not None and child_recorder is not None:

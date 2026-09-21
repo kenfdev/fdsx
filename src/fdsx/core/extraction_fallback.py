@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
 
+from fdsx.core.cancellation import check_cancelled
 from fdsx.models.flow import ExtractionFallback, ExtractRule, LLMClassifyFallback
+from fdsx.providers.base import ProviderError
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
@@ -168,7 +170,7 @@ def execute_default_fallback(
 
     try:
         provider = provider_factory(provider_name)
-    except Exception:
+    except (ProviderError, ValueError):
         log.info(
             "extraction_fallback_invoked",
             source=resolved.source,
@@ -192,6 +194,7 @@ def execute_default_fallback(
         return None
 
     try:
+        check_cancelled()
         result = provider.execute(
             prompt=prompt, model=model, timeout=None, output_callback=None
         )
@@ -217,7 +220,7 @@ def execute_default_fallback(
         if on_fallback:
             on_fallback(event)
         return None
-    except Exception:
+    except ProviderError:
         log.info(
             "extraction_fallback_invoked",
             source=resolved.source,

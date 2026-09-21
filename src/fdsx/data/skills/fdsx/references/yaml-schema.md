@@ -283,7 +283,8 @@ type: "map"                     # literal discriminator
 items_path: string              # required — JSONPath to input array
 iterator: IteratorDef | LocalWorkflow # required — sub-workflow to execute for each item
 result_path: string             # required — JSONPath for results array
-fail_fast?: bool                # default: true — stop on first failure
+max_concurrency?: int           # default: 1 — strict positive integer, active items in this map
+fail_fast?: bool                # default: true — stop new starts on final failure; drain running items
 max_iterations?: int            # optional — >=1, max times this state can be entered
 hooks?: StateHookConfig         # optional — per-state hooks (on_state_start/on_state_end only)
 next?: string                   # XOR with end — target state
@@ -297,6 +298,34 @@ end?: bool                      # XOR with next — terminate flow
 - `items_path` must reference a variable set by a preceding state
 - Legacy list iterator states must all have `type: "task"`. For local branching and evaluation use [LocalWorkflow](local-workflows.md).
 - Iterator state names must be unique within the iterator
+- `max_concurrency` rejects booleans, floats (including `2.0`), numeric strings, zero, negative and unlimited values
+
+**Scheduling and results:** Both iterator forms default to sequential execution.
+`max_concurrency` counts active items, including their internal tasks and retry
+waits; it is not a workflow-wide process limit. Free slots take pending input
+indices in order without waiting for a batch. Actual process starts and log
+arrival can differ. Each item retains its internal execution order and isolated
+variable context. Results always follow input order: legacy iterators export the
+last task output; local workflows export their result envelopes. Empty inputs
+return `[]`; a limit larger than the input starts only existing items.
+
+**Failure handling:** After retries are exhausted, `fail_fast: true` stops new
+items, waits for already running items without killing them, and saves their
+successful results. The lowest failed input index supplies the primary ordinary
+error; individual reasons remain recorded. With `fail_fast: false`, legacy
+iterators collect failures as `null` and ultimately fail the map, while local
+workflows can succeed with failure envelopes. Infrastructure or save errors stop
+new starts regardless of `fail_fast`, take precedence over ordinary failures,
+and still allow running successes to be saved. Interruptions stop subsequent
+tasks and retries and shut down process groups before releasing run locks.
+
+**File safety:** Working directories are shared. Managed result files remain
+item-scoped, but arbitrary writes to the same file can conflict. Use distinct
+paths per item or keep concurrency at `1`. Concurrency adds no workspace
+isolation, nested state types or automatic item-level retries.
+
+For item-boundary persistence, saved failures and execution logs, read
+[Map item recovery](resume.md#map-item-recovery) before preparing a resume.
 
 ---
 

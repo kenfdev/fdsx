@@ -68,7 +68,7 @@ class TestProjectScopeEscalation:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", side_effect=codex_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             compiled = compile_flow(flow, config=config)
             compiled.graph.invoke({})
@@ -103,7 +103,7 @@ class TestProjectScopeEscalation:
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", side_effect=codex_side),
             patch("fdsx.providers.opencode._run_subprocess", side_effect=opencode_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             compiled = compile_flow(flow, config=config)
             compiled.graph.invoke({})
@@ -130,7 +130,7 @@ class TestProjectScopeEscalation:
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.opencode._run_subprocess", side_effect=opencode_side),
             patch("fdsx.providers.codex._run_subprocess") as mock_codex,
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             compiled = compile_flow(flow, config=config)
             compiled.graph.invoke({})
@@ -168,7 +168,7 @@ class TestProjectScopeEscalation:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess") as mock_codex,
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
             pytest.raises(RuntimeError),
         ):
             compiled = compile_flow(flow, config=config)

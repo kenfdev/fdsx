@@ -268,17 +268,17 @@ class TestHandleSignalSigkill:
 
 
 class TestHandleSignalLockRelease:
-    """Checkpoint lock is released when a CheckpointManager is provided."""
+    """The engine owns lock release after all graph workers drain."""
 
-    def test_releases_lock_when_checkpoint_manager_provided(self) -> None:
-        """release_lock is called with the correct thread_id."""
+    def test_does_not_release_lock_before_workers_drain(self) -> None:
+        """A signal alone must not unlock a still-running graph."""
         cm = MagicMock()
         handler = _make_handler(checkpoint_manager=cm, thread_id="my-thread")
 
         with patch("sys.exit"):
             handler._handle_signal(signal.SIGINT, None)
 
-        cm.release_lock.assert_called_once_with("my-thread")
+        cm.release_lock.assert_not_called()
 
     def test_skips_lock_release_when_no_checkpoint_manager(self) -> None:
         """No AttributeError when checkpoint_manager is None."""
@@ -387,3 +387,14 @@ class TestForceQuit:
 
         captured = capsys.readouterr()
         assert _FORCE_QUIT_MESSAGE.strip() in captured.err
+
+
+def test_late_registration_is_stopped_after_signal_snapshot():
+    handler = _make_handler()
+    proc = _make_process(poll_returns=[None, None, 0])
+    with patch("sys.exit"), patch("os.killpg") as kill:
+        handler._handle_signal(signal.SIGINT, None)
+        handler.register_process(proc)
+    kill.assert_called_once_with(proc.pid, signal.SIGINT)
+    proc.wait.assert_called_once()
+    assert handler.cancellation.stopped.is_set()
