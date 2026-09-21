@@ -1,9 +1,8 @@
 # Native session forks
 
 Grok ordinary, parallel and map forks are implemented, but **full native
-qualification is pending**. Session execution accepts only candidate 1.0.30
-(bare version or hexadecimal build metadata with `[stable]`), not a verified
-minimum. Sources use `--session-id <fresh-UUID>`; destinations and retries use
+qualification is pending**. FDSX does not probe or restrict the CLI version.
+Sources use `--session-id <fresh-UUID>`; destinations and retries use
 `--resume <saved-id> --fork-session --session-id <fresh-child-UUID>`. Completion
 metadata must match the requested child ID. Same-provider model switching is
 allowed, including escalation; native cross-model verification remains pending.
@@ -22,8 +21,9 @@ ordinary, parallel and map forks, but **native verification remains pending**.
 No tested Claude version baseline or verified native support is claimed.
 
 The Codex adapter also has a local native-fork implementation with offline tests.
-Its exact source-inspected candidate is 0.154.0; **native qualification is pending**.
-This is an exact runtime version restriction, not a minimum supported version.
+The 0.155.1 source includes persistent new sessions and `exec fork`;
+**native qualification is pending**. FDSX does not probe or restrict the CLI
+version, nor replace that check with a help/capability probe.
 Referenced sources run with `codex exec --json -`; destinations use
 `codex exec --json fork <saved-session-id> -`, with prompts on stdin and
 `-c ephemeral=false` to retain native history. Other execution options precede
@@ -34,8 +34,9 @@ Codex destinations and retries create new children of the selected saved session
 Later external changes to that usable session are inherited at fork time. Retain
 the same accessible Codex storage, including source and ancestor history; a child
 file or FDSX checkpoint alone is not a portable conversation backup. Missing
-history, incompatible versions and malformed completion metadata fail with the
-affected state and guidance to restore history or rerun the source. There is no
+history, unsupported CLI features and malformed completion metadata fail with the
+affected state and guidance to check required features or restore history.
+Rerunning the source cannot fix unsupported CLI features. There is no
 fresh-session fallback. Same-provider model switching is allowed; native
 cross-model verification remains pending.
 
@@ -104,9 +105,9 @@ Pi and cannot guarantee that its runtime, selected models or native files exist.
 
 ## Native interface and storage contract
 
-The supported baseline is **Pi 0.85.1** (session format v3), not a claim that every
-earlier version lacks forks. FDSX checks the version and fails closed if the
-required native interface or saved history is unavailable.
+Pi requires the native SessionManager interface and session format v3.
+FDSX does not probe or restrict the CLI version. It validates the saved session
+format and fork result, and fails if the required interface or history is unavailable.
 
 FDSX invokes a bundled local extension in a separate, prompt-free Pi subprocess.
 The extension calls Pi's documented `SessionManager.forkFrom` with the current
@@ -127,7 +128,7 @@ Checkpoint references contain only provider identity, absolute native path,
 session ID, completed entry ID, byte count and SHA-256 of the completed file.
 Later appends can be present: native branch selection still stops at the saved
 entry. Changes to the completed prefix, missing files, corrupt trees, incompatible
-versions and missing metadata fail closed. Trailing label entries are normalized
+session format versions and missing metadata fail closed. Trailing label entries are normalized
 to their preceding conversation endpoint because Pi regenerates labels in forks.
 Do not concurrently rewrite native history while it is being forked.
 

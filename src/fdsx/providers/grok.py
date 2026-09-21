@@ -1,5 +1,4 @@
 import json
-import re
 import subprocess  # nosec B404 - process callback type annotations only.
 import tempfile
 import threading
@@ -416,24 +415,6 @@ class GrokProvider(ProviderBase):
                 session_flags.extend(["--resume", str(source_id), "--fork-session"])
             session_flags.extend(["--session-id", str(child_id)])
             stderr_callback = None  # Native errors may include conversation content.
-            # Candidate identified in the local distribution, not a verified
-            # minimum. Fail closed on other interfaces until qualified.
-            version = _run_subprocess(
-                args=["grok", "--no-auto-update", "--version"],
-                timeout=10,
-                inactivity_timeout=10,
-            )
-            if (
-                version.exit_code != 0
-                or re.fullmatch(
-                    r"grok 1\.0\.30(?: \([0-9a-f]+\) \[stable\])?",
-                    version.stdout.strip(),
-                )
-                is None
-            ):
-                raise session_error(
-                    "requires candidate grok 1.0.30; native qualification is pending"
-                )
 
         prompt_path: Path | None = None
         try:
