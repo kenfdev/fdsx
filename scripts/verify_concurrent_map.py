@@ -157,7 +157,9 @@ def main():
         for scenario in ("success", "failure", "interrupt")
     ]
     (root / "results.json").write_text(json.dumps(results, indent=2))
-    print(json.dumps({"artifacts": str(root), "checks": results}, indent=2))
+    sys.stdout.write(
+        json.dumps({"artifacts": str(root), "checks": results}, indent=2) + "\n"
+    )
 
 
 if __name__ == "__main__":
