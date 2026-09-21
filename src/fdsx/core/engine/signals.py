@@ -4,7 +4,7 @@ Registers SIGINT and SIGTERM handlers during flow execution that:
 1. Propagate the signal to all active child process groups
 2. Wait up to 5 seconds for voluntary exit
 3. SIGKILL any surviving process groups
-4. Release the flow's checkpoint lock (idempotent)
+4. Let the engine drain workers and release its checkpoint lock
 5. Print "Workflow interrupted" to stderr
 6. Exit with code 128 + signum
 """
@@ -16,8 +16,11 @@ import subprocess  # nosec B404 - manages existing provider processes and timeou
 import sys
 import threading
 import time
+from contextvars import Token
 from types import FrameType
 from typing import TYPE_CHECKING, Any
+
+from fdsx.core.cancellation import Cancellation, current_cancellation
 
 if TYPE_CHECKING:
     from fdsx.checkpoint.manager import CheckpointManager
@@ -36,6 +39,36 @@ _INTERRUPT_MESSAGE = "\nWorkflow interrupted"
 _FORCE_QUIT_MESSAGE = "Force quitting..."
 
 
+def _stop_processes(procs: list[subprocess.Popen[Any]], signum: int) -> None:
+    """Apply the same graceful deadline and escalation to snapshots and late arrivals."""
+    # Step 1: Forward the signal to all active child process groups.
+    # Each subprocess is started with start_new_session=True, so its PID
+    # is also its process group ID.  Killing the entire group ensures
+    # grandchild processes (e.g. "sleep" spawned by "sh -c") are cleaned up.
+    for proc in procs:
+        if proc.poll() is None:
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signum)
+
+    # Step 2: Wait up to _GRACEFUL_SHUTDOWN_TIMEOUT seconds for voluntary exit.
+    deadline = time.monotonic() + _GRACEFUL_SHUTDOWN_TIMEOUT
+    for proc in procs:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if proc.poll() is None:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=max(0.05, remaining))
+
+    # Step 3: SIGKILL any process groups still alive after the grace period.
+    for proc in procs:
+        if proc.poll() is None:
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=1)
+
+
 class SignalHandler:
     """Context manager that installs SIGINT/SIGTERM handlers during flow execution.
 
@@ -43,7 +76,7 @@ class SignalHandler:
     1. Forwards the signal to all tracked processes.
     2. Waits up to ``_GRACEFUL_SHUTDOWN_TIMEOUT`` seconds for voluntary exit.
     3. SIGKILLs any processes that are still alive.
-    4. Releases the checkpoint lock (if a CheckpointManager is provided).
+    4. Leaves checkpoint lock release to the engine after worker shutdown.
     5. Prints ``_INTERRUPT_MESSAGE`` to stderr.
     6. Calls ``sys.exit(128 + signum)``.
 
@@ -72,8 +105,11 @@ class SignalHandler:
         self._checkpoint_manager = checkpoint_manager
         self._thread_id = thread_id
         self._active_processes: set[subprocess.Popen[Any]] = set()
-        self._processes_lock = threading.Lock()
+        self._processes_lock = threading.RLock()
         self._interrupted = False
+        self._signum: int = signal.SIGTERM
+        self.cancellation = Cancellation(self.register_process)
+        self._cancellation_token: Token[Cancellation | None] | None = None
         # signal.signal() returns the previous handler, which may be a callable
         # or one of the signal.Handlers enum values (SIG_DFL, SIG_IGN).
         # Use Any to avoid complex typing for the stored previous handler.
@@ -93,6 +129,10 @@ class SignalHandler:
         """
         with self._processes_lock:
             self._active_processes.add(proc)
+            interrupted = self._interrupted
+        if interrupted:
+            # The registering worker owns shutdown for a late arrival.
+            _stop_processes([proc], self._signum)
 
     def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: forward signal → wait → SIGKILL → cleanup → exit."""
@@ -100,40 +140,15 @@ class SignalHandler:
             print(_FORCE_QUIT_MESSAGE, file=sys.stderr)
             os._exit(_SIGNAL_EXIT_BASE + signum)
         self._interrupted = True
+        self._signum = signum
+        self.cancellation.stopped.set()
         with self._processes_lock:
             procs = list(self._active_processes)
 
-        # Step 1: Forward the signal to all active child process groups.
-        # Each subprocess is started with start_new_session=True, so its PID
-        # is also its process group ID.  Killing the entire group ensures
-        # grandchild processes (e.g. "sleep" spawned by "sh -c") are cleaned up.
-        for proc in procs:
-            if proc.poll() is None:
-                with contextlib.suppress(OSError):
-                    os.killpg(proc.pid, signum)
+        _stop_processes(procs, signum)
 
-        # Step 2: Wait up to _GRACEFUL_SHUTDOWN_TIMEOUT seconds for voluntary exit.
-        deadline = time.monotonic() + _GRACEFUL_SHUTDOWN_TIMEOUT
-        for proc in procs:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            if proc.poll() is None:
-                with contextlib.suppress(subprocess.TimeoutExpired):
-                    proc.wait(timeout=max(0.05, remaining))
-
-        # Step 3: SIGKILL any process groups still alive after the grace period.
-        for proc in procs:
-            if proc.poll() is None:
-                with contextlib.suppress(OSError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-                with contextlib.suppress(subprocess.TimeoutExpired):
-                    proc.wait(timeout=1)
-
-        # Step 4: Release the checkpoint lock (idempotent).
-        if self._checkpoint_manager is not None:
-            with contextlib.suppress(Exception):
-                self._checkpoint_manager.release_lock(self._thread_id)
+        # The engine releases the checkpoint lock only after graph workers
+        # have drained and the interrupted run record has been published.
 
         # Step 5: Print interrupt message to stderr.
         print(_INTERRUPT_MESSAGE, file=sys.stderr)
@@ -145,6 +160,7 @@ class SignalHandler:
 
     def __enter__(self) -> "SignalHandler":
         """Register custom SIGINT and SIGTERM handlers, saving the previous ones."""
+        self._cancellation_token = current_cancellation.set(self.cancellation)
         self._prev_sigint = signal.signal(signal.SIGINT, self._handle_signal)
         self._prev_sigterm = signal.signal(signal.SIGTERM, self._handle_signal)
         return self
@@ -153,3 +169,5 @@ class SignalHandler:
         """Restore the previous SIGINT and SIGTERM handlers."""
         signal.signal(signal.SIGINT, self._prev_sigint)
         signal.signal(signal.SIGTERM, self._prev_sigterm)
+        if self._cancellation_token is not None:
+            current_cancellation.reset(self._cancellation_token)

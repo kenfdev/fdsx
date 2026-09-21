@@ -1,8 +1,11 @@
 """Map state iteration node factory for the compiler package."""
 
 import subprocess  # nosec B404 - process callback type annotations only.
+import sys
 import time
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from contextvars import copy_context
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
@@ -12,6 +15,7 @@ from uuid import uuid4
 import structlog
 
 from fdsx.checkpoint.map_progress import MapProgress
+from fdsx.core.cancellation import check_cancelled, current_cancellation
 from fdsx.core.extraction_fallback import FallbackEvent, resolve_fallback
 from fdsx.core.variables import (
     _strip_reserved_keys,
@@ -48,6 +52,10 @@ from .helpers import (
 
 if TYPE_CHECKING:
     from fdsx.core.config import FdsxConfig
+
+
+class MapExecutionError(RuntimeError):
+    """An item could not execute or publish because of a runtime failure."""
 
 
 def _top_key(path: str) -> str:
@@ -141,24 +149,35 @@ def _create_map_node(
             return _strip_reserved_keys(partial)
 
         completion_lock = Lock()
+        scheduling_lock = Lock()
+        stopped = False
+        failures: dict[int, str] = {}
 
         def complete_item(
             index: int, result: Any, failed: bool, error: str, started: float
         ) -> None:
+            nonlocal stopped
+            check_cancelled()
+            if failed:
+                with scheduling_lock:
+                    failures[index] = error
+                    if state.fail_fast:
+                        stopped = True
             # Serialize publication and its record snapshot as one completion event.
             with completion_lock:
+                if failed and recorder is not None:
+                    recorder.record_map_iteration_complete(
+                        state_name, index, "error", error
+                    )
                 if not (failed and state.fail_fast):
                     progress.collect(index, result, "failure" if failed else "success")
                     if recorder is not None:
                         recorder.record_map_progress(
                             state_name, iteration, execution_id, progress.snapshot()
                         )
-                if recorder is not None:
+                if not failed and recorder is not None:
                     recorder.record_map_iteration_complete(
-                        state_name,
-                        index,
-                        "error" if failed else "success",
-                        error if failed else str(result),
+                        state_name, index, "success", str(result)
                     )
             logger = structlog.get_logger(__name__)
             if failed:
@@ -182,9 +201,8 @@ def _create_map_node(
                     state_name, index, len(items), duration=time.time() - started
                 )
 
-        for idx, item in enumerate(items):
-            if idx in collected:
-                continue
+        def run_item(idx: int, item: Any) -> None:
+            check_cancelled()
             display_map_iteration(state_name, idx, len(items))
             iter_start_time = time.time()
             iter_context = deepcopy({**state_dict, "item": item})
@@ -235,13 +253,10 @@ def _create_map_node(
                     complete_item(
                         idx, outcome, failed, outcome["error"] or "", iter_start_time
                     )
-                    if failed and state.fail_fast:
-                        raise RuntimeError(
-                            f"Map state '{state_name}': item {idx} failed: {outcome['error']}"
-                        )
-                    continue
+                    return
 
                 for iter_state in state.iterator.states:
+                    check_cancelled()
                     merged_options = _merge_provider_options(
                         config,
                         flow,
@@ -375,16 +390,8 @@ def _create_map_node(
                         and exec_result.structured_value is None
                     ):
                         stream_logger.close()
-                        orig = iter_state.provider
-                        last = exec_result.last_provider_name or orig
-                        annotation = f" (escalated from {orig})" if last != orig else ""
                         error = _sanitize_output(last_error) or ""
                         complete_item(idx, None, True, error, iter_start_time)
-                        if state.fail_fast:
-                            raise RuntimeError(
-                                f"Map state '{state_name}': iteration {idx} failed: "
-                                f"Provider {last}{annotation}: {error}"
-                            )
                         break
 
                     if iter_state.extract:
@@ -393,10 +400,6 @@ def _create_map_node(
                             complete_item(
                                 idx, None, True, "extraction failed", iter_start_time
                             )
-                            if state.fail_fast:
-                                raise RuntimeError(
-                                    f"Map state '{state_name}': iteration {idx} extraction failed"
-                                )
                             break
                         iter_result = extracted
                         iter_context = set_jsonpath(
@@ -438,6 +441,78 @@ def _create_map_node(
                         )
                     complete_item(idx, last_result, False, "", iter_start_time)
 
+        def worker(idx: int) -> None:
+            nonlocal stopped
+            try:
+                with scheduling_lock:
+                    if stopped:
+                        return
+                run_item(idx, items[idx])
+            finally:
+                # Observe any exceptional exit without swallowing BaseException or
+                # broad-catching implementation failures as ordinary item failures.
+                error = sys.exc_info()[1]
+                if error is not None:
+                    with scheduling_lock:
+                        stopped = True
+                    if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                        cancellation = current_cancellation.get()
+                        if cancellation is not None:
+                            cancellation.interrupt(error)
+                    if recorder is not None and isinstance(error, Exception):
+                        recorder.record_map_execution_error(state_name, idx, str(error))
+
+        pending_indices = iter(i for i in range(len(items)) if i not in collected)
+        active: dict[Future[None], int] = {}
+        errors: dict[int, BaseException] = {}
+        with ThreadPoolExecutor(max_workers=state.max_concurrency) as executor:
+            exhausted = False
+            while active or not exhausted:
+                check_cancelled()
+                with scheduling_lock:
+                    while not stopped and len(active) < state.max_concurrency:
+                        idx = next(pending_indices, None)
+                        if idx is None:
+                            exhausted = True
+                            break
+                        active[executor.submit(copy_context().run, worker, idx)] = idx
+                    if stopped:
+                        exhausted = True
+                if not active:
+                    break
+                done, _ = wait(active, timeout=0.05, return_when=FIRST_COMPLETED)
+                for future in done:
+                    idx = active.pop(future)
+                    error = future.exception()
+                    if error is not None:
+                        errors[idx] = error
+        check_cancelled()
+        if errors:
+            # Interruption outranks infrastructure errors, which outrank handled
+            # item failures. All workers have finished publishing before raising.
+            for error in errors.values():
+                if not isinstance(error, Exception):
+                    raise error
+            index = min(errors)
+            error = errors[index]
+            structlog.get_logger(__name__).error(
+                "map_execution_failed",
+                state=state_name,
+                item_index=index,
+                error_kind=type(error).__name__,
+                error=str(error),
+            )
+            raise MapExecutionError(
+                f"Map state '{state_name}': item {index} execution failed: {error}"
+            ) from error
+        if failures and state.fail_fast:
+            index = min(failures)
+            raise RuntimeError(
+                f"Map state '{state_name}': "
+                f"{'item' if isinstance(state.iterator, LocalWorkflow) else 'iteration'} "
+                f"{index} failed: {failures[index]}"
+            )
+
         saved = progress.snapshot()
         n_failed = sum(entry["status"] == "failure" for entry in saved.values())
         results = [entry["result"] for _, entry in sorted(saved.items())]
@@ -464,8 +539,11 @@ def _create_map_node(
             )
 
         if n_failed > 0 and not isinstance(state.iterator, LocalWorkflow):
+            first = min(i for i, entry in saved.items() if entry["status"] == "failure")
+            reason = failures.get(first, "previously collected failure")
             raise RuntimeError(
-                f"Map state '{state_name}': {n_failed} of {len(items)} iterations failed"
+                f"Map state '{state_name}': {n_failed} of {len(items)} iterations failed; "
+                f"item {first}: {reason}"
             )
 
         return _strip_reserved_keys(partial)

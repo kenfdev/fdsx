@@ -204,11 +204,14 @@ def offline(tmp_path, monkeypatch):
     return requests, options, system, llm
 
 
+@pytest.mark.parametrize("concurrency", [1, 3])
 @pytest.mark.parametrize("container", ["map", "parallel"])
 def test_local_result_files_preserve_parent_and_sibling_artifacts(
-    tmp_path, offline, container
+    tmp_path, offline, container, concurrency
 ):
     data = workflow(container)
+    if container == "map":
+        data["states"]["work"]["max_concurrency"] = concurrency
     data["start_at"] = "parent"
     data["states"]["parent"] = {
         "type": "task",
@@ -246,10 +249,13 @@ def test_local_result_files_preserve_parent_and_sibling_artifacts(
 
 @pytest.mark.parametrize("container", ["map", "parallel"])
 @pytest.mark.parametrize("kind", ["classifier", "evaluate", "task"])
+@pytest.mark.parametrize("concurrency", [1, 3])
 def test_repairs_route_locally_and_use_latest_material(
-    tmp_path, offline, container, kind
+    tmp_path, offline, container, kind, concurrency
 ):
     data = workflow(container, kind)
+    if container == "map":
+        data["states"]["work"]["max_concurrency"] = concurrency
     result = run_flow(
         write(tmp_path, data),
         {"items": ["A", "B", "C"], "draft": "PARENT_PRIVATE"},

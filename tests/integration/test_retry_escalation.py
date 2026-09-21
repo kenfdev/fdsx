@@ -150,7 +150,7 @@ class TestRetryEscalationBasic:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", side_effect=codex_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             result = run_flow(path, base_dir=tmp_path)
 
@@ -164,7 +164,7 @@ class TestRetryEscalationBasic:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=FAIL),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
             pytest.raises(Exception) as exc_info,
         ):
             run_flow(path, base_dir=tmp_path)
@@ -188,7 +188,7 @@ class TestRetryEscalationBasic:
 
         with (
             patch("fdsx.providers.claude._run_subprocess", side_effect=claude_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             result = run_flow(path, base_dir=tmp_path)
 
@@ -226,7 +226,7 @@ class TestRetryEscalationParallel:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", side_effect=codex_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, base_dir=tmp_path)
 
@@ -248,7 +248,7 @@ class TestRetryEscalationMap:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", side_effect=codex_side),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             result = run_flow(
                 path,
@@ -270,7 +270,7 @@ class TestRetryEscalationRecorder:
         with (
             patch("fdsx.providers.claude._run_subprocess", return_value=FAIL),
             patch("fdsx.providers.codex._run_subprocess", return_value=SUCCESS_CODEX),
-            patch("fdsx.core.compiler.execution.time.sleep"),
+            patch("fdsx.core.compiler.execution.retry_wait"),
         ):
             run_flow(path, thread_id=thread_id, base_dir=tmp_path)
 

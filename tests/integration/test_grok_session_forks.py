@@ -110,7 +110,7 @@ def native():
     fixture = NativeCLI()
     with (
         patch("fdsx.providers.grok._run_subprocess", side_effect=fixture),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         yield fixture
 

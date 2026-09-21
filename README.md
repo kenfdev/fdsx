@@ -326,7 +326,8 @@ states:
           command: "echo {item}"
           result_path: $.iter.step2
           retry: 0
-    fail_fast: true                     # (bool, default: true) stop all iterations on first failure
+    max_concurrency: 2                   # (positive integer, default: 1) active items in this map
+    fail_fast: true                     # stop new items on final failure; wait for running items
     result_path: $.map_results           # (string, REQUIRED) JSONPath for the results array
     max_iterations: 10                  # (int, optional) max times this state can be re-entered
     hooks:                              # (optional) on_state_start / on_state_end only
@@ -1027,7 +1028,31 @@ fdsx resume --thread-id <thread_id>
 Maps resume at item boundaries. Both iterator forms reuse saved items by their
 zero-based input index, even when saved indices are not contiguous. Unfinished
 items restart at their first step; final results remain in input order. A new
-visit to the map starts fresh. Execution remains sequential.
+visit to the map starts fresh. Execution is sequential by default; set
+`max_concurrency` to a positive integer to overlap items in either iterator form.
+Booleans, floats (including `2.0`), numeric strings (`"2"`), zero, negative values,
+and unlimited settings are rejected before execution.
+
+The limit counts active items in this map, including their internal tasks and
+retry waits. It does not limit workflow-wide processes or other maps. Pending
+items are assigned in input order and each free slot is refilled without waiting
+for a batch; process startup and log arrival order may differ. Results always
+follow input order. Empty arrays return an empty array; a limit larger than the
+input only starts existing items.
+
+On a final item failure, `fail_fast: true` stops new starts and waits for running
+items without killing them. Their successful results are saved as they finish.
+The lowest input index among ordinary failures is the primary error; each item's
+reason remains in the run record. Infrastructure or save failures stop new starts
+regardless of `fail_fast`, take precedence over ordinary failures, and still allow
+other running successes to be saved. Interruptions stop further tasks and retries
+and use the normal process-group shutdown policy before records and locks close.
+
+Working directories are shared. Managed result files remain item-scoped, but
+users must avoid concurrent writes to the same arbitrary file. No automatic
+workspace isolation or additional nested state types are provided. See
+[bounded map verification](docs/concurrent-map.md) for both forms and a repeatable
+local-only CLI test.
 
 Map progress uses a versioned format with the map visit and each collected
 item's result and status. Older contiguous progress is read without modifying

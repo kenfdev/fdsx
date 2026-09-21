@@ -159,7 +159,7 @@ def native(tmp_path, monkeypatch):
     with (
         patch("fdsx.providers.pi.shutil.which", return_value="/fixture/pi"),
         patch("fdsx.providers.pi._run_subprocess", side_effect=fixture),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         yield fixture
 

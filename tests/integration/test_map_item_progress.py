@@ -408,7 +408,7 @@ def test_retry_attempts_are_separate_from_item_counts(
     path = write(tmp_path, data)
     provider[1]["fail"] = ("last", "B")
     waits = []
-    monkeypatch.setattr("fdsx.core.compiler.execution.time.sleep", waits.append)
+    monkeypatch.setattr("fdsx.core.compiler.execution.retry_wait", waits.append)
     if local:
         run_flow(
             path, {"items": list("ABC")}, thread_id="items", base_dir=tmp_path / ".fdsx"

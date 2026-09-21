@@ -1117,6 +1117,7 @@ class MapState(BaseModel):
         ..., description="Sub-workflow to execute for each item"
     )
     result_path: str = Field(..., description="JSONPath for results array")
+    max_concurrency: int = Field(default=1, strict=True, ge=1)
     fail_fast: bool = Field(default=True, description="Stop on first failure")
     max_iterations: int | None = Field(
         default=None, ge=1, description="Max times this state can be entered"

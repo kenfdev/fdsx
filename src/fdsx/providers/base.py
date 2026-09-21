@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
 
+from fdsx.core.cancellation import check_cancelled, current_cancellation
 from fdsx.providers.privacy import PrivateAwareLogger
 
 if TYPE_CHECKING:
@@ -280,6 +281,7 @@ def _run_subprocess(
         proc_env = {**os.environ, **(env or {})}
         proc_env.pop("FDSX_HOOKS", None)
         # Provider argv is passed without shell expansion; system tasks explicitly opt into sh.
+        check_cancelled()
         with subprocess.Popen(  # nosec B603
             cmd,
             stdin=subprocess.PIPE if stdin_data is not None else None,
@@ -291,7 +293,12 @@ def _run_subprocess(
             start_new_session=True,
         ) as process:
             try:
-                if on_process_start is not None:
+                cancellation = current_cancellation.get()
+                if cancellation is not None:
+                    cancellation.register(process)
+                if on_process_start is not None and (
+                    cancellation is None or on_process_start != cancellation.register
+                ):
                     on_process_start(process)
 
                 killed_by_timeout = False

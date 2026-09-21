@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 
+from fdsx.core.cancellation import check_cancelled
 from fdsx.core.hooks import (
     INPUT_FILENAME,
     OUTPUT_FILENAME,
@@ -209,6 +210,7 @@ def _wrap_with_hooks(
         return node_fn
 
     def wrapped(state_dict: dict[str, Any]) -> dict[str, Any]:
+        check_cancelled()
         thread_id: str = recorder.thread_id if recorder is not None else ""
         flow_name: str = recorder.flow_name if recorder is not None else ""
 
@@ -240,6 +242,7 @@ def _wrap_with_hooks(
         except BaseException as exc:
             node_error = exc
 
+        check_cancelled()
         status = "completed" if node_error is None else "failed"
 
         try:

@@ -95,7 +95,7 @@ def native():
     fixture = NativeCLI()
     with (
         patch("fdsx.providers.claude._run_subprocess", side_effect=fixture),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         yield fixture
 
@@ -822,3 +822,23 @@ def test_session_parsing_limits_keep_reader_alive(damage, caplog, capsys):
     diagnostics = str(error.value) + caplog.text + captured.err + captured.out
     assert "PRIVATE" not in diagnostics
     assert "Traceback" not in diagnostics
+
+
+def test_concurrent_map_forks_same_source_into_independent_children(tmp_path, native):
+    from threading import Barrier
+
+    barrier = Barrier(2, timeout=5)
+
+    def concurrent(**kwargs):
+        if "--resume" in kwargs["args"]:
+            barrier.wait()
+        return native(**kwargs)
+
+    path = internal_flow(tmp_path, "map", max_concurrency=2)
+    with patch("fdsx.providers.claude._run_subprocess", side_effect=concurrent):
+        result = run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert result.results["children"] == ["child0 output", "child1 output"]
+    source, *children = native.calls
+    assert len(children) == 2
+    assert {child["parent"] for child in children} == {source["child"]}
+    assert len({child["child"] for child in children}) == 2

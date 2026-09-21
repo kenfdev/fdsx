@@ -359,7 +359,7 @@ def test_grok_workflow_retries_after_provider_failure(tmp_path: Path) -> None:
 
     with (
         patch("fdsx.providers.grok._run_subprocess", side_effect=fake_run_subprocess),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         result = run_flow(flow_path, base_dir=tmp_path / ".fdsx", quiet=True)
 

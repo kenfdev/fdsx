@@ -14,7 +14,7 @@ from fdsx.providers.base import ProviderResult
 def mock_provider_environment():
     with (
         patch("fdsx.providers.cursor.shutil.which", return_value="/mock/agent"),
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
     ):
         yield
 
@@ -392,7 +392,7 @@ def test_retry_and_provider_switch_keep_single_prefix(tmp_path, escalate):
     )
     path = save_states(tmp_path, {"work": ai_task(retry=1, end=True)}, **flow)
     with (
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
         patch(
             "fdsx.providers.claude._run_subprocess",
             side_effect=[ProviderResult(1, "", "fail"), ProviderResult(0, "ok", "")],
@@ -424,7 +424,7 @@ def test_structured_retry_keeps_schema_and_feedback(tmp_path):
         structured_output={"schema": "schema.json", "result_path": "$.payload"},
     )
     with (
-        patch("fdsx.core.compiler.execution.time.sleep"),
+        patch("fdsx.core.compiler.execution.retry_wait"),
         patch(
             "fdsx.providers.claude._run_subprocess",
             side_effect=[

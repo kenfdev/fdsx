@@ -363,8 +363,20 @@ class RunRecorder:
                     "item_index": index,
                     "status": status,
                     "output_preview": output_preview,
+                    **({"error": output} if status == "error" else {}),
                 }
             )
+
+    def record_map_execution_error(
+        self, state_name: str, index: int, error: str
+    ) -> None:
+        """Keep infrastructure diagnostics separate from reusable completions."""
+        with self._lock:
+            state = self._find_state_by_name(state_name)
+            if state is not None:
+                state.setdefault("execution_errors", []).append(
+                    {"item_index": index, "error": error}
+                )
 
     def record_map_complete(
         self,
