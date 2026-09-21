@@ -49,7 +49,6 @@ def write_flow(tmp_path, states, **kwargs):
 class NativeCLI:
     def __init__(self):
         self.calls = []
-        self.version = "grok 1.0.30"
         self.responses = {}
         self.interrupt = None
         self.lock = Lock()
@@ -57,8 +56,7 @@ class NativeCLI:
 
     def __call__(self, **kwargs):
         args = kwargs["args"]
-        if "--version" in args:
-            return ProviderResult(0, self.version, "")
+        assert "--version" not in args
         prompt = (
             Path(args[args.index("--prompt-file") + 1]).read_text()
             if "--prompt-file" in args
@@ -115,11 +113,7 @@ def native():
         yield fixture
 
 
-@pytest.mark.parametrize(
-    "version", ["grok 1.0.30", "grok 1.0.30 (04b7ffed98c6) [stable]\n"]
-)
-def test_siblings_current_files_and_fork_chain(tmp_path, native, version):
-    native.version = version
+def test_siblings_current_files_and_fork_chain(tmp_path, native):
     path = write_flow(
         tmp_path,
         {
@@ -603,10 +597,7 @@ def test_native_timeout_and_unavailable_history_never_fall_back(exit_code):
     parent = str(uuid4())
     with patch(
         "fdsx.providers.grok._run_subprocess",
-        side_effect=[
-            ProviderResult(0, "grok 1.0.30", ""),
-            ProviderResult(exit_code, "PRIVATE", "PRIVATE"),
-        ],
+        return_value=ProviderResult(exit_code, "PRIVATE", "PRIVATE"),
     ) as subprocess:
         result = GrokProvider().execute_with_session(
             SessionRequest("child", {"provider": "grok", "session_id": parent}),
@@ -616,7 +607,7 @@ def test_native_timeout_and_unavailable_history_never_fall_back(exit_code):
     assert result.exit_code == exit_code
     assert result.stdout == ""
     assert "PRIVATE" not in result.stderr
-    assert subprocess.call_count == 2
+    assert subprocess.call_count == 1
     assert "--fork-session" in subprocess.call_args.kwargs["args"]
 
 
@@ -649,34 +640,20 @@ def test_forked_source_reexecution_uses_upstream(tmp_path, native):
     assert e["parent"] == d["child"]
 
 
-@pytest.mark.parametrize(
-    "version",
-    [
-        "grok 1.0.29",
-        "grok 1.0.31",
-        "grok 1.0.31 (04b7ffed98c6) [stable]",
-        "grok 1.0.300",
-        "grok 1.0.30-preview",
-        "grok 1.0.30 (04b7ffed98c6) [preview]",
-        "grok 1.0.30\nPRIVATE",
-        "PRIVATE",
-        "",
-    ],
-)
-def test_unqualified_version_rejected_before_session_execution(version, caplog):
-    with (
-        patch(
-            "fdsx.providers.grok._run_subprocess",
-            return_value=ProviderResult(0, version, "PRIVATE"),
-        ) as call,
-        pytest.raises(ProviderSessionError, match=r"candidate grok 1\.0\.30") as error,
-    ):
-        GrokProvider().execute_with_session(
-            SessionRequest("plan"), prompt="plan", model="grok-4.6"
-        )
-    assert call.call_count == 1
-    assert call.call_args.kwargs["args"] == ["grok", "--no-auto-update", "--version"]
-    assert "PRIVATE" not in str(error.value) + caplog.text
+def test_new_plan_then_fork_without_version_probe(tmp_path, native):
+    path = write_flow(
+        tmp_path,
+        {
+            "plan": task("plan", next="child"),
+            "child": task("child", fork_from="plan", end=True),
+        },
+    )
+    result = run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert result.status == "completed"
+    source, child = native.calls
+    assert source["parent"] is None
+    assert child["parent"] == source["child"]
+    assert child["child"] != source["child"]
 
 
 @pytest.mark.parametrize(

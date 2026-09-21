@@ -166,10 +166,10 @@ set `fork_from: plan` on both destinations.
 
 | Provider | Native selection and runtime boundary |
 | --- | --- |
-| Pi | Baseline 0.85.1, session format v3. Forks the saved completed endpoint; later appends are excluded and changes to the saved prefix fail. Same-provider model changes are allowed. |
+| Pi | Native SessionManager and session format v3; no CLI version gate. Forks the saved completed endpoint; later appends are excluded and changes to the saved prefix fail. Same-provider model changes are allowed. |
 | Claude | `--resume <saved-id> --fork-session`. Uses the saved session's usable conversation at fork time. Native qualification and a tested version baseline remain pending. |
-| Codex | `exec --json fork <saved-id> -`, with persistent history. Exact candidate 0.154.0, not a verified minimum; native qualification pending. |
-| Grok | `--resume <saved-id> --fork-session --session-id <fresh-UUID>`. Exact candidate 1.0.30, accepting bare version output or hexadecimal build metadata with `[stable]`. Recall/isolation smoke checks passed; full native qualification pending. |
+| Codex | `exec --json fork <saved-id> -`, with persistent history. No CLI version gate; native qualification pending. |
+| Grok | `--resume <saved-id> --fork-session --session-id <fresh-UUID>`. No CLI version gate. Recall/isolation smoke checks passed; full native qualification pending. |
 
 **Execution and recovery:**
 - Each destination and each execution/structured-output retry creates a distinct

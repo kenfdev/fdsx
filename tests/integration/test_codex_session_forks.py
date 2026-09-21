@@ -56,8 +56,7 @@ class NativeCLI:
 
     def __call__(self, **kwargs):
         args = kwargs["args"]
-        if args == ["codex", "--version"]:
-            return ProviderResult(0, "codex-cli 0.154.0\n", "")
+        assert "--version" not in args
         prompt = kwargs["stdin_data"] or args[2]
         action = prompt.split("\n")[0]
         parent = args[args.index("fork") + 1] if "fork" in args else None
@@ -380,7 +379,9 @@ def test_bad_native_metadata_fails_closed_without_leaking(native, caplog, damage
     if damage == "error":
         result = CodexProvider().execute_with_session(request, **kwargs)
         assert result.exit_code != 0
-        assert "rerun the source" in result.stderr
+        assert (
+            "Rerunning the source cannot fix unsupported CLI features" in result.stderr
+        )
         assert "PRIVATE" not in result.stderr
     else:
         with pytest.raises(ProviderSessionError, match=r"metadata|child reference"):
@@ -657,25 +658,30 @@ def test_model_escalation_keeps_source(tmp_path, native, model):
     )
 
 
-@pytest.mark.parametrize("exit_code", [124, 127, 1])
-def test_native_timeout_and_unavailable_history_never_fall_back(exit_code):
+@pytest.mark.parametrize("exit_code", [124, 127, 1, 2])
+@pytest.mark.parametrize("fork", [False, True])
+def test_native_failure_never_falls_back_or_probes_version(exit_code, fork):
     parent = str(uuid4())
     with patch(
         "fdsx.providers.codex._run_subprocess",
-        side_effect=[
-            ProviderResult(0, "codex-cli 0.154.0", ""),
-            ProviderResult(exit_code, "PRIVATE", "PRIVATE"),
-        ],
+        return_value=ProviderResult(exit_code, "PRIVATE", "PRIVATE"),
     ) as subprocess:
         result = CodexProvider().execute_with_session(
-            SessionRequest("child", {"provider": "codex", "session_id": parent}),
-            prompt="child",
+            SessionRequest(
+                "child" if fork else "plan",
+                {"provider": "codex", "session_id": parent} if fork else None,
+            ),
+            prompt="child" if fork else "plan",
         )
     assert result.exit_code == exit_code
     assert result.stdout == ""
     assert "PRIVATE" not in result.stderr
-    assert subprocess.call_count == 2
-    assert "fork" in subprocess.call_args.kwargs["args"]
+    assert subprocess.call_count == 1
+    args = subprocess.call_args.kwargs["args"]
+    assert args[:2] == ["codex", "exec"]
+    assert ("fork" in args) is fork
+    assert "Rerunning the source cannot fix unsupported CLI features" in result.stderr
+    assert "No fresh-session fallback was attempted" in result.stderr
 
 
 def test_forked_source_reexecution_uses_upstream(tmp_path, native):
@@ -707,21 +713,24 @@ def test_forked_source_reexecution_uses_upstream(tmp_path, native):
     assert e["parent"] == d["child"]
 
 
-@pytest.mark.parametrize(
-    "version", ["codex-cli 0.153.0", "codex-cli 0.155.0", "PRIVATE", ""]
-)
-def test_unqualified_versions_fail_before_prompt(version, caplog):
-    with (
-        patch(
-            "fdsx.providers.codex._run_subprocess",
-            return_value=ProviderResult(0, version, "PRIVATE"),
-        ) as run,
-        pytest.raises(ProviderSessionError, match=r"0\.154\.0"),
-    ):
-        CodexProvider().execute_with_session(SessionRequest("plan"), prompt="plan")
-    assert run.call_count == 1
-    assert run.call_args.kwargs["args"] == ["codex", "--version"]
-    assert "PRIVATE" not in caplog.text
+def test_new_plan_then_fork_without_version_probe(tmp_path, native):
+    path = write_flow(
+        tmp_path,
+        {
+            "initialize": dict(type="pass", next="plan"),
+            "plan": task("plan", next="child"),
+            "child": task("child", fork_from="plan", end=True),
+        },
+    )
+    definition = yaml.safe_load(path.read_text())
+    definition["start_at"] = "initialize"
+    path.write_text(yaml.safe_dump(definition))
+    result = run_flow(path, base_dir=tmp_path / ".fdsx")
+    assert result.status == "completed"
+    source, child = native.calls
+    assert source["parent"] is None
+    assert child["parent"] == source["child"]
+    assert child["child"] != source["child"]
 
 
 @pytest.mark.parametrize(

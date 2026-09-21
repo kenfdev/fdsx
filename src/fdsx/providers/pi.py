@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 import shutil
 import subprocess  # nosec B404 - process callback type annotations only.
 from collections.abc import Callable
@@ -96,7 +95,7 @@ class PiProvider(ProviderBase):
 
                 raise session_error(
                     session_request.state_name,
-                    "runtime is unavailable; install Pi >= 0.85.1 on PATH",
+                    "runtime is unavailable; install Pi on PATH",
                 )
             raise PiProviderError(
                 "pi binary not found on PATH. Ensure pi is installed and available."
@@ -125,19 +124,6 @@ class PiProvider(ProviderBase):
                 session_error,
             )
 
-            version_result = _run_subprocess(args=["pi", "--version"], timeout=10)
-            version = re.fullmatch(
-                r"(?:pi\s+)?(\d+)\.(\d+)\.(\d+)", version_result.stdout.strip()
-            )
-            if (
-                version_result.exit_code != 0
-                or version is None
-                or tuple(map(int, version.groups())) < (0, 85, 1)
-            ):
-                raise session_error(
-                    session_request.state_name,
-                    "forks require Pi >= 0.85.1 with native SessionManager and v3 session persistence",
-                )
             session_directory = new_session_directory(session_request.state_name)
             if session_request.source is not None:
                 select_source(session_request.source, session_request.state_name)
@@ -182,7 +168,7 @@ class PiProvider(ProviderBase):
                 except (ValueError, OSError, RecursionError):
                     raise session_error(
                         session_request.state_name,
-                        "native endpoint fork failed; check Pi >= 0.85.1 and saved history",
+                        "native endpoint fork failed; check native SessionManager support and saved history",
                     ) from None
                 from fdsx.providers.pi_sessions import capture_reference
 

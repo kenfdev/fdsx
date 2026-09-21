@@ -86,8 +86,9 @@ class _CodexSession:
         )
         return ProviderSessionError(
             f"State '{self.request.state_name}': Codex native session {reason}; "
-            "verify exec fork CLI compatibility and retained source/ancestor history "
-            "in the same Codex storage, then rerun the source task. "
+            "check that the CLI supports persistent exec sessions and exec fork; "
+            "for forks, restore missing source/ancestor history in the same Codex storage. "
+            "Rerunning the source cannot fix unsupported CLI features. "
             "No fresh-session fallback was attempted."
         )
 
@@ -337,16 +338,6 @@ class CodexProvider(ProviderBase):
         session = (
             _CodexSession(session_request) if session_request is not None else None
         )
-        if session is not None:
-            # Source-inspected candidate only, not a verified minimum version.
-            # Newer versions may change the persistence or JSON contract.
-            version = _run_subprocess(
-                args=["codex", "--version"], timeout=10, inactivity_timeout=10
-            )
-            if version.exit_code != 0 or version.stdout.strip() != "codex-cli 0.154.0":
-                raise session.error(
-                    "requires source-inspected candidate codex-cli 0.154.0; native qualification is pending"
-                )
         schema_path: Path | None = None
         if output_schema is not None:
             encoded_schema = serialize_output_schema(output_schema)

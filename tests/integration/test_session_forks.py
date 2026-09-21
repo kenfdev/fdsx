@@ -57,14 +57,12 @@ class NativeFixture:
         self.executions = []
         self.forks = []
         self.responses = {}
-        self.version = "0.85.1"
         self.fork_failure = False
         self.on_execute = None
 
     def __call__(self, **kwargs):
         args = kwargs["args"]
-        if "--version" in args:
-            return ProviderResult(0, self.version, "")
+        assert "--version" not in args
         if "-e" in args:
             request = json.loads(kwargs["env"]["FDSX_PI_FORK_REQUEST"])
             if self.fork_failure:
@@ -401,8 +399,9 @@ def test_resume_malformed_fork_metadata_fails_before_destination(
         pytest.raises(RuntimeError, match="State 'implement': Pi session") as error,
     ):
         resume_flow("resume-fork", tmp_path / ".fdsx", path)
-    assert "native endpoint fork failed; check Pi >= 0.85.1 and saved history" in str(
-        error.value
+    assert (
+        "native endpoint fork failed; check native SessionManager support and saved history"
+        in str(error.value)
     )
     captured = capsys.readouterr()
     assert "private conversation" not in (
@@ -410,9 +409,8 @@ def test_resume_malformed_fork_metadata_fails_before_destination(
     )
     assert len(native.executions) == 1
     assert not native.forks
-    assert len(subprocess.call_args_list) == 2
-    assert subprocess.call_args_list[0].kwargs["args"] == ["pi", "--version"]
-    assert "-e" in subprocess.call_args_list[1].kwargs["args"]
+    assert len(subprocess.call_args_list) == 1
+    assert "-e" in subprocess.call_args_list[0].kwargs["args"]
 
 
 def test_appended_history_still_forks_completed_endpoint(tmp_path, native):
@@ -439,15 +437,9 @@ def test_appended_history_still_forks_completed_endpoint(tmp_path, native):
     assert native.forks[0][0]["endpoint"] == "entry-0"
 
 
-@pytest.mark.parametrize("failure", ["version", "fork"])
-def test_native_capability_failure_never_executes_blank_destination(
-    tmp_path, native, failure
-):
+def test_native_capability_failure_never_executes_blank_destination(tmp_path, native):
     path = interrupted_flow(tmp_path, native)
-    if failure == "version":
-        native.version = "0.50.0"
-    else:
-        native.fork_failure = True
+    native.fork_failure = True
     with (
         patch("builtins.input", return_value="1"),
         pytest.raises(RuntimeError, match="State 'implement': Pi session") as error,
