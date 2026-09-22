@@ -76,7 +76,9 @@ class GraphExecutionPlan:
     checkpointed: bool
 
 
-def execute_graph(plan: GraphExecutionPlan) -> dict[str, Any]:
+def execute_graph(
+    plan: GraphExecutionPlan, on_progress: Callable[[], None] | None = None
+) -> dict[str, Any]:
     """Stream a prepared graph invocation through interrupts to its latest state."""
     from .interrupts import handle_interrupts
 
@@ -90,12 +92,15 @@ def execute_graph(plan: GraphExecutionPlan) -> dict[str, Any]:
             version="v2",
         ):
             last_state = chunk["data"]
+            if on_progress is not None:
+                on_progress()
 
         if plan.checkpointed:
             last_state = handle_interrupts(
                 plan.graph,
                 plan.continuation_config,
                 last_state,
+                on_progress=on_progress,
             )
 
     if plan.checkpointed:
@@ -178,8 +183,13 @@ def execute_lifecycle(
 ) -> FlowResult:
     """Execute one prepared graph and own its common terminal lifecycle."""
     last_state = plan.initial_state
+
+    def save_progress() -> None:
+        context.recorder.save(base_dir=context.base_dir)
+
     try:
-        last_state = execute_graph(plan)
+        save_progress()
+        last_state = execute_graph(plan, on_progress=save_progress)
         return finalize_terminal_execution(context, last_state)
     except FailStateTermination as termination:
         _persist_terminal_marker(

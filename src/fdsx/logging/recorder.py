@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -53,6 +54,7 @@ class RunRecorder:
         self.final_variables: dict[str, Any] | None = None
         self._current_state: dict[str, Any] | None = None
         self._lock = threading.Lock()
+        self._history_loaded = False
 
     def record_local_workflow(self, scope: str, recorder: "RunRecorder") -> None:
         """Keep local diagnostics separate from top-level terminal-state detection."""
@@ -506,34 +508,35 @@ class RunRecorder:
 
         file_path = thread_dir / RUN_FILENAME
 
-        if file_path.exists():
-            with file_path.open(encoding="utf-8") as f:
-                existing_log: dict[str, Any] = json.load(f)
-
-            self.local_workflows = (
-                existing_log.get("local_workflows", []) + self.local_workflows
-            )
-            self.classifier_events = (
-                existing_log.get("classifier_events", []) + self.classifier_events
-            )
-            existing_states = existing_log.get("states", [])
-            existing_states.extend(self.states)
-
-            self.states = existing_states
-            existing_recoveries = existing_log.get("recoveries", [])
-            existing_recoveries.extend(self.recoveries)
-            self.recoveries = existing_recoveries
-            self.started_at = existing_log.get("started_at", self.started_at)
+        # Load prior attempts once so repeated saves never duplicate history.
+        if not self._history_loaded:
+            if file_path.exists():
+                with file_path.open(encoding="utf-8") as f:
+                    history = json.load(f)
+                self.states = history.get("states", []) + self.states
+                self.recoveries = history.get("recoveries", []) + self.recoveries
+                self.local_workflows = (
+                    history.get("local_workflows", []) + self.local_workflows
+                )
+                self.classifier_events = (
+                    history.get("classifier_events", []) + self.classifier_events
+                )
+                self.started_at = history.get("started_at", self.started_at)
+            self._history_loaded = True
 
         log_data = self.to_dict()
         log_json = json.dumps(log_data, ensure_ascii=False, indent=2)
 
-        fd = os.open(str(file_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # Publish a complete file, leaving the previous record intact on failure.
+        fd, temporary = tempfile.mkstemp(prefix=".run-", suffix=".tmp", dir=thread_dir)
         try:
-            os.fchmod(fd, 0o600)
-            os.write(fd, log_json.encode("utf-8"))
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(log_json)
+                f.flush()
+                os.fsync(f.fileno())
+            Path(temporary).replace(file_path)
         finally:
-            os.close(fd)
+            Path(temporary).unlink(missing_ok=True)
 
         return file_path
 

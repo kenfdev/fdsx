@@ -1,5 +1,6 @@
 """Shared interrupt-handling loop for the engine package."""
 
+from collections.abc import Callable
 from typing import Any
 
 from langgraph.types import Command
@@ -12,6 +13,7 @@ def handle_interrupts(
     config: dict[str, Any],
     last_state: dict[str, Any],
     stream_mode: str = "values",
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Handle interrupt loop for wait states requiring user input.
 
@@ -55,5 +57,7 @@ def handle_interrupts(
             version="v2",
         ):
             last_state = chunk["data"]
+            if on_progress is not None:
+                on_progress()
 
     return last_state
