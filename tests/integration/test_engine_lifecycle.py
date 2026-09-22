@@ -180,6 +180,11 @@ def test_fresh_run_releases_lock_when_checkpoint_setup_fails(tmp_path) -> None:
     assert CheckpointManager(base_dir).is_locked(thread_id) == (False, None)
 
 
+def _fail_terminal_save(recorder, *args, **kwargs):
+    if recorder.completed_at is not None:
+        raise OSError("secondary recorder failure")
+
+
 def test_failure_cleanup_does_not_replace_provider_error(tmp_path) -> None:
     with (
         structlog.testing.capture_logs() as logs,
@@ -192,7 +197,8 @@ def test_failure_cleanup_does_not_replace_provider_error(tmp_path) -> None:
         patch.object(
             RunRecorder,
             "save",
-            side_effect=OSError("secondary recorder failure"),
+            autospec=True,
+            side_effect=_fail_terminal_save,
         ),
     ):
         run_flow(
@@ -293,7 +299,8 @@ states:
         patch.object(
             RunRecorder,
             "save",
-            side_effect=OSError("secondary recorder failure"),
+            autospec=True,
+            side_effect=_fail_terminal_save,
         ),
     ):
         result = run_flow(

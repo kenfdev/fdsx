@@ -150,6 +150,7 @@ def resume_flow(
         checkpoint_tuple = checkpointer.get_tuple(checkpoint_config)
         input_keys: set[str] = set()
         has_input_metadata = False
+        checkpoint_meta: dict[str, Any] = {}
         if checkpoint_tuple is not None:
             channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
             checkpoint_meta = channel_values.get("_meta", {})
@@ -191,6 +192,11 @@ def resume_flow(
                         flow_path = Path(_flow_path_str)
                 except (json.JSONDecodeError, OSError, KeyError):
                     pass
+
+            if flow_path is None and isinstance(checkpoint_meta, dict):
+                saved_flow_path = checkpoint_meta.get("flow_path")
+                if isinstance(saved_flow_path, str) and saved_flow_path:
+                    flow_path = Path(saved_flow_path)
 
             if flow_path is None or not (flow_path and flow_path.exists()):
                 raise RuntimeError(
