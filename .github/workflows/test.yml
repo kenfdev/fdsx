@@ -63,7 +63,7 @@ jobs:
           --junitxml=test-results.xml --durations=20
       - name: upload test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-evidence-python-${{ matrix.python-version }}
           path: |
